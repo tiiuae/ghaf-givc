@@ -8,6 +8,9 @@ packages = [
     "gotests",
     "gopls",
     "golangci-lint",
+    "rustc",
+    "cargo",
+    "pkgs.stdenv.cc", # Need for build rust components
     "protobuf",
     "protoc-gen-go",
     "protoc-gen-go-grpc",

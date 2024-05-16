@@ -1,2 +1,9 @@
 .vscode
+*.sw?
+api/dbus
+api/admin/protoc.sh
+api/systemd/protoc.sh
+internal/pkgs/dbusproxy
+certs
 result
+target
