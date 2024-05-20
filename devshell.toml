@@ -9,6 +9,7 @@ packages = [
     "gopls",
     "golangci-lint",
     "rustc",
+    "rustfmt",
     "cargo",
     "pkgs.stdenv.cc", # Need for build rust components
     "protobuf",
