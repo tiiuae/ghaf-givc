@@ -9,6 +9,7 @@ version = "0.0.1"
 [dependencies]
 async-stream = "0.3"
 strum = {version = "0.25", features = ["derive"]}
+clap = {version = "4.5.4", features = ["derive", "env"]}
 console = "0.15"
 http = "0.2"
 http-body = "0.4.2"
