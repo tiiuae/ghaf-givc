@@ -1,0 +1,47 @@
+// Copyright 2024 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+option go_package = "./systemd";
+package systemd;
+
+message UnitRequest {
+    string UnitName = 1;
+}
+
+message UnitResponse {
+    string CmdStatus = 1;
+}
+
+message UnitStatus {
+    string Name = 1;
+	string Description = 2;
+	string LoadState = 3;
+	string ActiveState = 4;
+    string SubState = 5;
+	string Path = 6;
+}
+
+message UnitStatusResponse {
+    string CmdStatus = 1;
+    UnitStatus UnitStatus = 2;
+}
+
+message UnitResourceRequest {
+    string UnitName = 1;
+}
+
+message UnitResourceResponse {
+    double CpuUsage = 1;
+    float MemoryUsage = 2;
+}
+
+service UnitControlService {
+    rpc GetUnitStatus(UnitRequest) returns (UnitStatusResponse) {}
+    rpc StartUnit(UnitRequest) returns (UnitResponse) {}
+    rpc StopUnit(UnitRequest) returns (UnitResponse) {}
+    rpc KillUnit(UnitRequest) returns (UnitResponse) {}
+    rpc FreezeUnit(UnitRequest) returns (UnitResponse) {}
+    rpc UnfreezeUnit(UnitRequest) returns (UnitResponse) {}
+    rpc MonitorUnit(UnitResourceRequest) returns (stream UnitResourceResponse) {}
+    rpc StartApplication(UnitRequest) returns (UnitResponse) {}
+}
