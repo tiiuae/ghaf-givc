@@ -1,5 +1,5 @@
 use clap::Parser;
-use givc::server;
+use givc::admin;
 use std::net::SocketAddr;
 use tonic::transport::Server;
 
@@ -40,7 +40,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .build()
         .unwrap();
 
-    let admin_service_svc = server::AdminServiceServer::new(server::AdminService::default());
+    let admin_service_svc = admin::AdminServiceServer::new(admin::AdminService::default());
 
     builder
         .add_service(reflect)

@@ -1,4 +1,4 @@
-pub mod server;
+pub mod admin;
 pub mod types;
 pub mod registry;
 
