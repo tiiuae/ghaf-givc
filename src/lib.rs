@@ -1,4 +1,6 @@
 pub mod server;
+pub mod types;
+pub mod registry;
 
 pub mod pb {
     #![allow(dead_code)]
