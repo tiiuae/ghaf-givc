@@ -47,4 +47,21 @@ impl Registry {
             _ => Err("More than one unique services registered".to_string()), // FIXME: Fail registration, this situation should never happens
         }
     }
+
+    pub fn create_unique_entry_name(&self, name: String) -> String {
+        let state = self.map.lock().unwrap();
+        let mut counter = 0;
+        loop {
+            let new_name = format!("{name}@{counter}.service");
+            if !state.contains_key(&new_name) {
+                return new_name;
+            }
+            counter += 1;
+        };
+    }
+
+    pub fn watch_list(&self) -> Vec<RegistryEntry> {
+        let state = self.map.lock().unwrap();
+        state.values().filter(|x| x.watch).map(|x| x.clone()).collect()
+    }
 }
