@@ -2,42 +2,26 @@
 // Some of them would be rewritten, replaced, or even removed
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum UnitType {
-    HostMgr = 0,
-    HostSvc = 1,
-    HostApp = 2,
-
-    AdmVm     = 3,
-    AdmVmMgr = 4,
-    AdmVmSvc = 5,
-    AdmVmApp = 6,
-
-    SysVm     = 7,
-    SysVmMgr = 8,
-    SysVmSvc = 9,
-    SysVmApp = 10,
-
-    AppVm     = 11,
-    AppVmMgr = 12,
-    AppVmSvc = 13,
-    AppVmApp = 14,
+pub struct UnitType {
+    pub vm: VmType,
+    pub service: ServiceType,
 }
 
-/* FIXME: Eventually replace UnitType with following:
-#[derive(Debug, Clone)]
-enum UnitType {
+#[derive(Debug, Clone, PartialEq)]
+enum VmType {
+    Host,
     SysVM,
     AppVM,
     HostVM,
 }
 
-#[derive(Debug, Clone)]
-enum UnitSubType {
+#[derive(Debug, Clone, PartialEq)]
+enum ServiceType {
     Mgr,
     Svc,
     App,
+    VM,
 }
-*/
 
 #[derive(Debug, Clone)]
 pub struct UnitStatus {
