@@ -23,7 +23,11 @@ impl Registry {
 
     pub fn register(&self, entry: RegistryEntry) {
         let mut state = self.map.lock().unwrap();
-        state.entry(entry.name.clone()).or_insert(entry);
+        println!("Registering {:#?}", entry);
+        match state.insert(entry.name.clone(), entry) {
+            Some(old) => println!("Replaced old entry {:#?}", old),
+            None => ()
+        };
     }
 
     pub fn by_name(&self, name: String) -> Result<RegistryEntry, String> {
