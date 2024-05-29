@@ -25,40 +25,39 @@ enum ServiceType {
 
 #[derive(Debug, Clone)]
 pub struct UnitStatus {
-    pub name:   String,
+    pub name: String,
     pub description: String,
-    pub load_state:   String, 
+    pub load_state: String,
     pub active_state: String,
-    pub sub_state:    String,
-    pub path:        String, // FIXME: PathBuf?
+    pub sub_state: String,
+    pub path: String, // FIXME: PathBuf?
 }
 
 #[derive(Debug, Clone)]
-pub struct TlsConfig {
-}
+pub struct TlsConfig {}
 
 #[derive(Debug, Clone)]
 pub struct TransportConfig {
-    pub address:   String,
-    pub port:      u16,
-    pub protocol:  String,
+    pub address: String,
+    pub port: u16,
+    pub protocol: String,
     pub tls_config: TlsConfig,
 }
 
 #[derive(Debug, Clone)]
 pub struct EndpointConfig {
-    pub name:      String,
+    pub name: String,
     pub transport: TransportConfig,
-    pub services:  Vec<String>
+    pub services: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct EndpointEntry {
-    pub name:     String,
+    pub name: String,
     pub protocol: String,
-    pub address:  String,
-    pub port:     String,
-    pub with_tls:  bool,
+    pub address: String,
+    pub port: String,
+    pub with_tls: bool,
 }
 
 #[derive(Debug, Clone)]

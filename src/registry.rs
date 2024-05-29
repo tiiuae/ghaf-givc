@@ -1,7 +1,7 @@
-use std::collections::hash_map::{HashMap,Entry};
+use std::collections::hash_map::{Entry, HashMap};
 use std::fmt;
-use std::sync::{Arc,Mutex};
 use std::result::Result;
+use std::sync::{Arc, Mutex};
 
 use crate::types::*;
 
@@ -11,13 +11,13 @@ struct Registry {
     /// not a Tokio mutex. This is because there are no asynchronous operations
     /// being performed while holding the mutex. Additionally, the critical
     /// sections are very small.
-    map: Arc<Mutex<HashMap<String,RegistryEntry>>> 
+    map: Arc<Mutex<HashMap<String, RegistryEntry>>>,
 }
 
 impl Registry {
     pub fn new() -> Self {
         Self {
-            map: Arc::new(Mutex::new(HashMap::new()))
+            map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -26,7 +26,7 @@ impl Registry {
         println!("Registering {:#?}", entry);
         match state.insert(entry.name.clone(), entry) {
             Some(old) => println!("Replaced old entry {:#?}", old),
-            None => ()
+            None => (),
         };
     }
 
@@ -40,7 +40,11 @@ impl Registry {
 
     pub fn by_type_many(&self, r#type: UnitType) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
-        state.values().filter(|x| x.r#type == r#type).map(|x| x.clone()).collect()
+        state
+            .values()
+            .filter(|x| x.r#type == r#type)
+            .map(|x| x.clone())
+            .collect()
     }
 
     pub fn by_type(&self, r#type: UnitType) -> Result<RegistryEntry, String> {
@@ -61,11 +65,15 @@ impl Registry {
                 return new_name;
             }
             counter += 1;
-        };
+        }
     }
 
     pub fn watch_list(&self) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
-        state.values().filter(|x| x.watch).map(|x| x.clone()).collect()
+        state
+            .values()
+            .filter(|x| x.watch)
+            .map(|x| x.clone())
+            .collect()
     }
 }
