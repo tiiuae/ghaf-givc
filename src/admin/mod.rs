@@ -2,6 +2,9 @@ use crate::pb::{self, *};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
+pub mod registry;
+pub mod sysfsm;
+
 #[derive(Default, Clone)]
 pub struct AdminService;
 
