@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use crate::types::*;
 
 #[derive(Clone, Debug)]
-struct Registry {
+pub struct Registry {
     /// The shared state is guarded by a mutex. This is a `std::sync::Mutex` and
     /// not a Tokio mutex. This is because there are no asynchronous operations
     /// being performed while holding the mutex. Additionally, the critical

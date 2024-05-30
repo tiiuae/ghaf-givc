@@ -1,5 +1,6 @@
 // This module contain literal translations of types from internal/pkgs/types/types.go
 // Some of them would be rewritten, replaced, or even removed
+use crate::pb;
 use std::convert::{Into, TryFrom};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -145,6 +146,20 @@ pub struct UnitStatus {
     pub path: String, // FIXME: PathBuf?
 }
 
+impl TryFrom<pb::UnitStatus> for UnitStatus {
+    type Error = String;
+    fn try_from(us: pb::UnitStatus) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: us.name,
+            description: us.description,
+            load_state: us.load_state,
+            active_state: us.active_state,
+            sub_state: "stub".into(),
+            path: us.path,
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TlsConfig {
     ca_cert_file_path: String,
@@ -176,6 +191,19 @@ pub struct EndpointEntry {
     pub with_tls: bool,
 }
 
+impl TryFrom<pb::TransportConfig> for EndpointEntry {
+    type Error = String;
+    fn try_from(tc: pb::TransportConfig) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: "stub".into(),
+            protocol: tc.protocol,
+            address: tc.address,
+            port: tc.port,
+            with_tls: tc.with_tls,
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RegistryEntry {
     pub name: String,
@@ -184,4 +212,27 @@ pub struct RegistryEntry {
     pub status: UnitStatus,
     pub endpoint: EndpointEntry,
     pub watch: bool,
+}
+
+impl TryFrom<pb::RegistryRequest> for RegistryEntry {
+    type Error = String;
+    fn try_from(req: pb::RegistryRequest) -> Result<Self, Self::Error> {
+        let ty = UnitType::try_from(req.r#type)?;
+        let status = req
+            .state
+            .ok_or("status missing".into())
+            .and_then(UnitStatus::try_from)?;
+        let endpoint = req
+            .transport
+            .ok_or("endpoint missing".into())
+            .and_then(EndpointEntry::try_from)?;
+        Ok(Self {
+            name: req.name,
+            parent: req.parent,
+            status: status,
+            watch: false, // No `watch` field in request
+            r#type: ty,
+            endpoint: endpoint,
+        })
+    }
 }

@@ -1,12 +1,37 @@
 use crate::pb::{self, *};
+use tonic::{Code, Request, Response, Status};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
 pub mod registry;
 pub mod sysfsm;
 
-#[derive(Default, Clone)]
-pub struct AdminService;
+use crate::types::*;
+use registry::*;
+
+// FIXME: this is almost copy of sysfsm::Event.
+#[derive(Copy, Clone, Debug)]
+pub enum State {
+    Init,
+    InitComplete,
+    HostRegistered,
+    VmsRegistered,
+}
+
+#[derive(Debug, Clone)]
+pub struct AdminService {
+    registry: Registry,
+    state: State, // FIXME: use sysfsm statemachine
+}
+
+impl AdminService {
+    pub fn new() -> Self {
+        AdminService {
+            registry: Registry::new(),
+            state: State::Init,
+        }
+    }
+}
 
 #[tonic::async_trait]
 impl pb::admin_service_server::AdminService for AdminService {
@@ -14,7 +39,16 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<RegistryRequest>,
     ) -> std::result::Result<tonic::Response<pb::RegistryResponse>, tonic::Status> {
-        unimplemented!();
+        let req = request.into_inner();
+
+        let entry =
+            RegistryEntry::try_from(req).map_err(|e| Status::new(Code::InvalidArgument, e))?;
+        self.registry.register(entry);
+
+        let res = RegistryResponse {
+            cmd_status: String::from("Registration successful"),
+        };
+        Ok(Response::new(res))
     }
     async fn start_application(
         &self,
