@@ -3,11 +3,8 @@ use tonic::{Code, Request, Response, Status};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
-pub mod registry;
-pub mod sysfsm;
-
 use crate::types::*;
-use registry::*;
+use crate::admin::registry::*;
 
 // FIXME: this is almost copy of sysfsm::Event.
 #[derive(Copy, Clone, Debug)]

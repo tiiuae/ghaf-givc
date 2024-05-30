@@ -40,7 +40,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .build()
         .unwrap();
 
-    let admin_service_svc = admin::AdminServiceServer::new(admin::AdminService::new());
+    let admin_service_svc = admin::server::AdminServiceServer::new(admin::server::AdminService::new());
 
     builder
         .add_service(reflect)
