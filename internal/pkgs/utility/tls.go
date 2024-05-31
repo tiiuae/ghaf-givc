@@ -47,6 +47,7 @@ func TlsServerConfig(CACertFilePath string, CertFilePath string, KeyFilePath str
 		MinVersion:   tls.VersionTLS13,
 		ClientAuth:   clientAuth,
 		ClientCAs:    certPool,
+		RootCAs:      certPool,
 		Certificates: []tls.Certificate{serverTLSCert},
 		CipherSuites: CIPHER_SUITES,
 	}
