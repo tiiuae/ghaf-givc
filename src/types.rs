@@ -161,28 +161,6 @@ impl TryFrom<pb::UnitStatus> for UnitStatus {
 }
 
 #[derive(Debug, Clone)]
-pub struct TlsConfig {
-    ca_cert_file_path: String,
-    cert_file_path: String,
-    key_file_path: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct TransportConfig {
-    pub address: String,
-    pub port: u16,
-    pub protocol: String,
-    pub tls_config: TlsConfig,
-}
-
-#[derive(Debug, Clone)]
-pub struct EndpointConfig {
-    pub name: String,
-    pub transport: TransportConfig,
-    pub services: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
 pub struct EndpointEntry {
     pub name: String,
     pub protocol: String,

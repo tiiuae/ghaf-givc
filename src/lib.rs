@@ -1,11 +1,17 @@
 pub mod admin;
-pub mod registry;
+pub mod endpoint;
 pub mod types;
+pub mod systemd_api;
 
 pub mod pb {
-    #![allow(dead_code)]
-    #![allow(unused_imports)]
-    include!(concat!(env!("OUT_DIR"), "/admin.rs"));
+    pub mod admin {
+        tonic::include_proto!("admin");
+    }
+    pub mod systemd {
+        tonic::include_proto!("systemd");
+    }
+    // Re-export to keep current code untouched
+    pub use crate::pb::admin::*;
 }
 
 use std::{default, fmt, iter};

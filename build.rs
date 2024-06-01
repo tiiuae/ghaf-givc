@@ -9,4 +9,9 @@ fn main() {
         .file_descriptor_set_path(out_dir.join("admin_descriptor.bin"))
         .compile(&["api/admin/admin.proto"], &["admin"])
         .unwrap();
+
+    tonic_build::configure()
+        .file_descriptor_set_path(out_dir.join("systemd_descriptor.bin"))
+        .compile(&["api/systemd/systemd.proto"], &["systemd"])
+        .unwrap();
 }
