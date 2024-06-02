@@ -79,11 +79,6 @@ func (svc *AdminService) RegisterService(req *types.RegistryEntry) error {
 		log.Errorf("Error registering entry: %s", err)
 	}
 
-	// Debug info
-	svc.Registry.DebugPrint()
-	state, _ := svc.SystemFsm.State(context.Background())
-	log.Infof("STATE: %s", state)
-
 	// Check state and transition
 	registerHostPhase, err := svc.SystemFsm.IsInState(STATE_REGISTER_HOST)
 	if err != nil {
@@ -92,8 +87,6 @@ func (svc *AdminService) RegisterService(req *types.RegistryEntry) error {
 	if registerHostPhase {
 		if req.Type == types.UNIT_TYPE_HOST_MGR { // verify?
 			svc.SystemFsm.Fire(TRIGGER_HOST_REGISTERED)
-			state, _ = svc.SystemFsm.State(context.Background())
-			log.Infof("NEW STATE: %s", state)
 		}
 	}
 
@@ -110,9 +103,10 @@ func (svc *AdminService) RegisterService(req *types.RegistryEntry) error {
 			}
 		}
 		svc.SystemFsm.Fire(TRIGGER_VMS_REGISTERED)
-		state, _ = svc.SystemFsm.State(context.Background())
-		log.Infof("NEW STATE: %s", state)
 	}
+
+	state, _ := svc.SystemFsm.State(context.Background())
+	log.Infof("STATE: %s", state)
 
 	return nil
 }

@@ -121,15 +121,10 @@ func (r *ServiceRegistry) DebugPrint() {
 	for _, entry := range r.registry {
 		log.Infof("-Name: %s", entry.Name)
 		if entry.Parent != "" {
-			log.Infof("---Parent: %s", entry.Parent)
+			log.Infof("--Parent: %s", entry.Parent)
 		} else {
-			log.Infof("---Parent: None")
+			log.Infof("--Parent: None")
 		}
-		// log.Infof("Address: %s", entry.Addr)
-		// log.Infof("Port: %s", entry.Port)
-		// log.Infof("Protocol: %s", entry.Protocol)
-		// log.Infof("State: %v", entry.State)
-		// log.Infof("")
 	}
 }
 
