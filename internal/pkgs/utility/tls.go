@@ -86,6 +86,11 @@ func TlsClientConfig(CACertFilePath string, CertFilePath string, KeyFilePath str
 
 func TlsClientConfigFromTlsConfig(tlsConfig *tls.Config, serverName string) *tls.Config {
 
+	// Return nil if no TLS config is set
+	if tlsConfig == nil {
+		return nil
+	}
+
 	// Set TLS configuration
 	newTlsConfig := &tls.Config{
 		MinVersion:   tls.VersionTLS13,
