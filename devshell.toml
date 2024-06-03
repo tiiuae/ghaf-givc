@@ -9,6 +9,7 @@ packages = [
     "gopls",
     "golangci-lint",
     "rustc",
+    "rustfmt",
     "cargo",
     "protobuf",
     "protoc-gen-go",
