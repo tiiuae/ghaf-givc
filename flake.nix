@@ -61,7 +61,7 @@
     // {
       # NixOS Modules
       nixosModules = {
-        admin = import ./nixos/modules/admin.nix;
+        admin = import ./nixos/modules/admin.nix {inherit self;};
         host = import ./nixos/modules/host.nix;
         sysvm = import ./nixos/modules/sysvm.nix;
         appvm = import ./nixos/modules/appvm.nix;

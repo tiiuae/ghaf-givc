@@ -1,13 +1,13 @@
 # Copyright 2024 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
-{
+{self}: {
   config,
   pkgs,
   lib,
   ...
 }: let
   cfg = config.givc.admin;
-  givc-admin = pkgs.callPackage ../packages/givc-admin.nix {};
+  givc-admin = self.packages.${pkgs.stdenv.hostPlatform.system}.givc-admin-rs;
   inherit (lib) mkOption mkEnableOption mkIf types trivial concatStringsSep attrsets;
 in {
   options.givc.admin = {
