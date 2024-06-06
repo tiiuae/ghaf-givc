@@ -40,6 +40,15 @@ message ApplicationResponse {
     string AppStatus = 2;
 }
 
+message LogRequest {
+    string UserName = 1;
+    string Ip = 2;
+}
+
+message LogResponse {
+    string CmdStatus = 1;
+}
+
 message Empty {
 }
 
@@ -49,6 +58,7 @@ service AdminService {
     rpc PauseApplication(ApplicationRequest) returns (ApplicationResponse) {}
     rpc ResumeApplication(ApplicationRequest) returns (ApplicationResponse) {}
     rpc StopApplication(ApplicationRequest) returns (ApplicationResponse) {}
+    rpc LogsExport(LogRequest) returns (LogResponse) {}
     rpc Poweroff(Empty) returns (Empty) {}
     rpc Reboot(Empty) returns (Empty) {}
 }

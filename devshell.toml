@@ -8,10 +8,14 @@ packages = [
     "gotests",
     "gopls",
     "golangci-lint",
+    "rustc",
+    "rustfmt",
+    "cargo",
     "protobuf",
     "protoc-gen-go",
     "protoc-gen-go-grpc",
-    "grpcurl"
+    "grpcurl",
+    "pkgs.stdenv.cc"
 ]
 
 [[commands]]
