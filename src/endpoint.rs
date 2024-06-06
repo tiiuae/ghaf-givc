@@ -33,8 +33,8 @@ impl TlsConfig {
 
 fn transport_config_to_url(tc: pb::TransportConfig) -> String {
     let scheme = match tc.with_tls {
-        True => "https",
-        False => "http"
+        true => "https",
+        false => "http"
     };
     format!("{}://{}:{}", scheme, tc.address, tc.port)
 }
