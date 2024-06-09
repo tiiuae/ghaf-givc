@@ -38,6 +38,15 @@ impl Registry {
         }
     }
 
+    pub fn by_name_many(&self, name: String) -> Vec<RegistryEntry> {
+        let state = self.map.lock().unwrap();
+        state
+            .values()
+            .filter(|x| x.name.contains(name.as_str()))
+            .map(|x| x.clone())
+            .collect()
+    }
+
     pub fn by_type_many(&self, r#type: UnitType) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
         state
