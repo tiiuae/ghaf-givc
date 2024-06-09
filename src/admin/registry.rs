@@ -65,6 +65,11 @@ impl Registry {
         }
     }
 
+    pub fn contains(&self, name: String) -> bool {
+        let state = self.map.lock().unwrap();
+        state.contains_key(&name)
+    }
+
     pub fn create_unique_entry_name(&self, name: String) -> String {
         let state = self.map.lock().unwrap();
         let mut counter = 0;
