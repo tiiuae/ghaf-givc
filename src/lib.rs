@@ -1,7 +1,7 @@
 pub mod admin;
 pub mod endpoint;
-pub mod types;
 pub mod systemd_api;
+pub mod types;
 
 pub mod pb {
     pub mod admin {

@@ -3,8 +3,9 @@ use tonic::{Code, Request, Response, Status};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
-use crate::types::*;
 use crate::admin::registry::*;
+use crate::endpoint::TlsConfig;
+use crate::types::*;
 
 // FIXME: this is almost copy of sysfsm::Event.
 #[derive(Copy, Clone, Debug)]
@@ -19,13 +20,15 @@ pub enum State {
 pub struct AdminService {
     registry: Registry,
     state: State, // FIXME: use sysfsm statemachine
+    tls_config: Option<TlsConfig>,
 }
 
 impl AdminService {
-    pub fn new() -> Self {
+    pub fn new(use_tls: Option<TlsConfig>) -> Self {
         AdminService {
             registry: Registry::new(),
             state: State::Init,
+            tls_config: use_tls,
         }
     }
 }

@@ -166,7 +166,6 @@ pub struct EndpointEntry {
     pub protocol: String,
     pub address: String,
     pub port: String,
-    pub with_tls: bool,
 }
 
 impl TryFrom<pb::TransportConfig> for EndpointEntry {
@@ -177,7 +176,6 @@ impl TryFrom<pb::TransportConfig> for EndpointEntry {
             protocol: tc.protocol,
             address: tc.address,
             port: tc.port,
-            with_tls: tc.with_tls,
         })
     }
 }
