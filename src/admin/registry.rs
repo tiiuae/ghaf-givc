@@ -3,6 +3,7 @@ use std::fmt;
 use std::result::Result;
 use std::sync::{Arc, Mutex};
 
+use anyhow::*;
 use crate::types::*;
 
 #[derive(Clone, Debug)]
@@ -30,11 +31,11 @@ impl Registry {
         };
     }
 
-    pub fn by_name(&self, name: String) -> Result<RegistryEntry, String> {
+    pub fn by_name(&self, name: String) -> anyhow::Result<RegistryEntry> {
         let mut state = self.map.lock().unwrap();
         match state.entry(name.clone()) {
             Entry::Occupied(v) => Ok(v.get().clone()),
-            Entry::Vacant(_) => Err(format!("Service {name} not registered")),
+            Entry::Vacant(_) => bail!(format!("Service {name} not registered")),
         }
     }
 
@@ -56,12 +57,12 @@ impl Registry {
             .collect()
     }
 
-    pub fn by_type(&self, r#type: UnitType) -> Result<RegistryEntry, String> {
+    pub fn by_type(&self, r#type: UnitType) -> anyhow::Result<RegistryEntry> {
         let vec = self.by_type_many(r#type);
         match vec.len() {
             1 => Ok(vec[0].clone()),
-            0 => Err("No service registered for".to_string()),
-            _ => Err("More than one unique services registered".to_string()), // FIXME: Fail registration, this situation should never happens
+            0 => bail!("No service registered for"),
+            _ => bail!("More than one unique services registered"), // FIXME: Fail registration, this situation should never happens
         }
     }
 
