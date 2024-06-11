@@ -3,8 +3,8 @@ use std::fmt;
 use std::result::Result;
 use std::sync::{Arc, Mutex};
 
-use anyhow::*;
 use crate::types::*;
+use anyhow::*;
 
 #[derive(Clone, Debug)]
 pub struct Registry {
@@ -29,6 +29,17 @@ impl Registry {
             Some(old) => println!("Replaced old entry {:#?}", old),
             None => (),
         };
+    }
+
+    pub fn deregister(&self, name: String) -> anyhow::Result<()> {
+        let mut state = self.map.lock().unwrap();
+        match state.remove(&name) {
+            Some(entry) => {
+                println!("Deregistering {:#?}", entry);
+                Ok(())
+            }
+            None => bail!("Can't deregister entry {}, it not registered", name.clone()),
+        }
     }
 
     pub fn by_name(&self, name: String) -> anyhow::Result<RegistryEntry> {

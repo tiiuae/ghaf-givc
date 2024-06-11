@@ -10,7 +10,7 @@ pub struct UnitType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum VmType {
+pub enum VmType {
     Host,
     AdmVM,
     SysVM,
@@ -18,7 +18,7 @@ enum VmType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ServiceType {
+pub enum ServiceType {
     Mgr,
     Svc,
     App,
@@ -177,6 +177,17 @@ impl TryFrom<pb::TransportConfig> for EndpointEntry {
             address: tc.address,
             port: tc.port,
         })
+    }
+}
+
+impl Into<pb::TransportConfig> for EndpointEntry {
+    fn into(self) -> pb::TransportConfig {
+        pb::TransportConfig {
+            protocol: self.protocol,
+            address: self.address,
+            port: self.port,
+            name: self.name,
+        }
     }
 }
 
