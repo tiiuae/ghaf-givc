@@ -9,6 +9,10 @@
     flake-utils.url = "github:numtide/flake-utils";
     treefmt-nix.url = "github:numtide/treefmt-nix";
     devshell.url = "github:numtide/devshell";
+    crane = {
+      url = "github:ipetkov/crane";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
@@ -17,6 +21,7 @@
     devshell,
     nixpkgs,
     treefmt-nix,
+    crane,
   }: let
     # Supported systems
     systems = with flake-utils.lib.system; [
@@ -38,6 +43,7 @@
         givc-app = pkgs.callPackage ./nixos/packages/givc-app.nix {};
         givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix {};
         givc-admin = pkgs.callPackage ./nixos/packages/givc-admin.nix {};
+        givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix { inherit crane; src = ./.; };
       };
 
       # DevShells
