@@ -1,13 +1,13 @@
 # Copyright 2024 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
-{
+{self}: {
   config,
   pkgs,
   lib,
   ...
 }: let
   cfg = config.givc.host;
-  givc-agent = pkgs.callPackage ../packages/givc-agent.nix {};
+  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-agent;
   inherit (lib) mkOption mkEnableOption mkIf types concatStringsSep trivial attrsets;
 in {
   options.givc.host = {

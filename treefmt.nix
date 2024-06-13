@@ -9,6 +9,8 @@ _: {
     statix.enable = true; # prevents use of nix anti-patterns https://github.com/nerdypepper/statix
     # Go
     gofmt.enable = true; # go formatter https://golang.org/cmd/gofmt/
+    # Rust
+    rustfmt.enable = true; # rust formatter
     # Bash
     shellcheck.enable = true; # lints shell scripts https://github.com/koalaman/shellcheck
   };

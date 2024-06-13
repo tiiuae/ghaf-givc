@@ -43,7 +43,10 @@
         givc-app = pkgs.callPackage ./nixos/packages/givc-app.nix {};
         givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix {};
         givc-admin = pkgs.callPackage ./nixos/packages/givc-admin.nix {};
-        givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix { inherit crane; src = ./.; };
+        givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix {
+          inherit crane;
+          src = ./.;
+        };
       };
 
       # DevShells
@@ -58,10 +61,11 @@
     // {
       # NixOS Modules
       nixosModules = {
-        admin = import ./nixos/modules/admin.nix;
-        host = import ./nixos/modules/host.nix;
-        sysvm = import ./nixos/modules/sysvm.nix;
-        appvm = import ./nixos/modules/appvm.nix;
+        admin-go = import ./nixos/modules/admin-go.nix {inherit self;};
+        admin = import ./nixos/modules/admin.nix {inherit self;};
+        host = import ./nixos/modules/host.nix {inherit self;};
+        sysvm = import ./nixos/modules/sysvm.nix {inherit self;};
+        appvm = import ./nixos/modules/appvm.nix {inherit self;};
       };
 
       # Overlays

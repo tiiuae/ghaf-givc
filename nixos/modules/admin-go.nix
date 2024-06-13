@@ -6,12 +6,12 @@
   lib,
   ...
 }: let
-  cfg = config.givc.appvm;
-  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-agent;
-  inherit (lib) mkOption mkEnableOption mkIf types trivial attrsets;
+  cfg = config.givc.admin;
+  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-admin;
+  inherit (lib) mkOption mkEnableOption mkIf types trivial concatStringsSep attrsets;
 in {
-  options.givc.appvm = {
-    enable = mkEnableOption "Enable givc-appvm module.";
+  options.givc.admin = {
+    enable = mkEnableOption "Enable givc-admin module.";
 
     name = mkOption {
       description = "Host name (without domain).";
@@ -20,13 +20,13 @@ in {
     };
 
     addr = mkOption {
-      description = "IPv4 address. Optionally use 'dynamic' to let the service determine its IP on interface 'ethint0'.";
+      description = "IPv4 address.";
       type = types.str;
       default = "127.0.0.1";
     };
 
     port = mkOption {
-      description = "Port of the agent service. Defaults to '9000'.";
+      description = "Port of the admin service. Defaults to '9000'.";
       type = types.str;
       default = "9000";
     };
@@ -37,53 +37,14 @@ in {
       default = "tcp";
     };
 
-    applications = mkOption {
+    services = mkOption {
       description = ''
-        List of applications to be supported by the service. Expects a JSON string with the format:
-          "name": "command"
-        with:
-        - name: name of the application
-        - command: command to start the application
+        List of microvm services of the system-vms for the admin module to administrate, excluding any dynamic VMs such as app-vm. Expects a space separated list.
+        Must be a of type 'service', e.g., 'microvm@net-vm.service'.
       '';
-      type = types.str;
-      default = "";
-      example = ''{"chromium": "run-waypipe chromium --enable-features=UseOzonePlatform --ozone-platform=wayland"}'';
-    };
-
-    admin = mkOption {
-      description = "Admin server configuration.";
-      type = with types;
-        submodule {
-          options = {
-            enable = mkEnableOption "Admin module";
-            name = mkOption {
-              description = "Hostname of admin server";
-              type = types.str;
-            };
-
-            addr = mkOption {
-              description = "Address of admin server";
-              type = types.str;
-            };
-
-            port = mkOption {
-              description = "Port of admin server";
-              type = types.str;
-            };
-
-            protocol = mkOption {
-              description = "Protocol of admin server";
-              type = types.str;
-            };
-          };
-        };
-      default = {
-        enable = true;
-        name = "localhost";
-        addr = "127.0.0.1";
-        port = "9001";
-        protocol = "tcp";
-      };
+      type = types.listOf types.str;
+      default = [""];
+      example = "['microvm@net-vm.service']";
     };
 
     tls = mkOption {
@@ -128,10 +89,6 @@ in {
   config = mkIf cfg.enable {
     assertions = [
       {
-        assertion = cfg.applications != "";
-        message = "A list of services (or targets) is required for this module to run.";
-      }
-      {
         assertion =
           !(cfg.tls.enable
             && (
@@ -141,15 +98,15 @@ in {
       }
     ];
 
-    systemd.user.services."givc-${cfg.name}" = {
-      description = "GIVC remote service manager for application VMs.";
+    systemd.services.givc-admin = {
+      description = "GIVC admin module.";
       enable = true;
-      after = ["sockets.target"];
-      wants = ["sockets.target"];
-      wantedBy = ["default.target"];
+      after = ["network-online.target"];
+      wants = ["network-online.target"];
+      wantedBy = ["multi-user.target"];
       serviceConfig = {
         Type = "exec";
-        ExecStart = "${givc-agent}/bin/givc-agent";
+        ExecStart = "${givc-admin}/bin/givc-admin";
         Restart = "always";
         RestartSec = 1;
       };
@@ -159,15 +116,10 @@ in {
           "ADDR" = "${cfg.addr}";
           "PORT" = "${cfg.port}";
           "PROTO" = "${cfg.protocol}";
-          "TYPE" = "12";
-          "SUBTYPE" = "13";
+          "TYPE" = "4";
+          "SUBTYPE" = "5";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
-          "PARENT" = "microvm@${cfg.name}.service";
-          "APPLICATIONS" = "${cfg.applications}";
-          "ADMIN_SERVER_NAME" = "${cfg.admin.name}.ghaf";
-          "ADMIN_SERVER_ADDR" = "${cfg.admin.addr}";
-          "ADMIN_SERVER_PORT" = "${cfg.admin.port}";
-          "ADMIN_SERVER_PROTO" = "${cfg.admin.protocol}";
+          "SERVICES" = "${concatStringsSep " " cfg.services}";
         }
         // attrsets.optionalAttrs cfg.tls.enable {
           "CA_CERT" = "${cfg.tls.caCertPath}";
