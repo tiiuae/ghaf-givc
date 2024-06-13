@@ -5,7 +5,7 @@ pkgs.buildGoModule {
   pname = "givc-admin";
   version = "0.0.1";
   src = ../../.;
-  vendorHash = "sha256-ijo8Nwv+Ut3x1T+6L3MEdMQMv4zx2yBnSfx6Wl5zcdM=";
+  vendorHash = "sha256-aW3aMkPs7Inj6SRKNv/mg+EpsaZLa8S16qyC/XsRcmw=";
   subPackages = [
     "api/admin"
     "api/systemd"
