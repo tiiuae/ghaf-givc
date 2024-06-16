@@ -78,6 +78,8 @@ func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistrati
 	}
 	reflection.Register(srv.grpcServer)
 
+	reflection.Register(srv.grpcServer)
+
 	return &srv, nil
 }
 

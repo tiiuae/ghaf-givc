@@ -9,3 +9,4 @@ gen_protoc() {
 
 gen_protoc api/admin admin.proto
 gen_protoc api/systemd systemd.proto
+gen_protoc api/wifi wifi.proto

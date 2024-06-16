@@ -82,6 +82,14 @@ in {
       };
     };
 
+    wifiManager = mkOption {
+      description = ''
+        Wifi manager to handle wifi related queries.
+      '';
+      type = types.bool;
+      default = false;
+    };
+
     tls = mkOption {
       description = ''
         TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
@@ -154,6 +162,7 @@ in {
           "PROTO" = "${cfg.protocol}";
           "TYPE" = "8";
           "SUBTYPE" = "9";
+          "WIFI" = "${trivial.boolToString cfg.wifiManager}";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "PARENT" = "microvm@${cfg.name}.service";
           "SERVICES" = "${concatStringsSep " " cfg.services}";
