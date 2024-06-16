@@ -1,7 +1,9 @@
 use crate::pb::{self, *};
 use anyhow::*;
+use std::future::Future;
 use std::time::Duration;
 use tonic::{Code, Request, Response, Status};
+use tonic_types::{ErrorDetails, StatusExt};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
@@ -37,7 +39,7 @@ impl AdminService {
         }
     }
 
-    pub fn host_endpoint(&self) -> anyhow::Result<EndpointConfig> {
+    fn host_endpoint(&self) -> anyhow::Result<EndpointConfig> {
         let host_mgr = self.registry.by_type(UnitType {
             vm: VmType::Host,
             service: ServiceType::Mgr,
@@ -47,6 +49,25 @@ impl AdminService {
             tls: self.tls_config.clone(),
             services: vec![],
         })
+    }
+
+    fn agent_endpoint(&self, name: &String) -> anyhow::Result<EndpointConfig> {
+        let vm_name = format!("givc-{}-vm.service", name);
+        let agent = self.registry.by_name(vm_name)?;
+        Ok(EndpointConfig {
+            transport: agent.endpoint.into(),
+            tls: self.tls_config.clone(),
+            services: vec![],
+        })
+    }
+
+    fn app_entries(&self, name: String) -> anyhow::Result<Vec<String>> {
+        if name.contains("@") {
+            let list = self.registry.by_name_many(name)?;
+            Ok(list.into_iter().map(|entry| entry.name).collect())
+        } else {
+            Ok(vec![name])
+        }
     }
 
     pub async fn get_remote_status(
@@ -133,6 +154,90 @@ impl AdminService {
             ),
         }
     }
+
+    async fn monitor_routine(&self) -> anyhow::Result<()> {
+        let watch_list = self.registry.watch_list();
+        for entry in watch_list {
+            match self.get_remote_status(&entry).await {
+                Err(err) => {
+                    println!(
+                        "could not get status of unit {}: {}",
+                        entry.name.clone(),
+                        err
+                    );
+                    self.handle_error(entry)
+                        .await
+                        .context("during handle error")?
+                }
+                std::result::Result::Ok(status) => {
+                    // Difference from "go" algorithm -- save new status before recovering attempt
+                    if status.active_state != "active" {
+                        println!(
+                            "Status of {} is {}, instead of active. Recovering.",
+                            entry.name.clone(),
+                            status.active_state
+                        )
+                    };
+
+                    // We have immutable copy of entry here, but need update _in registry_ copy
+                    self.registry
+                        .update_state(entry.name.clone(), status.clone())?;
+
+                    if status.active_state != "active" {
+                        self.handle_error(entry)
+                            .await
+                            .context("during handle error")?
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn monitor(&self) {
+        loop {
+            let watch = Duration::new(5, 0);
+            tokio::time::sleep(watch).await;
+
+            if let Err(err) = self.monitor_routine().await {
+                println!("Error during watch: {}", err);
+            }
+        }
+    }
+}
+
+async fn escalate<T, R, F, FA>(
+    req: tonic::Request<T>,
+    fun: F,
+) -> std::result::Result<tonic::Response<R>, tonic::Status>
+where
+    F: FnOnce(T) -> FA,
+    FA: Future<Output = anyhow::Result<R>>,
+{
+    let result = fun(req.into_inner()).await;
+    match result {
+        std::result::Result::Ok(res) => std::result::Result::Ok(Response::new(res)),
+        Err(any) => {
+            let mut err_details = ErrorDetails::new();
+            // Generate error status
+            let status = Status::with_error_details(
+                Code::InvalidArgument,
+                "request contains invalid arguments",
+                err_details,
+            );
+
+            return Err(status);
+        }
+    }
+}
+
+fn app_success() -> anyhow::Result<ApplicationResponse> {
+    // FIXME: what should be response
+    let res = ApplicationResponse {
+        cmd_status: String::from("Command successful."),
+        app_status: String::from("Command successful."),
+    };
+    Ok(res)
 }
 
 #[tonic::async_trait]
@@ -162,30 +267,64 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
-        unimplemented!();
+        escalate(request, |req| async {
+            let agent = self.agent_endpoint(&req.app_name)?;
+            let client = SystemDClient::new(agent);
+            for each in self.app_entries(req.app_name)? {
+                _ = client.pause_remote(each).await?
+            }
+            app_success()
+        })
+        .await
     }
     async fn resume_application(
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
-        unimplemented!();
+        escalate(request, |req| async {
+            let agent = self.agent_endpoint(&req.app_name)?;
+            let client = SystemDClient::new(agent);
+            for each in self.app_entries(req.app_name)? {
+                _ = client.resume_remote(each).await?
+            }
+            app_success()
+        })
+        .await
     }
     async fn stop_application(
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
-        unimplemented!();
+        escalate(request, |req| async {
+            let agent = self.agent_endpoint(&req.app_name)?;
+            let client = SystemDClient::new(agent);
+            for each in self.app_entries(req.app_name)? {
+                _ = client.stop_remote(each).await?
+            }
+            app_success()
+        })
+        .await
     }
     async fn poweroff(
         &self,
         request: tonic::Request<Empty>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
-        unimplemented!();
+        escalate(request, |_| async {
+            self.send_system_command(String::from("poweroff.target"))
+                .await?;
+            Ok(Empty {})
+        })
+        .await
     }
     async fn reboot(
         &self,
         request: tonic::Request<Empty>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
-        unimplemented!();
+        escalate(request, |_| async {
+            self.send_system_command(String::from("poweroff.target"))
+                .await?;
+            Ok(Empty {})
+        })
+        .await
     }
 }
