@@ -57,7 +57,7 @@ impl AdminServiceImpl {
     }
 
     fn host_endpoint(&self) -> anyhow::Result<EndpointConfig> {
-        let host_mgr = self.registry.by_type(UnitType {
+        let host_mgr = self.registry.by_type(&UnitType {
             vm: VmType::Host,
             service: ServiceType::Mgr,
         })?;
@@ -70,7 +70,7 @@ impl AdminServiceImpl {
 
     pub fn agent_endpoint(&self, name: &String) -> anyhow::Result<EndpointConfig> {
         let vm_name = format!("givc-{}-vm.service", name);
-        let agent = self.registry.by_name(vm_name)?;
+        let agent = self.registry.by_name(&vm_name)?;
         Ok(EndpointConfig {
             transport: agent.endpoint.into(),
             tls: self.tls_config.clone(),
@@ -80,7 +80,7 @@ impl AdminServiceImpl {
 
     pub fn app_entries(&self, name: String) -> anyhow::Result<Vec<String>> {
         if name.contains("@") {
-            let list = self.registry.by_name_many(name)?;
+            let list = self.registry.by_name_many(&name)?;
             Ok(list.into_iter().map(|entry| entry.name).collect())
         } else {
             Ok(vec![name])
@@ -92,7 +92,7 @@ impl AdminServiceImpl {
         entry: &RegistryEntry,
     ) -> anyhow::Result<crate::types::UnitStatus> {
         let transport = if entry.endpoint.address.is_empty() {
-            let parent = self.registry.by_name(entry.parent.clone())?;
+            let parent = self.registry.by_name(&entry.parent)?;
             parent.endpoint.clone()
         } else {
             entry.endpoint.clone()
@@ -150,7 +150,7 @@ impl AdminServiceImpl {
     pub async fn handle_error(&self, entry: RegistryEntry) -> anyhow::Result<()> {
         match (entry.r#type.vm, entry.r#type.service) {
             (VmType::AppVM, ServiceType::App) => {
-                self.registry.deregister(entry.name)?;
+                self.registry.deregister(&entry.name)?;
                 Ok(())
             }
             (VmType::AppVM, ServiceType::Mgr) | (VmType::SysVM, ServiceType::Mgr) => {
@@ -197,8 +197,7 @@ impl AdminServiceImpl {
                     };
 
                     // We have immutable copy of entry here, but need update _in registry_ copy
-                    self.registry
-                        .update_state(entry.name.clone(), status.clone())?;
+                    self.registry.update_state(&entry.name, status.clone())?;
 
                     if status.active_state != "active" {
                         self.handle_error(entry)
@@ -234,20 +233,20 @@ impl AdminServiceImpl {
         let systemd_agent = format!("givc-{}-vm.service", &req.app_name);
 
         // Entry unused in "go" code
-        let entry = match self.registry.by_name(systemd_agent.clone()) {
+        let entry = match self.registry.by_name(&systemd_agent) {
             std::result::Result::Ok(e) => e,
             Err(_) => {
                 self.start_vm(req.app_name.clone())
                     .await
                     .context(format!("Starting vm for {}", &req.app_name))?;
                 self.registry
-                    .by_name(systemd_agent.clone())
+                    .by_name(&systemd_agent)
                     .context("after starting VM")?
             }
         };
         let endpoint = self.agent_endpoint(&req.app_name)?;
         let client = SystemDClient::new(endpoint.clone());
-        let service_name = self.registry.create_unique_entry_name(req.app_name);
+        let service_name = self.registry.create_unique_entry_name(&req.app_name);
         client.start_remote(service_name.clone()).await?;
         let status = client.get_remote_status(service_name.clone()).await?;
         if status.active_state != "active" {

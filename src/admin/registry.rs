@@ -31,26 +31,26 @@ impl Registry {
         };
     }
 
-    pub fn deregister(&self, name: String) -> anyhow::Result<()> {
+    pub fn deregister(&self, name: &String) -> anyhow::Result<()> {
         let mut state = self.map.lock().unwrap();
-        match state.remove(&name) {
+        match state.remove(name) {
             Some(entry) => {
                 println!("Deregistering {:#?}", entry);
                 Ok(())
             }
-            None => bail!("Can't deregister entry {}, it not registered", name.clone()),
+            None => bail!("Can't deregister entry {}, it not registered", name),
         }
     }
 
-    pub fn by_name(&self, name: String) -> anyhow::Result<RegistryEntry> {
+    pub fn by_name(&self, name: &String) -> anyhow::Result<RegistryEntry> {
         let mut state = self.map.lock().unwrap();
-        match state.entry(name.clone()) {
+        match state.entry(name.to_string()) {
             Entry::Occupied(v) => Ok(v.get().clone()),
             Entry::Vacant(_) => bail!(format!("Service {name} not registered")),
         }
     }
 
-    pub fn by_name_many(&self, name: String) -> anyhow::Result<Vec<RegistryEntry>> {
+    pub fn by_name_many(&self, name: &String) -> anyhow::Result<Vec<RegistryEntry>> {
         let state = self.map.lock().unwrap();
         let list: Vec<RegistryEntry> = state
             .values()
@@ -64,17 +64,17 @@ impl Registry {
         }
     }
 
-    pub fn by_type_many(&self, r#type: UnitType) -> Vec<RegistryEntry> {
+    pub fn by_type_many(&self, ty: &UnitType) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
         state
             .values()
-            .filter(|x| x.r#type == r#type)
+            .filter(|x| x.r#type == *ty)
             .map(|x| x.clone())
             .collect()
     }
 
-    pub fn by_type(&self, r#type: UnitType) -> anyhow::Result<RegistryEntry> {
-        let vec = self.by_type_many(r#type);
+    pub fn by_type(&self, ty: &UnitType) -> anyhow::Result<RegistryEntry> {
+        let vec = self.by_type_many(&ty);
         match vec.len() {
             1 => Ok(vec[0].clone()),
             0 => bail!("No service registered for"),
@@ -82,12 +82,12 @@ impl Registry {
         }
     }
 
-    pub fn contains(&self, name: String) -> bool {
+    pub fn contains(&self, name: &String) -> bool {
         let state = self.map.lock().unwrap();
-        state.contains_key(&name)
+        state.contains_key(name)
     }
 
-    pub fn create_unique_entry_name(&self, name: String) -> String {
+    pub fn create_unique_entry_name(&self, name: &String) -> String {
         let state = self.map.lock().unwrap();
         let mut counter = 0;
         loop {
@@ -108,9 +108,9 @@ impl Registry {
             .collect()
     }
 
-    pub fn update_state(&self, name: String, status: UnitStatus) -> anyhow::Result<()> {
+    pub fn update_state(&self, name: &String, status: UnitStatus) -> anyhow::Result<()> {
         let mut state = self.map.lock().unwrap();
-        if let Some(e) = state.get_mut(&name) {
+        if let Some(e) = state.get_mut(name) {
             e.status = status
         } else {
             bail!("Can't update state for {}, is not registered", name)
