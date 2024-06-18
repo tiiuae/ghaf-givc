@@ -15,7 +15,7 @@ use crate::types::*;
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 
 // FIXME: this is almost copy of sysfsm::Event.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum State {
     Init,
     InitComplete,
@@ -261,7 +261,55 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
-        unimplemented!();
+        escalate(request, |req| async {
+            if self.state != State::VmsRegistered {
+                println!("not all required system-vms are registered")
+            }
+            let systemd_agent = format!("givc-{}-vm.service", &req.app_name);
+
+            // Entry unused in "go" code
+            let entry = match self.registry.by_name(systemd_agent.clone()) {
+                std::result::Result::Ok(e) => e,
+                Err(_) => {
+                    self.start_vm(req.app_name.clone())
+                        .await
+                        .context(format!("Starting vm for {}", &req.app_name))?;
+                    self.registry
+                        .by_name(systemd_agent.clone())
+                        .context("after starting VM")?
+                }
+            };
+            let endpoint = self.agent_endpoint(&req.app_name)?;
+            let client = SystemDClient::new(endpoint.clone());
+            let service_name = self.registry.create_unique_entry_name(req.app_name);
+            client.start_remote(service_name.clone()).await?;
+            let status = client.get_remote_status(service_name.clone()).await?;
+            if status.active_state != "active" {
+                bail!("cannot start unit: {}", &service_name)
+            };
+
+            let app_entry = RegistryEntry {
+                name: service_name.clone(),
+                parent: systemd_agent,
+                status: status,
+                watch: true,
+                r#type: UnitType {
+                    vm: VmType::AppVM,
+                    service: ServiceType::App,
+                },
+                endpoint: EndpointEntry {
+                    // Bogus
+                    protocol: String::from("bogus"),
+                    name: service_name,
+                    address: endpoint.transport.address,
+                    port: endpoint.transport.port,
+                },
+            };
+            self.registry.register(app_entry);
+
+            app_success()
+        })
+        .await
     }
     async fn pause_application(
         &self,
