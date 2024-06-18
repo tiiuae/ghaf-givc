@@ -213,11 +213,12 @@ impl TryFrom<pb::RegistryRequest> for RegistryEntry {
             .transport
             .ok_or("endpoint missing".into())
             .and_then(EndpointEntry::try_from)?;
+        let watch = ty.service == ServiceType::Mgr;
         Ok(Self {
             name: req.name,
             parent: req.parent,
             status: status,
-            watch: false, // No `watch` field in request
+            watch: watch,
             r#type: ty,
             endpoint: endpoint,
         })
