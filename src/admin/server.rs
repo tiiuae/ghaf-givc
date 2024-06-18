@@ -1,6 +1,7 @@
 use crate::pb::{self, *};
 use anyhow::*;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 use tonic::{Code, Request, Response, Status};
 use tonic_types::{ErrorDetails, StatusExt};
@@ -23,16 +24,32 @@ pub enum State {
     VmsRegistered,
 }
 
-#[derive(Debug, Clone)]
-pub struct AdminService {
+#[derive(Debug)]
+pub struct AdminServiceImpl {
     registry: Registry,
     state: State, // FIXME: use sysfsm statemachine
     tls_config: Option<TlsConfig>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AdminService {
+    inner: Arc<AdminServiceImpl>,
+}
+
 impl AdminService {
     pub fn new(use_tls: Option<TlsConfig>) -> Self {
-        AdminService {
+        let inner = Arc::new(AdminServiceImpl::new(use_tls));
+        let clone = inner.clone();
+        tokio::task::spawn(async move {
+            clone.monitor().await;
+        });
+        Self { inner: inner }
+    }
+}
+
+impl AdminServiceImpl {
+    pub fn new(use_tls: Option<TlsConfig>) -> Self {
+        Self {
             registry: Registry::new(),
             state: State::Init,
             tls_config: use_tls,
@@ -51,7 +68,7 @@ impl AdminService {
         })
     }
 
-    fn agent_endpoint(&self, name: &String) -> anyhow::Result<EndpointConfig> {
+    pub fn agent_endpoint(&self, name: &String) -> anyhow::Result<EndpointConfig> {
         let vm_name = format!("givc-{}-vm.service", name);
         let agent = self.registry.by_name(vm_name)?;
         Ok(EndpointConfig {
@@ -61,7 +78,7 @@ impl AdminService {
         })
     }
 
-    fn app_entries(&self, name: String) -> anyhow::Result<Vec<String>> {
+    pub fn app_entries(&self, name: String) -> anyhow::Result<Vec<String>> {
         if name.contains("@") {
             let list = self.registry.by_name_many(name)?;
             Ok(list.into_iter().map(|entry| entry.name).collect())
@@ -204,6 +221,59 @@ impl AdminService {
             }
         }
     }
+
+    // Refactoring kludge
+    pub fn register(&self, entry: RegistryEntry) {
+        self.registry.register(entry)
+    }
+
+    pub async fn start_app(&self, req: ApplicationRequest) -> anyhow::Result<()> {
+        if self.state != State::VmsRegistered {
+            println!("not all required system-vms are registered")
+        }
+        let systemd_agent = format!("givc-{}-vm.service", &req.app_name);
+
+        // Entry unused in "go" code
+        let entry = match self.registry.by_name(systemd_agent.clone()) {
+            std::result::Result::Ok(e) => e,
+            Err(_) => {
+                self.start_vm(req.app_name.clone())
+                    .await
+                    .context(format!("Starting vm for {}", &req.app_name))?;
+                self.registry
+                    .by_name(systemd_agent.clone())
+                    .context("after starting VM")?
+            }
+        };
+        let endpoint = self.agent_endpoint(&req.app_name)?;
+        let client = SystemDClient::new(endpoint.clone());
+        let service_name = self.registry.create_unique_entry_name(req.app_name);
+        client.start_remote(service_name.clone()).await?;
+        let status = client.get_remote_status(service_name.clone()).await?;
+        if status.active_state != "active" {
+            bail!("cannot start unit: {}", &service_name)
+        };
+
+        let app_entry = RegistryEntry {
+            name: service_name.clone(),
+            parent: systemd_agent,
+            status: status,
+            watch: true,
+            r#type: UnitType {
+                vm: VmType::AppVM,
+                service: ServiceType::App,
+            },
+            endpoint: EndpointEntry {
+                // Bogus
+                protocol: String::from("bogus"),
+                name: service_name,
+                address: endpoint.transport.address,
+                port: endpoint.transport.port,
+            },
+        };
+        self.registry.register(app_entry);
+        Ok(())
+    }
 }
 
 async fn escalate<T, R, F, FA>(
@@ -250,7 +320,7 @@ impl pb::admin_service_server::AdminService for AdminService {
 
         let entry =
             RegistryEntry::try_from(req).map_err(|e| Status::new(Code::InvalidArgument, e))?;
-        self.registry.register(entry);
+        self.inner.register(entry);
 
         let res = RegistryResponse {
             cmd_status: String::from("Registration successful"),
@@ -262,51 +332,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
         escalate(request, |req| async {
-            if self.state != State::VmsRegistered {
-                println!("not all required system-vms are registered")
-            }
-            let systemd_agent = format!("givc-{}-vm.service", &req.app_name);
-
-            // Entry unused in "go" code
-            let entry = match self.registry.by_name(systemd_agent.clone()) {
-                std::result::Result::Ok(e) => e,
-                Err(_) => {
-                    self.start_vm(req.app_name.clone())
-                        .await
-                        .context(format!("Starting vm for {}", &req.app_name))?;
-                    self.registry
-                        .by_name(systemd_agent.clone())
-                        .context("after starting VM")?
-                }
-            };
-            let endpoint = self.agent_endpoint(&req.app_name)?;
-            let client = SystemDClient::new(endpoint.clone());
-            let service_name = self.registry.create_unique_entry_name(req.app_name);
-            client.start_remote(service_name.clone()).await?;
-            let status = client.get_remote_status(service_name.clone()).await?;
-            if status.active_state != "active" {
-                bail!("cannot start unit: {}", &service_name)
-            };
-
-            let app_entry = RegistryEntry {
-                name: service_name.clone(),
-                parent: systemd_agent,
-                status: status,
-                watch: true,
-                r#type: UnitType {
-                    vm: VmType::AppVM,
-                    service: ServiceType::App,
-                },
-                endpoint: EndpointEntry {
-                    // Bogus
-                    protocol: String::from("bogus"),
-                    name: service_name,
-                    address: endpoint.transport.address,
-                    port: endpoint.transport.port,
-                },
-            };
-            self.registry.register(app_entry);
-
+            self.inner.start_app(req).await?;
             app_success()
         })
         .await
@@ -316,9 +342,9 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
         escalate(request, |req| async {
-            let agent = self.agent_endpoint(&req.app_name)?;
+            let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
-            for each in self.app_entries(req.app_name)? {
+            for each in self.inner.app_entries(req.app_name)? {
                 _ = client.pause_remote(each).await?
             }
             app_success()
@@ -330,9 +356,9 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
         escalate(request, |req| async {
-            let agent = self.agent_endpoint(&req.app_name)?;
+            let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
-            for each in self.app_entries(req.app_name)? {
+            for each in self.inner.app_entries(req.app_name)? {
                 _ = client.resume_remote(each).await?
             }
             app_success()
@@ -344,9 +370,9 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
         escalate(request, |req| async {
-            let agent = self.agent_endpoint(&req.app_name)?;
+            let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
-            for each in self.app_entries(req.app_name)? {
+            for each in self.inner.app_entries(req.app_name)? {
                 _ = client.stop_remote(each).await?
             }
             app_success()
@@ -358,7 +384,8 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<Empty>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         escalate(request, |_| async {
-            self.send_system_command(String::from("poweroff.target"))
+            self.inner
+                .send_system_command(String::from("poweroff.target"))
                 .await?;
             Ok(Empty {})
         })
@@ -369,7 +396,8 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<Empty>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         escalate(request, |_| async {
-            self.send_system_command(String::from("poweroff.target"))
+            self.inner
+                .send_system_command(String::from("poweroff.target"))
                 .await?;
             Ok(Empty {})
         })
