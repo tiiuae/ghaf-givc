@@ -1,10 +1,8 @@
 use crate::pb::{self, *};
 use anyhow::*;
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::{Code, Request, Response, Status};
-use tonic_types::{ErrorDetails, StatusExt};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
@@ -12,6 +10,7 @@ use crate::admin::registry::*;
 use crate::endpoint::{EndpointConfig, TlsConfig};
 use crate::systemd_api::client::SystemDClient;
 use crate::types::*;
+use crate::utils::tonic::*;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 
@@ -272,31 +271,6 @@ impl AdminServiceImpl {
         };
         self.registry.register(app_entry);
         Ok(())
-    }
-}
-
-async fn escalate<T, R, F, FA>(
-    req: tonic::Request<T>,
-    fun: F,
-) -> std::result::Result<tonic::Response<R>, tonic::Status>
-where
-    F: FnOnce(T) -> FA,
-    FA: Future<Output = anyhow::Result<R>>,
-{
-    let result = fun(req.into_inner()).await;
-    match result {
-        std::result::Result::Ok(res) => std::result::Result::Ok(Response::new(res)),
-        Err(any) => {
-            let mut err_details = ErrorDetails::new();
-            // Generate error status
-            let status = Status::with_error_details(
-                Code::InvalidArgument,
-                "request contains invalid arguments",
-                err_details,
-            );
-
-            return Err(status);
-        }
     }
 }
 
