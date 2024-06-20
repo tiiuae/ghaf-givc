@@ -183,19 +183,20 @@ impl AdminServiceImpl {
                         .context("during handle error")?
                 }
                 std::result::Result::Ok(status) => {
+                    let inactive = status.active_state != "active";
                     // Difference from "go" algorithm -- save new status before recovering attempt
-                    if status.active_state != "active" {
+                    if inactive {
                         println!(
                             "Status of {} is {}, instead of active. Recovering.",
-                            entry.name.clone(),
+                            &entry.name,
                             status.active_state
                         )
                     };
 
                     // We have immutable copy of entry here, but need update _in registry_ copy
-                    self.registry.update_state(&entry.name, status.clone())?;
+                    self.registry.update_state(&entry.name, status)?;
 
-                    if status.active_state != "active" {
+                    if inactive {
                         self.handle_error(entry)
                             .await
                             .context("during handle error")?
