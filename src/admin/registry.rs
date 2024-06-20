@@ -118,3 +118,52 @@ impl Registry {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::naming::parse_application_name;
+
+    #[test]
+    fn test_register_deregister() -> anyhow::Result<()> {
+        let r = Registry::new();
+
+        let foo = RegistryEntry::dummy("foo".to_string());
+        let foo_key = "foo".to_string();
+        let bar = RegistryEntry::dummy("bar".to_string());
+
+        r.register(foo.clone());
+        r.register(bar);
+
+        assert!(r.contains(&foo_key));
+        assert!(r.contains(&"bar".to_string()));
+
+        let foo1 = r.by_name(&foo_key)?;
+        assert_eq!(foo1, foo);
+
+        assert!(r.deregister(&foo_key).is_ok());
+        assert!(!r.contains(&foo_key));
+        assert!(r.by_name(&foo_key).is_err());
+        assert!(r.deregister(&foo_key).is_err()); // fail to dereg second time
+        Ok(())
+    }
+
+    #[test]
+    fn test_unique_name() -> anyhow::Result<()> {
+        let r = Registry::new();
+
+        let foo = "foo".to_string();
+        let name1 = r.create_unique_entry_name(&foo);
+        assert_eq!(name1, "foo@0.service");
+        let re1 = RegistryEntry::dummy(name1.clone());
+        r.register(re1);
+
+        let name2 = r.create_unique_entry_name(&foo);
+        assert_eq!(name2, "foo@1.service");
+
+        // Integration test -- ensure all names are parsable
+        assert!(parse_application_name(&name1).is_ok());
+        assert!(parse_application_name(&name2).is_ok());
+        Ok(())
+    }
+}

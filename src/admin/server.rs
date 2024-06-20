@@ -10,6 +10,7 @@ use crate::admin::registry::*;
 use crate::endpoint::{EndpointConfig, TlsConfig};
 use crate::systemd_api::client::SystemDClient;
 use crate::types::*;
+use crate::utils::naming::*;
 use crate::utils::tonic::*;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
@@ -68,7 +69,7 @@ impl AdminServiceImpl {
     }
 
     pub fn agent_endpoint(&self, name: &String) -> anyhow::Result<EndpointConfig> {
-        let vm_name = format!("givc-{}-vm.service", name);
+        let vm_name = format_service_name(name);
         let agent = self.registry.by_name(&vm_name)?;
         Ok(EndpointConfig {
             transport: agent.endpoint.into(),
@@ -116,7 +117,7 @@ impl AdminServiceImpl {
     pub async fn start_vm(&self, name: String) -> anyhow::Result<()> {
         let endpoint = self.host_endpoint()?;
         let client = SystemDClient::new(endpoint);
-        let vm_name = format!("microvm@{name}-vm.service");
+        let vm_name = format_vm_name(&name);
         let status = client
             .get_remote_status(vm_name.clone())
             .await
@@ -153,15 +154,11 @@ impl AdminServiceImpl {
                 Ok(())
             }
             (VmType::AppVM, ServiceType::Mgr) | (VmType::SysVM, ServiceType::Mgr) => {
-                if let Some(name_no_suffix) = entry.name.strip_suffix("-vm.service") {
-                    if let Some(name) = name_no_suffix.strip_prefix("givc-") {
-                        self.start_vm(name.to_string()).await.context(format!(
-                            "handing error, by restart VM {}",
-                            entry.name.clone()
-                        ))?
-                    }
-                };
-                bail!("Doesn't know how to parse VM name: {}", entry.name.clone())
+                let name = parse_service_name(&entry.name)?;
+                self.start_vm(name.to_string())
+                    .await
+                    .context(format!("handing error, by restart VM {}", &entry.name))?;
+                Ok(())
             }
             (x, y) => bail!(
                 "Don't known how to handle_error for VM type: {:?}:{:?}",
@@ -229,7 +226,7 @@ impl AdminServiceImpl {
         if self.state != State::VmsRegistered {
             println!("not all required system-vms are registered")
         }
-        let systemd_agent = format!("givc-{}-vm.service", &req.app_name);
+        let systemd_agent = format_service_name(&req.app_name);
 
         // Entry unused in "go" code
         let entry = match self.registry.by_name(&systemd_agent) {

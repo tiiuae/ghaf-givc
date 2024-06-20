@@ -136,7 +136,7 @@ impl Into<u32> for UnitType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnitStatus {
     pub name: String,
     pub description: String,
@@ -160,7 +160,7 @@ impl TryFrom<pb::UnitStatus> for UnitStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EndpointEntry {
     pub name: String,
     pub protocol: String,
@@ -191,7 +191,7 @@ impl Into<pb::TransportConfig> for EndpointEntry {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RegistryEntry {
     pub name: String,
     pub parent: String,
@@ -199,6 +199,35 @@ pub struct RegistryEntry {
     pub status: UnitStatus,
     pub endpoint: EndpointEntry,
     pub watch: bool,
+}
+
+#[cfg(test)]
+impl RegistryEntry {
+    pub fn dummy(n: String) -> Self {
+        Self {
+            name: n,
+            parent: "bogus".to_string(),
+            r#type: UnitType {
+                vm: VmType::AppVM,
+                service: ServiceType::App,
+            },
+            status: UnitStatus {
+                name: "systemd-servicename.service".to_string(),
+                description: "bogus".to_string(),
+                active_state: "active".to_string(),
+                load_state: "loaded".to_string(),
+                sub_state: "bogus".to_string(),
+                path: "bogus".to_string(),
+            },
+            endpoint: EndpointEntry {
+                name: "bogus".to_string(),
+                protocol: "bogus".to_string(),
+                address: "127.0.0.1".to_string(),
+                port: "42".to_string(),
+            },
+            watch: true,
+        }
+    }
 }
 
 impl TryFrom<pb::RegistryRequest> for RegistryEntry {
