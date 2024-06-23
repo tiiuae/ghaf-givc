@@ -160,6 +160,18 @@ impl TryFrom<pb::UnitStatus> for UnitStatus {
     }
 }
 
+impl Into<pb::UnitStatus> for UnitStatus {
+    fn into(self) -> pb::UnitStatus {
+        pb::UnitStatus {
+            name: self.name,
+            description: self.description,
+            load_state: self.load_state,
+            active_state: self.active_state,
+            path: self.path,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct EndpointEntry {
     pub name: String,
