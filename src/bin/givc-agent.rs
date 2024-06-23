@@ -1,13 +1,13 @@
 use clap::Parser;
-use givc::pb;
-use givc::systemd_api::server::SystemdService;
 use givc::admin::client::AdminClient;
 use givc::endpoint::{EndpointConfig, TlsConfig};
+use givc::pb;
+use givc::systemd_api::server::SystemdService;
 use givc::types::*;
+use givc::utils::naming::*;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tonic::transport::Server;
-use givc::utils::naming::*;
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "givc-agent")]
@@ -15,7 +15,7 @@ use givc::utils::naming::*;
 struct Cli {
     #[arg(long, env = "NAME")]
     name: String,
-    
+
     #[arg(long, env = "ADDR", default_missing_value = "127.0.0.1")]
     addr: String,
     #[arg(long, env = "PORT", default_missing_value = "9001")]
@@ -55,7 +55,8 @@ struct Cli {
 
 // FIXME: should be in src/lib.rs: mod pb {}, but doesn't work
 mod kludge {
-    pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("systemd_descriptor");
+    pub const FILE_DESCRIPTOR_SET: &[u8] =
+        tonic::include_file_descriptor_set!("systemd_descriptor");
 }
 
 #[tokio::main]
@@ -66,7 +67,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::new(cli.addr.clone().parse().unwrap(), cli.port);
 
     let agent_service_name = format_service_name(&cli.name);
-
 
     let mut builder = Server::builder();
 
@@ -90,12 +90,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             protocol: "bogus".into(),
             name: "bogus".into(),
         },
-        services: Vec::new(),
         tls: tls.clone(),
     };
 
     // Perfect example of bad designed code, admin.register_service(entry) should hide structure filling
-    let entry = RegistryEntry{
+    let entry = RegistryEntry {
         name: agent_service_name,
         parent: String::from(""),
         r#type: cli.r#type.try_into()?,
@@ -114,7 +113,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             active_state: String::from("bogus"),
             sub_state: String::from("bogus"),
             path: String::from("bogus"),
-        }
+        },
     };
 
     let admin = AdminClient::new(admin_cfg);
@@ -125,8 +124,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .build()
         .unwrap();
 
-    let agent_service_svc =
-        pb::systemd::unit_control_service_server::UnitControlServiceServer::new(SystemdService::new());
+    let agent_service_svc = pb::systemd::unit_control_service_server::UnitControlServiceServer::new(
+        SystemdService::new(),
+    );
 
     builder
         .add_service(reflect)

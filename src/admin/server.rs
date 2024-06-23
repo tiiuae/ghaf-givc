@@ -64,7 +64,6 @@ impl AdminServiceImpl {
         Ok(EndpointConfig {
             transport: host_mgr.endpoint.into(),
             tls: self.tls_config.clone(),
-            services: vec![],
         })
     }
 
@@ -74,7 +73,6 @@ impl AdminServiceImpl {
         Ok(EndpointConfig {
             transport: agent.endpoint.into(),
             tls: self.tls_config.clone(),
-            services: vec![],
         })
     }
 
@@ -100,7 +98,6 @@ impl AdminServiceImpl {
         let endpoint = EndpointConfig {
             transport: transport.into(),
             tls: self.tls_config.clone(),
-            services: vec![],
         };
 
         let client = SystemDClient::new(endpoint);

@@ -5,12 +5,11 @@ use tonic::{Code, Request, Response, Status};
 pub use pb::systemd::unit_control_service_server::UnitControlServiceServer;
 
 #[derive(Debug, Clone)]
-pub struct SystemdService {
-}
+pub struct SystemdService {}
 
 impl SystemdService {
     pub fn new() -> Self {
-        Self{}
+        Self {}
     }
 }
 

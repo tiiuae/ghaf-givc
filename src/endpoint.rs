@@ -16,7 +16,6 @@ pub struct TlsConfig {
 #[derive(Debug, Clone)]
 pub struct EndpointConfig {
     pub transport: pb::TransportConfig,
-    pub services: Vec<String>,
     pub tls: Option<TlsConfig>,
 }
 
