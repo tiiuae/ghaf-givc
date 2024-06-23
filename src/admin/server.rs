@@ -188,8 +188,7 @@ impl AdminServiceImpl {
                     if inactive {
                         println!(
                             "Status of {} is {}, instead of active. Recovering.",
-                            &entry.name,
-                            status.active_state
+                            &entry.name, status.active_state
                         )
                     };
 

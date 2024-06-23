@@ -5,7 +5,14 @@ use tonic::{Code, Request, Response, Status};
 pub use pb::systemd::unit_control_service_server::UnitControlServiceServer;
 
 #[derive(Debug, Clone)]
-struct SystemdService {}
+pub struct SystemdService {
+}
+
+impl SystemdService {
+    pub fn new() -> Self {
+        Self{}
+    }
+}
 
 type Stream<T> =
     Pin<Box<dyn tokio_stream::Stream<Item = std::result::Result<T, Status>> + Send + 'static>>;
