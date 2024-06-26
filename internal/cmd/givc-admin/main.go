@@ -42,7 +42,7 @@ func main() {
 	if name == "" {
 		log.Fatalf("No 'NAME' environment variable present.")
 	}
-	cfgServer.Transport.Name = name + ".ghaf"
+	cfgServer.Transport.Name = name
 
 	address := os.Getenv("ADDR")
 	if address == "" {

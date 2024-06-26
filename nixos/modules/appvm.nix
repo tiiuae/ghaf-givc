@@ -164,7 +164,7 @@ in {
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "PARENT" = "microvm@${cfg.name}.service";
           "APPLICATIONS" = "${cfg.applications}";
-          "ADMIN_SERVER_NAME" = "${cfg.admin.name}.ghaf";
+          "ADMIN_SERVER_NAME" = "${cfg.admin.name}";
           "ADMIN_SERVER_ADDR" = "${cfg.admin.addr}";
           "ADMIN_SERVER_PORT" = "${cfg.admin.port}";
           "ADMIN_SERVER_PROTO" = "${cfg.admin.protocol}";

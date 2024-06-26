@@ -105,8 +105,8 @@ Only one `host` module should be present at a time. Sample `host` module configu
     # Provide TLS configuration files
     tls = {
       caCertPath = "/etc/ssl/certs/ca-certificates.crt";
-      certPath = "/etc/givc/host.ghaf-cert.pem";
-      keyPath = "/etc/givc/host.ghaf-key.pem";
+      certPath = "/etc/givc/ghaf-host-cert.pem";
+      keyPath = "/etc/givc/ghaf-host-key.pem";
     };
 
     # Provide admin service information
@@ -147,8 +147,8 @@ To use the agent as application controller, include the `appvm` module as follow
     # Provide TLS configuration files
     tls = {
       caCertPath = "/etc/ssl/certs/ca-certificates.crt";
-      certPath = "/etc/givc/host.ghaf-cert.pem";
-      keyPath = "/etc/givc/host.ghaf-key.pem";
+      certPath = "/etc/givc/ghaf-host-cert.pem";
+      keyPath = "/etc/givc/ghaf-host-key.pem";
     };
 
     # Provide admin service information

@@ -158,7 +158,7 @@ in {
           "SUBTYPE" = "1";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "SERVICES" = "${concatStringsSep " " cfg.services}";
-          "ADMIN_SERVER_NAME" = "${cfg.admin.name}.ghaf";
+          "ADMIN_SERVER_NAME" = "${cfg.admin.name}";
           "ADMIN_SERVER_ADDR" = "${cfg.admin.addr}";
           "ADMIN_SERVER_PORT" = "${cfg.admin.port}";
           "ADMIN_SERVER_PROTO" = "${cfg.admin.protocol}";

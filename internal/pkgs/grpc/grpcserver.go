@@ -69,8 +69,8 @@ func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistrati
 	for _, s := range srv.config.Services {
 		log.Info("Registering service: ", s.Name())
 		s.RegisterGrpcService(srv.grpcServer)
-		reflection.Register(srv.grpcServer)
 	}
+	reflection.Register(srv.grpcServer)
 
 	return &srv, nil
 }

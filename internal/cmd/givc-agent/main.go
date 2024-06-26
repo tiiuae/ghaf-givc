@@ -136,7 +136,7 @@ func main() {
 	// Set agent configurations
 	cfgAgent := &types.EndpointConfig{
 		Transport: types.TransportConfig{
-			Name:     name + ".ghaf",
+			Name:     name,
 			Address:  address,
 			Port:     port,
 			Protocol: protocol,
