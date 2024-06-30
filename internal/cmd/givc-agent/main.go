@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"givc/api/admin"
 	givc_grpc "givc/internal/pkgs/grpc"
@@ -25,7 +24,7 @@ import (
 func main() {
 
 	var err error
-	log.Infof("Executing %s \n", filepath.Base(os.Args[0]))
+	log.Infof("Executing %s", filepath.Base(os.Args[0]))
 
 	name := os.Getenv("NAME")
 	if name == "" {
@@ -114,25 +113,6 @@ func main() {
 		TlsConfig: tlsConfig,
 	}
 
-	// TEMP: IP resolution with hardcoded interface
-	if address == "dynamic" {
-		i := 0
-		for i < 100 {
-			address, err = givc_util.GetInterfaceIpv4("ethint0")
-			if err != nil || address == "" {
-				log.Warningf("Cannot fetch IP address: %s", err)
-				time.Sleep(1 * time.Second)
-				i += 1
-				continue
-			}
-			break
-		}
-	}
-	if address == "" {
-		log.Fatalf("Cannot resolve IP. Exiting.")
-	}
-	// TEMP: IP resolution
-
 	// Set agent configurations
 	cfgAgent := &types.EndpointConfig{
 		Transport: types.TransportConfig{
@@ -168,10 +148,10 @@ func main() {
 	}
 
 	// Register this instance
-	// @TODO: Add sync with server, sd_notify + ctx handling
-
+	serverStarted := make(chan struct{})
 	go func() {
-		time.Sleep(1 * time.Second)
+		// Wait for server to start
+		<-serverStarted
 
 		// Register agent
 		serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
@@ -213,7 +193,7 @@ func main() {
 
 	// Start server
 	ctx := context.Background()
-	err = grpcServer.ListenAndServe(ctx)
+	err = grpcServer.ListenAndServe(ctx, serverStarted)
 	if err != nil {
 		log.Fatalf("Grpc server failed: %s", err)
 	}

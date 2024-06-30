@@ -102,7 +102,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	err = grpcServer.ListenAndServe(ctx)
+	err = grpcServer.ListenAndServe(ctx, make(chan struct{}))
 	if err != nil {
 		log.Fatalf("Grpc server failed: %s", err)
 	}

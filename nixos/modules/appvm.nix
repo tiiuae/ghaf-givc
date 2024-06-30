@@ -20,7 +20,7 @@ in {
     };
 
     addr = mkOption {
-      description = "IPv4 address. Optionally use 'dynamic' to let the service determine its IP on interface 'ethint0'.";
+      description = "IPv4 address.";
       type = types.str;
       default = "127.0.0.1";
     };

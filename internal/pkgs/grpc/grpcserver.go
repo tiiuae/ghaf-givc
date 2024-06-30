@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"givc/internal/pkgs/types"
 	"net"
+	"time"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_logrus "github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus"
@@ -20,6 +21,11 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	LISTENER_WAIT_TIME = 1 * time.Second
+	LISTENER_RETRIES   = 20
 )
 
 type GrpcServerConfig struct {
@@ -75,11 +81,19 @@ func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistrati
 	return &srv, nil
 }
 
-func (s *GrpcServer) ListenAndServe(ctx context.Context) error {
+func (s *GrpcServer) ListenAndServe(ctx context.Context, started chan struct{}) error {
 
-	listener, err := net.Listen(s.config.Transport.Protocol, s.config.Transport.Address+":"+s.config.Transport.Port)
-	if err != nil {
-		return err
+	var err error
+	var listener net.Listener
+	addr := s.config.Transport.Address + ":" + s.config.Transport.Port
+	for i := 0; i < LISTENER_RETRIES; i++ {
+		listener, err = net.Listen(s.config.Transport.Protocol, addr)
+		if err != nil {
+			time.Sleep(LISTENER_WAIT_TIME)
+			log.WithFields(log.Fields{"addr": addr}).Info("Error binding address for GRPC server, retrying...")
+			continue
+		}
+		break
 	}
 	defer listener.Close()
 
@@ -87,21 +101,18 @@ func (s *GrpcServer) ListenAndServe(ctx context.Context) error {
 	idleConnsClosed := make(chan struct{})
 	go func() {
 		<-ctx.Done()
-
 		s.grpcServer.GracefulStop()
-
 		close(idleConnsClosed)
 	}()
 
 	group.Go(func() error {
 		log.WithFields(log.Fields{"addr": listener.Addr().String()}).Info("Starting GRPC server")
-
-		if err := s.grpcServer.Serve(listener); err != nil {
+		close(started)
+		err := s.grpcServer.Serve(listener)
+		if err != nil {
 			return err
 		}
-
 		log.WithFields(log.Fields{"addr": listener.Addr().String()}).Info("GRPC server stopped")
-
 		return nil
 	})
 
