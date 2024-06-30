@@ -401,6 +401,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tonic-reflection",
+ "tonic-types",
  "tower",
  "tracing-subscriber",
 ]
@@ -764,7 +765,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools",
  "log",
  "multimap",
@@ -1208,6 +1209,17 @@ dependencies = [
  "prost-types",
  "tokio",
  "tokio-stream",
+ "tonic",
+]
+
+[[package]]
+name = "tonic-types"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4aa089471d8d4c60ec3aef047739713a4695f0b309d4cea0073bc55201064f4"
+dependencies = [
+ "prost",
+ "prost-types",
  "tonic",
 ]
 
