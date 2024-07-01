@@ -1,0 +1,30 @@
+// Copyright 2024 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+option go_package = "./wifi";
+package wifimanager;
+
+message WifiNetworkRequest {
+    string NetworkName = 1;
+}
+
+message WifiConnectionRequest {
+    string SSID = 1;
+    string Password = 2;
+}
+
+message WifiNetworkResponse {
+    repeated string InUse = 1;
+    repeated string SSID = 2;
+    repeated string Signal = 3;
+    repeated string Security = 4;
+}
+
+message WifiConnectionResponse {
+    string Response = 1;
+}
+
+service WifiService {
+    rpc ListNetwork(WifiNetworkRequest) returns (WifiNetworkResponse) {}
+    rpc ConnectNetwork(WifiConnectionRequest) returns (WifiConnectionResponse) {}
+}
