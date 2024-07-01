@@ -22,14 +22,16 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	WifiService_MonitorWifiNetworks_FullMethodName = "/wifimanager.WifiService/MonitorWifiNetworks"
+	WifiService_ListNetwork_FullMethodName    = "/wifimanager.WifiService/ListNetwork"
+	WifiService_ConnectNetwork_FullMethodName = "/wifimanager.WifiService/ConnectNetwork"
 )
 
 // WifiServiceClient is the client API for WifiService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WifiServiceClient interface {
-	MonitorWifiNetworks(ctx context.Context, in *WifiNetworkRequest, opts ...grpc.CallOption) (*WifiNetworkResponse, error)
+	ListNetwork(ctx context.Context, in *WifiNetworkRequest, opts ...grpc.CallOption) (*WifiNetworkResponse, error)
+	ConnectNetwork(ctx context.Context, in *WifiConnectionRequest, opts ...grpc.CallOption) (*WifiConnectionResponse, error)
 }
 
 type wifiServiceClient struct {
@@ -40,9 +42,18 @@ func NewWifiServiceClient(cc grpc.ClientConnInterface) WifiServiceClient {
 	return &wifiServiceClient{cc}
 }
 
-func (c *wifiServiceClient) MonitorWifiNetworks(ctx context.Context, in *WifiNetworkRequest, opts ...grpc.CallOption) (*WifiNetworkResponse, error) {
+func (c *wifiServiceClient) ListNetwork(ctx context.Context, in *WifiNetworkRequest, opts ...grpc.CallOption) (*WifiNetworkResponse, error) {
 	out := new(WifiNetworkResponse)
-	err := c.cc.Invoke(ctx, WifiService_MonitorWifiNetworks_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, WifiService_ListNetwork_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *wifiServiceClient) ConnectNetwork(ctx context.Context, in *WifiConnectionRequest, opts ...grpc.CallOption) (*WifiConnectionResponse, error) {
+	out := new(WifiConnectionResponse)
+	err := c.cc.Invoke(ctx, WifiService_ConnectNetwork_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +64,8 @@ func (c *wifiServiceClient) MonitorWifiNetworks(ctx context.Context, in *WifiNet
 // All implementations must embed UnimplementedWifiServiceServer
 // for forward compatibility
 type WifiServiceServer interface {
-	MonitorWifiNetworks(context.Context, *WifiNetworkRequest) (*WifiNetworkResponse, error)
+	ListNetwork(context.Context, *WifiNetworkRequest) (*WifiNetworkResponse, error)
+	ConnectNetwork(context.Context, *WifiConnectionRequest) (*WifiConnectionResponse, error)
 	mustEmbedUnimplementedWifiServiceServer()
 }
 
@@ -61,8 +73,11 @@ type WifiServiceServer interface {
 type UnimplementedWifiServiceServer struct {
 }
 
-func (UnimplementedWifiServiceServer) MonitorWifiNetworks(context.Context, *WifiNetworkRequest) (*WifiNetworkResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method MonitorWifiNetworks not implemented")
+func (UnimplementedWifiServiceServer) ListNetwork(context.Context, *WifiNetworkRequest) (*WifiNetworkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListNetwork not implemented")
+}
+func (UnimplementedWifiServiceServer) ConnectNetwork(context.Context, *WifiConnectionRequest) (*WifiConnectionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConnectNetwork not implemented")
 }
 func (UnimplementedWifiServiceServer) mustEmbedUnimplementedWifiServiceServer() {}
 
@@ -77,20 +92,38 @@ func RegisterWifiServiceServer(s grpc.ServiceRegistrar, srv WifiServiceServer) {
 	s.RegisterService(&WifiService_ServiceDesc, srv)
 }
 
-func _WifiService_MonitorWifiNetworks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _WifiService_ListNetwork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(WifiNetworkRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(WifiServiceServer).MonitorWifiNetworks(ctx, in)
+		return srv.(WifiServiceServer).ListNetwork(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: WifiService_MonitorWifiNetworks_FullMethodName,
+		FullMethod: WifiService_ListNetwork_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WifiServiceServer).MonitorWifiNetworks(ctx, req.(*WifiNetworkRequest))
+		return srv.(WifiServiceServer).ListNetwork(ctx, req.(*WifiNetworkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WifiService_ConnectNetwork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WifiConnectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WifiServiceServer).ConnectNetwork(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WifiService_ConnectNetwork_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WifiServiceServer).ConnectNetwork(ctx, req.(*WifiConnectionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -103,8 +136,12 @@ var WifiService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*WifiServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "MonitorWifiNetworks",
-			Handler:    _WifiService_MonitorWifiNetworks_Handler,
+			MethodName: "ListNetwork",
+			Handler:    _WifiService_ListNetwork_Handler,
+		},
+		{
+			MethodName: "ConnectNetwork",
+			Handler:    _WifiService_ConnectNetwork_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

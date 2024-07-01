@@ -46,12 +46,12 @@ func NewWifiControlServer() (*WifiControlServer, error) {
 	return &wifiControlServer, nil
 }
 
-func (s *WifiControlServer) MonitorWifiNetworks(ctx context.Context, req *wifi_api.WifiNetworkRequest) (*wifi_api.WifiNetworkResponse, error) {
-	log.Infof("Incoming available wifi network request for %v\n", req)
+func (s *WifiControlServer) ListNetwork(ctx context.Context, req *wifi_api.WifiNetworkRequest) (*wifi_api.WifiNetworkResponse, error) {
+	log.Infof("Incoming request to list available APs of %v\n", req)
 
-	networks, err := s.Controller.GetWifiNetworks(context.Background(), req.NetworkName)
+	networks, err := s.Controller.GetNetworkList(context.Background(), req.NetworkName)
 	if err != nil {
-		log.Infof("[NetworkList] Error fetching network properties: %v\n", err)
+		log.Infof("[ListNetwork] Error fetching network properties: %v\n", err)
 		return nil, fmt.Errorf("cannot fetch network properties")
 	}
 
@@ -63,4 +63,16 @@ func (s *WifiControlServer) MonitorWifiNetworks(ctx context.Context, req *wifi_a
 	}
 
 	return &resp, nil
+}
+
+func (s *WifiControlServer) ConnectNetwork(ctx context.Context, req *wifi_api.WifiConnectionRequest) (*wifi_api.WifiConnectionResponse, error) {
+	log.Infof("Incoming request to connect %v\n", req)
+
+	response, err := s.Controller.Connect(context.Background(), req.SSID, req.Password)
+	if err != nil {
+		log.Infof("[ConnectNetwork] Error fetching network properties: %v %v\n", response, err)
+		return nil, fmt.Errorf("cannot fetch network properties %s (%s)", response, err)
+	}
+
+	return &wifi_api.WifiConnectionResponse{Response: response}, nil
 }

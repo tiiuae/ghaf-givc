@@ -16,7 +16,7 @@ func NewController() (*WifiController, error) {
 	return &WifiController{}, nil
 }
 
-func (c *WifiController) GetWifiNetworks(ctx context.Context, NetworkInterface string) (map[string][]string, error) {
+func (c *WifiController) GetNetworkList(ctx context.Context, NetworkInterface string) (map[string][]string, error) {
 	parsedOutput := make(map[string][]string)
 
 	// Input validation
@@ -28,12 +28,12 @@ func (c *WifiController) GetWifiNetworks(ctx context.Context, NetworkInterface s
 	nmcliRunCmd += " -f IN-USE,SSID,SIGNAL,SECURITY "
 	nmcliRunCmd += " device wifi "
 
-	// Get wifi list from nix package
+	// Get wifi list from nmcli
 	cmd := exec.Command("/bin/sh", "-c", nmcliRunCmd)
 	networks, err := cmd.Output()
 
 	if err != nil {
-		return parsedOutput, fmt.Errorf("error starting application: %s (%s)", "wifi-list", err)
+		return parsedOutput, fmt.Errorf("error starting application: %s (%s)", "nmcli", err)
 	}
 
 	parsedOutput["IN-USE"] = []string{}
@@ -51,4 +51,28 @@ func (c *WifiController) GetWifiNetworks(ctx context.Context, NetworkInterface s
 	}
 
 	return parsedOutput, nil
+}
+
+func (c *WifiController) Connect(ctx context.Context, SSID string, Password string) (string, error) {
+
+	// Input validation
+	if ctx == nil {
+		return "", fmt.Errorf("context cannot be nil")
+	}
+
+	nmcliRunCmd := "/run/current-system/sw/bin/nmcli"
+	nmcliRunCmd += " device wifi connect "
+	nmcliRunCmd += SSID
+	nmcliRunCmd += " password \""
+	nmcliRunCmd += Password
+	nmcliRunCmd += "\""
+
+	cmd := exec.Command("/bin/sh", "-c", nmcliRunCmd)
+	response, err := cmd.Output()
+
+	if err != nil {
+		return string(response), fmt.Errorf("error starting application: %s (%s)", "nmcli", err)
+	}
+
+	return string(response), nil
 }

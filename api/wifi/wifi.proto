@@ -8,6 +8,11 @@ message WifiNetworkRequest {
     string NetworkName = 1;
 }
 
+message WifiConnectionRequest {
+    string SSID = 1;
+    string Password = 2;
+}
+
 message WifiNetworkResponse {
     repeated string InUse = 1;
     repeated string SSID = 2;
@@ -15,6 +20,11 @@ message WifiNetworkResponse {
     repeated string Security = 4;
 }
 
+message WifiConnectionResponse {
+    string Response = 1;
+}
+
 service WifiService {
-    rpc MonitorWifiNetworks(WifiNetworkRequest) returns (WifiNetworkResponse) {}
+    rpc ListNetwork(WifiNetworkRequest) returns (WifiNetworkResponse) {}
+    rpc ConnectNetwork(WifiConnectionRequest) returns (WifiConnectionResponse) {}
 }
