@@ -51,8 +51,8 @@ func (s *WifiControlServer) ListNetwork(ctx context.Context, req *wifi_api.WifiN
 
 	networks, err := s.Controller.GetNetworkList(context.Background(), req.NetworkName)
 	if err != nil {
-		log.Infof("[ListNetwork] Error fetching network properties: %v\n", err)
-		return nil, fmt.Errorf("cannot fetch network properties")
+		log.Infof("[ListNetwork] Error fetching network list: %v\n", err)
+		return nil, fmt.Errorf("cannot fetch network list")
 	}
 
 	resp := wifi_api.WifiNetworkResponse{
@@ -66,12 +66,36 @@ func (s *WifiControlServer) ListNetwork(ctx context.Context, req *wifi_api.WifiN
 }
 
 func (s *WifiControlServer) ConnectNetwork(ctx context.Context, req *wifi_api.WifiConnectionRequest) (*wifi_api.WifiConnectionResponse, error) {
-	log.Infof("Incoming request to connect %v\n", req)
+	log.Infof("Incoming conenction request to %v\n", req.SSID)
 
 	response, err := s.Controller.Connect(context.Background(), req.SSID, req.Password)
 	if err != nil {
-		log.Infof("[ConnectNetwork] Error fetching network properties: %v %v\n", response, err)
-		return nil, fmt.Errorf("cannot fetch network properties %s (%s)", response, err)
+		log.Infof("[ConnectNetwork] Error AP connection: %v %v\n", response, err)
+		return nil, fmt.Errorf("cannot connect to AP %s (%s)", response, err)
+	}
+
+	return &wifi_api.WifiConnectionResponse{Response: response}, nil
+}
+
+func (s *WifiControlServer) TurnOn(ctx context.Context, req *wifi_api.WifiNetworkRequest) (*wifi_api.WifiConnectionResponse, error) {
+	log.Infof("Incoming request to turn on the wifi\n")
+
+	response, err := s.Controller.WifiRadioSwitch(context.Background(), true)
+	if err != nil {
+		log.Infof("[TurnOn] Error switching the network: %v\n", err)
+		return nil, fmt.Errorf("cannot switch the network")
+	}
+
+	return &wifi_api.WifiConnectionResponse{Response: response}, nil
+}
+
+func (s *WifiControlServer) TurnOff(ctx context.Context, req *wifi_api.WifiNetworkRequest) (*wifi_api.WifiConnectionResponse, error) {
+	log.Infof("Incoming request to turn off the wifi\n")
+
+	response, err := s.Controller.WifiRadioSwitch(context.Background(), false)
+	if err != nil {
+		log.Infof("[TurnOff] Error switching the network: %v\n", err)
+		return nil, fmt.Errorf("cannot switch the network")
 	}
 
 	return &wifi_api.WifiConnectionResponse{Response: response}, nil

@@ -68,7 +68,33 @@ func (c *WifiController) Connect(ctx context.Context, SSID string, Password stri
 	nmcliRunCmd += "\""
 
 	cmd := exec.Command("/bin/sh", "-c", nmcliRunCmd)
-	response, err := cmd.Output()
+	response, err := cmd.CombinedOutput()
+
+	if err != nil {
+		return string(response), fmt.Errorf("error starting application: %s: %s (%s)", "nmcli", response, err)
+	}
+
+	return string(response), nil
+}
+
+func (c *WifiController) WifiRadioSwitch(ctx context.Context, TurnOn bool) (string, error) {
+
+	// Input validation
+	if ctx == nil {
+		return "", fmt.Errorf("context cannot be nil")
+	}
+
+	nmcliRunCmd := "/run/current-system/sw/bin/nmcli"
+	nmcliRunCmd += " radio wifi "
+
+	if TurnOn {
+		nmcliRunCmd += "on"
+	} else {
+		nmcliRunCmd += "off"
+	}
+
+	cmd := exec.Command("/bin/sh", "-c", nmcliRunCmd)
+	response, err := cmd.CombinedOutput()
 
 	if err != nil {
 		return string(response), fmt.Errorf("error starting application: %s (%s)", "nmcli", err)

@@ -27,4 +27,6 @@ message WifiConnectionResponse {
 service WifiService {
     rpc ListNetwork(WifiNetworkRequest) returns (WifiNetworkResponse) {}
     rpc ConnectNetwork(WifiConnectionRequest) returns (WifiConnectionResponse) {}
+    rpc TurnOn(WifiNetworkRequest) returns (WifiConnectionResponse) {}
+    rpc TurnOff(WifiNetworkRequest) returns (WifiConnectionResponse) {}
 }
