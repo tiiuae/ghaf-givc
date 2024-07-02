@@ -1,10 +1,9 @@
-use std::collections::hash_map::{Entry, HashMap};
-use std::fmt;
-use std::result::Result;
+use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::types::*;
 use anyhow::{anyhow, bail, Error};
+use tracing::info;
 
 #[derive(Clone, Debug)]
 pub struct Registry {
@@ -24,9 +23,9 @@ impl Registry {
 
     pub fn register(&self, entry: RegistryEntry) {
         let mut state = self.map.lock().unwrap();
-        println!("Registering {:#?}", entry);
+        info!("Registering {:#?}", entry);
         match state.insert(entry.name.clone(), entry) {
-            Some(old) => println!("Replaced old entry {:#?}", old),
+            Some(old) => info!("Replaced old entry {:#?}", old),
             None => (),
         };
     }
@@ -35,7 +34,7 @@ impl Registry {
         let mut state = self.map.lock().unwrap();
         match state.remove(name) {
             Some(entry) => {
-                println!("Deregistering {:#?}", entry);
+                info!("Deregistering {:#?}", entry);
                 Ok(())
             }
             None => bail!("Can't deregister entry {}, it not registered", name),
@@ -43,7 +42,7 @@ impl Registry {
     }
 
     pub fn by_name(&self, name: &String) -> anyhow::Result<RegistryEntry> {
-        let mut state = self.map.lock().unwrap();
+        let state = self.map.lock().unwrap();
         state
             .get(name)
             .cloned()

@@ -1,5 +1,6 @@
 use anyhow;
 use std::future::Future;
+use tracing::error;
 use std::result::Result;
 use tonic::{Code, Request, Response, Status};
 use tonic_types::{ErrorDetails, StatusExt};
@@ -23,6 +24,7 @@ where
                 "request contains invalid arguments",
                 err_details,
             );
+            error!("error handling GRPC request: {}", any);
 
             Err(status)
         }

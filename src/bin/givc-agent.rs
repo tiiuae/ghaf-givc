@@ -1,4 +1,5 @@
 use clap::Parser;
+use tracing::info;
 use givc::admin::client::AdminClient;
 use givc::endpoint::{EndpointConfig, TlsConfig};
 use givc::pb;
@@ -61,8 +62,10 @@ mod kludge {
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    givc::trace_init();
+
     let cli = Cli::parse();
-    println!("CLI is {:#?}", cli);
+    info!("CLI is {:#?}", cli);
 
     let addr = SocketAddr::new(cli.addr.parse()?, cli.port);
 

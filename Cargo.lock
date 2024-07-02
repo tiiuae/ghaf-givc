@@ -403,6 +403,7 @@ dependencies = [
  "tonic-reflection",
  "tonic-types",
  "tower",
+ "tracing",
  "tracing-subscriber",
 ]
 

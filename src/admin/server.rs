@@ -1,5 +1,6 @@
 use crate::pb::{self, *};
 use anyhow::{bail, Context, Error};
+use tracing::{info, error};
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::{Code, Request, Response, Status};
@@ -170,7 +171,7 @@ impl AdminServiceImpl {
         for entry in watch_list {
             match self.get_remote_status(&entry).await {
                 Err(err) => {
-                    println!(
+                    error!(
                         "could not get status of unit {}: {}",
                         entry.name.clone(),
                         err
@@ -183,7 +184,7 @@ impl AdminServiceImpl {
                     let inactive = status.active_state != "active";
                     // Difference from "go" algorithm -- save new status before recovering attempt
                     if inactive {
-                        println!(
+                        error!(
                             "Status of {} is {}, instead of active. Recovering.",
                             &entry.name, status.active_state
                         )
@@ -209,7 +210,7 @@ impl AdminServiceImpl {
         loop {
             watch.tick().await;
             if let Err(err) = self.monitor_routine().await {
-                println!("Error during watch: {}", err);
+                error!("Error during watch: {}", err);
             }
         }
     }
@@ -221,7 +222,7 @@ impl AdminServiceImpl {
 
     pub async fn start_app(&self, req: ApplicationRequest) -> anyhow::Result<()> {
         if self.state != State::VmsRegistered {
-            println!("not all required system-vms are registered")
+            info!("not all required system-vms are registered")
         }
         let systemd_agent = format_service_name(&req.app_name);
 

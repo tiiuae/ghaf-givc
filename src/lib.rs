@@ -15,8 +15,6 @@ pub mod pb {
     pub use crate::pb::admin::*;
 }
 
-use std::{default, fmt, iter};
-
 pub fn trace_init() {
     tracing_subscriber::fmt::init();
 }

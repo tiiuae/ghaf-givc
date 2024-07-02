@@ -1,5 +1,4 @@
 use anyhow::*;
-use std::fmt;
 
 pub fn format_vm_name(name: &String) -> String {
     format!("microvm@{name}-vm.service")
