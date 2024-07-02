@@ -10,12 +10,10 @@ pub fn format_service_name(name: &String) -> String {
 }
 
 pub fn parse_service_name(name: &String) -> anyhow::Result<String> {
-    if let Some(name_no_suffix) = name.strip_suffix("-vm.service") {
-        if let Some(name) = name_no_suffix.strip_prefix("givc-") {
-            return Ok(name.to_string());
-        }
-    };
-    bail!("Doesn't know how to parse VM name: {}", name)
+    name.strip_suffix("-vm.service")
+        .and_then(|name| name.strip_prefix("givc-"))
+        .map(str::to_string)
+        .ok_or(anyhow!("Doesn't know how to parse VM name: {name}"))
 }
 
 // From `agent` code, ported for future

@@ -64,7 +64,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     println!("CLI is {:#?}", cli);
 
-    let addr = SocketAddr::new(cli.addr.clone().parse().unwrap(), cli.port);
+    let addr = SocketAddr::new(cli.addr.parse()?, cli.port);
 
     let agent_service_name = format_service_name(&cli.name);
 

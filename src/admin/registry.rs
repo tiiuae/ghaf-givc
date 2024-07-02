@@ -4,7 +4,7 @@ use std::result::Result;
 use std::sync::{Arc, Mutex};
 
 use crate::types::*;
-use anyhow::*;
+use anyhow::{anyhow, bail, Error};
 
 #[derive(Clone, Debug)]
 pub struct Registry {
@@ -44,10 +44,10 @@ impl Registry {
 
     pub fn by_name(&self, name: &String) -> anyhow::Result<RegistryEntry> {
         let mut state = self.map.lock().unwrap();
-        match state.entry(name.to_string()) {
-            Entry::Occupied(v) => Ok(v.get().clone()),
-            Entry::Vacant(_) => bail!(format!("Service {name} not registered")),
-        }
+        state
+            .get(name)
+            .cloned()
+            .ok_or_else(|| anyhow!("Service {name} not registered"))
     }
 
     pub fn by_name_many(&self, name: &String) -> anyhow::Result<Vec<RegistryEntry>> {
@@ -55,7 +55,7 @@ impl Registry {
         let list: Vec<RegistryEntry> = state
             .values()
             .filter(|x| x.name.contains(name.as_str()))
-            .map(|x| x.clone())
+            .cloned()
             .collect();
         if list.len() == 0 {
             bail!("No entries match string {}", name)
@@ -69,7 +69,7 @@ impl Registry {
         state
             .values()
             .filter(|x| x.r#type == *ty)
-            .map(|x| x.clone())
+            .cloned()
             .collect()
     }
 
@@ -101,11 +101,7 @@ impl Registry {
 
     pub fn watch_list(&self) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
-        state
-            .values()
-            .filter(|x| x.watch)
-            .map(|x| x.clone())
-            .collect()
+        state.values().filter(|x| x.watch).cloned().collect()
     }
 
     pub fn update_state(&self, name: &String, status: UnitStatus) -> anyhow::Result<()> {

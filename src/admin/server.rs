@@ -1,5 +1,5 @@
 use crate::pb::{self, *};
-use anyhow::*;
+use anyhow::{bail, Context, Error};
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::{Code, Request, Response, Status};
@@ -118,24 +118,24 @@ impl AdminServiceImpl {
         let status = client
             .get_remote_status(vm_name.clone())
             .await
-            .context(format!("cannot retrieve vm status for {}", vm_name))?;
+            .with_context(|| format!("cannot retrieve vm status for {vm_name}"))?;
 
         if status.load_state != "loaded" {
-            bail!("vm {} not loaded", vm_name)
+            bail!("vm {vm_name} not loaded")
         };
 
         if status.active_state != "active" {
             client
                 .start_remote(vm_name.clone())
                 .await
-                .context(format!("spawn remote VM service {}", vm_name))?;
+                .with_context(|| format!("spawn remote VM service {vm_name}"))?;
 
             tokio::time::sleep(VM_STARTUP_TIME).await;
 
             let new_status = client
                 .get_remote_status(vm_name.clone())
                 .await
-                .context(format!("cannot retrieve vm status for {}", vm_name))?;
+                .with_context(|| format!("cannot retrieve vm status for {vm_name}"))?;
 
             if new_status.active_state != "active" {
                 bail!("Unable to launch VM {vm_name}")
@@ -154,7 +154,7 @@ impl AdminServiceImpl {
                 let name = parse_service_name(&entry.name)?;
                 self.start_vm(name.to_string())
                     .await
-                    .context(format!("handing error, by restart VM {}", &entry.name))?;
+                    .with_context(|| format!("handing error, by restart VM {}", &entry.name))?;
                 Ok(())
             }
             (x, y) => bail!(
@@ -177,9 +177,9 @@ impl AdminServiceImpl {
                     );
                     self.handle_error(entry)
                         .await
-                        .context("during handle error")?
+                        .with_context(|| "during handle error")?
                 }
-                std::result::Result::Ok(status) => {
+                Ok(status) => {
                     let inactive = status.active_state != "active";
                     // Difference from "go" algorithm -- save new status before recovering attempt
                     if inactive {
@@ -195,7 +195,7 @@ impl AdminServiceImpl {
                     if inactive {
                         self.handle_error(entry)
                             .await
-                            .context("during handle error")?
+                            .with_context(|| "during handle error")?
                     }
                 }
             }
@@ -204,10 +204,10 @@ impl AdminServiceImpl {
     }
 
     pub async fn monitor(&self) {
+        let mut watch = tokio::time::interval(Duration::from_secs(5));
+        watch.tick().await; // First tick fires instantly
         loop {
-            let watch = Duration::new(5, 0);
-            tokio::time::sleep(watch).await;
-
+            watch.tick().await;
             if let Err(err) = self.monitor_routine().await {
                 println!("Error during watch: {}", err);
             }
@@ -243,7 +243,7 @@ impl AdminServiceImpl {
         client.start_remote(service_name.clone()).await?;
         let status = client.get_remote_status(service_name.clone()).await?;
         if status.active_state != "active" {
-            bail!("cannot start unit: {}", &service_name)
+            bail!("cannot start unit: {service_name}")
         };
 
         let app_entry = RegistryEntry {
@@ -292,7 +292,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         let res = RegistryResponse {
             cmd_status: String::from("Registration successful"),
         };
-        std::result::Result::Ok(Response::new(res))
+        Ok(Response::new(res))
     }
     async fn start_application(
         &self,

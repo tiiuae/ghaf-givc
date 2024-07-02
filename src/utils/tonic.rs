@@ -14,7 +14,7 @@ where
 {
     let result = fun(req.into_inner()).await;
     match result {
-        std::result::Result::Ok(res) => std::result::Result::Ok(Response::new(res)),
+        Ok(res) => Ok(Response::new(res)),
         Err(any) => {
             let mut err_details = ErrorDetails::new();
             // Generate error status
@@ -24,7 +24,7 @@ where
                 err_details,
             );
 
-            return Err(status);
+            Err(status)
         }
     }
 }
