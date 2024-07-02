@@ -49,12 +49,12 @@ impl Registry {
             .ok_or_else(|| anyhow!("Service {name} not registered"))
     }
 
-    pub fn by_name_many(&self, name: &String) -> anyhow::Result<Vec<RegistryEntry>> {
+    pub fn find_names(&self, name: &String) -> anyhow::Result<Vec<String>> {
         let state = self.map.lock().unwrap();
-        let list: Vec<RegistryEntry> = state
+        let list: Vec<String> = state
             .values()
-            .filter(|x| x.name.contains(name.as_str()))
-            .cloned()
+            .filter(|x| x.name.starts_with(name.as_str()))
+            .map(|x| x.name.clone())
             .collect();
         if list.len() == 0 {
             bail!("No entries match string {}", name)

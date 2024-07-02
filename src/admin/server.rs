@@ -79,8 +79,8 @@ impl AdminServiceImpl {
 
     pub fn app_entries(&self, name: String) -> anyhow::Result<Vec<String>> {
         if name.contains("@") {
-            let list = self.registry.by_name_many(&name)?;
-            Ok(list.into_iter().map(|entry| entry.name).collect())
+            let list = self.registry.find_names(&name)?;
+            Ok(list)
         } else {
             Ok(vec![name])
         }
