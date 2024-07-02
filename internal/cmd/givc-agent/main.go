@@ -17,6 +17,7 @@ import (
 	"givc/internal/pkgs/servicemanager"
 	"givc/internal/pkgs/types"
 	givc_util "givc/internal/pkgs/utility"
+	"givc/internal/pkgs/wifimanager"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -83,6 +84,11 @@ func main() {
 	adminServerProtocol := os.Getenv("ADMIN_SERVER_PROTO")
 	if adminServerProtocol == "" {
 		log.Fatalf("An address for the admin server is required in environment variable $ADMIN_SERVER_PROTO.")
+	}
+	wifiEnabled := false
+	wifiService, wifiOption := os.LookupEnv("WIFI")
+	if wifiOption && (wifiService != "false") {
+		wifiEnabled = true
 	}
 	var tlsConfig *tls.Config
 	if os.Getenv("TLS") != "false" {
@@ -179,14 +185,27 @@ func main() {
 		}
 	}()
 
+	// Create and resgister gRPC services
+	var grpcServices []types.GrpcServiceRegistration
+
 	// Create systemd control server
 	systemdControlServer, err := servicemanager.NewSystemdControlServer(cfgAgent.Services, applications)
 	if err != nil {
 		log.Fatalf("Cannot create systemd control server")
 	}
+	grpcServices = append(grpcServices, systemdControlServer)
+
+	if wifiEnabled {
+		// Create wifi control server
+		wifiControlServer, err := wifimanager.NewWifiControlServer()
+		if err != nil {
+			log.Fatalf("Cannot create wifi control server")
+		}
+		grpcServices = append(grpcServices, wifiControlServer)
+	}
 
 	// Create grpc server
-	grpcServer, err := givc_grpc.NewServer(cfgAgent, []types.GrpcServiceRegistration{systemdControlServer})
+	grpcServer, err := givc_grpc.NewServer(cfgAgent, grpcServices)
 	if err != nil {
 		log.Fatalf("Cannot create grpc server config")
 	}
