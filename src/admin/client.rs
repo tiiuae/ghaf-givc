@@ -27,12 +27,7 @@ impl AdminClient {
             name: entry.name,
             parent: entry.parent,
             r#type: entry.r#type.into(),
-            transport: Some(pb::admin::TransportConfig {
-                name: entry.endpoint.name,
-                protocol: entry.endpoint.protocol,
-                address: entry.endpoint.address,
-                port: entry.endpoint.port,
-            }),
+            transport: Some(entry.endpoint.into()),
             state: Some(entry.status.into()),
         };
         let response = self.connect().await?.register_service(request).await?;

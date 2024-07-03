@@ -1,5 +1,4 @@
 use clap::Parser;
-use tracing::info;
 use givc::admin::client::AdminClient;
 use givc::endpoint::{EndpointConfig, TlsConfig};
 use givc::pb;
@@ -9,6 +8,7 @@ use givc::utils::naming::*;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tonic::transport::Server;
+use tracing::info;
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "givc-agent")]
@@ -87,11 +87,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     };
 
     let admin_cfg = EndpointConfig {
-        transport: pb::TransportConfig {
+        transport: TransportConfig {
             address: cli.admin_server_addr,
-            port: cli.admin_server_port.to_string(),
+            port: cli.admin_server_port,
             protocol: "bogus".into(),
-            name: "bogus".into(),
         },
         tls: tls.clone(),
     };
@@ -102,12 +101,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         parent: String::from(""),
         r#type: cli.r#type.try_into()?,
         endpoint: EndpointEntry {
-            name: String::from("never used"),
             address: cli.addr,
-            port: cli.port.to_string(),
+            port: cli.port,
             protocol: String::from("bogus"),
         },
-        watch: false,
+        watch: true,
         // We can't use just one name field like in "go" code
         status: UnitStatus {
             name: String::from("bogus"),

@@ -1,6 +1,7 @@
 // This module contain literal translations of types from internal/pkgs/types/types.go
 // Some of them would be rewritten, replaced, or even removed
 use crate::pb;
+use anyhow::{anyhow, bail};
 use std::convert::{Into, TryFrom};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,7 +29,7 @@ pub enum ServiceType {
 // Go version use u32 for UnitType, where we use more sophisticated types
 // Let provide decode with error handling (we can get value overflow from wire)
 impl TryFrom<u32> for UnitType {
-    type Error = String;
+    type Error = anyhow::Error;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         use ServiceType::*;
         use VmType::*;
@@ -93,7 +94,7 @@ impl TryFrom<u32> for UnitType {
                 vm: AppVM,
                 service: App,
             }),
-            n => Err(format!("Unknown u32 value for UnitType: {n}")),
+            n => bail!("Unknown u32 value for UnitType: {n}"),
         }
     }
 }
@@ -147,7 +148,7 @@ pub struct UnitStatus {
 }
 
 impl TryFrom<pb::UnitStatus> for UnitStatus {
-    type Error = String;
+    type Error = anyhow::Error;
     fn try_from(us: pb::UnitStatus) -> Result<Self, Self::Error> {
         Ok(Self {
             name: us.name,
@@ -174,20 +175,20 @@ impl Into<pb::UnitStatus> for UnitStatus {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EndpointEntry {
-    pub name: String,
     pub protocol: String,
     pub address: String,
-    pub port: String,
+    pub port: u16,
 }
 
+pub type TransportConfig = EndpointEntry;
+
 impl TryFrom<pb::TransportConfig> for EndpointEntry {
-    type Error = String;
+    type Error = anyhow::Error;
     fn try_from(tc: pb::TransportConfig) -> Result<Self, Self::Error> {
         Ok(Self {
-            name: "stub".into(),
             protocol: tc.protocol,
             address: tc.address,
-            port: tc.port,
+            port: tc.port.parse()?,
         })
     }
 }
@@ -197,8 +198,8 @@ impl Into<pb::TransportConfig> for EndpointEntry {
         pb::TransportConfig {
             protocol: self.protocol,
             address: self.address,
-            port: self.port,
-            name: self.name,
+            port: self.port.to_string(),
+            name: String::from("unused"),
         }
     }
 }
@@ -232,10 +233,9 @@ impl RegistryEntry {
                 path: "bogus".to_string(),
             },
             endpoint: EndpointEntry {
-                name: "bogus".to_string(),
                 protocol: "bogus".to_string(),
                 address: "127.0.0.1".to_string(),
-                port: "42".to_string(),
+                port: 42,
             },
             watch: true,
         }
@@ -243,16 +243,16 @@ impl RegistryEntry {
 }
 
 impl TryFrom<pb::RegistryRequest> for RegistryEntry {
-    type Error = String;
+    type Error = anyhow::Error;
     fn try_from(req: pb::RegistryRequest) -> Result<Self, Self::Error> {
         let ty = UnitType::try_from(req.r#type)?;
         let status = req
             .state
-            .ok_or("status missing".into())
+            .ok_or(anyhow!("status missing"))
             .and_then(UnitStatus::try_from)?;
         let endpoint = req
             .transport
-            .ok_or("endpoint missing".into())
+            .ok_or(anyhow!("endpoint missing"))
             .and_then(EndpointEntry::try_from)?;
         let watch = ty.service == ServiceType::Mgr;
         Ok(Self {

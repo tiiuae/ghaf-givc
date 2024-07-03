@@ -1,10 +1,10 @@
 use clap::Parser;
-use tracing::info;
 use givc::admin;
 use givc::endpoint::TlsConfig;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tonic::transport::Server;
+use tracing::info;
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "givc-admin")]

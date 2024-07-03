@@ -1,5 +1,5 @@
 use crate::pb;
-use crate::types;
+use crate::types::TransportConfig;
 use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -15,7 +15,7 @@ pub struct TlsConfig {
 
 #[derive(Debug, Clone)]
 pub struct EndpointConfig {
-    pub transport: pb::TransportConfig,
+    pub transport: TransportConfig,
     pub tls: Option<TlsConfig>,
 }
 
@@ -42,7 +42,7 @@ impl TlsConfig {
     }
 }
 
-fn transport_config_to_url(tc: pb::TransportConfig, with_tls: bool) -> String {
+fn transport_config_to_url(tc: TransportConfig, with_tls: bool) -> String {
     let scheme = match with_tls {
         true => "https",
         false => "http",

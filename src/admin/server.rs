@@ -1,9 +1,9 @@
 use crate::pb::{self, *};
 use anyhow::{bail, Context, Error};
-use tracing::{info, error};
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::{Code, Request, Response, Status};
+use tracing::{error, info};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
@@ -169,6 +169,7 @@ impl AdminServiceImpl {
     async fn monitor_routine(&self) -> anyhow::Result<()> {
         let watch_list = self.registry.watch_list();
         for entry in watch_list {
+            info!("Monitoring...{}", &entry.name);
             match self.get_remote_status(&entry).await {
                 Err(err) => {
                     error!(
@@ -209,6 +210,7 @@ impl AdminServiceImpl {
         watch.tick().await; // First tick fires instantly
         loop {
             watch.tick().await;
+            info!("Monitoring...");
             if let Err(err) = self.monitor_routine().await {
                 error!("Error during watch: {}", err);
             }
@@ -256,13 +258,7 @@ impl AdminServiceImpl {
                 vm: VmType::AppVM,
                 service: ServiceType::App,
             },
-            endpoint: EndpointEntry {
-                // Bogus
-                protocol: String::from("bogus"),
-                name: service_name,
-                address: endpoint.transport.address,
-                port: endpoint.transport.port,
-            },
+            endpoint: endpoint.transport,
         };
         self.registry.register(app_entry);
         Ok(())
@@ -286,8 +282,8 @@ impl pb::admin_service_server::AdminService for AdminService {
     ) -> std::result::Result<tonic::Response<pb::RegistryResponse>, tonic::Status> {
         let req = request.into_inner();
 
-        let entry =
-            RegistryEntry::try_from(req).map_err(|e| Status::new(Code::InvalidArgument, e))?;
+        let entry = RegistryEntry::try_from(req)
+            .map_err(|e| Status::new(Code::InvalidArgument, format!("{e}")))?;
         self.inner.register(entry);
 
         let res = RegistryResponse {

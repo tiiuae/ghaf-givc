@@ -1,9 +1,9 @@
 use anyhow;
 use std::future::Future;
-use tracing::error;
 use std::result::Result;
 use tonic::{Code, Request, Response, Status};
 use tonic_types::{ErrorDetails, StatusExt};
+use tracing::error;
 
 pub async fn escalate<T, R, F, FA>(
     req: tonic::Request<T>,
