@@ -50,13 +50,18 @@ impl Registry {
         }
     }
 
-    pub fn by_name_many(&self, name: String) -> Vec<RegistryEntry> {
+    pub fn by_name_many(&self, name: String) -> anyhow::Result<Vec<RegistryEntry>> {
         let state = self.map.lock().unwrap();
-        state
+        let list: Vec<RegistryEntry> = state
             .values()
             .filter(|x| x.name.contains(name.as_str()))
             .map(|x| x.clone())
-            .collect()
+            .collect();
+        if list.len() == 0 {
+            bail!("No entries match string {}", name)
+        } else {
+            Ok(list)
+        }
     }
 
     pub fn by_type_many(&self, r#type: UnitType) -> Vec<RegistryEntry> {
@@ -101,5 +106,15 @@ impl Registry {
             .filter(|x| x.watch)
             .map(|x| x.clone())
             .collect()
+    }
+
+    pub fn update_state(&self, name: String, status: UnitStatus) -> anyhow::Result<()> {
+        let mut state = self.map.lock().unwrap();
+        if let Some(e) = state.get_mut(&name) {
+            e.status = status
+        } else {
+            bail!("Can't update state for {}, is not registered", name)
+        };
+        Ok(())
     }
 }
