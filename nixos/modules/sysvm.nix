@@ -82,12 +82,12 @@ in {
       };
     };
 
-    wifiManager = mkOption {
+    wifiIface = mkOption {
       description = ''
         Wifi manager to handle wifi related queries.
       '';
-      type = types.bool;
-      default = false;
+      type = types.str;
+      default = "";
     };
 
     tls = mkOption {
@@ -162,7 +162,7 @@ in {
           "PROTO" = "${cfg.protocol}";
           "TYPE" = "8";
           "SUBTYPE" = "9";
-          "WIFI" = "${trivial.boolToString cfg.wifiManager}";
+          "WIFI" = "${cfg.wifiIface}";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "PARENT" = "microvm@${cfg.name}.service";
           "SERVICES" = "${concatStringsSep " " cfg.services}";
