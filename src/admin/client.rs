@@ -1,20 +1,42 @@
 use crate::endpoint::EndpointConfig;
-use crate::pb::{self, *};
+use crate::pb;
 use crate::types::*;
 use serde::Serialize;
+use std::future::Future;
+use std::path::PathBuf;
+use std::time::Duration;
 use tonic::transport::Channel;
 use tonic::{metadata::MetadataValue, Code, Request, Response, Status};
 
 type Client = pb::admin_service_client::AdminServiceClient<Channel>;
 
-#[derive(Debug, Serialize)]
-pub struct QueryResult {
-    // FIXME: TBD
+#[derive(Debug, Clone, Copy, Serialize)]
+pub enum VMStatus {
+    Running,
+    PoweredOff,
+    Paused,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
+pub enum TrustLevel {
+    Secure,
+    Warning,
+    NotSecure,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct QueryResult {
+    name: String,        //VM name
+    description: String, //App name, some details
+    status: VMStatus,
+    trust_level: TrustLevel,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub enum Event {
-    SomethingHappens,
+    ListUpdate(Vec<QueryResult>),   // Come on connect, and only once
+    UnitStatusChanged(QueryResult), // When unit updated/added
+    UnitShutdown(String),
 }
 
 #[derive(Debug)]
@@ -27,10 +49,24 @@ impl AdminClient {
         Self { endpoint: ec }
     }
 
-    // FIXME: Should be `connect(ec: EndpointConfig) -> anyhow::Result<Self>
-    async fn connect(&self) -> anyhow::Result<Client> {
+    async fn connect_to(&self) -> anyhow::Result<Client> {
         let channel = self.endpoint.connect().await?;
         Ok(Client::new(channel))
+    }
+
+    // New style api, not yet implemented, stub atm to make current code happy
+    // FIXME: cert path vs TlsConfig?
+    async fn connect(addr: String, port: u16, _cert: Option<PathBuf>) -> anyhow::Result<Self> {
+        Ok(Self {
+            endpoint: EndpointConfig {
+                transport: TransportConfig {
+                    address: addr,
+                    port: port,
+                    protocol: String::from("bogus"),
+                },
+                tls: None,
+            },
+        })
     }
 
     // FIXME: Should accept parameters, not server-side structure, current impl is blunt
@@ -43,7 +79,7 @@ impl AdminClient {
             transport: Some(entry.endpoint.into()),
             state: Some(entry.status.into()),
         };
-        let response = self.connect().await?.register_service(request).await?;
+        let response = self.connect_to().await?.register_service(request).await?;
         Ok(response.into_inner().cmd_status)
     }
 
@@ -68,10 +104,37 @@ impl AdminClient {
         todo!();
     }
 
-    pub async fn watch<F>(&self, callback: F) -> anyhow::Result<()>
+    // FIXME: should be merged with query()
+    pub async fn query_list(&self) -> anyhow::Result<Vec<QueryResult>> {
+        let list = vec![QueryResult::default()];
+        Ok(list)
+    }
+
+    pub async fn watch<F, FA>(&self, callback: F) -> anyhow::Result<()>
     where
-        F: Fn(Event) -> anyhow::Result<()>,
+        F: Fn(Event) -> FA,
+        FA: Future<Output = anyhow::Result<()>>,
     {
-        callback(Event::SomethingHappens)
+        let mut watch = tokio::time::interval(Duration::from_secs(5));
+        watch.tick().await; // First tick fires instantly
+        let list = self.query_list().await?;
+
+        callback(Event::ListUpdate(list)).await?;
+        loop {
+            watch.tick().await;
+            callback(Event::UnitStatusChanged(QueryResult::default())).await?
+        }
+    }
+}
+
+// FIXME: for prototyping/debug, would be dropped from final version
+impl Default for QueryResult {
+    fn default() -> Self {
+        Self {
+            name: String::from("AppVM"),
+            description: String::from("Sample App VM"),
+            status: VMStatus::Running,
+            trust_level: TrustLevel::Warning,
+        }
     }
 }

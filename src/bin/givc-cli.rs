@@ -94,7 +94,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Watch { as_json } => {
             admin
-                .watch(|event| {
+                .watch(|event| async move {
                     if as_json {
                         let js = serde_json::to_string(&event)?;
                         println!("{}", js)
