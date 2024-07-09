@@ -14,7 +14,7 @@ type HwIdController struct {
 }
 
 func NewController(iface string) (*HwIdController, error) {
-	return &HwIdController{ iface: iface }, nil
+	return &HwIdController{iface: iface}, nil
 }
 
 func (c *HwIdController) GetIdentifier(ctx context.Context) (string, error) {

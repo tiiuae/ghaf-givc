@@ -82,9 +82,25 @@ in {
       };
     };
 
-    wifiIface = mkOption {
+    wifiManager = mkOption {
       description = ''
         Wifi manager to handle wifi related queries.
+      '';
+      type = types.bool;
+      default = false;
+    };
+
+    hwidService = mkOption {
+      description = ''
+        Hardware identifier service.
+      '';
+      type = types.bool;
+      default = false;
+    };
+
+    hwidIface = mkOption {
+      description = ''
+        Interface for hardware identifier.
       '';
       type = types.str;
       default = "";
@@ -162,7 +178,9 @@ in {
           "PROTO" = "${cfg.protocol}";
           "TYPE" = "8";
           "SUBTYPE" = "9";
-          "WIFI" = "${cfg.wifiIface}";
+          "WIFI" = "${trivial.boolToString cfg.wifiManager}";
+          "HWID" = "${trivial.boolToString cfg.hwidService}";
+          "HWID_IFACE" = "${cfg.hwidIface}";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "PARENT" = "microvm@${cfg.name}.service";
           "SERVICES" = "${concatStringsSep " " cfg.services}";

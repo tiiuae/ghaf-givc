@@ -6,16 +6,10 @@ import (
 	"context"
 	"fmt"
 
-	"time"
-
 	hwid_api "givc/api/hwid"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
-)
-
-const (
-	ResourceStreamInterval = 400 * time.Millisecond
 )
 
 type HwIdServer struct {
@@ -55,5 +49,5 @@ func (s *HwIdServer) GetHwId(ctx context.Context, req *hwid_api.HwIdRequest) (*h
 		return nil, fmt.Errorf("cannot get hardware id")
 	}
 
-	return &hwid_api.HwIdResponse { Identifier: identifier }, nil
+	return &hwid_api.HwIdResponse{Identifier: identifier}, nil
 }

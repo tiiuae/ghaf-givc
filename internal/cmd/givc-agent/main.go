@@ -13,12 +13,12 @@ import (
 
 	"givc/api/admin"
 	givc_grpc "givc/internal/pkgs/grpc"
+	"givc/internal/pkgs/hwidmanager"
 	"givc/internal/pkgs/serviceclient"
 	"givc/internal/pkgs/servicemanager"
 	"givc/internal/pkgs/types"
 	givc_util "givc/internal/pkgs/utility"
 	"givc/internal/pkgs/wifimanager"
-	"givc/internal/pkgs/hwidmanager"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -88,8 +88,18 @@ func main() {
 	}
 	wifiEnabled := false
 	wifiService, wifiOption := os.LookupEnv("WIFI")
-	if wifiOption && (wifiService != "") {
+	if wifiOption && (wifiService != "false") {
 		wifiEnabled = true
+	}
+
+	hwidEnabled := false
+	hwidService, hwidOption := os.LookupEnv("HWID")
+	hwidIface, hwidIfOption := os.LookupEnv("HWID_IFACE")
+	if hwidOption && (hwidService != "false") {
+		if !hwidIfOption || hwidIface == "" {
+			log.Fatalf("Hwid enabled without specifying interface")
+		}
+		hwidEnabled = true
 	}
 	var tlsConfig *tls.Config
 	if os.Getenv("TLS") != "false" {
@@ -203,14 +213,15 @@ func main() {
 			log.Fatalf("Cannot create wifi control server")
 		}
 		grpcServices = append(grpcServices, wifiControlServer)
+	}
 
-		hwidServer, err := hwidmanager.NewHwIdServer(wifiService)
+	if hwidEnabled {
+		hwidServer, err := hwidmanager.NewHwIdServer(hwidIface)
 		if err != nil {
 			log.Fatalf("Cannot create hwid server")
 		}
 		grpcServices = append(grpcServices, hwidServer)
 	}
-
 
 	// Create grpc server
 	grpcServer, err := givc_grpc.NewServer(cfgAgent, grpcServices)
