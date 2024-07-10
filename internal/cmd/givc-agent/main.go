@@ -96,8 +96,8 @@ func main() {
 	hwidService, hwidOption := os.LookupEnv("HWID")
 	hwidIface, hwidIfOption := os.LookupEnv("HWID_IFACE")
 	if hwidOption && (hwidService != "false") {
-		if !hwidIfOption || hwidIface == "" {
-			log.Fatalf("Hwid enabled without specifying interface")
+		if !hwidIfOption {
+			hwidIface = ""
 		}
 		hwidEnabled = true
 	}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -14,6 +15,13 @@ type HwIdController struct {
 }
 
 func NewController(iface string) (*HwIdController, error) {
+	if iface == "" {
+		paths, err := filepath.Glob("/sys/class/net/wl*")
+		if err != nil || paths == nil || len(paths) > 1 {
+			return nil, fmt.Errorf("Could not find device")
+		}
+		iface = filepath.Base(paths[0])
+	}
 	return &HwIdController{iface: iface}, nil
 }
 
