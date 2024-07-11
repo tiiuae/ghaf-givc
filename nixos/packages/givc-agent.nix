@@ -9,6 +9,7 @@ pkgs.buildGoModule {
   subPackages = [
     "api/admin"
     "api/systemd"
+    "api/hwid"
     "internal/pkgs/grpc"
     "internal/pkgs/servicemanager"
     "internal/pkgs/serviceclient"

@@ -90,6 +90,22 @@ in {
       default = false;
     };
 
+    hwidService = mkOption {
+      description = ''
+        Hardware identifier service.
+      '';
+      type = types.bool;
+      default = false;
+    };
+
+    hwidIface = mkOption {
+      description = ''
+        Interface for hardware identifier.
+      '';
+      type = types.str;
+      default = "";
+    };
+
     tls = mkOption {
       description = ''
         TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
@@ -163,6 +179,8 @@ in {
           "TYPE" = "8";
           "SUBTYPE" = "9";
           "WIFI" = "${trivial.boolToString cfg.wifiManager}";
+          "HWID" = "${trivial.boolToString cfg.hwidService}";
+          "HWID_IFACE" = "${cfg.hwidIface}";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "PARENT" = "microvm@${cfg.name}.service";
           "SERVICES" = "${concatStringsSep " " cfg.services}";

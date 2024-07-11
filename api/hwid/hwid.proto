@@ -1,0 +1,16 @@
+// Copyright 2024 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+option go_package = "./hwid";
+package hwid;
+
+message HwIdRequest {
+}
+
+message HwIdResponse {
+    string Identifier = 1;
+}
+
+service HwidService {
+    rpc GetHwId(HwIdRequest) returns (HwIdResponse) {}
+}
