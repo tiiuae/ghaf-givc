@@ -214,7 +214,8 @@ pub struct RegistryEntry {
     pub watch: bool,
 }
 
-#[cfg(test)]
+// FIXME: function below only for testing, but it can't be hidden under #[cfg(test)] due crate splitting
+// #[cfg(test)]
 impl RegistryEntry {
     pub fn dummy(n: String) -> Self {
         Self {

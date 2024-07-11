@@ -1,5 +1,5 @@
-use crate::pb;
-use crate::types::TransportConfig;
+use givc_common::pb;
+use givc_common::types::TransportConfig;
 use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Duration;

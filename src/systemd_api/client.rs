@@ -1,4 +1,4 @@
-use crate::endpoint::EndpointConfig;
+use givc_client::endpoint::EndpointConfig;
 use crate::pb::{self, *};
 use crate::types::*;
 use anyhow::Result;

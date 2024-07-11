@@ -1,6 +1,6 @@
 use crate::endpoint::EndpointConfig;
-use crate::pb;
-use crate::types::*;
+use givc_common::pb;
+use givc_common::types::*;
 use serde::Serialize;
 use std::future::Future;
 use std::path::PathBuf;

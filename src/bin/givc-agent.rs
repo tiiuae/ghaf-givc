@@ -1,7 +1,8 @@
 use clap::Parser;
-use givc::admin::client::AdminClient;
+use givc_common::pb::reflection::SYSTEMD_DESCRIPTOR;
+use givc_common::pb;
+use givc_client::AdminClient;
 use givc::endpoint::{EndpointConfig, TlsConfig};
-use givc::pb;
 use givc::systemd_api::server::SystemdService;
 use givc::types::*;
 use givc::utils::naming::*;
@@ -52,12 +53,6 @@ struct Cli {
         value_delimiter = ','
     )]
     services: Option<Vec<String>>,
-}
-
-// FIXME: should be in src/lib.rs: mod pb {}, but doesn't work
-mod kludge {
-    pub const FILE_DESCRIPTOR_SET: &[u8] =
-        tonic::include_file_descriptor_set!("systemd_descriptor");
 }
 
 #[tokio::main]
@@ -121,7 +116,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     admin.register_service(entry).await?;
 
     let reflect = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(kludge::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
         .build()
         .unwrap();
 

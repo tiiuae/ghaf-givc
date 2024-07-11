@@ -8,7 +8,7 @@ use tracing::{error, info};
 pub use pb::admin_service_server::AdminServiceServer;
 
 use crate::admin::registry::*;
-use crate::endpoint::{EndpointConfig, TlsConfig};
+use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use crate::systemd_api::client::SystemDClient;
 use crate::types::*;
 use crate::utils::naming::*;

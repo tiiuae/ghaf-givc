@@ -1,4 +1,5 @@
 use clap::Parser;
+use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use givc::admin;
 use givc::endpoint::TlsConfig;
 use std::net::SocketAddr;
@@ -36,11 +37,6 @@ struct Cli {
     services: Option<Vec<String>>,
 }
 
-// FIXME: should be in src/lib.rs: mod pb {}, but doesn't work
-mod kludge {
-    pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("admin_descriptor");
-}
-
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     givc::trace_init();
@@ -66,7 +62,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     };
 
     let reflect = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(kludge::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(ADMIN_DESCRIPTOR)
         .build()
         .unwrap();
 

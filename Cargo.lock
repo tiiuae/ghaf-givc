@@ -470,6 +470,8 @@ dependencies = [
  "async-stream",
  "clap",
  "console",
+ "givc-client",
+ "givc-common",
  "http",
  "http-body",
  "hyper",
@@ -480,13 +482,48 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
- "tonic-build",
  "tonic-reflection",
  "tonic-types",
  "tower",
  "tracing",
  "tracing-subscriber",
  "x509-parser",
+]
+
+[[package]]
+name = "givc-client"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "givc-common",
+ "http",
+ "http-body",
+ "prost",
+ "serde",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-types",
+ "tracing",
+]
+
+[[package]]
+name = "givc-common"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "http",
+ "http-body",
+ "prost",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-build",
+ "tonic-types",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

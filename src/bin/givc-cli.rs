@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use givc::admin::client::AdminClient;
+use givc_client::AdminClient;
 use givc::endpoint::{EndpointConfig, TlsConfig};
 use givc::pb;
 use givc::types::*;
