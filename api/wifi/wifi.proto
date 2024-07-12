@@ -14,10 +14,9 @@ message WifiConnectionRequest {
 }
 
 message WifiNetworkResponse {
-    repeated string InUse = 1;
-    repeated string SSID = 2;
-    repeated string Signal = 3;
-    repeated string Security = 4;
+    repeated string SSID = 1;
+    repeated uint32 Signal = 2;
+    repeated uint32 Security = 3;
 }
 
 message WifiConnectionResponse {
@@ -27,6 +26,7 @@ message WifiConnectionResponse {
 service WifiService {
     rpc ListNetwork(WifiNetworkRequest) returns (WifiNetworkResponse) {}
     rpc ConnectNetwork(WifiConnectionRequest) returns (WifiConnectionResponse) {}
+    rpc DisconnectNetwork(WifiNetworkRequest) returns (WifiConnectionResponse) {}
     rpc TurnOn(WifiNetworkRequest) returns (WifiConnectionResponse) {}
     rpc TurnOff(WifiNetworkRequest) returns (WifiConnectionResponse) {}
 }

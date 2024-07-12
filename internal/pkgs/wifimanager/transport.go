@@ -56,22 +56,33 @@ func (s *WifiControlServer) ListNetwork(ctx context.Context, req *wifi_api.WifiN
 	}
 
 	resp := wifi_api.WifiNetworkResponse{
-		InUse:    networks["IN-USE"],
-		SSID:     networks["SSID"],
-		Signal:   networks["SIGNAL"],
-		Security: networks["SECURITY"],
+		SSID:     networks.Ssid,
+		Signal:   networks.Signal,
+		Security: networks.Security,
 	}
 
 	return &resp, nil
 }
 
 func (s *WifiControlServer) ConnectNetwork(ctx context.Context, req *wifi_api.WifiConnectionRequest) (*wifi_api.WifiConnectionResponse, error) {
-	log.Infof("Incoming conenction request to %v\n", req.SSID)
+	log.Infof("Incoming connection request to %v\n", req.SSID)
 
 	response, err := s.Controller.Connect(context.Background(), req.SSID, req.Password)
 	if err != nil {
 		log.Infof("[ConnectNetwork] Error AP connection: %v %v\n", response, err)
 		return nil, fmt.Errorf("cannot connect to AP %s (%s)", response, err)
+	}
+
+	return &wifi_api.WifiConnectionResponse{Response: response}, nil
+}
+
+func (s *WifiControlServer) DisconnectNetwork(ctx context.Context, req *wifi_api.WifiNetworkRequest) (*wifi_api.WifiConnectionResponse, error) {
+	log.Infof("Incoming disconnection request\n")
+
+	response, err := s.Controller.Disconnect(context.Background())
+	if err != nil {
+		log.Infof("[ConnectNetwork] Error AP disconnection: %v %v\n", response, err)
+		return nil, fmt.Errorf("cannot disconnect fromAP %s (%s)", response, err)
 	}
 
 	return &wifi_api.WifiConnectionResponse{Response: response}, nil
