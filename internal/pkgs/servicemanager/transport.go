@@ -4,7 +4,6 @@ package servicemanager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"time"
@@ -13,6 +12,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	grpc_codes "google.golang.org/grpc/codes"
+	grpc_status "google.golang.org/grpc/status"
 )
 
 const (
@@ -57,11 +58,11 @@ func (s *SystemdControlServer) GetUnitStatus(ctx context.Context, req *systemd_a
 	unitStatus, err := s.Controller.FindUnit(req.UnitName)
 	if err != nil {
 		log.Infof("[GetUnitStatus] Error finding unit: %v", err)
-		return nil, errors.New("error fetching unit status")
+		return nil, grpc_status.Error(grpc_codes.NotFound, "error fetching unit status")
 	}
 	if len(unitStatus) != 1 {
 		errStr := fmt.Sprintf("error, got %d units named %s", len(unitStatus), req.UnitName)
-		return nil, errors.New(errStr)
+		return nil, grpc_status.Error(grpc_codes.NotFound, errStr)
 	}
 
 	resp := &systemd_api.UnitStatusResponse{
@@ -85,7 +86,7 @@ func (s *SystemdControlServer) StartUnit(ctx context.Context, req *systemd_api.U
 	err := s.Controller.StartUnit(context.Background(), req.UnitName)
 	if err != nil {
 		log.Infof("[StartUnit] Error starting unit: %v", err)
-		return nil, errors.New("unit not started")
+		return nil, grpc_status.Error(grpc_codes.Unknown, "cannot start unit")
 	}
 	return &systemd_api.UnitResponse{CmdStatus: "Command successful"}, nil
 }
@@ -96,7 +97,7 @@ func (s *SystemdControlServer) StopUnit(ctx context.Context, req *systemd_api.Un
 	err := s.Controller.StopUnit(context.Background(), req.UnitName)
 	if err != nil {
 		log.Infof("[StopUnit] Error stopping unit: %v\n", err)
-		return nil, errors.New("unit not stopped")
+		return nil, grpc_status.Error(grpc_codes.Unknown, "cannot stop unit")
 	}
 	return &systemd_api.UnitResponse{CmdStatus: "Command successful"}, nil
 }
@@ -106,8 +107,8 @@ func (s *SystemdControlServer) KillUnit(ctx context.Context, req *systemd_api.Un
 
 	err := s.Controller.KillUnit(context.Background(), req.UnitName)
 	if err != nil {
-		log.Infof("[StartUnit] Error starting unit: %v\n", err)
-		return nil, errors.New("unit not killed")
+		log.Infof("[KillUnit] Error starting unit: %v\n", err)
+		return nil, grpc_status.Error(grpc_codes.Unknown, "cannot kill unit")
 	}
 	return &systemd_api.UnitResponse{CmdStatus: "Command successful"}, nil
 }
@@ -117,8 +118,8 @@ func (s *SystemdControlServer) FreezeUnit(ctx context.Context, req *systemd_api.
 
 	err := s.Controller.FreezeUnit(context.Background(), req.UnitName)
 	if err != nil {
-		log.Infof("[StartUnit] Error freezing unit: %v\n", err)
-		return nil, errors.New("unit not frozen")
+		log.Infof("[FreezeUnit] Error freezing unit: %v\n", err)
+		return nil, grpc_status.Error(grpc_codes.Unknown, "cannot freeze unit")
 	}
 	return &systemd_api.UnitResponse{CmdStatus: "Command successful"}, nil
 }
@@ -129,7 +130,7 @@ func (s *SystemdControlServer) UnfreezeUnit(ctx context.Context, req *systemd_ap
 	err := s.Controller.UnfreezeUnit(context.Background(), req.UnitName)
 	if err != nil {
 		log.Infof("[StartUnit] Error un-freezing unit: %v\n", err)
-		return nil, errors.New("unit not unfrozen")
+		return nil, grpc_status.Error(grpc_codes.Unknown, "cannot unfreeze unit")
 	}
 	return &systemd_api.UnitResponse{CmdStatus: "Command successful"}, nil
 }
@@ -140,7 +141,7 @@ func (s *SystemdControlServer) MonitorUnit(req *systemd_api.UnitResourceRequest,
 	// Find unit
 	units, err := s.Controller.FindUnit(req.UnitName)
 	if err != nil {
-		return err
+		return grpc_status.Error(grpc_codes.NotFound, "cannot monitor unit")
 	}
 	if len(units) != 1 {
 		return fmt.Errorf("none or more than one unit found")
@@ -162,8 +163,7 @@ func (s *SystemdControlServer) MonitorUnit(req *systemd_api.UnitResourceRequest,
 		return fmt.Errorf("failed to unwrap integer value from dbus.Variant")
 	}
 
-	// for i := 0; i < 50; i += 1 {
-	for {
+	for i := 0; i < 50; i += 1 {
 		cpuUsage, memoryUsage, err := s.Controller.GetUnitCpuAndMem(context.Background(), pid)
 		if err != nil {
 			log.Infof("[MonitorUnit] Error fetching unit properties: %v\n", err)
@@ -178,7 +178,7 @@ func (s *SystemdControlServer) MonitorUnit(req *systemd_api.UnitResourceRequest,
 		}
 		time.Sleep(ResourceStreamInterval)
 	}
-	// return nil
+	return nil
 }
 
 func (s *SystemdControlServer) StartApplication(ctx context.Context, req *systemd_api.UnitRequest) (*systemd_api.UnitResponse, error) {

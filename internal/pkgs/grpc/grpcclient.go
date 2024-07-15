@@ -11,6 +11,7 @@ import (
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	grpc_codes "google.golang.org/grpc/codes"
 	grpc_creds "google.golang.org/grpc/credentials"
@@ -30,21 +31,18 @@ func NewClient(cfg *types.EndpointConfig, allowLongWaits bool) (*grpc.ClientConn
 
 	// @TODO Input validation
 
-	// Create client tls config
-	clientConfig := &types.EndpointConfig{
-		Transport: cfg.Transport,
-		TlsConfig: givc_util.TlsClientConfigFromTlsConfig(cfg.TlsConfig, cfg.Transport.Name),
-	}
-
 	options := []grpc.DialOption{}
+
+	// Create client tls config
+	tlsConfig := givc_util.TlsClientConfigFromTlsConfig(cfg.TlsConfig, cfg.Transport.Name)
 
 	// Setup TLS credentials
 	var tlsCredentials grpc.DialOption
-	if clientConfig.TlsConfig != nil {
-		tlsCredentials = grpc.WithTransportCredentials(grpc_creds.NewTLS(clientConfig.TlsConfig))
+	if tlsConfig != nil {
+		tlsCredentials = grpc.WithTransportCredentials(grpc_creds.NewTLS(tlsConfig))
 	} else {
 		tlsCredentials = grpc.WithTransportCredentials(insecure.NewCredentials())
-		// return nil, grpc_status.Error(grpc_codes.Unavailable, "TLS configuration not provided")
+		log.Warning("TLS configuration not provided, using insecure connection")
 	}
 	options = append(options, tlsCredentials)
 

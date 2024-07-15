@@ -5,13 +5,13 @@ package servicemanager
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"syscall"
 
 	util "givc/internal/pkgs/utility"
 
 	"github.com/coreos/go-systemd/v22/dbus"
+	godbus "github.com/godbus/dbus/v5"
 	"github.com/shirou/gopsutil/process"
 	log "github.com/sirupsen/logrus"
 )
@@ -336,62 +336,49 @@ func (c *SystemdController) StartApplication(ctx context.Context, serviceName st
 		return cmdFailure, fmt.Errorf("incorrect application service name")
 	}
 
-	// Extract app name
+	// Assemble command
 	appName := strings.Split(serviceName, "@")[0]
 	appCmd, ok := c.applications[appName]
 	if !ok {
 		return cmdFailure, fmt.Errorf("application unknown")
 	}
-
-	// Assemble command
 	appCmd = strings.ReplaceAll(appCmd, "run-waypipe", "/run/current-system/sw/bin/run-waypipe")
 	appCmd = strings.ReplaceAll(appCmd, appName, "/run/current-system/sw/bin/"+appName)
+	cmd := strings.Split(appCmd, " ")
+	if len(cmd) == 0 {
+		return cmdFailure, fmt.Errorf("incorrect application string format")
+	}
 
-	systemdRunCmd := "/run/current-system/sw/bin/systemd-run"
-	systemdRunCmd += " --user "
-	systemdRunCmd += " --property=Type=exec "
-	systemdRunCmd += " -E XDG_CONFIG_DIRS=$XDG_CONFIG_DIRS:/etc/xdg "
-	systemdRunCmd += " -u " + serviceName + " "
-	systemdRunCmd += appCmd
+	// Setup properties
+	var props []dbus.Property
+	propDescription := dbus.PropDescription("Application service for " + appName)
+	propExecStart := dbus.PropExecStart(cmd, false)
+	propType := dbus.PropType("exec")
+	probEnvironment := dbus.Property{
+		Name:  "Environment",
+		Value: godbus.MakeVariant([]string{"XDG_CONFIG_DIRS=$XDG_CONFIG_DIRS:/etc/xdg"}),
+	}
+	props = append(props, propDescription, propExecStart, propType, probEnvironment)
 
-	// Run command
-	cmd := exec.Command("/bin/sh", "-c", systemdRunCmd)
-	err := cmd.Run()
+	// Run command as transient service
+	jobStatus := make(chan string)
+	_, err := c.conn.StartTransientUnitContext(ctx, serviceName, "replace", props, jobStatus)
 	if err != nil {
-		return "", fmt.Errorf("error starting application: %s (%s)", systemdRunCmd, err)
+		return cmdFailure, fmt.Errorf("error starting application: %s (%s)", appCmd, err)
+	}
+
+	// Check command started
+	status := <-jobStatus
+	switch status {
+	case "done":
+		log.Infof("application %s (re)start cmd successful\n", serviceName)
+	default:
+		return cmdFailure, fmt.Errorf("failed to start app %s: %s", serviceName, status)
 	}
 
 	// Whitelist application service
 	c.whitelist = append(c.whitelist, serviceName)
 	// @TODO remove application from whitelist?
-
-	// Inject executable
-	// var props []dbus.Property
-
-	// propExecStart := dbus.PropExecStart([]string{appCmd}, false)
-	// propType := dbus.PropType("exec")
-	// probEnvironment := dbus.Property{
-	// 	Name:  "Environment",
-	// 	Value: dbus_direct.MakeVariant("XDG_CONFIG_DIRS=$XDG_CONFIG_DIRS:/etc/xdg"),
-	// }
-	// props = append(props, propExecStart, propType, probEnvironment)
-	// props = append(props, propExecStart, propType)
-
-	// Run command as transient service
-	// ch := make(chan string)
-	// _, err := c.conn.StartTransientUnitContext(ctx, serviceName, "replace", props, ch)
-	// if err != nil {
-	// 	return cmdFailure, fmt.Errorf("error starting application: %s (%s)", appCmd, err)
-	// }
-
-	// Check command started
-	// status := <-ch
-	// switch status {
-	// case "done":
-	// 	log.Infof("application %s (re)start cmd successful\n", serviceName)
-	// default:
-	// 	return cmdFailure, fmt.Errorf("failed to start app %s: %s", serviceName, status)
-	// }
 
 	return "Command successful.", nil
 }

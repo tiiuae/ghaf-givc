@@ -5,7 +5,7 @@ pkgs.buildGoModule {
   pname = "givc-app";
   version = "0.0.1";
   src = ../../.;
-  vendorHash = "sha256-aW3aMkPs7Inj6SRKNv/mg+EpsaZLa8S16qyC/XsRcmw=";
+  vendorHash = "sha256-Ywb7Ea8rrkMSaZksnb6lxmYxWhc0IAiXzClQ0vPfm70=";
   subPackages = [
     "api/admin"
     "internal/pkgs/grpc"
