@@ -191,6 +191,7 @@ impl AdminServiceImpl {
                         )
                     };
 
+                    info!("Status of {} is {:#?} (updated)", &entry.name, status);
                     // We have immutable copy of entry here, but need update _in registry_ copy
                     self.registry.update_state(&entry.name, status)?;
 
