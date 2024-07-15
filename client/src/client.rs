@@ -26,10 +26,10 @@ pub enum TrustLevel {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct QueryResult {
-    name: String,        //VM name
-    description: String, //App name, some details
-    status: VMStatus,
-    trust_level: TrustLevel,
+    pub name: String,        //VM name
+    pub description: String, //App name, some details
+    pub status: VMStatus,
+    pub trust_level: TrustLevel,
 }
 
 #[derive(Debug, Clone, Serialize)]
