@@ -1,4 +1,4 @@
-use crate::endpoint::EndpointConfig;
+use crate::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::pb;
 use givc_common::types::*;
 use serde::Serialize;
@@ -45,28 +45,29 @@ pub struct AdminClient {
 }
 
 impl AdminClient {
-    pub fn new(ec: EndpointConfig) -> Self {
-        Self { endpoint: ec }
-    }
-
     async fn connect_to(&self) -> anyhow::Result<Client> {
         let channel = self.endpoint.connect().await?;
         Ok(Client::new(channel))
     }
 
     // New style api, not yet implemented, stub atm to make current code happy
-    // FIXME: cert path vs TlsConfig?
-    async fn connect(addr: String, port: u16, _cert: Option<PathBuf>) -> anyhow::Result<Self> {
-        Ok(Self {
+    // FIXME: Still doubt if constructor should be sync or async
+    pub fn new(addr: String, port: u16, tls_info: Option<(String, TlsConfig)>) -> Self {
+        let (name, tls) = match tls_info {
+            Some((name, tls)) => (name, Some(tls)),
+            None => (String::from("bogus(no tls)"), None),
+        };
+        Self {
             endpoint: EndpointConfig {
                 transport: TransportConfig {
                     address: addr,
                     port: port,
                     protocol: String::from("bogus"),
+                    tls_name: name,
                 },
-                tls: None,
+                tls: tls,
             },
-        })
+        }
     }
 
     // FIXME: Should accept parameters, not server-side structure, current impl is blunt

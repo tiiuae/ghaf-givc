@@ -175,9 +175,10 @@ impl Into<pb::UnitStatus> for UnitStatus {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EndpointEntry {
-    pub protocol: String,
+    pub protocol: String, // Bogus, should we drop it?
     pub address: String,
     pub port: u16,
+    pub tls_name: String,
 }
 
 pub type TransportConfig = EndpointEntry;
@@ -189,6 +190,7 @@ impl TryFrom<pb::TransportConfig> for EndpointEntry {
             protocol: tc.protocol,
             address: tc.address,
             port: tc.port.parse()?,
+            tls_name: tc.name,
         })
     }
 }
@@ -199,7 +201,7 @@ impl Into<pb::TransportConfig> for EndpointEntry {
             protocol: self.protocol,
             address: self.address,
             port: self.port.to_string(),
-            name: String::from("unused"),
+            name: self.tls_name,
         }
     }
 }
@@ -237,6 +239,7 @@ impl RegistryEntry {
                 protocol: "bogus".to_string(),
                 address: "127.0.0.1".to_string(),
                 port: 42,
+                tls_name: "bogus".to_string(),
             },
             watch: true,
         }

@@ -8,11 +8,11 @@ use tracing::{error, info};
 pub use pb::admin_service_server::AdminServiceServer;
 
 use crate::admin::registry::*;
-use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use crate::systemd_api::client::SystemDClient;
 use crate::types::*;
 use crate::utils::naming::*;
 use crate::utils::tonic::*;
+use givc_client::endpoint::{EndpointConfig, TlsConfig};
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 

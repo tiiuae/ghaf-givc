@@ -6,8 +6,8 @@ pub mod pb {
     // Re-export to keep current code untouched
     pub use givc_common::pb::*;
 }
-pub use givc_common::types;
 pub use givc_client::endpoint;
+pub use givc_common::types;
 
 pub fn trace_init() {
     tracing_subscriber::fmt::init();

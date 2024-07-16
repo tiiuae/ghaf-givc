@@ -1,7 +1,7 @@
 use clap::Parser;
-use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use givc::admin;
 use givc::endpoint::TlsConfig;
+use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tonic::transport::Server;
@@ -13,7 +13,7 @@ use tracing::info;
 struct Cli {
     #[arg(long, env = "ADDR", default_missing_value = "127.0.0.1")]
     addr: String,
-    #[arg(long, env = "PORT", default_missing_value = "9000")]
+    #[arg(long, env = "PORT", default_missing_value = "9000", value_parser = clap::value_parser!(u16).range(1..))]
     port: u16,
 
     #[arg(long, env = "TLS", default_missing_value = "false")]
@@ -52,7 +52,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tls = TlsConfig {
             ca_cert_file_path: cli.ca_cert.ok_or(String::from("required"))?,
             cert_file_path: cli.host_cert.ok_or(String::from("required"))?,
-            key_file_path: cli.host_key,
+            key_file_path: cli.host_key.ok_or(String::from("required"))?,
         };
         let tls_config = tls.server_config()?;
         builder = builder.tls_config(tls_config)?;

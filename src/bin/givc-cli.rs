@@ -1,9 +1,10 @@
 use clap::{Parser, Subcommand};
-use givc_client::AdminClient;
 use givc::endpoint::{EndpointConfig, TlsConfig};
 use givc::pb;
 use givc::types::*;
 use givc::utils::naming::*;
+use givc_client::{AdminClient, QueryResult};
+use serde::ser::Serialize;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::info;
@@ -14,11 +15,26 @@ use tracing::info;
 struct Cli {
     #[arg(long, env = "ADDR", default_missing_value = "127.0.0.1")]
     addr: String,
-    #[arg(long, env = "PORT", default_missing_value = "9000")]
+    #[arg(long, env = "PORT", default_missing_value = "9000", value_parser = clap::value_parser!(u16).range(1..))]
     port: u16,
 
     #[arg(long, env = "HOST_KEY")]
     host_key: Option<PathBuf>,
+
+    #[arg(long, env = "NAME", default_missing_value = "admin.ghaf")]
+    name: String, // for TLS service name
+
+    #[arg(long, env = "CA_CERT")]
+    cacert: Option<PathBuf>,
+
+    #[arg(long, env = "HOST_CERT")]
+    cert: Option<PathBuf>,
+
+    #[arg(long, env = "HOST_KEY")]
+    key: Option<PathBuf>,
+
+    #[arg(long, default_missing_value = "false")]
+    notls: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -43,6 +59,10 @@ enum Commands {
         by_type: Option<u32>, // FIXME:  parse UnitType by names?
         by_name: Vec<String>, // list of names, all if empty?
     },
+    QueryList {
+        // Even if I believe that QueryList is temporary
+        as_json: bool,
+    },
     Watch {
         as_json: bool,
     },
@@ -57,16 +77,19 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let addr = SocketAddr::new(cli.addr.parse()?, cli.port);
 
-    let admin_cfg = EndpointConfig {
-        transport: TransportConfig {
-            address: cli.addr,
-            port: cli.port,
-            protocol: "bogus".into(),
-        },
-        tls: None, // No TLS in cli at the moment
+    let tls = if cli.notls {
+        None
+    } else {
+        Some((
+            cli.name,
+            TlsConfig {
+                ca_cert_file_path: cli.cacert.expect("cacert is required"),
+                cert_file_path: cli.cert.expect("cert is required"),
+                key_file_path: cli.key.expect("key is required"),
+            },
+        ))
     };
-
-    let admin = AdminClient::new(admin_cfg);
+    let admin = AdminClient::new(cli.addr, cli.port, tls);
 
     match cli.command {
         Commands::Start { app } => admin.start(app).await?,
@@ -85,27 +108,31 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 None => None,
             };
             let reply = admin.query(ty, by_name).await?;
-            if as_json {
-                let js = serde_json::to_string(&reply)?;
-                println!("{}", js);
-            } else {
-                println!("{:#?}", reply);
-            }
+            dump(&reply, as_json)?
+        }
+        Commands::QueryList { as_json } => {
+            let reply = admin.query_list().await?;
+            dump(&reply, as_json)?
         }
         Commands::Watch { as_json } => {
             admin
-                .watch(|event| async move {
-                    if as_json {
-                        let js = serde_json::to_string(&event)?;
-                        println!("{}", js)
-                    } else {
-                        println!("{:#?}", event)
-                    };
-                    Ok(())
-                })
+                .watch(|event| async move { dump(&event, as_json) })
                 .await?
         }
     };
 
+    Ok(())
+}
+
+fn dump<Q>(qr: Q, as_json: bool) -> anyhow::Result<()>
+where
+    Q: std::fmt::Debug + Serialize,
+{
+    if as_json {
+        let js = serde_json::to_string(&qr)?;
+        println!("{}", js)
+    } else {
+        println!("{:#?}", qr)
+    };
     Ok(())
 }

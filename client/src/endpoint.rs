@@ -1,6 +1,6 @@
+use anyhow::Result;
 use givc_common::pb;
 use givc_common::types::TransportConfig;
-use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Duration;
 use tonic::transport::Endpoint;
@@ -10,7 +10,7 @@ use tonic::transport::{Certificate, Channel, ClientTlsConfig, Error, Identity, S
 pub struct TlsConfig {
     pub ca_cert_file_path: PathBuf,
     pub cert_file_path: PathBuf,
-    pub key_file_path: Option<PathBuf>,
+    pub key_file_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -20,22 +20,22 @@ pub struct EndpointConfig {
 }
 
 impl TlsConfig {
-    pub fn client_config(&self) -> anyhow::Result<ClientTlsConfig> {
+    pub fn client_config(&self, domain_name: impl Into<String>) -> anyhow::Result<ClientTlsConfig> {
         let pem = std::fs::read_to_string(self.ca_cert_file_path.as_os_str())?;
         let ca = Certificate::from_pem(pem);
-        Ok(ClientTlsConfig::new().ca_certificate(ca))
 
-        // FIXME:  .domain_name() are from examples, does it required?
-        //           .domain_name("foo.test.google.fr"),
+        let client_cert = std::fs::read_to_string(self.cert_file_path.as_os_str())?;
+        let client_key = std::fs::read_to_string(self.key_file_path.as_os_str())?;
+        let client_identity = Identity::from_pem(client_cert, client_key);
+        Ok(ClientTlsConfig::new()
+            .ca_certificate(ca)
+            .domain_name(domain_name)
+            .identity(client_identity))
     }
 
     pub fn server_config(&self) -> anyhow::Result<ServerTlsConfig> {
         let cert = std::fs::read_to_string(self.cert_file_path.as_os_str())?;
-        let keyfile = self
-            .key_file_path
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Key file is required"))?;
-        let key = std::fs::read_to_string(keyfile)?;
+        let key = std::fs::read_to_string(self.key_file_path.as_os_str())?;
         let identity = Identity::from_pem(cert, key);
         let config = ServerTlsConfig::new().identity(identity);
         Ok(config)

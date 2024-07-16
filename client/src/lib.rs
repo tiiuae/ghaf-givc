@@ -1,3 +1,3 @@
 pub mod client;
 pub mod endpoint;
-pub use crate::client::AdminClient;
+pub use crate::client::{AdminClient, QueryResult};

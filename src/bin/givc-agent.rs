@@ -1,11 +1,11 @@
 use clap::Parser;
-use givc_common::pb::reflection::SYSTEMD_DESCRIPTOR;
-use givc_common::pb;
-use givc_client::AdminClient;
 use givc::endpoint::{EndpointConfig, TlsConfig};
 use givc::systemd_api::server::SystemdService;
 use givc::types::*;
 use givc::utils::naming::*;
+use givc_client::AdminClient;
+use givc_common::pb;
+use givc_common::pb::reflection::SYSTEMD_DESCRIPTOR;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tonic::transport::Server;
@@ -20,7 +20,7 @@ struct Cli {
 
     #[arg(long, env = "ADDR", default_missing_value = "127.0.0.1")]
     addr: String,
-    #[arg(long, env = "PORT", default_missing_value = "9001")]
+    #[arg(long, env = "PORT", default_missing_value = "9001", value_parser = clap::value_parser!(u16).range(1..))]
     port: u16,
 
     #[arg(long, env = "TLS", default_missing_value = "false")]
@@ -45,6 +45,9 @@ struct Cli {
     admin_server_addr: String,
     #[arg(long, env = "ADMIN_SERVER_PORT", default_missing_value = "9000")]
     admin_server_port: u16,
+
+    #[arg(long, env = "ADMIN_SERVER_NAME", default_missing_value = "admin.ghaf")]
+    admin_server_name: String,
 
     #[arg(
         long,
@@ -72,22 +75,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tls = TlsConfig {
             ca_cert_file_path: cli.ca_cert.ok_or(String::from("required"))?,
             cert_file_path: cli.host_cert.ok_or(String::from("required"))?,
-            key_file_path: cli.host_key,
+            key_file_path: cli.host_key.ok_or(String::from("required"))?,
         };
         let tls_config = tls.server_config()?;
         builder = builder.tls_config(tls_config)?;
         Some(tls)
     } else {
         None
-    };
-
-    let admin_cfg = EndpointConfig {
-        transport: TransportConfig {
-            address: cli.admin_server_addr,
-            port: cli.admin_server_port,
-            protocol: "bogus".into(),
-        },
-        tls: tls.clone(),
     };
 
     // Perfect example of bad designed code, admin.register_service(entry) should hide structure filling
@@ -99,6 +93,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             address: cli.addr,
             port: cli.port,
             protocol: String::from("bogus"),
+            tls_name: cli.name,
         },
         watch: true,
         // We can't use just one name field like in "go" code
@@ -112,7 +107,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         },
     };
 
-    let admin = AdminClient::new(admin_cfg);
+    let admin_tls = tls.clone().map(|tls| (cli.admin_server_name, tls));
+    let admin = AdminClient::new(cli.admin_server_addr, cli.admin_server_port, admin_tls);
     admin.register_service(entry).await?;
 
     let reflect = tonic_reflection::server::Builder::configure()
