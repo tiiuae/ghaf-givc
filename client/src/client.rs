@@ -1,4 +1,5 @@
 use crate::endpoint::{EndpointConfig, TlsConfig};
+use async_channel::{bounded, Receiver};
 use givc_common::pb;
 use givc_common::types::*;
 use serde::Serialize;
@@ -34,9 +35,16 @@ pub struct QueryResult {
 
 #[derive(Debug, Clone, Serialize)]
 pub enum Event {
-    ListUpdate(Vec<QueryResult>),   // Come on connect, and only once
     UnitStatusChanged(QueryResult), // When unit updated/added
     UnitShutdown(String),
+}
+
+#[derive(Debug)]
+pub struct WatchResult {
+    pub initial: Vec<QueryResult>,
+    // Design defence: we use `async-channel` here, as it could be used with both
+    // tokio's and glib's eventloop, and recommended by gtk4-rs developers:
+    pub channel: Receiver<Event>,
 }
 
 #[derive(Debug)]
@@ -111,20 +119,31 @@ impl AdminClient {
         Ok(list)
     }
 
-    pub async fn watch<F, FA>(&self, callback: F) -> anyhow::Result<()>
-    where
-        F: Fn(Event) -> FA,
-        FA: Future<Output = anyhow::Result<()>>,
-    {
-        let mut watch = tokio::time::interval(Duration::from_secs(5));
-        watch.tick().await; // First tick fires instantly
+    pub async fn watch(&self) -> anyhow::Result<WatchResult> {
+        let (tx, rx) = async_channel::bounded::<Event>(10);
+
         let list = self.query_list().await?;
 
-        callback(Event::ListUpdate(list)).await?;
-        loop {
-            watch.tick().await;
-            callback(Event::UnitStatusChanged(QueryResult::default())).await?
-        }
+        let result = WatchResult {
+            initial: list,
+            channel: rx,
+        };
+
+        tokio::task::spawn(async move {
+            let mut watch = tokio::time::interval(Duration::from_secs(5));
+            watch.tick().await; // First tick fires instantly
+            loop {
+                watch.tick().await;
+                if let Err(e) = tx
+                    .send(Event::UnitStatusChanged(QueryResult::default()))
+                    .await
+                {
+                    println!("error sending {e}");
+                }
+            }
+        });
+
+        Ok(result)
     }
 }
 

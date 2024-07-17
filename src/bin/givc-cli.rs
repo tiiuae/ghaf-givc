@@ -56,7 +56,7 @@ enum Commands {
     },
     Query {
         #[arg(long, default_value_t = false)]
-        as_json: bool,        // Would it useful for scripts?
+        as_json: bool, // Would it useful for scripts?
         #[arg(long)]
         by_type: Option<u32>, // FIXME:  parse UnitType by names?
         #[arg(long)]
@@ -123,10 +123,29 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             let reply = admin.query_list().await?;
             dump(&reply, as_json)?
         }
-        Commands::Watch { as_json } => {
-            admin
-                .watch(|event| async move { dump(&event, as_json) })
-                .await?
+        Commands::Watch {
+            as_json,
+            limit,
+            initial,
+        } => {
+            let mut watch = admin.watch().await?;
+            let mut limit = limit;
+
+            if initial {
+                dump(watch.initial, as_json)?
+            }
+
+            loop {
+                let event = watch.channel.recv().await?;
+                dump(event, as_json);
+                if let Some(count) = limit {
+                    let count = count - 1;
+                    if count <= 0 {
+                        break;
+                    }
+                    limit = Some(count)
+                }
+            }
         }
     };
 

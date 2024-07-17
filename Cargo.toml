@@ -16,6 +16,7 @@ version = "0.0.1"
 [dependencies]
 anyhow = "1.0.86"
 async-stream = "0.3"
+async-channel = "2.3.1"
 strum = {version = "0.25", features = ["derive"]}
 clap = {version = "4.5.4", features = ["derive", "env"]}
 console = "0.15"
