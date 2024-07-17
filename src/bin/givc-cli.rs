@@ -33,7 +33,7 @@ struct Cli {
     #[arg(long, env = "HOST_KEY")]
     key: Option<PathBuf>,
 
-    #[arg(long, default_missing_value = "false")]
+    #[arg(long, default_value_t = false)]
     notls: bool,
 
     #[command(subcommand)]
@@ -55,16 +55,25 @@ enum Commands {
         app: String,
     },
     Query {
+        #[arg(long, default_value_t = false)]
         as_json: bool,        // Would it useful for scripts?
+        #[arg(long)]
         by_type: Option<u32>, // FIXME:  parse UnitType by names?
+        #[arg(long)]
         by_name: Vec<String>, // list of names, all if empty?
     },
     QueryList {
         // Even if I believe that QueryList is temporary
+        #[arg(long, default_value_t = false)]
         as_json: bool,
     },
     Watch {
+        #[arg(long, default_value_t = false)]
         as_json: bool,
+        #[arg(long, default_value_t = false)]
+        initial: bool,
+        #[arg(long)]
+        limit: Option<u32>,
     },
 }
 
