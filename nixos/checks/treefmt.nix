@@ -25,13 +25,13 @@
       };
     };
 
-    #    devshells.default.commands = [
-    #      {
-    #        category = "tools";
-    #        name = "fmt";
-    #        help = "format the source tree";
-    #        command = lib.getExe config.treefmt.build.wrapper;
-    #      }
-    #    ];
+    devshells.default.commands = [
+      {
+        category = "tools";
+        name = "fmt";
+        help = "format the source tree";
+        command = lib.getExe config.treefmt.build.wrapper;
+      }
+    ];
   };
 }

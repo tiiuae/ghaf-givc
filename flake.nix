@@ -19,6 +19,11 @@
       url = "github:ipetkov/crane";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    pre-commit-hooks-nix = {
+      url = "github:cachix/pre-commit-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.nixpkgs-stable.follows = "nixpkgs";
+    };
   };
 
   outputs = inputs @ {
@@ -38,6 +43,7 @@
       ];
       imports = [
         ./nixos/checks/treefmt.nix
+        ./devshell.nix
       ];
 
       perSystem = {
@@ -61,15 +67,6 @@
           givc-gen-certs = {
             type = "app";
             program = "${self'.packages.givc-gen-certs}/bin/givc-gen-certs";
-          };
-        };
-
-        # DevShells
-        devShells = let
-          pkgs' = pkgs.extend devshell.overlays.default;
-        in {
-          default = pkgs'.devshell.mkShell {
-            imports = [(pkgs'.devshell.importTOML ./devshell.toml)];
           };
         };
       };
