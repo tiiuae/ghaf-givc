@@ -77,8 +77,6 @@ in {
             hostPkgs = pkgs;
             defaults = {
               imports = [
-                # Import all of our NixOS modules by default.
-                nixosModules.default
                 # Fix missing `pkgs.system` in tests.
                 {nixpkgs.overlays = [(_: _: {inherit system;})];}
               ];

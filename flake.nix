@@ -45,6 +45,7 @@
         ./nixos/checks/treefmt.nix
         ./nixos/checks/vmTests.nix
         ./devshell.nix
+        ./nixos/tests
       ];
 
       perSystem = {
