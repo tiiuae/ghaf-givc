@@ -1,6 +1,5 @@
 use std::convert::TryFrom;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use x509_parser::pem::parse_x509_pem;
 use x509_parser::prelude::*;
 
 #[derive(Debug)]
