@@ -1,7 +1,7 @@
 use clap::Parser;
+use givc::utils::x509::SecurityInfo;
 use std::path::PathBuf;
 use x509_parser::pem::parse_x509_pem;
-use x509_parser::prelude::*;
 
 #[derive(Debug, Parser)]
 #[command(name = "givc-x509")]
@@ -17,7 +17,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let (_rem, pem) = parse_x509_pem(&cert_file)?;
 
-    let x509 = parse_x509_certificate(&pem.contents)?;
-    println!("X509: {:#?}", x509);
+    let x509 = SecurityInfo::try_from(pem.contents.as_slice())?;
+    println!("SI is {:?}", x509);
     Ok(())
 }
