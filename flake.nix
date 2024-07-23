@@ -51,13 +51,19 @@
       perSystem = {
         pkgs,
         self',
+        lib,
         ...
       }: {
         # Packages
-        packages = {
-          givc-app = pkgs.callPackage ./nixos/packages/givc-app.nix {};
-          givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix {};
-          givc-admin = pkgs.callPackage ./nixos/packages/givc-admin.nix {};
+        packages = let
+          src = lib.cleanSourceWith {
+            src = ./.;
+            filter = path: _type: (path != "go.mod") || (null != builtins.match ".*proto$" path) || (null != builtins.match ".*proto$" path);
+          };
+        in {
+          givc-app = pkgs.callPackage ./nixos/packages/givc-app.nix {inherit src;};
+          givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix {inherit src;};
+          givc-admin = pkgs.callPackage ./nixos/packages/givc-admin.nix {inherit src;};
           givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix {
             inherit crane;
             src = ./.;
