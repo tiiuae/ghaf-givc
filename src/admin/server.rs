@@ -1,8 +1,8 @@
 use crate::pb::{self, *};
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, Context};
 use std::sync::Arc;
 use std::time::Duration;
-use tonic::{Code, Request, Response, Status};
+use tonic::{Code, Response, Status};
 use tracing::{error, info};
 
 pub use pb::admin_service_server::AdminServiceServer;
@@ -230,7 +230,7 @@ impl AdminServiceImpl {
         let systemd_agent = format_service_name(&req.app_name);
 
         // Entry unused in "go" code
-        let entry = match self.registry.by_name(&systemd_agent) {
+        match self.registry.by_name(&systemd_agent) {
             std::result::Result::Ok(e) => e,
             Err(_) => {
                 self.start_vm(req.app_name.clone())

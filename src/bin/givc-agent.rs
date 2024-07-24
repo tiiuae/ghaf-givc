@@ -1,5 +1,5 @@
 use clap::Parser;
-use givc::endpoint::{EndpointConfig, TlsConfig};
+use givc::endpoint::TlsConfig;
 use givc::systemd_api::server::SystemdService;
 use givc::types::*;
 use givc::utils::naming::*;

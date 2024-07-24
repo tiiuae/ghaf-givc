@@ -2,7 +2,7 @@ use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::types::*;
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, bail};
 use tracing::info;
 
 #[derive(Clone, Debug)]

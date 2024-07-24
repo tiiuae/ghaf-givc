@@ -1,13 +1,10 @@
 use crate::endpoint::{EndpointConfig, TlsConfig};
-use async_channel::{bounded, Receiver};
+use async_channel::Receiver;
 use givc_common::pb;
 use givc_common::types::*;
 use serde::Serialize;
-use std::future::Future;
-use std::path::PathBuf;
 use std::time::Duration;
 use tonic::transport::Channel;
-use tonic::{metadata::MetadataValue, Code, Request, Response, Status};
 
 type Client = pb::admin_service_client::AdminServiceClient<Channel>;
 

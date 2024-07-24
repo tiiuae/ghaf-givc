@@ -1,7 +1,7 @@
 use anyhow;
 use std::future::Future;
 use std::result::Result;
-use tonic::{Code, Request, Response, Status};
+use tonic::{Code, Response, Status};
 use tonic_types::{ErrorDetails, StatusExt};
 use tracing::error;
 
@@ -17,7 +17,7 @@ where
     match result {
         Ok(res) => Ok(Response::new(res)),
         Err(any) => {
-            let mut err_details = ErrorDetails::new();
+            let err_details = ErrorDetails::new();
             // Generate error status
             let status = Status::with_error_details(
                 Code::InvalidArgument,

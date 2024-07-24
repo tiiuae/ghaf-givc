@@ -1,10 +1,8 @@
-use anyhow::Result;
-use givc_common::pb;
 use givc_common::types::TransportConfig;
 use std::path::PathBuf;
 use std::time::Duration;
 use tonic::transport::Endpoint;
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Error, Identity, ServerTlsConfig};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, ServerTlsConfig};
 
 #[derive(Debug, Clone)]
 pub struct TlsConfig {

@@ -1,11 +1,8 @@
 use clap::{Parser, Subcommand};
-use givc::endpoint::{EndpointConfig, TlsConfig};
-use givc::pb;
+use givc::endpoint::TlsConfig;
 use givc::types::*;
-use givc::utils::naming::*;
 use givc_client::{AdminClient, QueryResult};
 use serde::ser::Serialize;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::info;
 
@@ -84,8 +81,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     info!("CLI is {:#?}", cli);
 
-    let addr = SocketAddr::new(cli.addr.parse()?, cli.port);
-
     let tls = if cli.notls {
         None
     } else {
@@ -128,7 +123,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             limit,
             initial,
         } => {
-            let mut watch = admin.watch().await?;
+            let watch = admin.watch().await?;
             let mut limit = limit;
 
             if initial {
@@ -137,7 +132,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
             loop {
                 let event = watch.channel.recv().await?;
-                dump(event, as_json);
+                dump(event, as_json)?;
                 if let Some(count) = limit {
                     let count = count - 1;
                     if count <= 0 {

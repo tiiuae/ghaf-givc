@@ -1,5 +1,5 @@
 use super::x509::SecurityInfo;
-use tonic::{Request, Response, Status};
+use tonic::{Request, Status};
 
 fn security_info_from_request(req: &Request<()>) -> Result<SecurityInfo, Status> {
     if let Some(certs) = req.peer_certs() {
