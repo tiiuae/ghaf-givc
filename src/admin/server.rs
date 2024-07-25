@@ -1,5 +1,8 @@
 use crate::pb::{self, *};
 use anyhow::{bail, Context};
+use async_stream::try_stream;
+use givc_common::query::Event;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::{Code, Response, Status};
@@ -264,6 +267,17 @@ impl AdminServiceImpl {
         self.registry.register(app_entry);
         Ok(())
     }
+
+    pub async fn query_list_internal(&self) -> anyhow::Result<QueryListResponse> {
+        Ok(QueryListResponse {
+            list: vec![QueryListItem {
+                name: String::from("bogus"),
+                description: String::from("descr"),
+                vm_status: String::from("dead"),
+                trust_level: String::from("crap"),
+            }],
+        })
+    }
 }
 
 fn app_success() -> anyhow::Result<ApplicationResponse> {
@@ -274,6 +288,9 @@ fn app_success() -> anyhow::Result<ApplicationResponse> {
     };
     Ok(res)
 }
+
+type Stream<T> =
+    Pin<Box<dyn tokio_stream::Stream<Item = std::result::Result<T, Status>> + Send + 'static>>;
 
 #[tonic::async_trait]
 impl pb::admin_service_server::AdminService for AdminService {
@@ -365,6 +382,47 @@ impl pb::admin_service_server::AdminService for AdminService {
                 .send_system_command(String::from("poweroff.target"))
                 .await?;
             Ok(Empty {})
+        })
+        .await
+    }
+
+    async fn query_list(
+        &self,
+        request: tonic::Request<Empty>,
+    ) -> Result<tonic::Response<QueryListResponse>, tonic::Status> {
+        escalate(request, |_| async {
+            let list = self.inner.query_list_internal().await?;
+            Ok(list)
+        })
+        .await
+    }
+
+    type WatchStream = Stream<WatchItem>;
+    async fn watch(
+        &self,
+        request: tonic::Request<Empty>,
+    ) -> Result<tonic::Response<Self::WatchStream>, tonic::Status> {
+        escalate(request, |_| async {
+            let list = self.inner.query_list_internal().await?;
+            let head = if list.list.len() > 0 {
+                Some(list.list[0].clone())
+            } else {
+                None
+            };
+
+            let stream = try_stream! {
+                yield Event::into_initial(Vec::new());
+
+                loop {
+                     tokio::time::sleep(Duration::from_secs(5)).await;
+                     if let Some(item) = &head {
+                        yield WatchItem {
+                            status: Some(watch_item::Status::Updated(item.clone()))
+                        }
+                     }
+                 }
+            };
+            Ok(Box::pin(stream) as Self::WatchStream)
         })
         .await
     }

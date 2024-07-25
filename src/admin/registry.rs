@@ -112,6 +112,13 @@ impl Registry {
         };
         Ok(())
     }
+
+    // FIXME: Should we dump full contents here for `query`/`query_list` high-level API
+    // FIXME: .by_types_many() should works, but I add this one for debug convenience
+    pub fn contents(&self) -> Vec<RegistryEntry> {
+        let state = self.map.lock().unwrap();
+        state.values().cloned().collect()
+    }
 }
 
 #[cfg(test)]

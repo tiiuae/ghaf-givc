@@ -127,7 +127,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             let mut limit = limit;
 
             if initial {
-                dump(watch.initial, as_json)?
+                dump(watch.initial.clone(), as_json)?
             }
 
             loop {

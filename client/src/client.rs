@@ -1,40 +1,14 @@
 use crate::endpoint::{EndpointConfig, TlsConfig};
+use anyhow::bail;
 use async_channel::Receiver;
 use givc_common::pb;
+pub use givc_common::query::{Event, QueryResult};
 use givc_common::types::*;
-use serde::Serialize;
-use std::time::Duration;
+use tokio_stream::StreamExt;
 use tonic::transport::Channel;
+use tracing::debug;
 
 type Client = pb::admin_service_client::AdminServiceClient<Channel>;
-
-#[derive(Debug, Clone, Copy, Serialize)]
-pub enum VMStatus {
-    Running,
-    PoweredOff,
-    Paused,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-pub enum TrustLevel {
-    Secure,
-    Warning,
-    NotSecure,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct QueryResult {
-    pub name: String,        //VM name
-    pub description: String, //App name, some details
-    pub status: VMStatus,
-    pub trust_level: TrustLevel,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub enum Event {
-    UnitStatusChanged(QueryResult), // When unit updated/added
-    UnitShutdown(String),
-}
 
 #[derive(Debug)]
 pub struct WatchResult {
@@ -42,6 +16,14 @@ pub struct WatchResult {
     // Design defence: we use `async-channel` here, as it could be used with both
     // tokio's and glib's eventloop, and recommended by gtk4-rs developers:
     pub channel: Receiver<Event>,
+
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for WatchResult {
+    fn drop(&mut self) {
+        self.task.abort()
+    }
 }
 
 #[derive(Debug)]
@@ -112,46 +94,62 @@ impl AdminClient {
 
     // FIXME: should be merged with query()
     pub async fn query_list(&self) -> anyhow::Result<Vec<QueryResult>> {
-        let list = vec![QueryResult::default()];
-        Ok(list)
+        self.connect_to()
+            .await?
+            .query_list(pb::admin::Empty {})
+            .await?
+            .into_inner()
+            .list
+            .into_iter()
+            .map(QueryResult::try_from)
+            .collect()
     }
 
     pub async fn watch(&self) -> anyhow::Result<WatchResult> {
         let (tx, rx) = async_channel::bounded::<Event>(10);
 
-        let list = self.query_list().await?;
+        let mut watch = self
+            .connect_to()
+            .await?
+            .watch(pb::admin::Empty {})
+            .await?
+            .into_inner();
 
-        let result = WatchResult {
-            initial: list,
-            channel: rx,
+        let list = match watch.try_next().await? {
+            Some(first) => match first.status {
+                Some(pb::admin::watch_item::Status::Initial(init)) => QueryResult::parse_list(init.list)?,
+                Some(item) => bail!("Protocol error, first item in stream not pb::admin::watch_item::Status::Initial, {:?}", item),
+                None => bail!("Protocol error, initial item missing"),
+            },
+            None => bail!("Protocol error, status field missing"),
         };
 
-        tokio::task::spawn(async move {
-            let mut watch = tokio::time::interval(Duration::from_secs(5));
-            watch.tick().await; // First tick fires instantly
+        let task = tokio::task::spawn(async move {
             loop {
-                watch.tick().await;
-                if let Err(e) = tx
-                    .send(Event::UnitStatusChanged(QueryResult::default()))
-                    .await
-                {
-                    println!("error sending {e}");
+                if let Ok(Some(event)) = watch.try_next().await {
+                    let event = match Event::try_from(event) {
+                        Ok(event) => event,
+                        Err(e) => {
+                            debug!("Fail to decode: {e}");
+                            break;
+                        }
+                    };
+                    if let Err(e) = tx.send(event).await {
+                        debug!("Fail to send event: {e}");
+                        break;
+                    }
+                } else {
+                    debug!("Stream closed by server");
+                    break;
                 }
             }
         });
 
+        let result = WatchResult {
+            initial: list,
+            channel: rx,
+            task,
+        };
         Ok(result)
-    }
-}
-
-// FIXME: for prototyping/debug, would be dropped from final version
-impl Default for QueryResult {
-    fn default() -> Self {
-        Self {
-            name: String::from("AppVM"),
-            description: String::from("Sample App VM"),
-            status: VMStatus::Running,
-            trust_level: TrustLevel::Warning,
-        }
     }
 }
