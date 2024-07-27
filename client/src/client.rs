@@ -57,15 +57,20 @@ impl AdminClient {
         }
     }
 
-    // FIXME: Should accept parameters, not server-side structure, current impl is blunt
-    pub async fn register_service(&self, entry: RegistryEntry) -> anyhow::Result<String> {
+    pub async fn register_service(
+        &self,
+        name: String,
+        ty: UnitType,
+        endpoint: EndpointEntry,
+        status: UnitStatus,
+    ) -> anyhow::Result<String> {
         // Convert everything into wire format
         let request = pb::admin::RegistryRequest {
-            name: entry.name,
-            parent: entry.parent,
-            r#type: entry.r#type.into(),
-            transport: Some(entry.endpoint.into()),
-            state: Some(entry.status.into()),
+            name: name,
+            parent: "".to_owned(),
+            r#type: ty.into(),
+            transport: Some(endpoint.into()),
+            state: Some(status.into()),
         };
         let response = self.connect_to().await?.register_service(request).await?;
         Ok(response.into_inner().cmd_status)

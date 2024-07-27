@@ -1,3 +1,4 @@
+use super::entry::*;
 use crate::pb::{self, *};
 use anyhow::{bail, Context};
 use async_stream::try_stream;

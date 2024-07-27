@@ -1,6 +1,7 @@
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
 
+use super::entry::RegistryEntry;
 use crate::types::*;
 use anyhow::{anyhow, bail};
 use tracing::info;

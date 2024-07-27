@@ -85,31 +85,27 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     };
 
     // Perfect example of bad designed code, admin.register_service(entry) should hide structure filling
-    let entry = RegistryEntry {
-        name: agent_service_name,
-        parent: String::from(""),
-        r#type: cli.r#type.try_into()?,
-        endpoint: EndpointEntry {
-            address: cli.addr,
-            port: cli.port,
-            protocol: String::from("bogus"),
-            tls_name: cli.name,
-        },
-        watch: true,
-        // We can't use just one name field like in "go" code
-        status: UnitStatus {
-            name: String::from("bogus"),
-            description: String::from("bogus"),
-            load_state: String::from("bogus"),
-            active_state: String::from("bogus"),
-            sub_state: String::from("bogus"),
-            path: String::from("bogus"),
-        },
+    let endpoint = EndpointEntry {
+        address: cli.addr,
+        port: cli.port,
+        protocol: String::from("bogus"),
+        tls_name: cli.name,
+    };
+    // We can't use just one name field like in "go" code
+    let status = UnitStatus {
+        name: String::from("bogus"),
+        description: String::from("bogus"),
+        load_state: String::from("bogus"),
+        active_state: String::from("bogus"),
+        sub_state: String::from("bogus"),
+        path: String::from("bogus"),
     };
 
     let admin_tls = tls.clone().map(|tls| (cli.admin_server_name, tls));
     let admin = AdminClient::new(cli.admin_server_addr, cli.admin_server_port, admin_tls);
-    admin.register_service(entry).await?;
+    admin
+        .register_service(agent_service_name, cli.r#type.try_into()?, endpoint, status)
+        .await?;
 
     let reflect = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
