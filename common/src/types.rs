@@ -147,6 +147,12 @@ pub struct UnitStatus {
     pub path: String, // FIXME: PathBuf?
 }
 
+impl UnitStatus {
+    pub fn is_running(&self) -> bool {
+        self.active_state == "active"
+    }
+}
+
 impl TryFrom<pb::UnitStatus> for UnitStatus {
     type Error = anyhow::Error;
     fn try_from(us: pb::UnitStatus) -> Result<Self, Self::Error> {

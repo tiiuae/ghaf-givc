@@ -404,22 +404,20 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<Empty>,
     ) -> Result<tonic::Response<Self::WatchStream>, tonic::Status> {
         escalate(request, |_| async {
-            let list = self.inner.query_list_internal().await?;
-            let head = if list.list.len() > 0 {
-                Some(list.list[0].clone())
-            } else {
-                None
-            };
+            let (initial_list, mut chan) = self.inner.registry.subscribe();
 
             let stream = try_stream! {
-                yield Event::into_initial(Vec::new());
+                yield Event::into_initial(initial_list);
 
                 loop {
-                     tokio::time::sleep(Duration::from_secs(5)).await;
-                     if let Some(item) = &head {
-                        yield WatchItem {
-                            status: Some(watch_item::Status::Updated(item.clone()))
-                        }
+                    match chan.recv().await {
+                        Ok(event) => {
+                            yield event.into()
+                        },
+                        Err(e) => {
+                            error!("Failed to receive subscription item from registry: {e}");
+                            break;
+                        },
                      }
                  }
             };

@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 use super::entry::RegistryEntry;
 use crate::types::*;
 use anyhow::{anyhow, bail};
-use tracing::info;
+use givc_common::query::{Event, QueryResult};
+use tokio::sync::broadcast;
+use tracing::{debug, info};
 
 #[derive(Clone, Debug)]
 pub struct Registry {
@@ -13,22 +15,29 @@ pub struct Registry {
     /// being performed while holding the mutex. Additionally, the critical
     /// sections are very small.
     map: Arc<Mutex<HashMap<String, RegistryEntry>>>,
+    pubsub: broadcast::Sender<Event>,
 }
 
 impl Registry {
     pub fn new() -> Self {
         Self {
             map: Arc::new(Mutex::new(HashMap::new())),
+            pubsub: broadcast::Sender::new(16),
         }
     }
 
     pub fn register(&self, entry: RegistryEntry) {
         let mut state = self.map.lock().unwrap();
         info!("Registering {:#?}", entry);
+        let event = Event::UnitRegistered(entry.clone().into());
         match state.insert(entry.name.clone(), entry) {
-            Some(old) => info!("Replaced old entry {:#?}", old),
+            Some(old) => {
+                info!("Replaced old entry {:#?}", old);
+                self.send_event(Event::UnitShutdown(old.into()))
+            }
             None => (),
         };
+        self.send_event(event)
     }
 
     pub fn deregister(&self, name: &String) -> anyhow::Result<()> {
@@ -36,6 +45,7 @@ impl Registry {
         match state.remove(name) {
             Some(entry) => {
                 info!("Deregistering {:#?}", entry);
+                self.send_event(Event::UnitShutdown(entry.into()));
                 Ok(())
             }
             None => bail!("Can't deregister entry {}, it not registered", name),
@@ -107,7 +117,8 @@ impl Registry {
     pub fn update_state(&self, name: &String, status: UnitStatus) -> anyhow::Result<()> {
         let mut state = self.map.lock().unwrap();
         if let Some(e) = state.get_mut(name) {
-            e.status = status
+            e.status = status;
+            self.send_event(Event::UnitStatusChanged(e.clone().into()))
         } else {
             bail!("Can't update state for {}, is not registered", name)
         };
@@ -119,6 +130,19 @@ impl Registry {
     pub fn contents(&self) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
         state.values().cloned().collect()
+    }
+
+    pub fn subscribe(&self) -> (Vec<QueryResult>, broadcast::Receiver<Event>) {
+        let rx = self.pubsub.subscribe();
+        let state = self.map.lock().unwrap();
+        let contents = state.values().cloned().map(|x| x.into()).collect();
+        (contents, rx)
+    }
+
+    fn send_event(&self, event: Event) {
+        if let Err(e) = self.pubsub.send(event) {
+            debug!("error sending event: {}", e)
+        }
     }
 }
 
