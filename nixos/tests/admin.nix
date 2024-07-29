@@ -59,6 +59,11 @@ in {
               port = "9000";
               protocol = "tcp"; # go version expect word "tcp" here, but it unused
             };
+            services = [
+              "microvm@admin-vm.service"
+              "poweroff.target"
+              "reboot.target"
+            ];
             tls = {
               enable = true;
               caCertPath = "${snakeoil}/ghaf-host.ghaf/ca-cert.pem";
