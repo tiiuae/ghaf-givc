@@ -35,7 +35,7 @@ pub fn no_auth_interceptor(mut req: Request<()>) -> Result<Request<()>, Status> 
     Ok(req)
 }
 
-pub fn check_host<R>(req: Request<R>, hostname: &str) -> Result<(), Status> {
+pub fn ensure_host<R>(req: Request<R>, hostname: &str) -> Result<(), Status> {
     let permit = req
         .extensions()
         .get::<SecurityInfo>()
@@ -47,6 +47,22 @@ pub fn check_host<R>(req: Request<R>, hostname: &str) -> Result<(), Status> {
         Err(Status::permission_denied(format!(
             "Permissions for {} not confirmed by certificate",
             hostname
+        )))
+    }
+}
+
+pub fn ensure_hosts<R>(req: Request<R>, hostnames: &Vec<&str>) -> Result<(), Status> {
+    let permit = req
+        .extensions()
+        .get::<SecurityInfo>()
+        .map(|si| hostnames.iter().any(|hostname| si.check_hostname(hostname)))
+        .unwrap_or(false);
+    if permit {
+        Ok(())
+    } else {
+        Err(Status::permission_denied(format!(
+            "Permissions for {} not confirmed by certificate",
+            hostnames.join(", ")
         )))
     }
 }

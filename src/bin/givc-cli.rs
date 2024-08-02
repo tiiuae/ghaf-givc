@@ -85,11 +85,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         None
     } else {
         Some((
-            cli.name,
+            cli.name.clone(),
             TlsConfig {
                 ca_cert_file_path: cli.cacert.expect("cacert is required"),
                 cert_file_path: cli.cert.expect("cert is required"),
                 key_file_path: cli.key.expect("key is required"),
+                tls_name: Some(cli.name),
             },
         ))
     };

@@ -53,6 +53,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             ca_cert_file_path: cli.ca_cert.ok_or(String::from("required"))?,
             cert_file_path: cli.host_cert.ok_or(String::from("required"))?,
             key_file_path: cli.host_key.ok_or(String::from("required"))?,
+            tls_name: None,
         };
         let tls_config = tls.server_config()?;
         builder = builder.tls_config(tls_config)?;

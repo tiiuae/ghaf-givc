@@ -102,7 +102,10 @@ impl AdminServiceImpl {
         };
         let endpoint = EndpointConfig {
             transport: transport.into(),
-            tls: self.tls_config.clone(),
+            tls: self.tls_config.clone().map(|mut tls| {
+                tls.tls_name = Some(entry.name.clone());
+                tls
+            }),
         };
 
         let client = SystemDClient::new(endpoint);
@@ -173,7 +176,7 @@ impl AdminServiceImpl {
     async fn monitor_routine(&self) -> anyhow::Result<()> {
         let watch_list = self.registry.watch_list();
         for entry in watch_list {
-            info!("Monitoring...{}", &entry.name);
+            info!("Monitoring {}...", &entry.name);
             match self.get_remote_status(&entry).await {
                 Err(err) => {
                     error!(
