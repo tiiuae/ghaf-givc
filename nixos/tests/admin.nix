@@ -11,82 +11,86 @@
     guivm = "192.168.101.3";
   };
 in {
-  perSystem.vmTests.tests.admin = {
-    module = {
-      nodes = {
-        adminvm = {
-          imports = [
-            self.nixosModules.admin
-          ];
+  perSystem = {self', ...}: {
+    vmTests.tests.admin = {
+      module = {
+        nodes = {
+          adminvm = {
+            imports = [
+              self.nixosModules.admin
+            ];
 
-          networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
-            {
-              address = addrs.adminvm;
-              prefixLength = 24;
-            }
-          ];
-          givc.admin = {
-            enable = true;
-            name = "admin-vm.ghaf";
-            addr = addrs.adminvm;
-            port = "9000";
-            tls = {
+            networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
+              {
+                address = addrs.adminvm;
+                prefixLength = 24;
+              }
+            ];
+            givc.admin = {
               enable = true;
-              caCertPath = "${snakeoil}/admin-vm.ghaf/ca-cert.pem";
-              certPath = "${snakeoil}/admin-vm.ghaf/admin-vm.ghaf-cert.pem";
-              keyPath = "${snakeoil}/admin-vm.ghaf/admin-vm.ghaf-key.pem";
-            };
-          };
-        };
-        hostvm = {
-          imports = [
-            self.nixosModules.host
-          ];
-          networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
-            {
-              address = addrs.host;
-              prefixLength = 24;
-            }
-          ];
-          givc.host = {
-            enable = true;
-            name = "host";
-            addr = addrs.host;
-            port = "9001";
-            admin = {
-              name = "admin";
+              name = "admin-vm.ghaf";
               addr = addrs.adminvm;
               port = "9000";
-              protocol = "tcp"; # go version expect word "tcp" here, but it unused
-            };
-            services = [
-              "microvm@admin-vm.service"
-              "poweroff.target"
-              "reboot.target"
-            ];
-            tls = {
-              enable = true;
-              caCertPath = "${snakeoil}/ghaf-host.ghaf/ca-cert.pem";
-              certPath = "${snakeoil}/ghaf-host.ghaf/ghaf-host.ghaf-cert.pem";
-              keyPath = "${snakeoil}/ghaf-host.ghaf/ghaf-host.ghaf-key.pem";
+              tls = {
+                enable = true;
+                caCertPath = "${snakeoil}/admin-vm.ghaf/ca-cert.pem";
+                certPath = "${snakeoil}/admin-vm.ghaf/admin-vm.ghaf-cert.pem";
+                keyPath = "${snakeoil}/admin-vm.ghaf/admin-vm.ghaf-key.pem";
+              };
             };
           };
+          hostvm = {
+            imports = [
+              self.nixosModules.host
+            ];
+            networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
+              {
+                address = addrs.host;
+                prefixLength = 24;
+              }
+            ];
+            givc.host = {
+              enable = true;
+              name = "host";
+              addr = addrs.host;
+              port = "9001";
+              admin = {
+                name = "admin";
+                addr = addrs.adminvm;
+                port = "9000";
+                protocol = "tcp"; # go version expect word "tcp" here, but it unused
+              };
+              services = [
+                "microvm@admin-vm.service"
+                "poweroff.target"
+                "reboot.target"
+              ];
+              tls = {
+                enable = true;
+                caCertPath = "${snakeoil}/ghaf-host.ghaf/ca-cert.pem";
+                certPath = "${snakeoil}/ghaf-host.ghaf/ghaf-host.ghaf-cert.pem";
+                keyPath = "${snakeoil}/ghaf-host.ghaf/ghaf-host.ghaf-key.pem";
+              };
+            };
+          };
+          /*
+          appvm = {
+            imports = [
+              self.nixosModules.appvm
+            ];
+            networking.interfaces.eth1.ipv4.addresses = pkgs.lib.mkOverride 0 [
+              { address = addrs.appvm; prefixLength = 24; }
+            ];
+          };
+          */
         };
-        /*
-        appvm = {
-          imports = [
-            self.nixosModules.appvm
-          ];
-          networking.interfaces.eth1.ipv4.addresses = pkgs.lib.mkOverride 0 [
-            { address = addrs.appvm; prefixLength = 24; }
-          ];
-        };
-        */
+        testScript = {nodes, ...}: ''
+          hostvm.wait_for_unit("givc-host.service")
+          adminvm.wait_for_unit("givc-admin.service")
+          print(hostvm.succeed("${self'.packages.givc-admin-rs}/bin/givc-cli --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} --name ${nodes.adminvm.config.givc.admin.name} query-list"))
+          print(hostvm.succeed("${self'.packages.givc-admin-rs}/bin/givc-cli --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} --name ${nodes.adminvm.config.givc.admin.name} test ensure ghaf-host.ghaf"))
+        '';
       };
-      testScript = _: ''
-        hostvm.wait_for_unit("givc-host.service")
-        adminvm.wait_for_unit("givc-admin.service")
-      '';
     };
   };
 }
