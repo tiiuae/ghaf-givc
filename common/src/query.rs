@@ -4,7 +4,7 @@ use crate::pb;
 use std::str::FromStr;
 use std::string::ToString;
 
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Context};
 use serde::Serialize;
 use strum::{Display, EnumString};
 
@@ -58,8 +58,10 @@ impl TryFrom<pb::QueryListItem> for QueryResult {
         Ok(QueryResult {
             name: item.name,
             description: item.description,
-            status: VMStatus::from_str(item.vm_status.as_str())?,
-            trust_level: TrustLevel::from_str(item.trust_level.as_str())?,
+            status: VMStatus::from_str(item.vm_status.as_str())
+                .context(format!("While parsing vm_status {}", &item.vm_status))?,
+            trust_level: TrustLevel::from_str(item.trust_level.as_str())
+                .context(format!("While parsing trust_level {}", &item.trust_level))?,
         })
     }
 }
