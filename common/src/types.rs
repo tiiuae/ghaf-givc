@@ -1,6 +1,7 @@
 // This module contain literal translations of types from internal/pkgs/types/types.go
 // Some of them would be rewritten, replaced, or even removed
 use crate::pb;
+use anyhow::{anyhow, bail};
 use std::convert::{Into, TryFrom};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,7 +29,7 @@ pub enum ServiceType {
 // Go version use u32 for UnitType, where we use more sophisticated types
 // Let provide decode with error handling (we can get value overflow from wire)
 impl TryFrom<u32> for UnitType {
-    type Error = String;
+    type Error = anyhow::Error;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         use ServiceType::*;
         use VmType::*;
@@ -93,7 +94,7 @@ impl TryFrom<u32> for UnitType {
                 vm: AppVM,
                 service: App,
             }),
-            n => Err(format!("Unknown u32 value for UnitType: {n}")),
+            n => bail!("Unknown u32 value for UnitType: {n}"),
         }
     }
 }
@@ -136,7 +137,7 @@ impl Into<u32> for UnitType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnitStatus {
     pub name: String,
     pub description: String,
@@ -146,8 +147,14 @@ pub struct UnitStatus {
     pub path: String, // FIXME: PathBuf?
 }
 
+impl UnitStatus {
+    pub fn is_running(&self) -> bool {
+        self.active_state == "active"
+    }
+}
+
 impl TryFrom<pb::UnitStatus> for UnitStatus {
-    type Error = String;
+    type Error = anyhow::Error;
     fn try_from(us: pb::UnitStatus) -> Result<Self, Self::Error> {
         Ok(Self {
             name: us.name,
@@ -160,22 +167,36 @@ impl TryFrom<pb::UnitStatus> for UnitStatus {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct EndpointEntry {
-    pub name: String,
-    pub protocol: String,
-    pub address: String,
-    pub port: String,
+impl Into<pb::UnitStatus> for UnitStatus {
+    fn into(self) -> pb::UnitStatus {
+        pb::UnitStatus {
+            name: self.name,
+            description: self.description,
+            load_state: self.load_state,
+            active_state: self.active_state,
+            path: self.path,
+        }
+    }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct EndpointEntry {
+    pub protocol: String, // Bogus, should we drop it?
+    pub address: String,
+    pub port: u16,
+    pub tls_name: String,
+}
+
+pub type TransportConfig = EndpointEntry;
+
 impl TryFrom<pb::TransportConfig> for EndpointEntry {
-    type Error = String;
+    type Error = anyhow::Error;
     fn try_from(tc: pb::TransportConfig) -> Result<Self, Self::Error> {
         Ok(Self {
-            name: "stub".into(),
             protocol: tc.protocol,
             address: tc.address,
-            port: tc.port,
+            port: tc.port.parse()?,
+            tls_name: tc.name,
         })
     }
 }
@@ -185,41 +206,8 @@ impl Into<pb::TransportConfig> for EndpointEntry {
         pb::TransportConfig {
             protocol: self.protocol,
             address: self.address,
-            port: self.port,
-            name: self.name,
+            port: self.port.to_string(),
+            name: self.tls_name,
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RegistryEntry {
-    pub name: String,
-    pub parent: String,
-    pub r#type: UnitType,
-    pub status: UnitStatus,
-    pub endpoint: EndpointEntry,
-    pub watch: bool,
-}
-
-impl TryFrom<pb::RegistryRequest> for RegistryEntry {
-    type Error = String;
-    fn try_from(req: pb::RegistryRequest) -> Result<Self, Self::Error> {
-        let ty = UnitType::try_from(req.r#type)?;
-        let status = req
-            .state
-            .ok_or("status missing".into())
-            .and_then(UnitStatus::try_from)?;
-        let endpoint = req
-            .transport
-            .ok_or("endpoint missing".into())
-            .and_then(EndpointEntry::try_from)?;
-        Ok(Self {
-            name: req.name,
-            parent: req.parent,
-            status: status,
-            watch: false, // No `watch` field in request
-            r#type: ty,
-            endpoint: endpoint,
-        })
     }
 }

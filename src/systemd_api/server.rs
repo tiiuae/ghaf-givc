@@ -1,11 +1,17 @@
-use crate::pb::{self, *};
+use crate::pb;
 use std::pin::Pin;
-use tonic::{Code, Request, Response, Status};
+use tonic::Status;
 
 pub use pb::systemd::unit_control_service_server::UnitControlServiceServer;
 
 #[derive(Debug, Clone)]
-struct SystemdService {}
+pub struct SystemdService {}
+
+impl SystemdService {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
 
 type Stream<T> =
     Pin<Box<dyn tokio_stream::Stream<Item = std::result::Result<T, Status>> + Send + 'static>>;
@@ -14,37 +20,37 @@ type Stream<T> =
 impl pb::systemd::unit_control_service_server::UnitControlService for SystemdService {
     async fn get_unit_status(
         &self,
-        request: tonic::Request<pb::systemd::UnitRequest>,
+        _request: tonic::Request<pb::systemd::UnitRequest>,
     ) -> std::result::Result<tonic::Response<pb::systemd::UnitStatusResponse>, tonic::Status> {
         unimplemented!()
     }
     async fn start_unit(
         &self,
-        request: tonic::Request<pb::systemd::UnitRequest>,
+        _request: tonic::Request<pb::systemd::UnitRequest>,
     ) -> std::result::Result<tonic::Response<pb::systemd::UnitResponse>, tonic::Status> {
         unimplemented!()
     }
     async fn stop_unit(
         &self,
-        request: tonic::Request<pb::systemd::UnitRequest>,
+        _request: tonic::Request<pb::systemd::UnitRequest>,
     ) -> std::result::Result<tonic::Response<pb::systemd::UnitResponse>, tonic::Status> {
         unimplemented!()
     }
     async fn kill_unit(
         &self,
-        request: tonic::Request<pb::systemd::UnitRequest>,
+        _request: tonic::Request<pb::systemd::UnitRequest>,
     ) -> std::result::Result<tonic::Response<pb::systemd::UnitResponse>, tonic::Status> {
         unimplemented!()
     }
     async fn freeze_unit(
         &self,
-        request: tonic::Request<pb::systemd::UnitRequest>,
+        _request: tonic::Request<pb::systemd::UnitRequest>,
     ) -> std::result::Result<tonic::Response<pb::systemd::UnitResponse>, tonic::Status> {
         unimplemented!()
     }
     async fn unfreeze_unit(
         &self,
-        request: tonic::Request<pb::systemd::UnitRequest>,
+        _request: tonic::Request<pb::systemd::UnitRequest>,
     ) -> std::result::Result<tonic::Response<pb::systemd::UnitResponse>, tonic::Status> {
         unimplemented!()
     }
@@ -52,7 +58,7 @@ impl pb::systemd::unit_control_service_server::UnitControlService for SystemdSer
     type MonitorUnitStream = Stream<pb::systemd::UnitResourceResponse>;
     async fn monitor_unit(
         &self,
-        request: tonic::Request<pb::systemd::UnitResourceRequest>,
+        _request: tonic::Request<pb::systemd::UnitResourceRequest>,
     ) -> std::result::Result<tonic::Response<Self::MonitorUnitStream>, tonic::Status> {
         unimplemented!()
     }
@@ -65,7 +71,7 @@ impl pb::systemd::unit_control_service_server::UnitControlService for SystemdSer
     //         }
     async fn start_application(
         &self,
-        request: tonic::Request<pb::systemd::UnitRequest>,
+        _request: tonic::Request<pb::systemd::UnitRequest>,
     ) -> std::result::Result<tonic::Response<pb::systemd::UnitResponse>, tonic::Status> {
         unimplemented!()
     }

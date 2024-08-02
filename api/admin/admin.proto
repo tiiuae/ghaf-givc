@@ -43,6 +43,26 @@ message ApplicationResponse {
 message Empty {
 }
 
+message QueryListItem {
+    string Name = 1;
+    string Description = 2;
+    string VmStatus = 3;
+    string TrustLevel = 4;
+}
+
+message QueryListResponse {
+    repeated QueryListItem List = 1;
+}
+
+message WatchItem {
+    oneof Status {
+        QueryListResponse Initial = 1;
+        QueryListItem Added = 2;
+        QueryListItem Updated = 3;
+        QueryListItem Removed = 4;
+    }
+}
+
 service AdminService {
     rpc RegisterService(RegistryRequest) returns (RegistryResponse) {}
     rpc StartApplication(ApplicationRequest) returns (ApplicationResponse) {}
@@ -51,4 +71,7 @@ service AdminService {
     rpc StopApplication(ApplicationRequest) returns (ApplicationResponse) {}
     rpc Poweroff(Empty) returns (Empty) {}
     rpc Reboot(Empty) returns (Empty) {}
+
+    rpc QueryList(Empty) returns (QueryListResponse) {}
+    rpc Watch(Empty) returns (stream WatchItem) {}  
 }

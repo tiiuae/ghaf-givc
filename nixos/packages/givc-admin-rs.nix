@@ -33,6 +33,10 @@
       # Additional environment variables or build phases/hooks can be set
       # here *without* rebuilding all dependency crates
       # MY_CUSTOM_VAR = "some value";
+      postUnpack = ''
+        # Avoid issue with source filtering, put symlink back into source tree
+        ln -sf ../api $sourceRoot/common/api
+      '';
     });
 in
   givc

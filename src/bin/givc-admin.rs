@@ -1,9 +1,11 @@
 use clap::Parser;
 use givc::admin;
 use givc::endpoint::TlsConfig;
+use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tonic::transport::Server;
+use tracing::info;
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "givc-admin")]
@@ -11,7 +13,7 @@ use tonic::transport::Server;
 struct Cli {
     #[arg(long, env = "ADDR", default_missing_value = "127.0.0.1")]
     addr: String,
-    #[arg(long, env = "PORT", default_missing_value = "9000")]
+    #[arg(long, env = "PORT", default_missing_value = "9000", value_parser = clap::value_parser!(u16).range(1..))]
     port: u16,
 
     #[arg(long, env = "TLS", default_missing_value = "false")]
@@ -35,15 +37,12 @@ struct Cli {
     services: Option<Vec<String>>,
 }
 
-// FIXME: should be in src/lib.rs: mod pb {}, but doesn't work
-mod kludge {
-    pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("admin_descriptor");
-}
-
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    givc::trace_init();
+
     let cli = Cli::parse();
-    println!("CLI is {:#?}", cli);
+    info!("CLI is {:#?}", cli);
 
     let addr = SocketAddr::new(cli.addr.parse().unwrap(), cli.port);
 
@@ -53,7 +52,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tls = TlsConfig {
             ca_cert_file_path: cli.ca_cert.ok_or(String::from("required"))?,
             cert_file_path: cli.host_cert.ok_or(String::from("required"))?,
-            key_file_path: cli.host_key,
+            key_file_path: cli.host_key.ok_or(String::from("required"))?,
+            tls_name: None,
         };
         let tls_config = tls.server_config()?;
         builder = builder.tls_config(tls_config)?;
@@ -63,7 +63,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     };
 
     let reflect = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(kludge::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(ADMIN_DESCRIPTOR)
         .build()
         .unwrap();
 
