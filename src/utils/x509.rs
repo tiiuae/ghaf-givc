@@ -40,6 +40,14 @@ impl SecurityInfo {
             true
         }
     }
+
+    pub fn hostname(self) -> Option<String> {
+        if self.dns_names.len() > 0 {
+            Some(self.dns_names[0].clone())
+        } else {
+            None
+        }
+    }
 }
 
 impl TryFrom<&[u8]> for SecurityInfo {
