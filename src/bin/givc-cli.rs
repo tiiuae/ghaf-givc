@@ -72,6 +72,34 @@ enum Commands {
         #[arg(long)]
         limit: Option<u32>,
     },
+    Test {
+        #[command(subcommand)]
+        test: Test,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum Test {
+    Ensure {
+        #[arg(long, default_missing_value = "1")]
+        retry: i32,
+        service: String,
+    },
+}
+
+async fn test_subcommands(test: Test, admin: AdminClient) -> anyhow::Result<()> {
+    match test {
+        Test::Ensure { service, retry } => {
+            for _ in 0..retry {
+                let reply = admin.query_list().await?;
+                if reply.iter().any(|r| r.name == service) {
+                    return Ok(());
+                }
+                sleep(time::Duration::from_secs(1)).await
+            }
+            anyhow::bail!("test failed '{service}' not registered")
+        }
+    }
 }
 
 #[tokio::main]
@@ -97,6 +125,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let admin = AdminClient::new(cli.addr, cli.port, tls);
 
     match cli.command {
+        Commands::Test { test } => test_subcommands(test, admin).await?,
         Commands::Start { app } => admin.start(app).await?,
         Commands::Stop { app } => admin.stop(app).await?,
 
