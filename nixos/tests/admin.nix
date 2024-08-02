@@ -27,7 +27,7 @@ in {
           ];
           givc.admin = {
             enable = true;
-            name = "admin";
+            name = "admin-vm.ghaf";
             addr = addrs.adminvm;
             port = "9000";
             tls = {
