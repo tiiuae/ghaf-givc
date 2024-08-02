@@ -17,6 +17,7 @@ use crate::types::*;
 use crate::utils::naming::*;
 use crate::utils::tonic::*;
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
+use givc_common::query::*;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 
@@ -271,17 +272,6 @@ impl AdminServiceImpl {
         self.registry.register(app_entry);
         Ok(())
     }
-
-    pub async fn query_list_internal(&self) -> anyhow::Result<QueryListResponse> {
-        Ok(QueryListResponse {
-            list: vec![QueryListItem {
-                name: String::from("bogus"),
-                description: String::from("descr"),
-                vm_status: String::from("dead"),
-                trust_level: String::from("crap"),
-            }],
-        })
-    }
 }
 
 fn app_success() -> anyhow::Result<ApplicationResponse> {
@@ -395,8 +385,17 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<Empty>,
     ) -> Result<tonic::Response<QueryListResponse>, tonic::Status> {
         escalate(request, |_| async {
-            let list = self.inner.query_list_internal().await?;
-            Ok(list)
+            // Kludge
+            let list: Vec<QueryResult> = self
+                .inner
+                .registry
+                .contents()
+                .into_iter()
+                .map(|item| item.into())
+                .collect();
+            Ok(QueryListResponse {
+                list: list.into_iter().map(|item| item.into()).collect(), // Kludge
+            })
         })
         .await
     }
