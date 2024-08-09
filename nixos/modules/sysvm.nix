@@ -170,6 +170,7 @@ in {
         Restart = "always";
         RestartSec = 1;
       };
+      path = [pkgs.dbus];
       environment =
         {
           "NAME" = "${cfg.name}";

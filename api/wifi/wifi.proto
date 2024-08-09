@@ -4,6 +4,9 @@ syntax = "proto3";
 option go_package = "./wifi";
 package wifimanager;
 
+message EmptyRequest {
+}
+
 message WifiNetworkRequest {
     string NetworkName = 1;
 }
@@ -11,13 +14,18 @@ message WifiNetworkRequest {
 message WifiConnectionRequest {
     string SSID = 1;
     string Password = 2;
+    string Settings = 3;
+}
+
+message AccessPoint {
+    bool Connection = 1;
+    string SSID = 2;
+    uint32 Signal = 3;
+    string Security = 4;
 }
 
 message WifiNetworkResponse {
-    repeated string InUse = 1;
-    repeated string SSID = 2;
-    repeated string Signal = 3;
-    repeated string Security = 4;
+    repeated AccessPoint networks = 1;
 }
 
 message WifiConnectionResponse {
@@ -26,7 +34,9 @@ message WifiConnectionResponse {
 
 service WifiService {
     rpc ListNetwork(WifiNetworkRequest) returns (WifiNetworkResponse) {}
+    rpc GetActiveConnection(EmptyRequest) returns (AccessPoint) {}
     rpc ConnectNetwork(WifiConnectionRequest) returns (WifiConnectionResponse) {}
-    rpc TurnOn(WifiNetworkRequest) returns (WifiConnectionResponse) {}
-    rpc TurnOff(WifiNetworkRequest) returns (WifiConnectionResponse) {}
+    rpc DisconnectNetwork(EmptyRequest) returns (WifiConnectionResponse) {}
+    rpc TurnOn(EmptyRequest) returns (WifiConnectionResponse) {}
+    rpc TurnOff(EmptyRequest) returns (WifiConnectionResponse) {}
 }
