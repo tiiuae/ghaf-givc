@@ -7,7 +7,7 @@
 pkgs.buildGoModule {
   pname = "givc-agent";
   version = "0.0.1";
-  src = ../../.;
+  inherit src;
   vendorHash = "sha256-Ywb7Ea8rrkMSaZksnb6lxmYxWhc0IAiXzClQ0vPfm70=";
   subPackages = [
     "api/admin"

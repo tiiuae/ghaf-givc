@@ -56,9 +56,14 @@
       }: {
         # Packages
         packages = let
-          src = lib.cleanSourceWith {
-            src = ./.;
-            filter = path: _type: (path != "go.mod") || (null != builtins.match ".*proto$" path) || (null != builtins.match ".*proto$" path);
+          src = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./go.mod
+              ./go.sum
+              ./api
+              ./internal
+            ];
           };
         in {
           givc-app = pkgs.callPackage ./nixos/packages/givc-app.nix {inherit src;};
