@@ -84,11 +84,16 @@ in {
           };
           */
         };
-        testScript = {nodes, ...}: ''
+        testScript = {nodes, ...}: let
+          cli = "${self'.packages.givc-admin-rs}/bin/givc-cli";
+          expected = "givc-ghaf-host.ghaf.service"; # Name which we _expect_ to see registered in admin server's registry
+          # FIXME: why it so bizzare? (derived from name in cert)
+        in ''
           hostvm.wait_for_unit("givc-host.service")
           adminvm.wait_for_unit("givc-admin.service")
-          print(hostvm.succeed("${self'.packages.givc-admin-rs}/bin/givc-cli --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} --name ${nodes.adminvm.config.givc.admin.name} query-list"))
-          print(hostvm.succeed("${self'.packages.givc-admin-rs}/bin/givc-cli --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} --name ${nodes.adminvm.config.givc.admin.name} test ensure ghaf-host.ghaf"))
+
+          # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
+          print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} --name ${nodes.adminvm.config.givc.admin.name} test ensure --retry 60 ${expected}"))
         '';
       };
     };
