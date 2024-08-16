@@ -10,12 +10,14 @@ import (
 	wifi_api "givc/api/wifi"
 
 	"github.com/godbus/dbus/v5"
+	log "github.com/sirupsen/logrus"
 )
 
 type WifiController struct {
-	conn        *dbus.Conn
-	wifiDevices []dbus.BusObject
-	nm          dbus.BusObject
+	conn            *dbus.Conn
+	wifiDevices     []dbus.BusObject
+	wifiDevicePaths []dbus.ObjectPath
+	nm              dbus.BusObject
 }
 
 type WifiNetworkResponse struct {
@@ -78,7 +80,6 @@ const (
 func NewController() (*WifiController, error) {
 	var err error
 	var c WifiController
-	var devicePaths []dbus.ObjectPath
 
 	c.conn, err = dbus.ConnectSystemBus()
 	if err != nil {
@@ -86,15 +87,24 @@ func NewController() (*WifiController, error) {
 	}
 
 	c.nm = c.conn.Object("org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager")
-	err = c.nm.Call("org.freedesktop.NetworkManager.GetDevices", 0).Store(&devicePaths)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get devices: %s", err)
-	}
 
-	c.wifiDevices, err = c.GetWifiDevices(devicePaths)
+	c.wifiDevices, err = c.GetWifiDevices()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wifi devices: %s", err)
 	}
+
+	if err = c.conn.AddMatchSignal(
+		dbus.WithMatchObjectPath("/org/freedesktop/NetworkManager"),
+		dbus.WithMatchInterface("org.freedesktop.NetworkManager"),
+		dbus.WithMatchSender("org.freedesktop.NetworkManager"),
+	); err != nil {
+		return nil, fmt.Errorf("failed to set device signal handler: %s", err)
+	}
+
+	// Update the wifi device when it is enabled lately
+	channel := make(chan *dbus.Signal, 10)
+	c.conn.Signal(channel)
+	go c.signal_handle(channel)
 
 	return &c, nil
 }
@@ -343,9 +353,17 @@ func (c *WifiController) WifiRadioSwitch(ctx context.Context, TurnOn bool) (stri
 	return fmt.Sprintf("Wireless %s successfully", status), nil
 }
 
-func (c *WifiController) GetWifiDevices(devicePaths []dbus.ObjectPath) ([]dbus.BusObject, error) {
+func (c *WifiController) GetWifiDevices() ([]dbus.BusObject, error) {
 	var wifiDevices []dbus.BusObject
 	var deviceType uint32
+	var devicePaths []dbus.ObjectPath
+
+	err := c.nm.Call("org.freedesktop.NetworkManager.GetDevices", 0).Store(&devicePaths)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get devices: %s", err)
+	}
+
+	c.wifiDevicePaths = devicePaths
 
 	for _, devicePath := range devicePaths {
 		device := c.conn.Object("org.freedesktop.NetworkManager", devicePath)
@@ -364,6 +382,21 @@ func (c *WifiController) GetWifiDevices(devicePaths []dbus.ObjectPath) ([]dbus.B
 		}
 	}
 	return wifiDevices, nil
+}
+
+func (c *WifiController) signal_handle(channel chan *dbus.Signal) {
+	var err error
+
+	for signal := range channel {
+		if signal.Name == "org.freedesktop.NetworkManager.DeviceAdded" {
+			c.wifiDevices, err = c.GetWifiDevices()
+			if err != nil {
+				log.Warnf("[WifiController] failed to get wifi devices: %s", err)
+				continue
+			}
+			log.Infof("[WifiController] wifi devices updated!")
+		}
+	}
 }
 
 func GetAPSecurity(ap AP) string {
