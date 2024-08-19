@@ -158,7 +158,7 @@ in {
       }
     ];
 
-    systemd.services."givc-sysvm" = {
+    systemd.services."givc-${cfg.name}" = {
       description = "GIVC remote service manager for system VMs.";
       enable = true;
       after = ["network-online.target"];

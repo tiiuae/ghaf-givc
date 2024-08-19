@@ -4,7 +4,7 @@
   inputs,
   ...
 }: let
-  tls = true;
+  tls = false;
   snakeoil = ./snakeoil;
   addrs = {
     host = "192.168.101.10";
@@ -71,10 +71,17 @@ in {
               };
               services = [
                 "microvm@admin-vm.service"
+                "microvm@foot-vm.service"
                 "poweroff.target"
                 "reboot.target"
               ];
               tls = mkTls "ghaf-host";
+            };
+            systemd.services."microvm@foot-vm" = {
+              script = ''
+                # Do nothing script, simulating microvm service
+                while true; do sleep 10; done
+              '';
             };
           };
           guivm = {pkgs, ...}: let
@@ -191,7 +198,7 @@ in {
             services.openssh.enable = true;
             givc.appvm = {
               enable = true;
-              name = "appvm";
+              name = "foot-vm";
               addr = addrs.appvm;
               admin = adminSettings;
               tls = mkTls "chromium-vm";
@@ -256,15 +263,21 @@ in {
               retry(func)
           # End of borrowed code
 
+          import time
           with subtest("setup services"):
-              hostvm.wait_for_unit("givc-host.service")
+              hostvm.wait_for_unit("givc-ghaf-host.service")
               adminvm.wait_for_unit("givc-admin.service")
               guivm.wait_for_unit("multi-user.target")
               appvm.wait_for_unit("multi-user.target")
-              guivm.wait_for_unit("givc-sysvm")
+              guivm.wait_for_unit("givc-gui-vm")
 
+              time.sleep(1)
               # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
-              print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} test ensure --retry 60 ${expected}"))
+              print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${
+            if tls
+            then ""
+            else "--notls"
+          } --name ${nodes.adminvm.config.givc.admin.name} test ensure --retry 60 ${expected}"))
 
           with subtest("setup gui vm"):
               # Ensure that sway in guiVM finished startup
@@ -275,7 +288,13 @@ in {
               swaymsg("exec ssh ${addrs.appvm} true && touch /tmp/ssh-ok")
               guivm.wait_for_file("/tmp/ssh-ok")
 
-          swaymsg("exec run-waypipe foot")
+          #swaymsg("exec run-waypipe foot")
+          print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${
+            if tls
+            then ""
+            else "--notls"
+          } --name ${nodes.adminvm.config.givc.admin.name} start foot"))
+          time.sleep(10) # Give few seconds to application to spin up
           wait_for_window("ghaf@appvm")
         '';
       };

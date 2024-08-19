@@ -76,8 +76,11 @@ impl AdminClient {
         Ok(response.into_inner().cmd_status)
     }
 
-    pub async fn start(&self, _app: String) -> anyhow::Result<()> {
-        todo!();
+    pub async fn start(&self, app: String) -> anyhow::Result<()> {
+        let request = pb::admin::ApplicationRequest { app_name: app };
+        let response = self.connect_to().await?.start_application(request).await?;
+        // Ok(response.into_inner().cmd_status)
+        Ok(())
     }
     pub async fn stop(&self, _app: String) -> anyhow::Result<()> {
         todo!();
