@@ -51,15 +51,15 @@ pkgs.writeShellScriptBin "givc-gen-certs" ''
     chmod -R 400 $ca_dir
   fi
   # Generate keys/certificates
-  gen_cert "ghaf-host.ghaf" "192.168.101.2" "$acl_prefix:host,acl_prefix:agent"
-  gen_cert "admin-vm.ghaf" "192.168.101.10"
-  gen_cert "net-vm.ghaf" "192.168.101.1"
-  gen_cert "gui-vm.ghaf" "192.168.101.3"
-  gen_cert "ids-vm.ghaf" "192.168.101.4"
-  gen_cert "audio-vm.ghaf" "192.168.101.5"
-  gen_cert "element-vm.ghaf" "192.168.100.253"
-  gen_cert "chromium-vm.ghaf"
-  gen_cert "gala-vm.ghaf"
-  gen_cert "zathura-vm.ghaf"
-  gen_cert "appflowy-vm.ghaf"
+  gen_cert "ghaf-host" "192.168.101.2" "$acl_prefix:host,acl_prefix:agent"
+  gen_cert "admin-vm" "192.168.101.10"
+  gen_cert "net-vm" "192.168.101.1"
+  gen_cert "gui-vm" "192.168.101.3"
+  gen_cert "ids-vm" "192.168.101.4"
+  gen_cert "audio-vm" "192.168.101.5"
+  gen_cert "element-vm" "192.168.100.253"
+  gen_cert "chromium-vm"
+  gen_cert "gala-vm"
+  gen_cert "zathura-vm"
+  gen_cert "appflowy-vm"
 ''

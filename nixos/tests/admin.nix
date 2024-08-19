@@ -4,6 +4,7 @@
   inputs,
   ...
 }: let
+  tls = true;
   snakeoil = ./snakeoil;
   addrs = {
     host = "192.168.101.10";
@@ -12,13 +13,13 @@
     guivm = "192.168.101.3";
   };
   adminSettings = {
-    name = "admin-vm.ghaf";
+    name = "admin-vm";
     addr = addrs.adminvm;
     port = "9000";
     protocol = "tcp"; # go version expect word "tcp" here, but it unused
   };
   mkTls = name: {
-    enable = true;
+    enable = tls;
     caCertPath = "${snakeoil}/${name}/ca-cert.pem";
     certPath = "${snakeoil}/${name}/${name}-cert.pem";
     keyPath = "${snakeoil}/${name}/${name}-key.pem";
@@ -41,10 +42,10 @@ in {
             ];
             givc.admin = {
               enable = true;
-              name = "admin-vm.ghaf";
+              name = "admin-vm";
               addr = addrs.adminvm;
               port = "9000";
-              tls = mkTls "admin-vm.ghaf";
+              tls = mkTls "admin-vm";
             };
           };
           hostvm = {
@@ -59,7 +60,7 @@ in {
             ];
             givc.host = {
               enable = true;
-              name = "host";
+              name = "ghaf-host";
               addr = addrs.host;
               port = "9001";
               admin = {
@@ -73,12 +74,7 @@ in {
                 "poweroff.target"
                 "reboot.target"
               ];
-              tls = {
-                enable = true;
-                caCertPath = "${snakeoil}/ghaf-host.ghaf/ca-cert.pem";
-                certPath = "${snakeoil}/ghaf-host.ghaf/ghaf-host.ghaf-cert.pem";
-                keyPath = "${snakeoil}/ghaf-host.ghaf/ghaf-host.ghaf-key.pem";
-              };
+              tls = mkTls "ghaf-host";
             };
           };
           guivm = {pkgs, ...}: let
@@ -151,7 +147,9 @@ in {
             givc.sysvm = {
               enable = true;
               admin = adminSettings;
-              tls = mkTls "gui-vm.ghaf";
+              addr = addrs.guivm;
+              name = "gui-vm";
+              tls = mkTls "gui-vm";
               services = [
                 "poweroff.target"
                 "reboot.target"
@@ -196,7 +194,7 @@ in {
               name = "appvm";
               addr = addrs.appvm;
               admin = adminSettings;
-              tls = mkTls "chromium-vm.ghaf";
+              tls = mkTls "chromium-vm";
               applications = lib.mkForce (builtins.toJSON {
                 "foot" = "run-waypipe foot";
               });
@@ -205,7 +203,7 @@ in {
         };
         testScript = {nodes, ...}: let
           cli = "${self'.packages.givc-admin-rs}/bin/givc-cli";
-          expected = "givc-ghaf-host.ghaf.service"; # Name which we _expect_ to see registered in admin server's registry
+          expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
           # FIXME: why it so bizzare? (derived from name in cert)
         in ''
           # Code below borrowed from $nixpkgs/nixos/tests/sway.nix
@@ -266,7 +264,7 @@ in {
               guivm.wait_for_unit("givc-sysvm")
 
               # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
-              print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} --name ${nodes.adminvm.config.givc.admin.name} test ensure --retry 60 ${expected}"))
+              print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} test ensure --retry 60 ${expected}"))
 
           with subtest("setup gui vm"):
               # Ensure that sway in guiVM finished startup
