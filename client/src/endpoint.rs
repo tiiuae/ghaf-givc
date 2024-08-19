@@ -61,7 +61,7 @@ fn transport_config_to_url(tc: TransportConfig, with_tls: bool) -> String {
 impl EndpointConfig {
     pub async fn connect(&self) -> anyhow::Result<Channel> {
         let url = transport_config_to_url(self.transport.clone(), self.tls.is_some());
-        info!("Connecting to {url}");
+        info!("Connecting to {url}, TLS name {:?}", &self.tls);
         let mut endpoint = Endpoint::try_from(url)?
             .timeout(Duration::from_secs(5))
             .concurrency_limit(30);

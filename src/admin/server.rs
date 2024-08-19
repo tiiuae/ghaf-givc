@@ -101,10 +101,11 @@ impl AdminServiceImpl {
         } else {
             entry.endpoint.clone()
         };
+        let tls_name = transport.tls_name.clone();
         let endpoint = EndpointConfig {
             transport: transport.into(),
             tls: self.tls_config.clone().map(|mut tls| {
-                tls.tls_name = Some(entry.name.clone());
+                tls.tls_name = Some(tls_name);
                 tls
             }),
         };
