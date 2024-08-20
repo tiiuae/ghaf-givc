@@ -65,7 +65,7 @@
     };
     pre-commit.settings = {
       hooks.treefmt.enable = true;
-      settings.treefmt.package = config.treefmt.build.wrapper;
+      hooks.treefmt.package = config.treefmt.build.wrapper;
     };
   };
 }

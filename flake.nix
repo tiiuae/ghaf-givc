@@ -50,15 +50,19 @@
 
       perSystem = {
         pkgs,
-        self',
         lib,
         ...
       }: {
         # Packages
         packages = let
-          src = lib.cleanSourceWith {
-            src = ./.;
-            filter = path: _type: (path != "go.mod") || (null != builtins.match ".*proto$" path) || (null != builtins.match ".*proto$" path);
+          src = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./go.mod
+              ./go.sum
+              ./api
+              ./internal
+            ];
           };
         in {
           givc-app = pkgs.callPackage ./nixos/packages/givc-app.nix {inherit src;};
@@ -67,14 +71,6 @@
           givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix {
             inherit crane;
             src = ./.;
-          };
-          givc-gen-certs = pkgs.callPackage ./nixos/packages/givc-gen-certs.nix {};
-        };
-
-        apps = {
-          givc-gen-certs = {
-            type = "app";
-            program = "${self'.packages.givc-gen-certs}/bin/givc-gen-certs";
           };
         };
       };
