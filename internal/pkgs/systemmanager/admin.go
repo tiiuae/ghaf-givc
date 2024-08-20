@@ -111,7 +111,11 @@ func (svc *AdminService) RegisterService(req *types.RegistryEntry) error {
 	return nil
 }
 
-// for now this assumes that 'name' is started in microvm@'name'-vm.service
+/*
+Previously assumed that 'name' is started in microvm@'name'-vm.service
+Quickfix allows for 'application:vm-name' to be passed as 'name'.
+@TODO: Properly address this in rust admin service implementation
+*/
 func (svc *AdminService) StartApplication(name string) (string, error) {
 
 	cmdFailure := "Command failed."
@@ -126,7 +130,13 @@ func (svc *AdminService) StartApplication(name string) (string, error) {
 	}
 
 	// Check registry for applications' systemd agent
-	systemdAgent := "givc-" + name + "-vm.service"
+	vmName := name + "-vm"
+	if strings.Contains(name, ":") {
+		appString := strings.Split(name, ":")
+		name = appString[0]
+		vmName = appString[1]
+	}
+	systemdAgent := "givc-" + vmName + ".service"
 	regEntry := svc.Registry.GetEntryByName(systemdAgent)
 
 	// If agent is not found, start VM
@@ -194,7 +204,13 @@ func (svc *AdminService) PauseApplication(name string) (string, error) {
 	}
 
 	// Check registry for applications' systemd agent
-	systemdAgent := "givc-" + name + "-vm.service"
+	vmName := name
+	if strings.Contains(name, ":") {
+		appString := strings.Split(name, ":")
+		name = appString[0]
+		vmName = appString[1]
+	}
+	systemdAgent := "givc-" + vmName + ".service"
 	regEntry := svc.Registry.GetEntryByName(systemdAgent)
 
 	// If agent is not found, return error
@@ -209,7 +225,7 @@ func (svc *AdminService) PauseApplication(name string) (string, error) {
 	}
 
 	// Determine if multiple services to pause
-	if !strings.Contains(name, name+"@") {
+	if !strings.Contains(name, "@") {
 		entries := svc.Registry.GetEntriesByName(name)
 		for _, entry := range entries {
 			// Pause application
@@ -242,7 +258,13 @@ func (svc *AdminService) ResumeApplication(name string) (string, error) {
 	}
 
 	// Check registry for applications' systemd agent
-	systemdAgent := "givc-" + name + "-vm.service"
+	vmName := name
+	if strings.Contains(name, ":") {
+		appString := strings.Split(name, ":")
+		name = appString[0]
+		vmName = appString[1]
+	}
+	systemdAgent := "givc-" + vmName + ".service"
 	regEntry := svc.Registry.GetEntryByName(systemdAgent)
 
 	// If agent is not found, return error
@@ -257,7 +279,7 @@ func (svc *AdminService) ResumeApplication(name string) (string, error) {
 	}
 
 	// Determine if multiple services to resume
-	if !strings.Contains(name, name+"@") {
+	if !strings.Contains(name, "@") {
 		entries := svc.Registry.GetEntriesByName(name)
 		for _, entry := range entries {
 			// Resume application
@@ -290,7 +312,13 @@ func (svc *AdminService) StopApplication(name string) (string, error) {
 	}
 
 	// Check registry for applications' systemd agent
-	systemdAgent := "givc-" + name + "-vm.service"
+	vmName := name
+	if strings.Contains(name, ":") {
+		appString := strings.Split(name, ":")
+		name = appString[0]
+		vmName = appString[1]
+	}
+	systemdAgent := "givc-" + vmName + ".service"
 	regEntry := svc.Registry.GetEntryByName(systemdAgent)
 
 	// If agent is not found, return error
@@ -305,7 +333,7 @@ func (svc *AdminService) StopApplication(name string) (string, error) {
 	}
 
 	// Determine if multiple services to stop
-	if !strings.Contains(name, name+"@") {
+	if !strings.Contains(name, "@") {
 		entries := svc.Registry.GetEntriesByName(name)
 		for _, entry := range entries {
 			// Stop application

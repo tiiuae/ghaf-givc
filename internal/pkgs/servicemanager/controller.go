@@ -342,8 +342,6 @@ func (c *SystemdController) StartApplication(ctx context.Context, serviceName st
 	if !ok {
 		return cmdFailure, fmt.Errorf("application unknown")
 	}
-	appCmd = strings.ReplaceAll(appCmd, "run-waypipe", "/run/current-system/sw/bin/run-waypipe")
-	appCmd = strings.ReplaceAll(appCmd, appName, "/run/current-system/sw/bin/"+appName)
 	cmd := strings.Split(appCmd, " ")
 	if len(cmd) == 0 {
 		return cmdFailure, fmt.Errorf("incorrect application string format")
