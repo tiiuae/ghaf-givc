@@ -1,5 +1,5 @@
 use std::convert::TryFrom;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 use x509_parser::prelude::*;
 
 #[derive(Debug)]
@@ -26,27 +26,15 @@ impl SecurityInfo {
     }
 
     pub fn check_address(&self, ia: &IpAddr) -> bool {
-        if self.enabled {
-            self.ip_addrs.iter().any(|a| a == ia)
-        } else {
-            true
-        }
+        !self.enabled || self.ip_addrs.iter().any(|a| a == ia)
     }
 
     pub fn check_hostname(&self, hostname: &str) -> bool {
-        if self.enabled {
-            self.dns_names.iter().any(|hn| hostname == hn)
-        } else {
-            true
-        }
+        !self.enabled || self.dns_names.iter().any(|hn| hostname == hn)
     }
 
     pub fn hostname(self) -> Option<String> {
-        if self.dns_names.len() > 0 {
-            Some(self.dns_names[0].clone())
-        } else {
-            None
-        }
+        self.dns_names.into_iter().next()
     }
 }
 
@@ -62,12 +50,12 @@ impl TryFrom<&[u8]> for SecurityInfo {
                         GeneralName::DNSName(s) => this.dns_names.push(s.to_string()),
                         GeneralName::IPAddress(b) if b.len() == 4 => {
                             let b = <[u8; 4]>::try_from(*b).unwrap();
-                            let ip = IpAddr::V4(Ipv4Addr::from(b));
+                            let ip = IpAddr::from(b);
                             this.ip_addrs.push(ip)
                         }
                         GeneralName::IPAddress(b) if b.len() == 16 => {
                             let b = <[u8; 16]>::try_from(*b).unwrap();
-                            let ip = IpAddr::V6(Ipv6Addr::from(b));
+                            let ip = IpAddr::from(b);
                             this.ip_addrs.push(ip)
                         }
                         _ => (),

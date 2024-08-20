@@ -1,7 +1,7 @@
 // This module contain literal translations of types from internal/pkgs/types/types.go
 // Some of them would be rewritten, replaced, or even removed
 use crate::pb;
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use std::convert::{Into, TryFrom};
 
 use givc_common::query::*;

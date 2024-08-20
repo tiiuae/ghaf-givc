@@ -1,5 +1,6 @@
 // Types related to QueryList and Watch API
 use crate::pb;
+use pb::admin::watch_item::Status;
 
 use std::str::FromStr;
 use std::string::ToString;
@@ -8,30 +9,20 @@ use anyhow::{anyhow, bail, Context};
 use serde::Serialize;
 use strum::{Display, EnumString};
 
-#[derive(Debug, Clone, Copy, Serialize, EnumString, Display)]
+#[derive(Clone, Copy, Debug, Default, Serialize, EnumString, Display)]
 pub enum VMStatus {
+    #[default]
     Running,
     PoweredOff,
     Paused,
 }
 
-impl Default for VMStatus {
-    fn default() -> Self {
-        VMStatus::Running
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, EnumString, Display)]
+#[derive(Clone, Copy, Debug, Default, Serialize, EnumString, Display)]
 pub enum TrustLevel {
     Secure,
+    #[default]
     Warning,
     NotSecure,
-}
-
-impl Default for TrustLevel {
-    fn default() -> Self {
-        TrustLevel::Warning
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -44,11 +35,7 @@ pub struct QueryResult {
 
 impl QueryResult {
     pub fn parse_list(items: Vec<pb::QueryListItem>) -> anyhow::Result<Vec<QueryResult>> {
-        let result = items
-            .into_iter()
-            .map(Self::try_from)
-            .collect::<anyhow::Result<Vec<QueryResult>>>()?;
-        Ok(result)
+        items.into_iter().map(Self::try_from).collect()
     }
 }
 
@@ -87,10 +74,12 @@ pub enum Event {
 impl Event {
     pub fn from_initial(item: pb::WatchItem) -> anyhow::Result<Vec<QueryResult>> {
         let status = item.status.ok_or_else(|| anyhow!("status field missing"))?;
-        if let pb::admin::watch_item::Status::Initial(init) = status {
+        if let Status::Initial(init) = status {
             QueryResult::parse_list(init.list)
         } else {
-            bail!("Unexpected {status:?} instead of pb::admin::watch_item::Status::Initial")
+            Err(anyhow!(
+                "Unexpected {status:?} instead of pb::admin::watch_item::Status::Initial"
+            ))
         }
     }
 
@@ -98,12 +87,12 @@ impl Event {
         let values = items.into_iter().map(|item| item.into()).collect();
         let init = pb::QueryListResponse { list: values };
         pb::WatchItem {
-            status: Some(pb::admin::watch_item::Status::Initial(init)),
+            status: Some(Status::Initial(init)),
         }
     }
 
     #[inline]
-    pub(crate) fn watch_item(status: pb::admin::watch_item::Status) -> pb::WatchItem {
+    pub(crate) fn watch_item(status: Status) -> pb::WatchItem {
         pb::WatchItem {
             status: Some(status),
         }
@@ -114,7 +103,6 @@ impl TryFrom<pb::WatchItem> for Event {
     type Error = anyhow::Error;
     fn try_from(item: pb::WatchItem) -> Result<Self, Self::Error> {
         if let Some(status) = item.status {
-            use pb::admin::watch_item::Status;
             Ok(match status {
                 Status::Initial(_) => bail!("Unexpected repeated Status::Initial"),
                 Status::Added(value) => Event::UnitRegistered(QueryResult::try_from(value)?),
@@ -129,7 +117,6 @@ impl TryFrom<pb::WatchItem> for Event {
 
 impl Into<pb::WatchItem> for Event {
     fn into(self) -> pb::WatchItem {
-        use pb::admin::watch_item::Status;
         match self {
             Event::UnitRegistered(value) => Self::watch_item(Status::Added(value.into())),
             Event::UnitStatusChanged(value) => Self::watch_item(Status::Updated(value.into())),

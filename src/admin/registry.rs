@@ -30,12 +30,9 @@ impl Registry {
         let mut state = self.map.lock().unwrap();
         info!("Registering {:#?}", entry);
         let event = Event::UnitRegistered(entry.clone().into());
-        match state.insert(entry.name.clone(), entry) {
-            Some(old) => {
-                info!("Replaced old entry {:#?}", old);
-                self.send_event(Event::UnitShutdown(old.into()))
-            }
-            None => (),
+        if let Some(old) = state.insert(entry.name.clone(), entry) {
+            info!("Replaced old entry {:#?}", old);
+            self.send_event(Event::UnitShutdown(old.into()))
         };
         self.send_event(event)
     }
@@ -63,9 +60,9 @@ impl Registry {
     pub fn find_names(&self, name: &String) -> anyhow::Result<Vec<String>> {
         let state = self.map.lock().unwrap();
         let list: Vec<String> = state
-            .values()
-            .filter(|x| x.name.starts_with(name.as_str()))
-            .map(|x| x.name.clone())
+            .keys()
+            .filter(|x| x.starts_with(name.as_str()))
+            .cloned()
             .collect();
         if list.len() == 0 {
             bail!("No entries match string {}", name)
@@ -74,19 +71,15 @@ impl Registry {
         }
     }
 
-    pub fn by_type_many(&self, ty: &UnitType) -> Vec<RegistryEntry> {
+    pub fn by_type_many(&self, ty: UnitType) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
-        state
-            .values()
-            .filter(|x| x.r#type == *ty)
-            .cloned()
-            .collect()
+        state.values().filter(|x| x.r#type == ty).cloned().collect()
     }
 
-    pub fn by_type(&self, ty: &UnitType) -> anyhow::Result<RegistryEntry> {
-        let vec = self.by_type_many(&ty);
+    pub fn by_type(&self, ty: UnitType) -> anyhow::Result<RegistryEntry> {
+        let vec = self.by_type_many(ty);
         match vec.len() {
-            1 => Ok(vec[0].clone()),
+            1 => Ok(vec.into_iter().next().unwrap()),
             0 => bail!("No service registered for"),
             _ => bail!("More than one unique services registered"), // FIXME: Fail registration, this situation should never happens
         }
@@ -116,13 +109,13 @@ impl Registry {
 
     pub fn update_state(&self, name: &String, status: UnitStatus) -> anyhow::Result<()> {
         let mut state = self.map.lock().unwrap();
-        if let Some(e) = state.get_mut(name) {
-            e.status = status;
-            self.send_event(Event::UnitStatusChanged(e.clone().into()))
-        } else {
-            bail!("Can't update state for {}, is not registered", name)
-        };
-        Ok(())
+        state
+            .get_mut(name)
+            .map(|e| {
+                e.status = status;
+                self.send_event(Event::UnitStatusChanged(e.clone().into()))
+            })
+            .ok_or_else(|| anyhow!("Can't update state for {}, is not registered", name))
     }
 
     // FIXME: Should we dump full contents here for `query`/`query_list` high-level API

@@ -73,9 +73,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let tls = if cli.use_tls {
         let tls = TlsConfig {
-            ca_cert_file_path: cli.ca_cert.ok_or(String::from("required"))?,
-            cert_file_path: cli.host_cert.ok_or(String::from("required"))?,
-            key_file_path: cli.host_key.ok_or(String::from("required"))?,
+            ca_cert_file_path: cli.ca_cert.ok_or("CA cert file required")?,
+            cert_file_path: cli.host_cert.ok_or("cert file required")?,
+            key_file_path: cli.host_key.ok_or("key file required")?,
             tls_name: None,
         };
         let tls_config = tls.server_config()?;

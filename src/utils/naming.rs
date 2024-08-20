@@ -8,20 +8,22 @@ pub fn format_service_name(name: &String) -> String {
     format!("givc-{}-vm.service", name)
 }
 
+// FIXME: rewrite as `pub fn parse_service_name(name: &str) -> anyhow::Result<&str>`
 pub fn parse_service_name(name: &String) -> anyhow::Result<String> {
     name.strip_suffix("-vm.service")
         .and_then(|name| name.strip_prefix("givc-"))
         .map(str::to_string)
-        .ok_or(anyhow!("Doesn't know how to parse VM name: {name}"))
+        .ok_or_else(|| anyhow!("Doesn't know how to parse VM name: {name}"))
 }
 
 // From `agent` code, ported for future
+// FIXME: rewrite as `parse_application_name(name: &str) -> anyhow::Result<(&str, i32)>`
 pub fn parse_application_name(name: &String) -> anyhow::Result<(String, i32)> {
     if let Some(name_no_suffix) = name.strip_suffix(".service") {
         if let Some((left, right)) = name_no_suffix.rsplit_once("@") {
             let num = right
                 .parse::<i32>()
-                .context(format!("While parsing number part of {}", name))?;
+                .with_context(|| format!("While parsing number part of {}", name))?;
             return Ok((left.to_string(), num));
         }
     };

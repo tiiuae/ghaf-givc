@@ -3,12 +3,10 @@ use tonic::{Request, Status};
 
 fn security_info_from_request(req: &Request<()>) -> Result<SecurityInfo, Status> {
     if let Some(certs) = req.peer_certs() {
-        for each in certs.iter() {
-            if let Ok(info) = SecurityInfo::try_from(each.get_ref()) {
-                return Ok(info);
-            }
-        }
-        Err(Status::unauthenticated("Can't determine certificate"))
+        certs
+            .iter()
+            .find_map(|cert| SecurityInfo::try_from(cert.get_ref()).ok())
+            .ok_or(Status::unauthenticated("Can't determinate certificace"))
     } else {
         Err(Status::unauthenticated("No valid certificate"))
     }
@@ -39,8 +37,7 @@ pub fn ensure_host<R>(req: Request<R>, hostname: &str) -> Result<(), Status> {
     let permit = req
         .extensions()
         .get::<SecurityInfo>()
-        .map(|si| si.check_hostname(hostname))
-        .unwrap_or(false);
+        .is_some_and(|si| si.check_hostname(hostname));
     if permit {
         Ok(())
     } else {
@@ -55,8 +52,7 @@ pub fn ensure_hosts<R>(req: Request<R>, hostnames: &Vec<&str>) -> Result<(), Sta
     let permit = req
         .extensions()
         .get::<SecurityInfo>()
-        .map(|si| hostnames.iter().any(|hostname| si.check_hostname(hostname)))
-        .unwrap_or(false);
+        .is_some_and(|si| hostnames.iter().any(|hostname| si.check_hostname(hostname)));
     if permit {
         Ok(())
     } else {

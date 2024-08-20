@@ -4,13 +4,13 @@ use crate::pb;
 use anyhow::{anyhow, bail};
 use std::convert::{Into, TryFrom};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct UnitType {
     pub vm: VmType,
     pub service: ServiceType,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum VmType {
     Host,
     AdmVM,
@@ -18,7 +18,7 @@ pub enum VmType {
     AppVM,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ServiceType {
     Mgr,
     Svc,

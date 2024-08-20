@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use givc::endpoint::TlsConfig;
 use givc::types::*;
-use givc_client::{AdminClient, QueryResult};
+use givc_client::AdminClient;
 use serde::ser::Serialize;
 use std::path::PathBuf;
 use std::time;
@@ -165,12 +165,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             loop {
                 let event = watch.channel.recv().await?;
                 dump(event, as_json)?;
-                if let Some(count) = limit {
-                    let count = count - 1;
-                    if count <= 0 {
-                        break;
-                    }
-                    limit = Some(count)
+                if limit.as_mut().is_some_and(|l| {
+                    *l -= 1;
+                    *l == 0
+                }) {
+                    break;
                 }
             }
         }

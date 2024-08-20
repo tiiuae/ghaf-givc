@@ -63,7 +63,7 @@ impl AdminServiceImpl {
     }
 
     fn host_endpoint(&self) -> anyhow::Result<EndpointConfig> {
-        let host_mgr = self.registry.by_type(&UnitType {
+        let host_mgr = self.registry.by_type(UnitType {
             vm: VmType::Host,
             service: ServiceType::Mgr,
         })?;
@@ -165,7 +165,7 @@ impl AdminServiceImpl {
                 self.start_vm(name.to_string())
                     .await
                     .with_context(|| format!("handing error, by restart VM {}", &entry.name))?;
-                Ok(())
+                Ok(()) // FIXME: should use `?` from line above, why it didn't work?
             }
             (x, y) => bail!(
                 "Don't known how to handle_error for VM type: {:?}:{:?}",
@@ -260,7 +260,7 @@ impl AdminServiceImpl {
         };
 
         let app_entry = RegistryEntry {
-            name: app_name.clone(),
+            name: app_name,
             parent: systemd_agent,
             status: status,
             watch: true,

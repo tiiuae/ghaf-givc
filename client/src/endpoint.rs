@@ -28,8 +28,8 @@ impl TlsConfig {
         let pem = std::fs::read_to_string(self.ca_cert_file_path.as_os_str())?;
         let ca = Certificate::from_pem(pem);
 
-        let client_cert = std::fs::read_to_string(self.cert_file_path.as_os_str())?;
-        let client_key = std::fs::read_to_string(self.key_file_path.as_os_str())?;
+        let client_cert = std::fs::read(self.cert_file_path.as_os_str())?;
+        let client_key = std::fs::read(self.key_file_path.as_os_str())?;
         let client_identity = Identity::from_pem(client_cert, client_key);
         let tls_name = self
             .tls_name
@@ -42,15 +42,15 @@ impl TlsConfig {
     }
 
     pub fn server_config(&self) -> anyhow::Result<ServerTlsConfig> {
-        let cert = std::fs::read_to_string(self.cert_file_path.as_os_str())?;
-        let key = std::fs::read_to_string(self.key_file_path.as_os_str())?;
+        let cert = std::fs::read(self.cert_file_path.as_os_str())?;
+        let key = std::fs::read(self.key_file_path.as_os_str())?;
         let identity = Identity::from_pem(cert, key);
         let config = ServerTlsConfig::new().identity(identity);
         Ok(config)
     }
 }
 
-fn transport_config_to_url(tc: TransportConfig, with_tls: bool) -> String {
+fn transport_config_to_url(tc: &TransportConfig, with_tls: bool) -> String {
     let scheme = match with_tls {
         true => "https",
         false => "http",
@@ -60,7 +60,7 @@ fn transport_config_to_url(tc: TransportConfig, with_tls: bool) -> String {
 
 impl EndpointConfig {
     pub async fn connect(&self) -> anyhow::Result<Channel> {
-        let url = transport_config_to_url(self.transport.clone(), self.tls.is_some());
+        let url = transport_config_to_url(&self.transport, self.tls.is_some());
         info!("Connecting to {url}, TLS name {:?}", &self.tls);
         let mut endpoint = Endpoint::try_from(url)?
             .timeout(Duration::from_secs(5))
