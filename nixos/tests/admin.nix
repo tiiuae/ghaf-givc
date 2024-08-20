@@ -114,13 +114,8 @@ in {
               }
             ];
             environment = {
-              systemPackages = [
-                # givc-agent expects /run/current-system/sw/bin/run-waypipe
-                (pkgs.writeScriptBin "run-waypipe" ''
-                  #!${pkgs.runtimeShell} -e
-                  ${pkgs.waypipe}/bin/waypipe ssh ${addrs.appvm} "$@"
-                '')
-                pkgs.foot
+              systemPackages = with pkgs; [
+                waypipe
               ];
               variables = {
                 # Use a fixed SWAYSOCK path (for swaymsg):
@@ -191,6 +186,11 @@ in {
             ];
             environment = {
               systemPackages = with pkgs; [
+                # givc-agent expects /run/current-system/sw/bin/run-waypipe
+                (pkgs.writeScriptBin "run-waypipe" ''
+                  #!${pkgs.runtimeShell} -e
+                  ${pkgs.waypipe}/bin/waypipe --socket /tmp/vsock server -- "$@"
+                '')
                 foot
                 waypipe
               ];
@@ -287,6 +287,10 @@ in {
           with subtest("setup ssh and keys"):
               swaymsg("exec ssh ${addrs.appvm} true && touch /tmp/ssh-ok")
               guivm.wait_for_file("/tmp/ssh-ok")
+              swaymsg("exec waypipe --socket /tmp/vsock client")
+              guivm.wait_for_file("/tmp/vsock")
+              swaymsg("exec ssh -R /tmp/vsock:/tmp/vsock -f -N ${addrs.appvm}")
+              time.sleep(5) # Give ssh some time to setup remote socket
 
           #swaymsg("exec run-waypipe foot")
           print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${
