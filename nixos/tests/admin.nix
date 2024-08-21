@@ -203,7 +203,7 @@ in {
               admin = adminSettings;
               tls = mkTls "chromium-vm";
               applications = lib.mkForce (builtins.toJSON {
-                "foot" = "run-waypipe foot";
+                "foot" = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot";
               });
             };
           };
@@ -260,7 +260,7 @@ in {
 
                   return any(pattern in name for name in nodes)
 
-              retry(func)
+              retry(func, timeout=30)
           # End of borrowed code
 
           import time
