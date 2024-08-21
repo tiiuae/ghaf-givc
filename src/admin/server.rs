@@ -121,10 +121,11 @@ impl AdminServiceImpl {
         Ok(())
     }
 
-    pub async fn start_vm(&self, name: String) -> anyhow::Result<()> {
+    pub async fn start_vm(&self, name: &str) -> anyhow::Result<()> {
         let endpoint = self.host_endpoint()?;
         let client = SystemDClient::new(endpoint);
-        let vm_name = format_vm_name(&name);
+        let (name, vm_name) = Self::parse_app_vm_pair(name);
+        let vm_name = format_vm_name(&name, vm_name);
         let status = client
             .get_remote_status(vm_name.clone())
             .await
@@ -162,7 +163,7 @@ impl AdminServiceImpl {
             }
             (VmType::AppVM, ServiceType::Mgr) | (VmType::SysVM, ServiceType::Mgr) => {
                 let name = parse_service_name(&entry.name)?;
-                self.start_vm(name.to_string())
+                self.start_vm(name)
                     .await
                     .with_context(|| format!("handing error, by restart VM {}", &entry.name))?;
                 Ok(()) // FIXME: should use `?` from line above, why it didn't work?
@@ -232,17 +233,26 @@ impl AdminServiceImpl {
         self.registry.register(entry)
     }
 
+    fn parse_app_vm_pair(app_and_vm: &str) -> (&str, Option<&str>) {
+        if let Some((app, vm)) = app_and_vm.split_once(":") {
+            (app, Some(vm))
+        } else {
+            (app_and_vm, None)
+        }
+    }
+
     pub async fn start_app(&self, req: ApplicationRequest) -> anyhow::Result<()> {
         if self.state != State::VmsRegistered {
             info!("not all required system-vms are registered")
         }
+
         let systemd_agent = format_service_name(&req.app_name);
 
         // Entry unused in "go" code
         match self.registry.by_name(&systemd_agent) {
             std::result::Result::Ok(e) => e,
             Err(_) => {
-                self.start_vm(req.app_name.clone())
+                self.start_vm(&req.app_name)
                     .await
                     .context(format!("Starting vm for {}", &req.app_name))?;
                 self.registry

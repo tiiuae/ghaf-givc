@@ -1,10 +1,14 @@
 use anyhow::*;
 
-pub fn format_vm_name(name: &String) -> String {
-    format!("microvm@{name}-vm.service")
+pub fn format_vm_name(name: &str, vm: Option<&str>) -> String {
+    if let Some(vm_name) = vm {
+        format!("microvm@{vm_name}.service")
+    } else {
+        format!("microvm@{name}-vm.service")
+    }
 }
 
-pub fn format_service_name(name: &String) -> String {
+pub fn format_service_name(name: &str) -> String {
     format!("givc-{}-vm.service", name)
 }
 
