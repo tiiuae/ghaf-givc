@@ -1,3 +1,10 @@
+[workspace]
+members = [
+  "client",
+  "common",
+  "."
+]
+
 [package]
 authors = ["Alexander Nikolaev <alexander.nikolaev@unikie.com>"]
 edition = "2021"
@@ -9,6 +16,7 @@ version = "0.0.1"
 [dependencies]
 anyhow = "1.0.86"
 async-stream = "0.3"
+async-channel = "2.3.1"
 strum = {version = "0.25", features = ["derive"]}
 clap = {version = "4.5.4", features = ["derive", "env"]}
 console = "0.15"
@@ -19,9 +27,15 @@ prost = "0.12"
 tokio = {version = "1.0", features = ["rt-multi-thread", "time", "macros"]}
 tokio-stream = "0.1"
 tonic = {version="0.11.0", features = ["tls"]}
+tonic-types = {version="0.11.0"}
 tonic-reflection = {version="0.11.0"}
 tower = {version = "0.4"}
+tracing = "0.1"
 tracing-subscriber = {version = "0.3"}
+serde = { version = "1.0.202", features = ["derive"]}
+serde_json = "1.0.120"
+x509-parser = { version = "0.16" }
 
-[build-dependencies]
-tonic-build = {version = "0.11.0", features = ["prost"]}
+# GIVC subparts
+givc-common = { path="common" } 
+givc-client = { path="client" } 

@@ -1,9 +1,6 @@
-use crate::endpoint::EndpointConfig;
-use crate::pb::{self, *};
-use crate::types::*;
-use anyhow::Result;
+use crate::pb;
+use givc_client::endpoint::EndpointConfig;
 use tonic::transport::Channel;
-use tonic::{metadata::MetadataValue, Code, Request, Response, Status};
 
 type Client = pb::systemd::unit_control_service_client::UnitControlServiceClient<Channel>;
 

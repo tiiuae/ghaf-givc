@@ -1,0 +1,25 @@
+[package]
+authors = ["Alexander Nikolaev <alexander.nikolaev@unikie.com>"]
+edition = "2021"
+license = "Apache 2.0"
+name = "givc-common"
+publish = false
+version = "0.0.1"
+
+[dependencies]
+anyhow = "1.0.86"
+async-stream = "0.3"
+http = "0.2"
+http-body = "0.4.2"
+prost = "0.12"
+tokio = {version = "1.0", features = ["rt-multi-thread", "time", "macros"]}
+tokio-stream = "0.1"
+tonic = {version="0.11.0", features = ["tls"]}
+tonic-types = {version="0.11.0"}
+tracing = "0.1"
+tracing-subscriber = {version = "0.3"}
+serde = { version = "1.0.202", features = ["derive"]}
+strum = { version = "0.26", features = ["derive"] }
+
+[build-dependencies]
+tonic-build = {version = "0.11.0", features = ["prost"]}
