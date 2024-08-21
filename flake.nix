@@ -86,6 +86,7 @@
 
         # Overlays
         overlays.default = _final: prev: {
+          src = ./.;
           givc-app = prev.callPackage ./nixos/packages/givc-app.nix {pkgs = prev;};
         };
       };
