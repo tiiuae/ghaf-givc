@@ -386,7 +386,7 @@ impl pb::admin_service_server::AdminService for AdminService {
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         escalate(request, |_| async {
             self.inner
-                .send_system_command(String::from("poweroff.target"))
+                .send_system_command(String::from("reboot.target"))
                 .await?;
             Ok(Empty {})
         })
