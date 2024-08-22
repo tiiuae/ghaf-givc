@@ -48,6 +48,8 @@ in
       default = "tcp";
     };
 
+    debug = mkEnableOption "Enable verbose logs for debugging.";
+
     services = mkOption {
       description = ''
         List of systemd services for the manager to administrate. Expects a space separated list.
@@ -164,6 +166,7 @@ in
           "ADDR" = "${cfg.addr}";
           "PORT" = "${cfg.port}";
           "PROTO" = "${cfg.protocol}";
+          "DEBUG" = "${trivial.boolToString cfg.debug}";
           "TYPE" = "0";
           "SUBTYPE" = "1";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";

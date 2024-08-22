@@ -44,6 +44,10 @@ func main() {
 	if protocol == "" {
 		log.Fatalf("No 'PROTO' environment variable present.")
 	}
+	debug := os.Getenv("DEBUG")
+	if debug != "true" {
+		log.SetLevel(log.WarnLevel)
+	}
 
 	parentName := os.Getenv("PARENT")
 

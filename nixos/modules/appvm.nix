@@ -47,6 +47,8 @@ in
       default = "tcp";
     };
 
+    debug = mkEnableOption "Enable verbose logs for debugging.";
+
     applications = mkOption {
       description = ''
         List of applications to be supported by the service. Expects a JSON string with the format:
@@ -168,6 +170,7 @@ in
           "ADDR" = "${cfg.addr}";
           "PORT" = "${cfg.port}";
           "PROTO" = "${cfg.protocol}";
+          "DEBUG" = "${trivial.boolToString cfg.debug}";
           "TYPE" = "12";
           "SUBTYPE" = "13";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";

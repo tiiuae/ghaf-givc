@@ -57,6 +57,8 @@ in
       default = "tcp";
     };
 
+    debug = mkEnableOption "Enable verbose logs for debugging.";
+
     admin = mkOption {
       description = "Admin server configuration.";
       type =
@@ -187,6 +189,7 @@ in
           "ADDR" = "${cfg.addr}";
           "PORT" = "${cfg.port}";
           "PROTO" = "${cfg.protocol}";
+          "DEBUG" = "${trivial.boolToString cfg.debug}";
           "TYPE" = "8";
           "SUBTYPE" = "9";
           "WIFI" = "${trivial.boolToString cfg.wifiManager}";
