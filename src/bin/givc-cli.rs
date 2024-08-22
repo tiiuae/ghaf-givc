@@ -42,6 +42,8 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Start {
+        #[arg(long)]
+        vm: Option<String>,
         app: String,
     },
     Stop {
@@ -128,7 +130,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Test { test } => test_subcommands(test, admin).await?,
-        Commands::Start { app } => admin.start(app).await?,
+        Commands::Start { app, vm } => admin.start(app, vm).await?,
         Commands::Stop { app } => admin.stop(app).await?,
 
         Commands::Pause { app } => admin.pause(app).await?,

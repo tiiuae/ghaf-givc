@@ -67,6 +67,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let addr = SocketAddr::new(cli.addr.parse()?, cli.port);
 
+    // FIXME: Totally wrong,
     let agent_service_name = format_service_name(&cli.name);
 
     let mut builder = Server::builder();
