@@ -19,6 +19,6 @@ jobs:
         run: nix fmt -- --fail-on-change
       - name: Check nix flake show runs successfully
         run: nix flake show
-      # - name: Run nix flake check
-      #   run: nix flake check
+      - name: Run nix flake check
+        run: nix flake check
 

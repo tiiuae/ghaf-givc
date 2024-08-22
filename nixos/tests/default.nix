@@ -1,3 +1,1 @@
-{
-  imports = [./admin.nix];
-}
+{ imports = [ ./admin.nix ]; }

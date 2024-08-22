@@ -1,9 +1,6 @@
 # Copyright 2024 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
-{
-  pkgs,
-  src,
-}:
+{ pkgs, src }:
 pkgs.buildGoModule {
   pname = "givc-agent";
   version = "0.0.1";

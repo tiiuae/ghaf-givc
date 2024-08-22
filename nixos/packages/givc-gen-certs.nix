@@ -1,4 +1,4 @@
-{pkgs}:
+{ pkgs }:
 pkgs.writeShellScriptBin "givc-gen-certs" ''
   set -xeuo pipefail
 

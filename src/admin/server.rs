@@ -74,8 +74,7 @@ impl AdminServiceImpl {
     }
 
     pub fn agent_endpoint(&self, name: &String) -> anyhow::Result<EndpointConfig> {
-        let vm_name = format_service_name(name);
-        let agent = self.registry.by_name(&vm_name)?;
+        let agent = self.registry.by_name(&name)?;
         Ok(EndpointConfig {
             transport: agent.endpoint.into(),
             tls: self.tls_config.clone(),
@@ -124,32 +123,31 @@ impl AdminServiceImpl {
     pub async fn start_vm(&self, name: &str) -> anyhow::Result<()> {
         let endpoint = self.host_endpoint()?;
         let client = SystemDClient::new(endpoint);
-        let (name, vm_name) = Self::parse_app_vm_pair(name);
-        let vm_name = format_vm_name(&name, vm_name);
+
         let status = client
-            .get_remote_status(vm_name.clone())
+            .get_remote_status(name.to_string())
             .await
-            .with_context(|| format!("cannot retrieve vm status for {vm_name}"))?;
+            .with_context(|| format!("cannot retrieve vm status for {name}"))?;
 
         if status.load_state != "loaded" {
-            bail!("vm {vm_name} not loaded")
+            bail!("vm {name} not loaded")
         };
 
         if status.active_state != "active" {
             client
-                .start_remote(vm_name.clone())
+                .start_remote(name.to_string())
                 .await
-                .with_context(|| format!("spawn remote VM service {vm_name}"))?;
+                .with_context(|| format!("spawn remote VM service {name}"))?;
 
             tokio::time::sleep(VM_STARTUP_TIME).await;
 
             let new_status = client
-                .get_remote_status(vm_name.clone())
+                .get_remote_status(name.to_string())
                 .await
-                .with_context(|| format!("cannot retrieve vm status for {vm_name}"))?;
+                .with_context(|| format!("cannot retrieve vm status for {name}"))?;
 
             if new_status.active_state != "active" {
-                bail!("Unable to launch VM {vm_name}")
+                bail!("Unable to launch VM {name}")
             }
         }
         Ok(())
@@ -245,24 +243,28 @@ impl AdminServiceImpl {
         if self.state != State::VmsRegistered {
             info!("not all required system-vms are registered")
         }
+        let (name, vm) = Self::parse_app_vm_pair(&req.app_name);
+        let vm_name = format_vm_name(&name, vm);
+        let systemd_agent = format_service_name(&name, vm);
 
-        let systemd_agent = format_service_name(&req.app_name);
+        info!("Starting app {name} on {vm_name}");
+        info!("Agent: {systemd_agent}");
 
         // Entry unused in "go" code
         match self.registry.by_name(&systemd_agent) {
             std::result::Result::Ok(e) => e,
             Err(_) => {
-                self.start_vm(&req.app_name)
+                self.start_vm(&vm_name)
                     .await
-                    .context(format!("Starting vm for {}", &req.app_name))?;
+                    .context(format!("Starting vm for {}", &name))?;
                 self.registry
                     .by_name(&systemd_agent)
                     .context("after starting VM")?
             }
         };
-        let endpoint = self.agent_endpoint(&req.app_name)?;
+        let endpoint = self.agent_endpoint(&systemd_agent)?;
         let client = SystemDClient::new(endpoint.clone());
-        let app_name = self.registry.create_unique_entry_name(&req.app_name);
+        let app_name = self.registry.create_unique_entry_name(&name.to_string());
         client.start_application(app_name.clone()).await?;
         let status = client.get_remote_status(app_name.clone()).await?;
         if status.active_state != "active" {

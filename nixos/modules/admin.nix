@@ -1,15 +1,26 @@
 # Copyright 2024 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
-{self}: {
+{ self }:
+{
   config,
   pkgs,
   lib,
   ...
-}: let
+}:
+let
   cfg = config.givc.admin;
   givc-admin = self.packages.${pkgs.stdenv.hostPlatform.system}.givc-admin-rs;
-  inherit (lib) mkOption mkEnableOption mkIf types trivial concatStringsSep attrsets;
-in {
+  inherit (lib)
+    mkOption
+    mkEnableOption
+    mkIf
+    types
+    trivial
+    concatStringsSep
+    attrsets
+    ;
+in
+{
   options.givc.admin = {
     enable = mkEnableOption "Enable givc-admin module.";
 
@@ -43,7 +54,7 @@ in {
         Must be a of type 'service', e.g., 'microvm@net-vm.service'.
       '';
       type = types.listOf types.str;
-      default = [""];
+      default = [ "" ];
       example = "['microvm@net-vm.service']";
     };
 
@@ -52,7 +63,8 @@ in {
         TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
         and requires paths to certificates and key being set. To disable it use 'tls.enable = false;'.
       '';
-      type = with types;
+      type =
+        with types;
         submodule {
           options = {
             enable = mkOption {
@@ -90,10 +102,7 @@ in {
     assertions = [
       {
         assertion =
-          !(cfg.tls.enable
-            && (
-              cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""
-            ));
+          !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
       }
     ];
@@ -101,9 +110,9 @@ in {
     systemd.services.givc-admin = {
       description = "GIVC admin module.";
       enable = true;
-      after = ["network-online.target"];
-      wants = ["network-online.target"];
-      wantedBy = ["multi-user.target"];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "exec";
         ExecStart = "${givc-admin}/bin/givc-admin";
@@ -127,8 +136,10 @@ in {
           "HOST_KEY" = "${cfg.tls.keyPath}";
         };
     };
-    networking.firewall.allowedTCPPorts = let
-      port = lib.strings.toInt cfg.port;
-    in [port];
+    networking.firewall.allowedTCPPorts =
+      let
+        port = lib.strings.toInt cfg.port;
+      in
+      [ port ];
   };
 }

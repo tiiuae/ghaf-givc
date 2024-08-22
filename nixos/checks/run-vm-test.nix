@@ -8,7 +8,7 @@
 writeShellApplication {
   name = "run-vm-test";
 
-  runtimeInputs = [];
+  runtimeInputs = [ ];
 
   text = ''
     cmd_name=$(basename "$0")
@@ -35,7 +35,9 @@ writeShellApplication {
     list() {
       echo "  list of available tests:"
       echo
-      echo "${lib.concatMapStrings (s: "    - " + s + "\n") (lib.mapAttrsToList (_: test: test.name) tests)}"
+      echo "${
+        lib.concatMapStrings (s: "    - " + s + "\n") (lib.mapAttrsToList (_: test: test.name) tests)
+      }"
     }
 
     args=$(getopt -o lihs: --long list,interactive,help,system: -n 'tests' -- "$@")

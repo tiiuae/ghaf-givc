@@ -8,8 +8,12 @@ pub fn format_vm_name(name: &str, vm: Option<&str>) -> String {
     }
 }
 
-pub fn format_service_name(name: &str) -> String {
-    format!("givc-{}-vm.service", name)
+pub fn format_service_name(name: &str, vm: Option<&str>) -> String {
+    if let Some(vm_name) = vm {
+        format!("givc-{vm_name}.service")
+    } else {
+        format!("givc-{name}-vm.service")
+    }
 }
 
 pub fn parse_service_name(name: &str) -> anyhow::Result<&str> {

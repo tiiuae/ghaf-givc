@@ -1,15 +1,25 @@
 # Copyright 2024 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
-{self}: {
+{ self }:
+{
   config,
   pkgs,
   lib,
   ...
-}: let
+}:
+let
   cfg = config.givc.appvm;
   inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-agent;
-  inherit (lib) mkOption mkEnableOption mkIf types trivial attrsets;
-in {
+  inherit (lib)
+    mkOption
+    mkEnableOption
+    mkIf
+    types
+    trivial
+    attrsets
+    ;
+in
+{
   options.givc.appvm = {
     enable = mkEnableOption "Enable givc-appvm module.";
 
@@ -52,7 +62,8 @@ in {
 
     admin = mkOption {
       description = "Admin server configuration.";
-      type = with types;
+      type =
+        with types;
         submodule {
           options = {
             enable = mkEnableOption "Admin module";
@@ -91,7 +102,8 @@ in {
         TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
         and requires paths to certificates and key being set. To disable it use 'tls.enable = false;'.
       '';
-      type = with types;
+      type =
+        with types;
         submodule {
           options = {
             enable = mkOption {
@@ -133,10 +145,7 @@ in {
       }
       {
         assertion =
-          !(cfg.tls.enable
-            && (
-              cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""
-            ));
+          !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
       }
     ];
@@ -144,9 +153,9 @@ in {
     systemd.user.services."givc-${cfg.name}" = {
       description = "GIVC remote service manager for application VMs.";
       enable = true;
-      after = ["sockets.target"];
-      wants = ["sockets.target"];
-      wantedBy = ["default.target"];
+      after = [ "sockets.target" ];
+      wants = [ "sockets.target" ];
+      wantedBy = [ "default.target" ];
       serviceConfig = {
         Type = "exec";
         ExecStart = "${givc-agent}/bin/givc-agent";
@@ -175,8 +184,10 @@ in {
           "HOST_KEY" = "${cfg.tls.keyPath}";
         };
     };
-    networking.firewall.allowedTCPPorts = let
-      port = lib.strings.toInt cfg.port;
-    in [port];
+    networking.firewall.allowedTCPPorts =
+      let
+        port = lib.strings.toInt cfg.port;
+      in
+      [ port ];
   };
 }

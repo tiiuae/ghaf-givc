@@ -4,7 +4,8 @@
   crane,
   protobuf,
   src,
-}: let
+}:
+let
   craneLib = crane.mkLib pkgs;
 
   protoFilter = path: _type: null != builtins.match ".*proto$" path;
@@ -19,14 +20,15 @@
 
     strictDeps = true;
 
-    nativeBuildInputs = [protobuf];
+    nativeBuildInputs = [ protobuf ];
     buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
       # Additional darwin specific inputs can be set here
       pkgs.libiconv
     ];
   };
 
-  givc = craneLib.buildPackage (commonArgs
+  givc = craneLib.buildPackage (
+    commonArgs
     // {
       cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
@@ -37,6 +39,7 @@
         # Avoid issue with source filtering, put symlink back into source tree
         ln -sf ../api $sourceRoot/common/api
       '';
-    });
+    }
+  );
 in
-  givc
+givc

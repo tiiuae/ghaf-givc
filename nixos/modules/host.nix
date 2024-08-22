@@ -1,15 +1,26 @@
 # Copyright 2024 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
-{self}: {
+{ self }:
+{
   config,
   pkgs,
   lib,
   ...
-}: let
+}:
+let
   cfg = config.givc.host;
   inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-agent;
-  inherit (lib) mkOption mkEnableOption mkIf types concatStringsSep trivial attrsets;
-in {
+  inherit (lib)
+    mkOption
+    mkEnableOption
+    mkIf
+    types
+    concatStringsSep
+    trivial
+    attrsets
+    ;
+in
+{
   options.givc.host = {
     enable = mkEnableOption "Enable givc-host module.";
 
@@ -43,13 +54,14 @@ in {
         Should be a unit file of type 'service' or 'target'.
       '';
       type = types.listOf types.str;
-      default = [""];
+      default = [ "" ];
       example = "['my-service.service' 'poweroff.target']";
     };
 
     admin = mkOption {
       description = "Admin server configuration.";
-      type = with types;
+      type =
+        with types;
         submodule {
           options = {
             enable = mkEnableOption "Admin module";
@@ -88,7 +100,8 @@ in {
         TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
         and requires paths to certificates and key being set. To disable it use 'tls.enable = false;'.
       '';
-      type = with types;
+      type =
+        with types;
         submodule {
           options = {
             enable = mkOption {
@@ -122,15 +135,12 @@ in {
   config = mkIf cfg.enable {
     assertions = [
       {
-        assertion = cfg.services != [];
+        assertion = cfg.services != [ ];
         message = "A list of services (or targets) is required for this module to run.";
       }
       {
         assertion =
-          !(cfg.tls.enable
-            && (
-              cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""
-            ));
+          !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
       }
     ];
@@ -138,9 +148,9 @@ in {
     systemd.services."givc-${cfg.name}" = {
       description = "GIVC remote service manager for the host.";
       enable = true;
-      after = ["network-online.target"];
-      wants = ["network-online.target"];
-      wantedBy = ["multi-user.target"];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
       # @TODO add requirement for admin to run before host module
       serviceConfig = {
         Type = "exec";
@@ -169,8 +179,10 @@ in {
           "HOST_KEY" = "${cfg.tls.keyPath}";
         };
     };
-    networking.firewall.allowedTCPPorts = let
-      port = lib.strings.toInt cfg.port;
-    in [port];
+    networking.firewall.allowedTCPPorts =
+      let
+        port = lib.strings.toInt cfg.port;
+      in
+      [ port ];
   };
 }

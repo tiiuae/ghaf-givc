@@ -26,17 +26,14 @@
     };
   };
 
-  outputs = inputs @ {
-    self,
-    flake-parts,
-    crane,
-    ...
-  }:
-    flake-parts.lib.mkFlake
-    {
-      inherit inputs;
-    }
-    {
+  outputs =
+    inputs@{
+      self,
+      flake-parts,
+      crane,
+      ...
+    }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -48,46 +45,46 @@
         ./nixos/tests
       ];
 
-      perSystem = {
-        pkgs,
-        lib,
-        ...
-      }: {
-        # Packages
-        packages = let
-          src = lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [
-              ./go.mod
-              ./go.sum
-              ./api
-              ./internal
-            ];
-          };
-        in {
-          givc-app = pkgs.callPackage ./nixos/packages/givc-app.nix {inherit src;};
-          givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix {inherit src;};
-          givc-admin = pkgs.callPackage ./nixos/packages/givc-admin.nix {inherit src;};
-          givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix {
-            inherit crane;
-            src = ./.;
-          };
+      perSystem =
+        { pkgs, lib, ... }:
+        {
+          # Packages
+          packages =
+            let
+              src = lib.fileset.toSource {
+                root = ./.;
+                fileset = lib.fileset.unions [
+                  ./go.mod
+                  ./go.sum
+                  ./api
+                  ./internal
+                ];
+              };
+            in
+            {
+              givc-app = pkgs.callPackage ./nixos/packages/givc-app.nix { inherit src; };
+              givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
+              givc-admin = pkgs.callPackage ./nixos/packages/givc-admin.nix { inherit src; };
+              givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix {
+                inherit crane;
+                src = ./.;
+              };
+            };
         };
-      };
       flake = {
         # NixOS Modules
         nixosModules = {
-          admin-go = import ./nixos/modules/admin-go.nix {inherit self;};
-          admin = import ./nixos/modules/admin.nix {inherit self;};
-          host = import ./nixos/modules/host.nix {inherit self;};
-          sysvm = import ./nixos/modules/sysvm.nix {inherit self;};
-          appvm = import ./nixos/modules/appvm.nix {inherit self;};
+          admin-go = import ./nixos/modules/admin-go.nix { inherit self; };
+          admin = import ./nixos/modules/admin.nix { inherit self; };
+          host = import ./nixos/modules/host.nix { inherit self; };
+          sysvm = import ./nixos/modules/sysvm.nix { inherit self; };
+          appvm = import ./nixos/modules/appvm.nix { inherit self; };
         };
 
         # Overlays
         overlays.default = _final: prev: {
           src = ./.;
-          givc-app = prev.callPackage ./nixos/packages/givc-app.nix {pkgs = prev;};
+          givc-app = prev.callPackage ./nixos/packages/givc-app.nix { pkgs = prev; };
         };
       };
     };
