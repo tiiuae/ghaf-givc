@@ -231,19 +231,12 @@ impl AdminServiceImpl {
         self.registry.register(entry)
     }
 
-    fn parse_app_vm_pair(app_and_vm: &str) -> (&str, Option<&str>) {
-        if let Some((app, vm)) = app_and_vm.split_once(":") {
-            (app, Some(vm))
-        } else {
-            (app_and_vm, None)
-        }
-    }
-
     pub async fn start_app(&self, req: ApplicationRequest) -> anyhow::Result<()> {
         if self.state != State::VmsRegistered {
             info!("not all required system-vms are registered")
         }
-        let (name, vm) = Self::parse_app_vm_pair(&req.app_name);
+        let name = req.app_name;
+        let vm = req.vm_name.as_deref();
         let vm_name = format_vm_name(&name, vm);
         let systemd_agent = format_service_name(&name, vm);
 
