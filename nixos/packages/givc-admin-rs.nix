@@ -30,6 +30,11 @@ let
   givc = craneLib.buildPackage (
     commonArgs
     // {
+      outputs = [
+        "out"
+        "cli"
+        "agent"
+      ];
       cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
       # Additional environment variables or build phases/hooks can be set
@@ -38,6 +43,11 @@ let
       postUnpack = ''
         # Avoid issue with source filtering, put symlink back into source tree
         ln -sf ../api $sourceRoot/common/api
+      '';
+      postInstall = ''
+        mkdir -p $cli/bin $agent/bin
+        mv $out/bin/givc-cli $cli/bin/givc-cli
+        mv $out/bin/givc-agent $agent/bin/givc-agent
       '';
     }
   );
