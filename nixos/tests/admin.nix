@@ -207,7 +207,7 @@ in
           testScript =
             { nodes, ... }:
             let
-              cli = "${self'.packages.givc-admin-rs}/bin/givc-cli";
+              cli = "${self'.packages.givc-admin-rs.cli}/bin/givc-cli";
               expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
             in
             # FIXME: why it so bizzare? (derived from name in cert)
