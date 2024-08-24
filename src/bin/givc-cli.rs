@@ -55,6 +55,8 @@ enum Commands {
     Resume {
         app: String,
     },
+    Reboot {},
+    Poweroff {},
     Query {
         #[arg(long, default_value_t = false)]
         as_json: bool, // Would it useful for scripts?
@@ -132,9 +134,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         Commands::Test { test } => test_subcommands(test, admin).await?,
         Commands::Start { app, vm } => admin.start(app, vm).await?,
         Commands::Stop { app } => admin.stop(app).await?,
-
         Commands::Pause { app } => admin.pause(app).await?,
         Commands::Resume { app } => admin.resume(app).await?,
+        Commands::Reboot {} => admin.reboot().await?,
+        Commands::Poweroff {} => admin.poweroff().await?,
 
         Commands::Query {
             by_type,

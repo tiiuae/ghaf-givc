@@ -91,6 +91,16 @@ impl AdminClient {
     pub async fn resume(&self, _app: String) -> anyhow::Result<()> {
         todo!();
     }
+    pub async fn reboot(&self) -> anyhow::Result<()> {
+        let request = pb::admin::Empty {};
+        let _response = self.connect_to().await?.reboot(request).await?;
+        Ok(())
+    }
+    pub async fn poweroff(&self) -> anyhow::Result<()> {
+        let request = pb::admin::Empty {};
+        let _response = self.connect_to().await?.poweroff(request).await?;
+        Ok(())
+    }
 
     pub async fn query(
         &self,
