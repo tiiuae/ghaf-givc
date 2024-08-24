@@ -20,11 +20,10 @@ import (
 )
 
 var (
-	MAX_RETRY          = uint(7)
-	TIMEOUT_LONG       = 10 * time.Second
-	TIMEOUT_SHORT      = 3 * time.Second
-	BACKOFF_TIME_LONG  = 200 * time.Millisecond
-	BACKOFF_TIME_SHORT = 50 * time.Millisecond
+	MAX_RETRY_SHORT = uint(10)
+	MAX_RETRY_LONG  = uint(60)
+	TIMEOUT_SHORT   = 50 * time.Millisecond
+	TIMEOUT_LONG    = 1 * time.Second
 )
 
 func NewClient(cfg *types.EndpointConfig, allowLongWaits bool) (*grpc.ClientConn, error) {
@@ -47,14 +46,16 @@ func NewClient(cfg *types.EndpointConfig, allowLongWaits bool) (*grpc.ClientConn
 	options = append(options, tlsCredentials)
 
 	// Retry options
+	retries := MAX_RETRY_SHORT
+	timeout := TIMEOUT_SHORT
+	if allowLongWaits {
+		retries = MAX_RETRY_LONG
+		timeout = TIMEOUT_LONG
+	}
 	retryOpts := []retry.CallOption{
 		retry.WithCodes(grpc_codes.NotFound, grpc_codes.Unavailable, grpc_codes.Aborted),
-		retry.WithMax(MAX_RETRY),
-	}
-	if allowLongWaits {
-		retryOpts = append(retryOpts, retry.WithPerRetryTimeout(TIMEOUT_LONG), retry.WithBackoff(retry.BackoffExponential(BACKOFF_TIME_LONG)))
-	} else {
-		retryOpts = append(retryOpts, retry.WithPerRetryTimeout(TIMEOUT_SHORT), retry.WithBackoff(retry.BackoffExponential(BACKOFF_TIME_SHORT)))
+		retry.WithMax(retries),
+		retry.WithPerRetryTimeout(timeout),
 	}
 
 	// Setup GRPC config

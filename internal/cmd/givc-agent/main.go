@@ -175,7 +175,10 @@ func main() {
 		<-serverStarted
 
 		// Register agent
-		serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
+		_, err := serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
+		if err != nil {
+			log.Fatalf("Error register agent: %s", err)
+		}
 
 		// Register services
 		for _, service := range services {
