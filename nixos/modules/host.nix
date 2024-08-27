@@ -56,8 +56,11 @@ in
         Should be a unit file of type 'service' or 'target'.
       '';
       type = types.listOf types.str;
-      default = [ "" ];
-      example = "['my-service.service' 'poweroff.target']";
+      default = [
+        "reboot.target"
+        "poweroff.target"
+      ];
+      example = "[ 'my-service.service' ]";
     };
 
     admin = mkOption {

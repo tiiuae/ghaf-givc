@@ -30,7 +30,10 @@ in
         Should be a unit file of type 'service' or 'target'.
       '';
       type = types.listOf types.str;
-      default = [ "" ];
+      default = [
+        "reboot.target"
+        "poweroff.target"
+      ];
     };
 
     name = mkOption {
