@@ -22,10 +22,8 @@ to the user manager to control applications running as transient systemd service
 
 ### Admin Service (System Manager)
 
-*Note: This module is currently undergoing a re-implementation in Rust.*
-
 The admin service runs in the admin-vm, a specialized VM providing system management services.
-The current (go) implementation includes
+The current implementation includes
 
 * System-wide service registry to track applications, system services, and host VM services
 * Monitoring service to update registry with current status information
@@ -64,7 +62,7 @@ To build individual packages (binaries), run either of
 ```nix
   nix build .#givc-agent
   nix build .#givc-admin
-  nix build .#givc-app
+  nix build .#givc-cli
 ```
 
 For the development shell, run
@@ -76,7 +74,7 @@ For the development shell, run
 To use the givc flake overlay, overlay your nixpkgs with the givc overlay, e.g.,
 
 ```nix
-  pkgs = pkgs.extend(givc.overlays.default);
+  nixpkgs.overlays = [ inputs.givc.overlays.default ];
 ```
 
 ### Example: Host/Sysvm/Admin module usage

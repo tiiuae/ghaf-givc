@@ -62,7 +62,6 @@
               };
             in
             rec {
-              givc-app = pkgs.callPackage ./nixos/packages/givc-app.nix { inherit src; };
               givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
               givc-admin = pkgs.callPackage ./nixos/packages/givc-admin.nix { inherit src; };
               givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix {
@@ -84,7 +83,6 @@
 
         # Overlays
         overlays.default = _final: prev: {
-          inherit (self.packages.${prev.stdenv.hostPlatform.system}) givc-app;
           givc-cli = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin-rs.cli;
         };
       };
