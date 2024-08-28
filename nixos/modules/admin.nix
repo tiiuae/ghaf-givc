@@ -37,9 +37,9 @@ in
     };
 
     port = mkOption {
-      description = "Port of the admin service. Defaults to '9000'.";
+      description = "Port of the admin service. Defaults to '9001'.";
       type = types.str;
-      default = "9000";
+      default = "9001";
     };
 
     protocol = mkOption {

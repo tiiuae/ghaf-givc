@@ -16,7 +16,7 @@ let
   adminSettings = {
     name = "admin-vm";
     addr = addrs.adminvm;
-    port = "9000";
+    port = "9001";
     protocol = "tcp"; # go version expect word "tcp" here, but it unused
   };
   mkTls = name: {
@@ -46,7 +46,7 @@ in
                 enable = true;
                 name = "admin-vm";
                 addr = addrs.adminvm;
-                port = "9000";
+                port = "9001";
                 tls = mkTls "admin-vm";
               };
             };
@@ -62,11 +62,11 @@ in
                 enable = true;
                 name = "ghaf-host";
                 addr = addrs.host;
-                port = "9001";
+                port = "9000";
                 admin = {
                   name = "admin";
                   addr = addrs.adminvm;
-                  port = "9000";
+                  port = "9001";
                   protocol = "tcp"; # go version expect word "tcp" here, but it unused
                 };
                 services = [

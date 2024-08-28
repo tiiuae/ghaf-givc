@@ -13,8 +13,14 @@
     flake-root = {
       url = "github:srid/flake-root";
     };
-    treefmt-nix.url = "github:numtide/treefmt-nix";
-    devshell.url = "github:numtide/devshell";
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    devshell = {
+      url = "github:numtide/devshell";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     crane = {
       url = "github:ipetkov/crane";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -63,7 +69,6 @@
             in
             rec {
               givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
-              givc-admin = pkgs.callPackage ./nixos/packages/givc-admin.nix { inherit src; };
               givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix {
                 inherit crane;
                 src = ./.;
@@ -74,7 +79,6 @@
       flake = {
         # NixOS Modules
         nixosModules = {
-          admin-go = import ./nixos/modules/admin-go.nix { inherit self; };
           admin = import ./nixos/modules/admin.nix { inherit self; };
           host = import ./nixos/modules/host.nix { inherit self; };
           sysvm = import ./nixos/modules/sysvm.nix { inherit self; };

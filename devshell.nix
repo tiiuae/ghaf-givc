@@ -53,7 +53,7 @@
           {
             help = "Update go dependencies";
             name = "go-update";
-            command = "go get -u ./... && go mod tidy && echo Done - do not forget to update the vendorHash in the packages (use pkgs.lib.fakeHash).";
+            command = "go get -u ./... && go mod tidy && echo Done - do not forget to update the vendorHash in the packages.";
           }
           {
             help = "golang linter";
