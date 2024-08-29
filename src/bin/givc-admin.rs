@@ -5,7 +5,7 @@ use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tonic::transport::Server;
-use tracing::info;
+use tracing::debug;
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "givc-admin")]
@@ -39,10 +39,10 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    givc::trace_init();
+    givc::trace_init()?;
 
     let cli = Cli::parse();
-    info!("CLI is {:#?}", cli);
+    debug!("CLI is {:#?}", cli);
 
     let addr = SocketAddr::new(cli.addr.parse().unwrap(), cli.port);
 

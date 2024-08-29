@@ -7,7 +7,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::{Code, Response, Status};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
@@ -177,7 +177,7 @@ impl AdminServiceImpl {
     async fn monitor_routine(&self) -> anyhow::Result<()> {
         let watch_list = self.registry.watch_list();
         for entry in watch_list {
-            info!("Monitoring {}...", &entry.name);
+            debug!("Monitoring {}...", &entry.name);
             match self.get_remote_status(&entry).await {
                 Err(err) => {
                     error!(
@@ -199,7 +199,7 @@ impl AdminServiceImpl {
                         )
                     };
 
-                    info!("Status of {} is {:#?} (updated)", &entry.name, status);
+                    debug!("Status of {} is {:#?} (updated)", &entry.name, status);
                     // We have immutable copy of entry here, but need update _in registry_ copy
                     self.registry.update_state(&entry.name, status)?;
 
@@ -219,7 +219,6 @@ impl AdminServiceImpl {
         watch.tick().await; // First tick fires instantly
         loop {
             watch.tick().await;
-            info!("Monitoring...");
             if let Err(err) = self.monitor_routine().await {
                 error!("Error during watch: {}", err);
             }
