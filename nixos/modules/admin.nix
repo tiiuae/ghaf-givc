@@ -23,6 +23,7 @@ in
 {
   options.givc.admin = {
     enable = mkEnableOption "Enable givc-admin module.";
+    debug = mkEnableOption "Enable givc-admin debug logging.";
 
     name = mkOption {
       description = "Host name (without domain).";
@@ -134,6 +135,10 @@ in
           "CA_CERT" = "${cfg.tls.caCertPath}";
           "HOST_CERT" = "${cfg.tls.certPath}";
           "HOST_KEY" = "${cfg.tls.keyPath}";
+        }
+        // attrsets.optionalAttrs cfg.debug {
+          "RUST_BACKTRACE" = "1";
+          "GIVC_LOG" = "debug";
         };
     };
     networking.firewall.allowedTCPPorts =
