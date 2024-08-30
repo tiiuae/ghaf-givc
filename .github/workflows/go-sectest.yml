@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2022-2024 TII (SSRC) and the Ghaf contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: go-sectest
+on:
+    push:
+        paths:
+        - 'internal/**'
+        - 'api/**'
+    pull_request:
+        paths:
+        - 'internal/**'
+        - 'api/**'
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      GO111MODULE: on
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v3
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail ./...'

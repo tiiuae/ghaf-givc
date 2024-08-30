@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"os"
+	"path/filepath"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -21,12 +22,12 @@ var (
 func TlsServerConfig(CACertFilePath string, CertFilePath string, KeyFilePath string, mutual bool) *tls.Config {
 
 	// Load TLS certificates and key
-	serverTLSCert, err := tls.LoadX509KeyPair(CertFilePath, KeyFilePath)
+	serverTLSCert, err := tls.LoadX509KeyPair(filepath.Clean(CertFilePath), filepath.Clean(KeyFilePath))
 	if err != nil {
 		log.Fatalf("[TlsServerConfig] Error loading server certificate and key file: %v", err)
 	}
 	certPool := x509.NewCertPool()
-	caCertPEM, err := os.ReadFile(CACertFilePath)
+	caCertPEM, err := os.ReadFile(filepath.Clean(CACertFilePath))
 	if err != nil {
 		log.Fatalf("[TlsServerConfig] Error loading CA certificate: %v", err)
 	}
@@ -63,7 +64,7 @@ func TlsClientConfig(CACertFilePath string, CertFilePath string, KeyFilePath str
 		log.Fatalf("[TlsClientConfig] Error loading client certificate and key file: %v", err)
 	}
 	certPool := x509.NewCertPool()
-	caCertPEM, err := os.ReadFile(CACertFilePath)
+	caCertPEM, err := os.ReadFile(filepath.Clean(CACertFilePath))
 	if err != nil {
 		log.Fatalf("[TlsClientConfig] Error loading CA certificate: %v", err)
 	}

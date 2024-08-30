@@ -110,7 +110,10 @@ func NewController() (*WifiController, error) {
 }
 
 func (c *WifiController) Close() {
-	c.conn.Close()
+	err := c.conn.Close()
+	if err != nil {
+		log.Warnf("[WifiController] failed to close connection: %s", err)
+	}
 }
 
 func (c *WifiController) GetNetworkList(ctx context.Context, NetworkInterface string) ([]*wifi_api.AccessPoint, error) {
@@ -167,8 +170,10 @@ func (c *WifiController) GetActiveConnection(ctx context.Context) (bool, string,
 		if err != nil {
 			return false, "", 0, "", fmt.Errorf("failed to get active access point path: %s", err)
 		}
-		activeAPPath.Store(&ap)
-
+		err = activeAPPath.Store(&ap)
+		if err != nil {
+			return false, "", 0, "", fmt.Errorf("failed to store active access point path: %s", err)
+		}
 		// No active connection
 		if ap == "/" {
 			return false, "", 0, "", nil
@@ -203,6 +208,10 @@ func (c *WifiController) Connect(ctx context.Context, SSID string, Password stri
 		if err != nil {
 			return "", fmt.Errorf("failed to get access points: %s", err)
 		}
+		if len(apPaths) < 1 {
+			continue
+		}
+
 		// Iterate over access points and append into output
 		for _, apPath := range apPaths {
 			apObject := c.conn.Object("org.freedesktop.NetworkManager", apPath)
@@ -250,7 +259,10 @@ func (c *WifiController) Connect(ctx context.Context, SSID string, Password stri
 		}
 
 		if keymgmt == NmAPSecConWPAEAP {
-			settings = MergeSettings(settings, extendSettings)
+			settings, err = MergeSettings(settings, extendSettings)
+			if err != nil {
+				return "", fmt.Errorf("failed to merge settings %s: %s", extendSettings, err)
+			}
 		}
 
 		// Add a new connection and connect
@@ -437,42 +449,61 @@ func GetAPData(ap dbus.BusObject) (AP, error) {
 	if err != nil {
 		return accesspoint, fmt.Errorf("failed to get SSID: %s", err)
 	}
-	ssid_variant.Store(&ssid)
+	err = ssid_variant.Store(&ssid)
+	if err != nil {
+		return accesspoint, fmt.Errorf("failed to store SSID: %s", err)
+	}
 	accesspoint.SSID = string(ssid)
 
 	strength_variant, err := ap.GetProperty("org.freedesktop.NetworkManager.AccessPoint.Strength")
 	if err != nil {
 		return accesspoint, fmt.Errorf("failed to get Strength: %s", err)
 	}
-	strength_variant.Store(&(accesspoint.Strength))
+	err = strength_variant.Store(&(accesspoint.Strength))
+	if err != nil {
+		return accesspoint, fmt.Errorf("failed to store Strength: %s", err)
+	}
 
 	flags_variant, err := ap.GetProperty("org.freedesktop.NetworkManager.AccessPoint.Flags")
 	if err != nil {
 		return accesspoint, fmt.Errorf("failed to get WPA flags: %s", err)
 	}
-	flags_variant.Store(&PrivacyFlag)
+	err = flags_variant.Store(&PrivacyFlag)
+	if err != nil {
+		return accesspoint, fmt.Errorf("failed to store flags: %s", err)
+	}
 	accesspoint.PrivacyFlag = PrivacyFlag != 0
 
 	wpaFlags_variant, err := ap.GetProperty("org.freedesktop.NetworkManager.AccessPoint.WpaFlags")
 	if err != nil {
 		return accesspoint, fmt.Errorf("failed to get WPA flags: %s", err)
 	}
-	wpaFlags_variant.Store(&(accesspoint.WPAFlags))
+	err = wpaFlags_variant.Store(&(accesspoint.WPAFlags))
+	if err != nil {
+		return accesspoint, fmt.Errorf("failed to store WPAFlags: %s", err)
+	}
 
 	rsnFlags_variant, err := ap.GetProperty("org.freedesktop.NetworkManager.AccessPoint.RsnFlags")
 	if err != nil {
 		return accesspoint, fmt.Errorf("failed to get RSN flags: %s", err)
 	}
-	rsnFlags_variant.Store(&(accesspoint.RSNFlags))
+	err = rsnFlags_variant.Store(&(accesspoint.RSNFlags))
+	if err != nil {
+		return accesspoint, fmt.Errorf("failed to store RSNFlags: %s", err)
+	}
 
 	return accesspoint, nil
 }
 
-func MergeSettings(baseSettings map[string]map[string]dbus.Variant, rawExtensionSettings string) map[string]map[string]dbus.Variant {
+func MergeSettings(baseSettings map[string]map[string]dbus.Variant, rawExtensionSettings string) (map[string]map[string]dbus.Variant, error) {
 	var settings map[string]any
 
 	// Parse the raw settings extension string
-	json.Unmarshal([]byte(rawExtensionSettings), &settings)
+	err := json.Unmarshal([]byte(rawExtensionSettings), &settings)
+	if err != nil {
+		log.Warnf("[WifiController] failed to parse extension settings: %s", err)
+		return nil, err
+	}
 
 	// Merge the two settings maps
 	for setting, keys := range settings {
@@ -486,5 +517,5 @@ func MergeSettings(baseSettings map[string]map[string]dbus.Variant, rawExtension
 			baseSettings[setting][key] = dbus.MakeVariant(value)
 		}
 	}
-	return baseSettings
+	return baseSettings, nil
 }

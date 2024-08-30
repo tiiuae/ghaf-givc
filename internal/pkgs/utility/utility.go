@@ -86,7 +86,7 @@ func GetCGroupPathForProcess(pid uint32) (string, error) {
 	cgroupFilePath := fmt.Sprintf("/proc/%d/cgroup", pid)
 
 	// Open the cgroup file
-	file, err := os.Open(cgroupFilePath)
+	file, err := os.Open(filepath.Clean(cgroupFilePath))
 	if err != nil {
 		return "", err
 	}

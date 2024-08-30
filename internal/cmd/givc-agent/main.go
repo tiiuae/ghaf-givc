@@ -198,7 +198,10 @@ func main() {
 					},
 				}
 				log.Infof("Trying to register service: %s", service)
-				serviceclient.RegisterRemoteService(cfgAdminServer, serviceEntryRequest)
+				_, err := serviceclient.RegisterRemoteService(cfgAdminServer, serviceEntryRequest)
+				if err != nil {
+					log.Warnf("Error registering service: %s", err)
+				}
 			}
 		}
 	}()
