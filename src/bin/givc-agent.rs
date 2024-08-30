@@ -60,7 +60,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    givc::trace_init();
+    givc::trace_init()?;
 
     let cli = Cli::parse();
     info!("CLI is {:#?}", cli);

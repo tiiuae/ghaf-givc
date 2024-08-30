@@ -37,7 +37,7 @@ impl Registry {
         self.send_event(event)
     }
 
-    pub fn deregister(&self, name: &String) -> anyhow::Result<()> {
+    pub fn deregister(&self, name: &str) -> anyhow::Result<()> {
         let mut state = self.map.lock().unwrap();
         match state.remove(name) {
             Some(entry) => {
@@ -49,7 +49,7 @@ impl Registry {
         }
     }
 
-    pub fn by_name(&self, name: &String) -> anyhow::Result<RegistryEntry> {
+    pub fn by_name(&self, name: &str) -> anyhow::Result<RegistryEntry> {
         let state = self.map.lock().unwrap();
         state
             .get(name)
@@ -57,11 +57,11 @@ impl Registry {
             .ok_or_else(|| anyhow!("Service {name} not registered"))
     }
 
-    pub fn find_names(&self, name: &String) -> anyhow::Result<Vec<String>> {
+    pub fn find_names(&self, name: &str) -> anyhow::Result<Vec<String>> {
         let state = self.map.lock().unwrap();
         let list: Vec<String> = state
             .keys()
-            .filter(|x| x.starts_with(name.as_str()))
+            .filter(|x| x.starts_with(name))
             .cloned()
             .collect();
         if list.len() == 0 {
@@ -85,12 +85,12 @@ impl Registry {
         }
     }
 
-    pub fn contains(&self, name: &String) -> bool {
+    pub fn contains(&self, name: &str) -> bool {
         let state = self.map.lock().unwrap();
         state.contains_key(name)
     }
 
-    pub fn create_unique_entry_name(&self, name: &String) -> String {
+    pub fn create_unique_entry_name(&self, name: &str) -> String {
         let state = self.map.lock().unwrap();
         let mut counter = 0;
         loop {
@@ -107,7 +107,7 @@ impl Registry {
         state.values().filter(|x| x.watch).cloned().collect()
     }
 
-    pub fn update_state(&self, name: &String, status: UnitStatus) -> anyhow::Result<()> {
+    pub fn update_state(&self, name: &str, status: UnitStatus) -> anyhow::Result<()> {
         let mut state = self.map.lock().unwrap();
         state
             .get_mut(name)

@@ -44,6 +44,7 @@ in
               ];
               givc.admin = {
                 enable = true;
+                debug = true;
                 name = "admin-vm";
                 addr = addrs.adminvm;
                 port = "9001";
