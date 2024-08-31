@@ -1,1 +1,6 @@
-{ imports = [ ./admin.nix ]; }
+{
+  imports = [
+    ./admin.nix
+    ./netvm.nix
+  ];
+}

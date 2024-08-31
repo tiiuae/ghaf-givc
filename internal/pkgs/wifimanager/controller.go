@@ -379,6 +379,13 @@ func (c *WifiController) GetWifiDevices() ([]dbus.BusObject, error) {
 
 	for _, devicePath := range devicePaths {
 		device := c.conn.Object("org.freedesktop.NetworkManager", devicePath)
+		deviceManaged, err := device.GetProperty("org.freedesktop.NetworkManager.Device.Managed")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get device type: %s", err)
+		}
+		if !deviceManaged.Value().(bool) {
+			continue // skip unmanaged devices
+		}
 		deviceTypeVriant, err := device.GetProperty("org.freedesktop.NetworkManager.Device.DeviceType")
 		if err != nil {
 			return nil, fmt.Errorf("failed to get device type: %s", err)

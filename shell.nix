@@ -7,6 +7,7 @@ pkgs.mkShell {
   packages = with pkgs; [
     go
     gopls
+    gosec
     gotests
     go-tools
     golangci-lint

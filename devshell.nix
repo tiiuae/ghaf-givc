@@ -12,7 +12,7 @@
         devshell = {
           name = "GIVC";
           motd = ''
-            ❄️ Welcome to the {14}{bold}Welcome to givc-devshell{reset} devshell ❄️
+            {14}{bold}❄️ Welcome to the givc devshell ❄️{reset}
             $(type -p menu &>/dev/null && menu)
             $(type -p update-pre-commit-hooks &>/dev/null && update-pre-commit-hooks)
           '';
@@ -21,8 +21,10 @@
           config.treefmt.build.wrapper
           reuse
           go
-          gotests
           gopls
+          gosec
+          gotests
+          go-tools
           golangci-lint
           rustc
           rustfmt
@@ -49,6 +51,11 @@
             help = "Like cURL, but for gRPC: Command-line tool for interacting with gRPC servers";
             name = "gcl";
             command = "grpcurl";
+          }
+          {
+            help = "Check golang vulnerabilities";
+            name = "go-checksec";
+            command = "gosec ./...";
           }
           {
             help = "Update go dependencies";
