@@ -16,6 +16,9 @@ struct Cli {
     #[arg(long, env = "PORT", default_missing_value = "9000", value_parser = clap::value_parser!(u16).range(1..))]
     port: u16,
 
+    #[arg(long, help = "Additionally listen UNIX socket")]
+    unix: Option<String>,
+
     #[arg(long, env = "TLS", default_missing_value = "false")]
     use_tls: bool,
 
@@ -70,10 +73,23 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let admin_service_svc =
         admin::server::AdminServiceServer::new(admin::server::AdminService::new(tls));
 
+    let sys_opts = tokio_listener::SystemOptions::default();
+    let user_opts = tokio_listener::UserOptions::default();
+    let tcp_addr = tokio_listener::ListenerAddress::Tcp(addr);
+
+    let mut addrs = vec![tcp_addr];
+
+    if let Some(unix_sock) = cli.unix {
+        let unix_sock_addr = tokio_listener::ListenerAddress::Path(unix_sock.into());
+        addrs.push(unix_sock_addr)
+    }
+
+    let listener = tokio_listener::Listener::bind_multiple(&addrs, &sys_opts, &user_opts).await?;
+
     builder
         .add_service(reflect)
         .add_service(admin_service_svc)
-        .serve(addr)
+        .serve_with_incoming(listener)
         .await?;
 
     Ok(())
