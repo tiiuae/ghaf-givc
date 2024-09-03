@@ -85,7 +85,18 @@ func (s *GrpcServer) ListenAndServe(ctx context.Context, started chan struct{}) 
 
 	var err error
 	var listener net.Listener
-	addr := s.config.Transport.Address + ":" + s.config.Transport.Port
+	var addr string
+
+	// Set address
+	switch s.config.Transport.Protocol {
+	case "tcp":
+		addr = s.config.Transport.Address + ":" + s.config.Transport.Port
+	case "unix":
+		addr = s.config.Transport.Address
+	default:
+		return fmt.Errorf("unsupported protocol: %s", s.config.Transport.Protocol)
+	}
+
 	for i := 0; i < LISTENER_RETRIES; i++ {
 		listener, err = net.Listen(s.config.Transport.Protocol, addr)
 		if err != nil {

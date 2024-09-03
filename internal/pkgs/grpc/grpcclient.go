@@ -4,6 +4,7 @@ package grpc
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"givc/internal/pkgs/types"
@@ -65,7 +66,18 @@ func NewClient(cfg *types.EndpointConfig, allowLongWaits bool) (*grpc.ClientConn
 	}
 	options = append(options, grpc.WithChainUnaryInterceptor(interceptors...))
 
-	return grpc.NewClient(cfg.Transport.Address+":"+cfg.Transport.Port, options...)
+	// Set address
+	var addr string
+	switch cfg.Transport.Protocol {
+	case "tcp":
+		addr = cfg.Transport.Address + ":" + cfg.Transport.Port
+	case "unix":
+		addr = cfg.Transport.Address
+	default:
+		return nil, fmt.Errorf("unsupported protocol: %s", cfg.Transport.Protocol)
+	}
+
+	return grpc.NewClient(addr, options...)
 }
 
 func withOutgoingContext(ctx context.Context, method string, req, resp interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
