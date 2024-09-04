@@ -195,8 +195,6 @@ in
             with subtest("boot_completed"):
                 adminvm.wait_for_unit("multi-user.target")
                 netvm.wait_for_unit("multi-user.target")
-                print(netvm.succeed("systemd-analyze critical-chain"))
-                print(netvm.succeed("systemd-analyze blame"))
 
             with subtest("wifimanager_listnetworks"):
                 nwlistMsg = adminvm.succeed("${grpcurl_cmd} ${grpcurl_args} ${grpcurl_addr} wifimanager.WifiService.ListNetwork")
