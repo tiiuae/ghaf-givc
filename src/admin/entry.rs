@@ -8,13 +8,34 @@ use givc_common::query::*;
 use givc_common::types::*;
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum Placement {
+    // Service is a `givc-agent` and could be directly connected
+    Endpoint(EndpointEntry),
+
+    // Service or application managed by specified agent
+    Managed(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct RegistryEntry {
     pub name: String,
-    pub parent: String,
     pub r#type: UnitType,
     pub status: UnitStatus,
-    pub endpoint: EndpointEntry,
+    pub placement: Placement,
     pub watch: bool,
+}
+
+impl RegistryEntry {
+    pub fn agent(self) -> anyhow::Result<EndpointEntry> {
+        match self.placement {
+            Placement::Endpoint(endpoint) => Ok(endpoint),
+            Placement::Managed(by) => Err(anyhow!(
+                "Agent endpoint {} is managed by {}!",
+                self.name,
+                by
+            )),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -22,7 +43,6 @@ impl RegistryEntry {
     pub fn dummy(n: String) -> Self {
         Self {
             name: n,
-            parent: "bogus".to_string(),
             r#type: UnitType {
                 vm: VmType::AppVM,
                 service: ServiceType::App,
@@ -35,12 +55,12 @@ impl RegistryEntry {
                 sub_state: "bogus".to_string(),
                 path: "bogus".to_string(),
             },
-            endpoint: EndpointEntry {
+            placement: Placement::Endpoint(EndpointEntry {
                 protocol: "bogus".to_string(),
                 address: "127.0.0.1".to_string(),
                 port: 42,
                 tls_name: "bogus".to_string(),
-            },
+            }),
             watch: true,
         }
     }
@@ -59,13 +79,14 @@ impl TryFrom<pb::RegistryRequest> for RegistryEntry {
             .ok_or(anyhow!("endpoint missing"))
             .and_then(EndpointEntry::try_from)?;
         let watch = ty.service == ServiceType::Mgr;
+        // FIXME: We currently ignore `req.parent`, what we should do if we got both parent and endpoint
+        // Protocol very inconsistent here
         Ok(Self {
             name: req.name,
-            parent: req.parent,
             status: status,
             watch: watch,
             r#type: ty,
-            endpoint: endpoint,
+            placement: Placement::Endpoint(endpoint),
         })
     }
 }
