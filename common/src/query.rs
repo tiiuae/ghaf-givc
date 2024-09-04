@@ -10,19 +10,21 @@ use serde::Serialize;
 use strum::{Display, EnumString};
 
 #[derive(Clone, Copy, Debug, Default, Serialize, EnumString, Display)]
+#[repr(u8)]
 pub enum VMStatus {
     #[default]
-    Running,
-    PoweredOff,
-    Paused,
+    Running = 0,
+    PoweredOff = 1,
+    Paused = 2,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, EnumString, Display)]
+#[repr(u8)]
 pub enum TrustLevel {
-    Secure,
+    Secure = 0,
     #[default]
-    Warning,
-    NotSecure,
+    Warning = 1,
+    NotSecure = 2,
 }
 
 #[derive(Debug, Clone, Serialize)]
