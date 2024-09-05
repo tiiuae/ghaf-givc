@@ -1,10 +1,16 @@
-use anyhow::anyhow;
-use givc_common::types::TransportConfig;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tonic::transport::Endpoint;
+
+use anyhow::anyhow;
+use hyper_util::rt::TokioIo;
+use tokio::net::UnixStream;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, ServerTlsConfig};
+use tonic::transport::{Endpoint, Uri};
+use tower::service_fn;
 use tracing::info;
+
+use givc_common::address::EndpointAddress;
+use givc_common::types::TransportConfig;
 
 #[derive(Debug, Clone)]
 pub struct TlsConfig {
@@ -50,17 +56,41 @@ impl TlsConfig {
     }
 }
 
-fn transport_config_to_url(tc: &TransportConfig, with_tls: bool) -> String {
+fn transport_config_to_url(ea: &EndpointAddress, with_tls: bool) -> String {
     let scheme = match with_tls {
         true => "https",
         false => "http",
     };
-    format!("{}://{}:{}", scheme, tc.address, tc.port)
+    match ea {
+        EndpointAddress::Tcp { addr, port } => format!("{}://{}:{}", scheme, addr, port),
+        _ => format!("{}://[::]:443", scheme), // Bogus url, to make tonic connector happy
+    }
+}
+
+async fn connect_unix_socket(endpoint: Endpoint, path: &String) -> anyhow::Result<Channel> {
+    let mut path = Some(path.to_owned());
+    let ch = endpoint
+        .connect_with_connector(service_fn(move |_: Uri| {
+            let path = path.take();
+            async move {
+                if let Some(path) = path {
+                    // Connect to a Uds socket
+                    Ok::<_, std::io::Error>(TokioIo::new(UnixStream::connect(path).await?))
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "Path already taken",
+                    ))
+                }
+            }
+        }))
+        .await?;
+    Ok(ch)
 }
 
 impl EndpointConfig {
     pub async fn connect(&self) -> anyhow::Result<Channel> {
-        let url = transport_config_to_url(&self.transport, self.tls.is_some());
+        let url = transport_config_to_url(&self.transport.address, self.tls.is_some());
         info!("Connecting to {url}, TLS name {:?}", &self.tls);
         let mut endpoint = Endpoint::try_from(url)?
             .timeout(Duration::from_secs(5))
@@ -68,7 +98,11 @@ impl EndpointConfig {
         if let Some(tls) = &self.tls {
             endpoint = endpoint.tls_config(tls.client_config()?)?;
         };
-        let channel = endpoint.connect().await?;
+        let channel = match &self.transport.address {
+            EndpointAddress::Tcp { .. } => endpoint.connect().await?,
+            EndpointAddress::Unix(unix) => connect_unix_socket(endpoint, unix).await?,
+            EndpointAddress::Abstract(abs) => connect_unix_socket(endpoint, abs).await?,
+        };
         Ok(channel)
     }
 }

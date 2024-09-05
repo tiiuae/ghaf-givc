@@ -4,6 +4,7 @@ use givc::systemd_api::server::SystemdService;
 use givc::types::*;
 use givc::utils::naming::*;
 use givc_client::AdminClient;
+use givc_common::address::EndpointAddress;
 use givc_common::pb;
 use givc_common::pb::reflection::SYSTEMD_DESCRIPTOR;
 use std::net::SocketAddr;
@@ -88,9 +89,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // Perfect example of bad designed code, admin.register_service(entry) should hide structure filling
     let endpoint = EndpointEntry {
-        address: cli.addr,
-        port: cli.port,
-        protocol: String::from("bogus"),
+        address: EndpointAddress::Tcp {
+            addr: cli.addr,
+            port: cli.port,
+        },
         tls_name: cli.name,
     };
     // We can't use just one name field like in "go" code

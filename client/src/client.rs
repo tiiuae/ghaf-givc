@@ -1,12 +1,15 @@
-use crate::endpoint::{EndpointConfig, TlsConfig};
 use anyhow::bail;
 use async_channel::Receiver;
-use givc_common::pb;
-pub use givc_common::query::{Event, QueryResult};
-use givc_common::types::*;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tracing::debug;
+
+use givc_common::address::EndpointAddress;
+use givc_common::pb;
+pub use givc_common::query::{Event, QueryResult};
+use givc_common::types::*;
+
+use crate::endpoint::{EndpointConfig, TlsConfig};
 
 type Client = pb::admin_service_client::AdminServiceClient<Channel>;
 
@@ -40,6 +43,13 @@ impl AdminClient {
     // New style api, not yet implemented, stub atm to make current code happy
     // FIXME: Still doubt if constructor should be sync or async
     pub fn new(addr: String, port: u16, tls_info: Option<(String, TlsConfig)>) -> Self {
+        Self::from_endpoint_address(EndpointAddress::Tcp { addr, port }, tls_info)
+    }
+
+    pub fn from_endpoint_address(
+        addr: EndpointAddress,
+        tls_info: Option<(String, TlsConfig)>,
+    ) -> Self {
         let (name, tls) = match tls_info {
             Some((name, tls)) => (name, Some(tls)),
             None => (String::from("bogus(no tls)"), None),
@@ -48,8 +58,6 @@ impl AdminClient {
             endpoint: EndpointConfig {
                 transport: TransportConfig {
                     address: addr,
-                    port: port,
-                    protocol: String::from("bogus"),
                     tls_name: name,
                 },
                 tls: tls,

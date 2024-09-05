@@ -583,11 +583,13 @@ dependencies = [
  "givc-common",
  "http 0.2.12",
  "http-body 0.4.6",
+ "hyper-util",
  "serde",
  "tokio",
  "tokio-stream",
  "tonic",
  "tonic-types",
+ "tower",
  "tracing",
 ]
 
