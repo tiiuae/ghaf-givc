@@ -67,16 +67,19 @@ impl AdminServiceImpl {
             vm: VmType::Host,
             service: ServiceType::Mgr,
         })?;
+        let endpoint = host_mgr
+            .agent()
+            .with_context(|| "Resolving host agent".to_string())?;
         Ok(EndpointConfig {
-            transport: host_mgr.endpoint.into(),
+            transport: endpoint.into(),
             tls: self.tls_config.clone(),
         })
     }
 
     pub fn agent_endpoint(&self, name: &String) -> anyhow::Result<EndpointConfig> {
-        let agent = self.registry.by_name(&name)?;
+        let endpoint = self.registry.by_name(&name)?.agent()?;
         Ok(EndpointConfig {
-            transport: agent.endpoint.into(),
+            transport: endpoint.into(),
             tls: self.tls_config.clone(),
         })
     }
@@ -94,11 +97,12 @@ impl AdminServiceImpl {
         &self,
         entry: &RegistryEntry,
     ) -> anyhow::Result<crate::types::UnitStatus> {
-        let transport = if entry.endpoint.address.is_empty() {
-            let parent = self.registry.by_name(&entry.parent)?;
-            parent.endpoint.clone()
-        } else {
-            entry.endpoint.clone()
+        let transport = match &entry.placement {
+            Placement::Managed(parent) => {
+                let parent = self.registry.by_name(parent)?;
+                parent.agent()? // Fail, if parent also `Managed`
+            }
+            Placement::Endpoint(endpoint) => endpoint.clone(), // FIXME: avoid clone!
         };
         let tls_name = transport.tls_name.clone();
         let endpoint = EndpointConfig {
@@ -265,14 +269,13 @@ impl AdminServiceImpl {
 
         let app_entry = RegistryEntry {
             name: app_name,
-            parent: systemd_agent,
             status: status,
             watch: true,
             r#type: UnitType {
                 vm: VmType::AppVM,
                 service: ServiceType::App,
             },
-            endpoint: endpoint.transport,
+            placement: Placement::Managed(systemd_agent),
         };
         self.registry.register(app_entry);
         Ok(())
