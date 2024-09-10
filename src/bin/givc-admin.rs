@@ -1,6 +1,7 @@
 use clap::Parser;
 use givc::admin;
 use givc::endpoint::TlsConfig;
+use givc::utils::vsock::parse_vsock_addr;
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -16,8 +17,11 @@ struct Cli {
     #[arg(long, env = "PORT", default_missing_value = "9000", value_parser = clap::value_parser!(u16).range(1..))]
     port: u16,
 
-    #[arg(long, help = "Additionally listen UNIX socket")]
+    #[arg(long, help = "Additionally listen UNIX socket (path)")]
     unix: Option<String>,
+
+    #[arg(long, help = "Additionally listen Vsock socket (cid:port format)")]
+    vsock: Option<String>,
 
     #[arg(long, env = "TLS", default_missing_value = "false")]
     use_tls: bool,
@@ -82,6 +86,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     if let Some(unix_sock) = cli.unix {
         let unix_sock_addr = tokio_listener::ListenerAddress::Path(unix_sock.into());
         addrs.push(unix_sock_addr)
+    }
+
+    if let Some(vsock) = cli.vsock {
+        let vsock_addr = parse_vsock_addr(&vsock)?.into();
+        addrs.push(vsock_addr)
     }
 
     let listener = tokio_listener::Listener::bind_multiple(&addrs, &sys_opts, &user_opts).await?;
