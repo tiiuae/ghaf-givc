@@ -184,11 +184,7 @@ impl AdminServiceImpl {
             debug!("Monitoring {}...", &entry.name);
             match self.get_remote_status(&entry).await {
                 Err(err) => {
-                    error!(
-                        "could not get status of unit {}: {}",
-                        entry.name.clone(),
-                        err
-                    );
+                    error!("could not get status of unit {}: {}", &entry.name, err);
                     self.handle_error(entry)
                         .await
                         .with_context(|| "during handle error")?
