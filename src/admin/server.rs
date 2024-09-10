@@ -160,7 +160,9 @@ impl AdminServiceImpl {
     pub async fn handle_error(&self, entry: RegistryEntry) -> anyhow::Result<()> {
         match (entry.r#type.vm, entry.r#type.service) {
             (VmType::AppVM, ServiceType::App) => {
-                self.registry.deregister(&entry.name)?;
+                if entry.status.is_exitted() {
+                    self.registry.deregister(&entry.name)?;
+                }
                 Ok(())
             }
             (VmType::AppVM, ServiceType::Mgr) | (VmType::SysVM, ServiceType::Mgr) => {
