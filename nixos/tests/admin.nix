@@ -200,7 +200,10 @@ in
                   admin = adminSettings;
                   tls = mkTls "chromium-vm";
                   applications = lib.mkForce (
-                    builtins.toJSON { "foot" = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot"; }
+                    builtins.toJSON {
+                      "foot" = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot";
+                      "clearexit" = "/run/current-system/sw/bin/sleep 5";
+                    }
                   );
                 };
               };
@@ -288,10 +291,23 @@ in
                   swaymsg("exec ssh -R /tmp/vsock:/tmp/vsock -f -N ${addrs.appvm}")
                   time.sleep(5) # Give ssh some time to setup remote socket
 
-              #swaymsg("exec run-waypipe foot")
-              print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start foot"))
-              time.sleep(10) # Give few seconds to application to spin up
-              wait_for_window("ghaf@appvm")
+              with subtest("Clean run"):
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start foot"))
+                  time.sleep(10) # Give few seconds to application to spin up
+                  wait_for_window("ghaf@appvm")
+
+              with subtest("crash and restart"):
+                  # Crash application
+                  appvm.succeed("pkill foot")
+                  time.sleep(10)
+                  # .. then ask to restart
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start foot"))
+                  wait_for_window("ghaf@appvm")
+
+              with subtest("clear exit and restart"):
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm foot-vm clearexit"))
+                  time.sleep(20) # Give few seconds to application to spin up, exit, then start it again
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm foot-vm clearexit"))
             '';
         };
       };
