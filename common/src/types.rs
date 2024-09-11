@@ -149,7 +149,12 @@ pub struct UnitStatus {
 
 impl UnitStatus {
     pub fn is_running(&self) -> bool {
-        self.active_state == "active"
+        self.active_state == "active" && self.load_state == "loaded" && self.sub_state == "running"
+    }
+    pub fn is_exitted(&self) -> bool {
+        self.active_state == "inactive"
+            && self.load_state == "not-found"
+            && self.sub_state == "dead"
     }
 }
 
