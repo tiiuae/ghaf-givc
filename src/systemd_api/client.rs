@@ -74,8 +74,15 @@ impl SystemDClient {
         Ok(status.cmd_status)
     }
 
-    pub async fn start_application(&self, unit: String) -> anyhow::Result<String> {
-        let request = pb::systemd::UnitRequest { unit_name: unit };
+    pub async fn start_application(
+        &self,
+        unit: String,
+        args: Vec<String>,
+    ) -> anyhow::Result<String> {
+        let request = pb::systemd::AppUnitRequest {
+            unit_name: unit,
+            args: args,
+        };
         let resp = self.connect().await?.start_application(request).await?;
         let status = resp.into_inner();
         Ok(status.cmd_status)

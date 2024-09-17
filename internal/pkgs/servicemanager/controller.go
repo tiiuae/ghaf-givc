@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 
+	givc_app "givc/internal/pkgs/applications"
+	types "givc/internal/pkgs/types"
 	util "givc/internal/pkgs/utility"
 
 	"github.com/coreos/go-systemd/v22/dbus"
@@ -19,10 +21,10 @@ import (
 type SystemdController struct {
 	conn         *dbus.Conn
 	whitelist    []string
-	applications map[string]string
+	applications []types.ApplicationManifest
 }
 
-func NewController(whitelist []string, applications map[string]string) (*SystemdController, error) {
+func NewController(whitelist []string, applications []types.ApplicationManifest) (*SystemdController, error) {
 	var err error
 	var c SystemdController
 
@@ -327,25 +329,34 @@ func (c *SystemdController) GetUnitProperties(ctx context.Context, unitName stri
 	return props, nil
 }
 
-func (c *SystemdController) StartApplication(ctx context.Context, serviceName string) (string, error) {
+func (c *SystemdController) StartApplication(ctx context.Context, serviceName string, serviceArgs []string) (string, error) {
 
 	cmdFailure := "Command failed."
 
-	// Verify input format
-	if !strings.Contains(serviceName, ".service") || !strings.Contains(serviceName, "@") {
-		return cmdFailure, fmt.Errorf("incorrect application service name")
+	// Validate application request
+	err := givc_app.ValidateAppUnitRequest(serviceName, serviceArgs, c.applications)
+	if err != nil {
+		return cmdFailure, err
 	}
 
 	// Assemble command
 	appName := strings.Split(serviceName, "@")[0]
-	appCmd, ok := c.applications[appName]
-	if !ok {
+	appCmd := ""
+	for _, app := range c.applications {
+		if app.Name == appName {
+			appCmd = app.Command
+		}
+	}
+	if appCmd == "" {
 		return cmdFailure, fmt.Errorf("application unknown")
 	}
 	cmd := strings.Split(appCmd, " ")
 	if len(cmd) == 0 {
 		return cmdFailure, fmt.Errorf("incorrect application string format")
 	}
+
+	// Add arguments
+	cmd = append(cmd, serviceArgs...)
 
 	// Setup properties
 	var props []dbus.Property
@@ -360,7 +371,7 @@ func (c *SystemdController) StartApplication(ctx context.Context, serviceName st
 
 	// Run command as transient service
 	jobStatus := make(chan string)
-	_, err := c.conn.StartTransientUnitContext(ctx, serviceName, "replace", props, jobStatus)
+	_, err = c.conn.StartTransientUnitContext(ctx, serviceName, "replace", props, jobStatus)
 	if err != nil {
 		return cmdFailure, fmt.Errorf("error starting application: %s (%s)", appCmd, err)
 	}

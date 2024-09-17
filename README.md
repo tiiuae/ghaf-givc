@@ -17,8 +17,7 @@ This project was started to support the development of system modules across a v
 
 ### Systemd Management Agent
 
-The systemd management agent runs in the host and VMs, and connects to the systemd manager of the system. It provides functionality to control services in host, system VMs, and application VMs. The agent can connect to the system manager to control system units, or
-to the user manager to control applications running as transient systemd services.
+The systemd management agent runs in the host and VMs, and connects to the systemd manager of the system. It provides functionality to control services in host, system VMs, and application VMs. The agent can connect to the system manager to control system units, or to the user manager to control applications running as transient systemd services.
 
 ### Admin Service (System Manager)
 
@@ -137,10 +136,14 @@ To use the agent as application controller, include the `appvm` module as follow
     addr = "192.168.1.123";
     port = "9000";
 
-    # Specify applications with "name":"command" (JSON)
-    applications = ''{
-      "appflowy": "run-waypipe appflowy"
-    }'';
+    # Specify applications by name, command, and argument types accepted
+    applications = [
+      {
+        name = "foot";
+        command = "${pkgs.foot}/bin/foot";
+        args = [ "flag" ];
+      }
+    ];
 
     # Provide TLS configuration files
     tls = {

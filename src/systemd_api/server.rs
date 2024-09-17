@@ -71,7 +71,7 @@ impl pb::systemd::unit_control_service_server::UnitControlService for SystemdSer
     //         }
     async fn start_application(
         &self,
-        _request: tonic::Request<pb::systemd::UnitRequest>,
+        _request: tonic::Request<pb::systemd::AppUnitRequest>,
     ) -> std::result::Result<tonic::Response<pb::systemd::UnitResponse>, tonic::Status> {
         unimplemented!()
     }

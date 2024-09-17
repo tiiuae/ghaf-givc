@@ -199,12 +199,16 @@ in
                   addr = addrs.appvm;
                   admin = adminSettings;
                   tls = mkTls "chromium-vm";
-                  applications = lib.mkForce (
-                    builtins.toJSON {
-                      "foot" = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot";
-                      "clearexit" = "/run/current-system/sw/bin/sleep 5";
+                  applications = [
+                    {
+                      name = "foot";
+                      command = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot";
                     }
-                  );
+                    {
+                      name = "clearexit";
+                      command = "/run/current-system/sw/bin/sleep 5";
+                    }
+                  ];
                 };
               };
           };

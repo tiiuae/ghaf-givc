@@ -31,6 +31,11 @@ const (
 	UNIT_TYPE_APPVM_APP UnitType = 14
 )
 
+const (
+	APP_ARG_FLAG = "flag"
+	APP_ARG_URL  = "url"
+)
+
 type UnitStatus struct {
 	Name        string
 	Description string
@@ -60,6 +65,12 @@ type RegistryEntry struct {
 	Transport TransportConfig
 	State     UnitStatus
 	Watch     bool
+}
+
+type ApplicationManifest struct {
+	Name    string   `json:"Name"`
+	Command string   `json:"Command"`
+	Args    []string `json:"Args,omitempty"`
 }
 
 type GrpcServiceRegistration interface {

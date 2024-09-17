@@ -18,6 +18,29 @@ let
     trivial
     attrsets
     ;
+
+  applicationSubmodule = types.submodule {
+    options = {
+      name = mkOption {
+        description = "Name of the application.";
+        type = types.str;
+      };
+      command = mkOption {
+        description = "Command to run the application.";
+        type = types.str;
+      };
+      args = mkOption {
+        description = ''
+          List of allowed argument types for the application. Currently implemented argument types:
+          - 'url': URL provided to the application as string
+          - 'flag': Flag (boolean) provided to the application as string
+        '';
+        type = types.listOf types.str;
+        default = [ ];
+      };
+    };
+  };
+
 in
 {
   options.givc.appvm = {
@@ -51,15 +74,17 @@ in
 
     applications = mkOption {
       description = ''
-        List of applications to be supported by the service. Expects a JSON string with the format:
-          "name": "command"
-        with:
-        - name: name of the application
-        - command: command to start the application
+        List of applications to be supported by the service.
       '';
-      type = types.str;
-      default = "";
-      example = ''{"chromium": "run-waypipe chromium --enable-features=UseOzonePlatform --ozone-platform=wayland"}'';
+      type = types.listOf applicationSubmodule;
+      default = [ { } ];
+      example = [
+        {
+          Name = "app";
+          Command = "/bin/bash";
+          Args = [ "url" ];
+        }
+      ];
     };
 
     admin = mkOption {
@@ -104,32 +129,30 @@ in
         TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
         and requires paths to certificates and key being set. To disable it use 'tls.enable = false;'.
       '';
-      type =
-        with types;
-        submodule {
-          options = {
-            enable = mkOption {
-              description = "Enable TLS. Defaults to 'true'.";
-              type = bool;
-              default = true;
-            };
-            caCertPath = mkOption {
-              description = "Path to the CA certificate file.";
-              type = str;
-              default = "";
-            };
-            certPath = mkOption {
-              description = "Path to the service certificate file.";
-              type = str;
-              default = "";
-            };
-            keyPath = mkOption {
-              description = "Path to the service key file.";
-              type = str;
-              default = "";
-            };
+      type = types.submodule {
+        options = {
+          enable = mkOption {
+            description = "Enable TLS. Defaults to 'true'.";
+            type = types.bool;
+            default = true;
+          };
+          caCertPath = mkOption {
+            description = "Path to the CA certificate file.";
+            type = types.str;
+            default = "";
+          };
+          certPath = mkOption {
+            description = "Path to the service certificate file.";
+            type = types.str;
+            default = "";
+          };
+          keyPath = mkOption {
+            description = "Path to the service key file.";
+            type = types.str;
+            default = "";
           };
         };
+      };
       default = {
         enable = true;
         caCertPath = "";
@@ -163,6 +186,7 @@ in
         ExecStart = "${givc-agent}/bin/givc-agent";
         Restart = "always";
         RestartSec = 1;
+        PrivateTmp = true;
       };
       environment =
         {
@@ -175,7 +199,7 @@ in
           "SUBTYPE" = "13";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "PARENT" = "microvm@${cfg.name}.service";
-          "APPLICATIONS" = "${cfg.applications}";
+          "APPLICATIONS" = "${builtins.toJSON cfg.applications}";
           "ADMIN_SERVER_NAME" = "${cfg.admin.name}";
           "ADMIN_SERVER_ADDR" = "${cfg.admin.addr}";
           "ADMIN_SERVER_PORT" = "${cfg.admin.port}";

@@ -163,3 +163,12 @@ func GetOutboundIP() net.IP {
 
 	return localAddr.IP
 }
+
+func CheckStringInArray(element string, array []string) bool {
+	for _, e := range array {
+		if e == element {
+			return true
+		}
+	}
+	return false
+}

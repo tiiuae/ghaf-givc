@@ -9,6 +9,7 @@ import (
 	"time"
 
 	systemd_api "givc/api/systemd"
+	"givc/internal/pkgs/types"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -33,7 +34,7 @@ func (s *SystemdControlServer) RegisterGrpcService(srv *grpc.Server) {
 	systemd_api.RegisterUnitControlServiceServer(srv, s)
 }
 
-func NewSystemdControlServer(whitelist []string, applications map[string]string) (*SystemdControlServer, error) {
+func NewSystemdControlServer(whitelist []string, applications []types.ApplicationManifest) (*SystemdControlServer, error) {
 
 	systemdController, err := NewController(whitelist, applications)
 	if err != nil {
@@ -181,9 +182,9 @@ func (s *SystemdControlServer) MonitorUnit(req *systemd_api.UnitResourceRequest,
 	return nil
 }
 
-func (s *SystemdControlServer) StartApplication(ctx context.Context, req *systemd_api.UnitRequest) (*systemd_api.UnitResponse, error) {
-	log.Infof("Executing application start method.\n")
-	resp, err := s.Controller.StartApplication(ctx, req.UnitName)
+func (s *SystemdControlServer) StartApplication(ctx context.Context, req *systemd_api.AppUnitRequest) (*systemd_api.UnitResponse, error) {
+	log.Infof("Executing application start method for: %s\n", req.UnitName)
+	resp, err := s.Controller.StartApplication(ctx, req.UnitName, req.Args)
 	if err != nil {
 		return nil, err
 	}
