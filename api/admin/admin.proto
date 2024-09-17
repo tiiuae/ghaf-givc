@@ -34,6 +34,7 @@ message RegistryResponse {
 message ApplicationRequest {
     string AppName = 1;
     optional string VmName = 2;
+    repeated string Args = 3;
 }
 
 message ApplicationResponse {
@@ -74,5 +75,5 @@ service AdminService {
     rpc Reboot(Empty) returns (Empty) {}
 
     rpc QueryList(Empty) returns (QueryListResponse) {}
-    rpc Watch(Empty) returns (stream WatchItem) {}  
+    rpc Watch(Empty) returns (stream WatchItem) {}
 }

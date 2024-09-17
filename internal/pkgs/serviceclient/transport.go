@@ -118,39 +118,6 @@ func StartRemoteService(cfg *types.EndpointConfig, unitName string) (*systemd_ap
 	return resp, nil
 }
 
-func StartRemoteApplication(cfg *types.EndpointConfig, unitName string) (*systemd_api.UnitResponse, error) {
-
-	// Setup and dial GRPC client
-	var conn *grpc.ClientConn
-	conn, err := givc_grpc.NewClient(cfg, false)
-	if err != nil {
-		log.Errorf("Cannot create grpc client: %v", err)
-		return nil, err
-	}
-	defer conn.Close()
-
-	// Create client
-	client := systemd_api.NewUnitControlServiceClient(conn)
-	if client == nil {
-		log.Errorf("Failed to create 'NewUnitControlServiceClient'")
-		return nil, err
-	}
-
-	// Start unit
-	request := systemd_api.UnitRequest{
-		UnitName: unitName,
-	}
-	ctx := context.Background()
-	resp, err := client.StartApplication(ctx, &request)
-	if err != nil {
-		log.Errorf("Not the response we hoped for: %v", err)
-		return nil, err
-	}
-
-	log.Infoln(resp)
-	return resp, nil
-}
-
 func PauseRemoteService(cfg *types.EndpointConfig, unitName string) (*systemd_api.UnitResponse, error) {
 
 	// Setup and dial GRPC client

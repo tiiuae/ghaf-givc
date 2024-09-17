@@ -12,6 +12,11 @@ message UnitResponse {
     string CmdStatus = 1;
 }
 
+message AppUnitRequest {
+    string UnitName = 1;
+    repeated string Args = 2;
+}
+
 message UnitStatus {
     string Name = 1;
 	string Description = 2;
@@ -43,5 +48,5 @@ service UnitControlService {
     rpc FreezeUnit(UnitRequest) returns (UnitResponse) {}
     rpc UnfreezeUnit(UnitRequest) returns (UnitResponse) {}
     rpc MonitorUnit(UnitResourceRequest) returns (stream UnitResourceResponse) {}
-    rpc StartApplication(UnitRequest) returns (UnitResponse) {}
+    rpc StartApplication(AppUnitRequest) returns (UnitResponse) {}
 }

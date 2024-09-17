@@ -5,13 +5,13 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"givc/api/admin"
+	givc_app "givc/internal/pkgs/applications"
 	givc_grpc "givc/internal/pkgs/grpc"
 	"givc/internal/pkgs/hwidmanager"
 	"givc/internal/pkgs/serviceclient"
@@ -65,15 +65,16 @@ func main() {
 	if servicesPresent {
 		services = strings.Split(servicesString, " ")
 	}
-	var applications map[string]string
+
+	var applications []types.ApplicationManifest
 	jsonApplicationString, appPresent := os.LookupEnv("APPLICATIONS")
 	if appPresent && jsonApplicationString != "" {
-		applications = make(map[string]string)
-		err := json.Unmarshal([]byte(jsonApplicationString), &applications)
+		applications, err = givc_app.ParseApplicationManifests(jsonApplicationString)
 		if err != nil {
-			log.Fatalf("Error unmarshalling JSON string.")
+			log.Fatalf("Error parsing application manifests: %s", err)
 		}
 	}
+
 	adminServerName := os.Getenv("ADMIN_SERVER_NAME")
 	if adminServerName == "" {
 		log.Fatalf("A name for the admin server is required in environment variable $ADMIN_SERVER_NAME.")
@@ -144,9 +145,9 @@ func main() {
 		},
 		TlsConfig: tlsConfig,
 	}
-	agentServiceName := "givc-" + name + ".service"
 
 	// Add services
+	agentServiceName := "givc-" + name + ".service"
 	cfgAgent.Services = append(cfgAgent.Services, agentServiceName)
 	if servicesPresent {
 		cfgAgent.Services = append(cfgAgent.Services, services...)

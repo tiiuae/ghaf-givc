@@ -259,7 +259,7 @@ impl AdminServiceImpl {
         let endpoint = self.agent_endpoint(&systemd_agent)?;
         let client = SystemDClient::new(endpoint.clone());
         let app_name = self.registry.create_unique_entry_name(&name.to_string());
-        client.start_application(app_name.clone()).await?;
+        client.start_application(app_name.clone(), req.args).await?;
         let status = client.get_remote_status(app_name.clone()).await?;
         if status.active_state != "active" {
             bail!("cannot start unit: {app_name}")
