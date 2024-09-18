@@ -4,6 +4,7 @@ use std::time::Duration;
 use anyhow::anyhow;
 use hyper_util::rt::TokioIo;
 use tokio::net::UnixStream;
+use tokio_vsock::{VsockAddr, VsockStream};
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, ServerTlsConfig};
 use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
@@ -88,6 +89,17 @@ async fn connect_unix_socket(endpoint: Endpoint, path: &String) -> anyhow::Resul
     Ok(ch)
 }
 
+async fn connect_vsock_socket(endpoint: Endpoint, vs: &VsockAddr) -> anyhow::Result<Channel> {
+    let vs = vs.to_owned();
+    let ch = endpoint
+        .connect_with_connector(service_fn(move |_: Uri| async move {
+            let stream = VsockStream::connect(vs).await?;
+            Ok::<_, std::io::Error>(TokioIo::new(stream))
+        }))
+        .await?;
+    Ok(ch)
+}
+
 impl EndpointConfig {
     pub async fn connect(&self) -> anyhow::Result<Channel> {
         let url = transport_config_to_url(&self.transport.address, self.tls.is_some());
@@ -102,6 +114,7 @@ impl EndpointConfig {
             EndpointAddress::Tcp { .. } => endpoint.connect().await?,
             EndpointAddress::Unix(unix) => connect_unix_socket(endpoint, unix).await?,
             EndpointAddress::Abstract(abs) => connect_unix_socket(endpoint, abs).await?,
+            EndpointAddress::Vsock(vs) => connect_vsock_socket(endpoint, vs).await?,
         };
         Ok(channel)
     }

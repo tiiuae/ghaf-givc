@@ -2,8 +2,10 @@
 // Some of them would be rewritten, replaced, or even removed
 use super::address::EndpointAddress;
 use crate::pb;
-use anyhow::{anyhow, bail};
 use std::convert::{Into, TryFrom};
+
+use anyhow::{anyhow, bail};
+use tokio_vsock::VsockAddr;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct UnitType {
@@ -203,7 +205,9 @@ impl TryFrom<pb::TransportConfig> for EndpointEntry {
             },
             "unix" => EndpointAddress::Unix(tc.address),
             "abstract" => EndpointAddress::Abstract(tc.address),
-            // "vsock" => unimplemented!(),
+            "vsock" => {
+                EndpointAddress::Vsock(VsockAddr::new(tc.address.parse()?, tc.port.parse()?))
+            }
             unknown => bail!("Unknown protocol: {unknown}"),
         };
         Ok(Self {
@@ -234,12 +238,12 @@ impl Into<pb::TransportConfig> for EndpointEntry {
                 port: "".into(),
                 name: self.tls_name,
             },
-            //            EndpointAddress::Vsock(vs) => pb::TransportConfig {
-            //                protocol: "vsock".into(),
-            //                address: vs.cid().to_string(),
-            //                port: vs.port().to_string(),
-            //                name: self.tls_name,
-            //            }
+            EndpointAddress::Vsock(vs) => pb::TransportConfig {
+                protocol: "vsock".into(),
+                address: vs.cid().to_string(),
+                port: vs.port().to_string(),
+                name: self.tls_name,
+            },
         }
     }
 }
