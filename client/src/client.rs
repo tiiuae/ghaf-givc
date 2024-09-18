@@ -110,6 +110,16 @@ impl AdminClient {
         let _response = self.connect_to().await?.poweroff(request).await?;
         Ok(())
     }
+    pub async fn suspend(&self) -> anyhow::Result<()> {
+        let request = pb::admin::Empty {};
+        let _response = self.connect_to().await?.suspend(request).await?;
+        Ok(())
+    }
+    pub async fn wakeup(&self) -> anyhow::Result<()> {
+        let request = pb::admin::Empty {};
+        let _response = self.connect_to().await?.wakeup(request).await?;
+        Ok(())
+    }
 
     pub async fn query(
         &self,

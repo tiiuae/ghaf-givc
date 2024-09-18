@@ -75,6 +75,8 @@ in
                   "microvm@foot-vm.service"
                   "poweroff.target"
                   "reboot.target"
+                  "sleep.target"
+                  "suspend.target"
                 ];
                 tls = mkTls "ghaf-host";
               };
@@ -154,6 +156,8 @@ in
                   services = [
                     "poweroff.target"
                     "reboot.target"
+                    "sleep.target"
+                    "suspend.target"
                   ];
                 };
 

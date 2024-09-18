@@ -29,6 +29,8 @@ const (
 	AdminService_StopApplication_FullMethodName   = "/admin.AdminService/StopApplication"
 	AdminService_Poweroff_FullMethodName          = "/admin.AdminService/Poweroff"
 	AdminService_Reboot_FullMethodName            = "/admin.AdminService/Reboot"
+	AdminService_Suspend_FullMethodName           = "/admin.AdminService/Suspend"
+	AdminService_Wakeup_FullMethodName            = "/admin.AdminService/Wakeup"
 	AdminService_QueryList_FullMethodName         = "/admin.AdminService/QueryList"
 	AdminService_Watch_FullMethodName             = "/admin.AdminService/Watch"
 )
@@ -44,6 +46,8 @@ type AdminServiceClient interface {
 	StopApplication(ctx context.Context, in *ApplicationRequest, opts ...grpc.CallOption) (*ApplicationResponse, error)
 	Poweroff(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
 	Reboot(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
+	Suspend(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
+	Wakeup(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
 	QueryList(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*QueryListResponse, error)
 	Watch(ctx context.Context, in *Empty, opts ...grpc.CallOption) (AdminService_WatchClient, error)
 }
@@ -119,6 +123,24 @@ func (c *adminServiceClient) Reboot(ctx context.Context, in *Empty, opts ...grpc
 	return out, nil
 }
 
+func (c *adminServiceClient) Suspend(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, AdminService_Suspend_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) Wakeup(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, AdminService_Wakeup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) QueryList(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*QueryListResponse, error) {
 	out := new(QueryListResponse)
 	err := c.cc.Invoke(ctx, AdminService_QueryList_FullMethodName, in, out, opts...)
@@ -171,6 +193,8 @@ type AdminServiceServer interface {
 	StopApplication(context.Context, *ApplicationRequest) (*ApplicationResponse, error)
 	Poweroff(context.Context, *Empty) (*Empty, error)
 	Reboot(context.Context, *Empty) (*Empty, error)
+	Suspend(context.Context, *Empty) (*Empty, error)
+	Wakeup(context.Context, *Empty) (*Empty, error)
 	QueryList(context.Context, *Empty) (*QueryListResponse, error)
 	Watch(*Empty, AdminService_WatchServer) error
 	mustEmbedUnimplementedAdminServiceServer()
@@ -200,6 +224,12 @@ func (UnimplementedAdminServiceServer) Poweroff(context.Context, *Empty) (*Empty
 }
 func (UnimplementedAdminServiceServer) Reboot(context.Context, *Empty) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Reboot not implemented")
+}
+func (UnimplementedAdminServiceServer) Suspend(context.Context, *Empty) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Suspend not implemented")
+}
+func (UnimplementedAdminServiceServer) Wakeup(context.Context, *Empty) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Wakeup not implemented")
 }
 func (UnimplementedAdminServiceServer) QueryList(context.Context, *Empty) (*QueryListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QueryList not implemented")
@@ -346,6 +376,42 @@ func _AdminService_Reboot_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_Suspend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).Suspend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_Suspend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).Suspend(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_Wakeup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).Wakeup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_Wakeup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).Wakeup(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_QueryList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
 	if err := dec(in); err != nil {
@@ -419,6 +485,14 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Reboot",
 			Handler:    _AdminService_Reboot_Handler,
+		},
+		{
+			MethodName: "Suspend",
+			Handler:    _AdminService_Suspend_Handler,
+		},
+		{
+			MethodName: "Wakeup",
+			Handler:    _AdminService_Wakeup_Handler,
 		},
 		{
 			MethodName: "QueryList",
