@@ -73,6 +73,8 @@ service AdminService {
     rpc StopApplication(ApplicationRequest) returns (ApplicationResponse) {}
     rpc Poweroff(Empty) returns (Empty) {}
     rpc Reboot(Empty) returns (Empty) {}
+    rpc Suspend(Empty) returns (Empty) {}
+    rpc Wakeup(Empty) returns (Empty) {}
 
     rpc QueryList(Empty) returns (QueryListResponse) {}
     rpc Watch(Empty) returns (stream WatchItem) {}

@@ -59,6 +59,8 @@ in
       default = [
         "reboot.target"
         "poweroff.target"
+        "sleep.target"
+        "suspend.target"
       ];
       example = "[ 'my-service.service' ]";
     };
