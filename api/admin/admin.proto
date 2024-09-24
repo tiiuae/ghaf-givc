@@ -28,7 +28,8 @@ message RegistryRequest {
 }
 
 message RegistryResponse {
-    string CmdStatus = 1;
+    string Timezone = 1;
+    string Locale = 2;
 }
 
 message ApplicationRequest {
@@ -65,12 +66,22 @@ message WatchItem {
     }
 }
 
+message LocaleRequest {
+    string Locale = 1;
+}
+
+message TimezoneRequest {
+    string Timezone = 1;
+}
+
 service AdminService {
     rpc RegisterService(RegistryRequest) returns (RegistryResponse) {}
     rpc StartApplication(ApplicationRequest) returns (ApplicationResponse) {}
     rpc PauseApplication(ApplicationRequest) returns (ApplicationResponse) {}
     rpc ResumeApplication(ApplicationRequest) returns (ApplicationResponse) {}
     rpc StopApplication(ApplicationRequest) returns (ApplicationResponse) {}
+    rpc SetLocale(LocaleRequest) returns (Empty) {}
+    rpc SetTimezone(TimezoneRequest) returns (Empty) {}
     rpc Poweroff(Empty) returns (Empty) {}
     rpc Reboot(Empty) returns (Empty) {}
     rpc Suspend(Empty) returns (Empty) {}

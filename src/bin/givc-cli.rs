@@ -79,6 +79,12 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         as_json: bool,
     },
+    SetLocale {
+        locale: String,
+    },
+    SetTimezone {
+        timezone: String,
+    },
     Watch {
         #[arg(long, default_value_t = false)]
         as_json: bool,
@@ -172,6 +178,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         Commands::QueryList { as_json } => {
             let reply = admin.query_list().await?;
             dump(&reply, as_json)?
+        }
+
+        Commands::SetLocale { locale } => {
+            admin.set_locale(locale).await?;
+        }
+
+        Commands::SetTimezone { timezone } => {
+            admin.set_timezone(timezone).await?;
         }
         Commands::Watch {
             as_json,

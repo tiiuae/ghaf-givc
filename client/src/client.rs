@@ -71,17 +71,22 @@ impl AdminClient {
         ty: UnitType,
         endpoint: EndpointEntry,
         status: UnitStatus,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<(String, String)> {
         // Convert everything into wire format
         let request = pb::admin::RegistryRequest {
-            name: name,
+            name,
             parent: "".to_owned(),
             r#type: ty.into(),
             transport: Some(endpoint.into()),
             state: Some(status.into()),
         };
-        let response = self.connect_to().await?.register_service(request).await?;
-        Ok(response.into_inner().cmd_status)
+        let response = self
+            .connect_to()
+            .await?
+            .register_service(request)
+            .await?
+            .into_inner();
+        Ok((response.timezone, response.locale))
     }
 
     pub async fn start(
@@ -148,6 +153,22 @@ impl AdminClient {
             .into_iter()
             .map(QueryResult::try_from)
             .collect()
+    }
+
+    pub async fn set_locale(&self, locale: String) -> anyhow::Result<()> {
+        self.connect_to()
+            .await?
+            .set_locale(pb::admin::LocaleRequest { locale })
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_timezone(&self, timezone: String) -> anyhow::Result<()> {
+        self.connect_to()
+            .await?
+            .set_timezone(pb::admin::TimezoneRequest { timezone })
+            .await?;
+        Ok(())
     }
 
     pub async fn watch(&self) -> anyhow::Result<WatchResult> {

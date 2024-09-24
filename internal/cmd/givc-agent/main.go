@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -176,9 +177,29 @@ func main() {
 		<-serverStarted
 
 		// Register agent
-		_, err := serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
+		response, err := serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
 		if err != nil {
 			log.Fatalf("Error register agent: %s", err)
+		} else {
+			if response.Locale != "" {
+				if err := exec.Command("localectl", "set-locale", response.Locale).Run(); err != nil {
+					log.Warningf("Failed to set locale: %s", err)
+				}
+				if givc_util.IsRoot() {
+					if err := exec.Command("systemctl", "set-environment", "LANG="+response.Locale).Run(); err != nil {
+						log.Warningf("Failed to set environment: %s", err)
+					}
+				} else {
+					if err := exec.Command("systemctl", "--user", "set-environment", "LANG="+response.Locale).Run(); err != nil {
+						log.Warningf("Failed to set environment: %s", err)
+					}
+				}
+			}
+			if response.Timezone != "" {
+				if err := exec.Command("timedatectl", "set-timezone", response.Timezone).Run(); err != nil {
+					log.Warningf("Failed to set timezone: %s", err)
+				}
+			}
 		}
 
 		// Register services

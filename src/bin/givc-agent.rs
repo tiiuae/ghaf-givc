@@ -9,6 +9,7 @@ use givc_common::pb;
 use givc_common::pb::reflection::SYSTEMD_DESCRIPTOR;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use tonic::transport::Server;
 use tracing::info;
 
@@ -107,9 +108,26 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let admin_tls = tls.clone().map(|tls| (cli.admin_server_name, tls));
     let admin = AdminClient::new(cli.admin_server_addr, cli.admin_server_port, admin_tls);
-    admin
+    let (timezone, locale) = admin
         .register_service(agent_service_name, cli.r#type.try_into()?, endpoint, status)
         .await?;
+
+    if !timezone.is_empty() {
+        Command::new("timedatectl")
+            .args(["set-timezone", timezone.as_str()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+    }
+    if !locale.is_empty() {
+        Command::new("localectl")
+            .args(["set-locale", locale.as_str()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+    }
 
     let reflect = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)

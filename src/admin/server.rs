@@ -6,6 +6,7 @@ use givc_common::query::Event;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tonic::{Code, Response, Status};
 use tracing::{debug, error, info};
 
@@ -20,6 +21,8 @@ use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::*;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
+const TIMEZONE_CONF: &str = "/etc/timezone.conf";
+const LOCALE_CONF: &str = "/etc/locale-givc.conf";
 
 // FIXME: this is almost copy of sysfsm::Event.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -35,6 +38,8 @@ pub struct AdminServiceImpl {
     registry: Registry,
     state: State, // FIXME: use sysfsm statemachine
     tls_config: Option<TlsConfig>,
+    locale: Mutex<String>,
+    timezone: Mutex<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,16 +54,31 @@ impl AdminService {
         tokio::task::spawn(async move {
             clone.monitor().await;
         });
-        Self { inner: inner }
+        Self { inner }
     }
 }
 
 impl AdminServiceImpl {
     pub fn new(use_tls: Option<TlsConfig>) -> Self {
+        let timezone = std::fs::read_to_string(TIMEZONE_CONF)
+            .ok()
+            .and_then(|l| l.lines().next().map(ToOwned::to_owned))
+            .unwrap_or_default();
+        let locale = std::fs::read_to_string(LOCALE_CONF)
+            .ok()
+            .and_then(|l| {
+                l.lines()
+                    .filter_map(|l| l.strip_prefix("LANG="))
+                    .next()
+                    .map(ToOwned::to_owned)
+            })
+            .unwrap_or_default();
         Self {
             registry: Registry::new(),
             state: State::Init,
             tls_config: use_tls,
+            timezone: Mutex::new(timezone),
+            locale: Mutex::new(locale),
         }
     }
 
@@ -300,13 +320,16 @@ impl pb::admin_service_server::AdminService for AdminService {
     ) -> std::result::Result<tonic::Response<pb::RegistryResponse>, tonic::Status> {
         let req = request.into_inner();
 
+        info!("Registering service {:?}", req);
         let entry = RegistryEntry::try_from(req)
             .map_err(|e| Status::new(Code::InvalidArgument, format!("{e}")))?;
         self.inner.register(entry);
 
         let res = RegistryResponse {
-            cmd_status: String::from("Registration successful"),
+            timezone: self.inner.timezone.lock().await.clone(),
+            locale: self.inner.locale.lock().await.clone(),
         };
+        info!("Responding with {res:?}");
         Ok(Response::new(res))
     }
     async fn start_application(
@@ -426,6 +449,30 @@ impl pb::admin_service_server::AdminService for AdminService {
             Ok(QueryListResponse {
                 list: list.into_iter().map(|item| item.into()).collect(), // Kludge
             })
+        })
+        .await
+    }
+
+    async fn set_locale(
+        &self,
+        request: tonic::Request<LocaleRequest>,
+    ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
+        escalate(request, |req| async move {
+            let _ = tokio::fs::write(LOCALE_CONF, format!("LANG={}", req.locale)).await;
+            *self.inner.locale.lock().await = req.locale;
+            Ok(Empty {})
+        })
+        .await
+    }
+
+    async fn set_timezone(
+        &self,
+        request: tonic::Request<TimezoneRequest>,
+    ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
+        escalate(request, |req| async move {
+            let _ = tokio::fs::write(TIMEZONE_CONF, &req.timezone).await;
+            *self.inner.timezone.lock().await = req.timezone;
+            Ok(Empty {})
         })
         .await
     }
