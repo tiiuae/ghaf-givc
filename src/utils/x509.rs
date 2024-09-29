@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::net::IpAddr;
 use x509_parser::prelude::*;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SecurityInfo {
     enabled: bool,
     dns_names: Vec<String>,

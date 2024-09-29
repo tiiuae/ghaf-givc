@@ -5,7 +5,7 @@ fn security_info_from_request(req: &Request<()>) -> Result<SecurityInfo, Status>
     if let Some(certs) = req.peer_certs() {
         certs
             .iter()
-            .find_map(|cert| SecurityInfo::try_from(cert.get_ref()).ok())
+            .find_map(|cert| SecurityInfo::try_from(cert.as_ref()).ok())
             .ok_or(Status::unauthenticated("Can't determinate certificace"))
     } else {
         Err(Status::unauthenticated("No valid certificate"))

@@ -1,8 +1,11 @@
 // This module contain literal translations of types from internal/pkgs/types/types.go
 // Some of them would be rewritten, replaced, or even removed
+use super::address::EndpointAddress;
 use crate::pb;
-use anyhow::{anyhow, bail};
 use std::convert::{Into, TryFrom};
+
+use anyhow::{anyhow, bail};
+use tokio_vsock::VsockAddr;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct UnitType {
@@ -186,9 +189,7 @@ impl Into<pb::UnitStatus> for UnitStatus {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EndpointEntry {
-    pub protocol: String, // Bogus, should we drop it?
-    pub address: String,
-    pub port: u16,
+    pub address: EndpointAddress,
     pub tls_name: String,
 }
 
@@ -197,10 +198,20 @@ pub type TransportConfig = EndpointEntry;
 impl TryFrom<pb::TransportConfig> for EndpointEntry {
     type Error = anyhow::Error;
     fn try_from(tc: pb::TransportConfig) -> Result<Self, Self::Error> {
+        let endpoint = match tc.protocol.as_str() {
+            "tcp" => EndpointAddress::Tcp {
+                addr: tc.address,
+                port: tc.port.parse()?,
+            },
+            "unix" => EndpointAddress::Unix(tc.address),
+            "abstract" => EndpointAddress::Abstract(tc.address),
+            "vsock" => {
+                EndpointAddress::Vsock(VsockAddr::new(tc.address.parse()?, tc.port.parse()?))
+            }
+            unknown => bail!("Unknown protocol: {unknown}"),
+        };
         Ok(Self {
-            protocol: tc.protocol,
-            address: tc.address,
-            port: tc.port.parse()?,
+            address: endpoint,
             tls_name: tc.name,
         })
     }
@@ -208,11 +219,31 @@ impl TryFrom<pb::TransportConfig> for EndpointEntry {
 
 impl Into<pb::TransportConfig> for EndpointEntry {
     fn into(self) -> pb::TransportConfig {
-        pb::TransportConfig {
-            protocol: self.protocol,
-            address: self.address,
-            port: self.port.to_string(),
-            name: self.tls_name,
+        match self.address {
+            EndpointAddress::Tcp { addr, port } => pb::TransportConfig {
+                protocol: "tcp".into(),
+                address: addr,
+                port: port.to_string(),
+                name: self.tls_name,
+            },
+            EndpointAddress::Unix(unix) => pb::TransportConfig {
+                protocol: "unix".into(),
+                address: unix,
+                port: "".into(),
+                name: self.tls_name,
+            },
+            EndpointAddress::Abstract(abstr) => pb::TransportConfig {
+                protocol: "abstract".into(),
+                address: abstr,
+                port: "".into(),
+                name: self.tls_name,
+            },
+            EndpointAddress::Vsock(vs) => pb::TransportConfig {
+                protocol: "vsock".into(),
+                address: vs.cid().to_string(),
+                port: vs.port().to_string(),
+                name: self.tls_name,
+            },
         }
     }
 }

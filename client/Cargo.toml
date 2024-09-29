@@ -12,11 +12,13 @@ async-channel = "2.3.1"
 async-stream = "0.3"
 http = "0.2"
 http-body = "0.4.2"
-prost = "0.12"
+hyper-util = { version = "0.1.4"}
 tokio = {version = "1.0", features = ["rt-multi-thread", "time", "macros"]}
 tokio-stream = "0.1"
-tonic = {version="0.11.0", features = ["tls"]}
-tonic-types = {version="0.11.0"}
+tokio-vsock = "*"
+tonic = {version="0.12.2", features = ["tls"]}
+tonic-types = {version="0.12.2"}
+tower = {version = "0.4"}
 tracing = "0.1"
 serde = { version = "1.0.202", features = ["derive"]}
 

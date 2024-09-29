@@ -41,6 +41,7 @@ impl RegistryEntry {
 #[cfg(test)]
 impl RegistryEntry {
     pub fn dummy(n: String) -> Self {
+        use givc_common::address::EndpointAddress;
         Self {
             name: n,
             r#type: UnitType {
@@ -56,9 +57,10 @@ impl RegistryEntry {
                 path: "bogus".to_string(),
             },
             placement: Placement::Endpoint(EndpointEntry {
-                protocol: "bogus".to_string(),
-                address: "127.0.0.1".to_string(),
-                port: 42,
+                address: EndpointAddress::Tcp {
+                    addr: "127.0.0.1".to_string(),
+                    port: 42,
+                },
                 tls_name: "bogus".to_string(),
             }),
             watch: true,

@@ -1,7 +1,9 @@
 use clap::{Parser, Subcommand};
 use givc::endpoint::TlsConfig;
 use givc::types::*;
+use givc::utils::vsock::parse_vsock_addr;
 use givc_client::AdminClient;
+use givc_common::address::EndpointAddress;
 use serde::ser::Serialize;
 use std::path::PathBuf;
 use std::time;
@@ -22,6 +24,9 @@ struct Cli {
 
     #[arg(long, env = "NAME", default_missing_value = "admin.ghaf")]
     name: String, // for TLS service name
+
+    #[arg(long)]
+    vsock: Option<String>,
 
     #[arg(long, env = "CA_CERT")]
     cacert: Option<PathBuf>,
@@ -132,7 +137,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             },
         ))
     };
-    let admin = AdminClient::new(cli.addr, cli.port, tls);
+
+    // FIXME; big kludge, but allow to test vsock connection
+    let admin = if let Some(vsock) = cli.vsock {
+        info!("Connection diverted to VSock");
+        AdminClient::from_endpoint_address(EndpointAddress::Vsock(parse_vsock_addr(&vsock)?), tls)
+    } else {
+        AdminClient::new(cli.addr, cli.port, tls)
+    };
 
     match cli.command {
         Commands::Test { test } => test_subcommands(test, admin).await?,

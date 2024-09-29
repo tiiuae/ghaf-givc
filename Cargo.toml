@@ -23,12 +23,12 @@ console = "0.15"
 http = "0.2"
 http-body = "0.4.2"
 hyper = "0.14"
-prost = "0.12"
 tokio = {version = "1.0", features = ["rt-multi-thread", "time", "macros"]}
 tokio-stream = "0.1"
-tonic = {version="0.11.0", features = ["tls"]}
-tonic-types = {version="0.11.0"}
-tonic-reflection = {version="0.11.0"}
+tokio-vsock = "0.5"
+tonic = {version="0.12.2", features = ["tls"]}
+tonic-types = {version="0.12.2"}
+tonic-reflection = {version="0.12.2"}
 tower = {version = "0.4"}
 tracing = "0.1"
 tracing-subscriber = {version = "0.3", features = ["env-filter", "tracing-log", "time", "local-time"]}
@@ -36,6 +36,8 @@ tracing-journald = {version =" 0.2.0"}
 serde = { version = "1.0.202", features = ["derive"]}
 serde_json = "1.0.120"
 x509-parser = { version = "0.16" }
+
+tokio-listener = { features = ["multi-listener", "tonic012", "vsock"], git = "https://github.com/avnik/tokio-listener", branch = "avnik/vsock-ghaf" }
 
 # GIVC subparts
 givc-common = { path="common" } 
