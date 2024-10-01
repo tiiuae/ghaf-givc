@@ -104,21 +104,18 @@ impl AdminServiceImpl {
             vm: VmType::Host,
             service: ServiceType::Mgr,
         })?;
-        let endpoint = host_mgr
-            .agent()
-            .with_context(|| "Resolving host agent".to_string())?;
+        self.endpoint(host_mgr).context("Resolving host agent")
+    }
+
+    pub fn endpoint(&self, reentry: RegistryEntry) -> anyhow::Result<EndpointConfig> {
         Ok(EndpointConfig {
-            transport: endpoint,
+            transport: reentry.agent()?,
             tls: self.tls_config.clone(),
         })
     }
-
     pub fn agent_endpoint(&self, name: &str) -> anyhow::Result<EndpointConfig> {
-        let endpoint = self.registry.by_name(name)?.agent()?;
-        Ok(EndpointConfig {
-            transport: endpoint,
-            tls: self.tls_config.clone(),
-        })
+        let reentry = self.registry.by_name(name)?;
+        self.endpoint(reentry)
     }
 
     pub fn app_entries(&self, name: String) -> anyhow::Result<Vec<String>> {
@@ -206,7 +203,7 @@ impl AdminServiceImpl {
                 let name = parse_service_name(&entry.name)?;
                 self.start_vm(name)
                     .await
-                    .with_context(|| format!("handing error, by restart VM {}", &entry.name))?;
+                    .with_context(|| format!("handing error, by restart VM {}", entry.name))?;
                 Ok(()) // FIXME: should use `?` from line above, why it didn't work?
             }
             (x, y) => bail!(
@@ -245,7 +242,7 @@ impl AdminServiceImpl {
                     if inactive {
                         self.handle_error(entry)
                             .await
-                            .with_context(|| "during handle error")?
+                            .context("during handle error")?
                     }
                 }
             }
@@ -287,7 +284,7 @@ impl AdminServiceImpl {
             Err(_) => {
                 self.start_vm(&vm_name)
                     .await
-                    .context(format!("Starting vm for {}", &name))?;
+                    .with_context(|| format!("Starting vm for {name}"))?;
                 self.registry
                     .by_name(&systemd_agent)
                     .context("after starting VM")?
@@ -505,7 +502,26 @@ impl pb::admin_service_server::AdminService for AdminService {
                 bail!("Invalid locale");
             }
             let _ = tokio::fs::write(LOCALE_CONF, format!("LANG={}", req.locale)).await;
+            let managers = self.inner.registry.find_map(|re| {
+                (re.r#type.service == ServiceType::Mgr)
+                    .then_some(())
+                    .and_then(|_| self.inner.endpoint(re.clone()).ok())
+            });
+            let locale = req.locale.clone();
+            tokio::spawn(async move {
+                for ec in managers {
+                    if let Ok(conn) = ec.connect().await {
+                        let mut client =
+                            pb::locale::locale_client_client::LocaleClientClient::new(conn);
+                        let localemsg = pb::locale::LocaleMessage {
+                            locale: locale.clone(),
+                        };
+                        let _ = client.locale_set(localemsg).await;
+                    }
+                }
+            });
             *self.inner.locale.lock().await = req.locale;
+
             Ok(Empty {})
         })
         .await
@@ -520,6 +536,24 @@ impl pb::admin_service_server::AdminService for AdminService {
                 bail!("Invalid timezone");
             }
             let _ = tokio::fs::write(TIMEZONE_CONF, &req.timezone).await;
+            let managers = self.inner.registry.find_map(|re| {
+                (re.r#type.service == ServiceType::Mgr)
+                    .then_some(())
+                    .and_then(|_| self.inner.endpoint(re.clone()).ok())
+            });
+            let timezone = req.timezone.clone();
+            tokio::spawn(async move {
+                for ec in managers {
+                    if let Ok(conn) = ec.connect().await {
+                        let mut client =
+                            pb::locale::locale_client_client::LocaleClientClient::new(conn);
+                        let tzmsg = pb::locale::TimezoneMessage {
+                            timezone: timezone.clone(),
+                        };
+                        let _ = client.timezone_set(tzmsg).await;
+                    }
+                }
+            });
             *self.inner.timezone.lock().await = req.timezone;
             Ok(Empty {})
         })

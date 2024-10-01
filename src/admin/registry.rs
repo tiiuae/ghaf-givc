@@ -81,6 +81,11 @@ impl Registry {
         }
     }
 
+    pub fn find_map<T, F: FnMut(&RegistryEntry) -> Option<T>>(&self, filter: F) -> Vec<T> {
+        let state = self.map.lock().unwrap();
+        state.values().filter_map(filter).collect()
+    }
+
     pub fn by_type_many(&self, ty: UnitType) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
         state.values().filter(|x| x.r#type == ty).cloned().collect()

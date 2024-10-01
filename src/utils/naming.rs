@@ -28,7 +28,7 @@ pub fn parse_application_name(name: &str) -> anyhow::Result<(&str, i32)> {
         if let Some((left, right)) = name_no_suffix.rsplit_once('@') {
             let num = right
                 .parse::<i32>()
-                .with_context(|| format!("While parsing number part of {}", name))?;
+                .with_context(|| format!("While parsing number part of {name}"))?;
             return Ok((left, num));
         }
     };
