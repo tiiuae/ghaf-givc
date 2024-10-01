@@ -4,7 +4,7 @@ use super::address::EndpointAddress;
 use crate::pb;
 use std::convert::{Into, TryFrom};
 
-use anyhow::{anyhow, bail};
+use anyhow::bail;
 use tokio_vsock::VsockAddr;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -107,30 +107,30 @@ impl TryFrom<u32> for UnitType {
 // so we can use just Into<u32> trait
 // FIXME:  Combination of `UnitType{ vm: Host, service: VM}` is ILLEGAL!!!
 //         Should we use TryInto, or fix type system?
-impl Into<u32> for UnitType {
-    fn into(self) -> u32 {
+impl From<UnitType> for u32 {
+    fn from(val: UnitType) -> Self {
         use ServiceType::*;
         use VmType::*;
-        match self.vm {
-            Host => match self.service {
+        match val.vm {
+            Host => match val.service {
                 Mgr => 0,
                 Svc => 1,
                 App => 2,
                 VM => 100500,
             },
-            AdmVM => match self.service {
+            AdmVM => match val.service {
                 VM => 3,
                 Mgr => 4,
                 Svc => 5,
                 App => 6,
             },
-            SysVM => match self.service {
+            SysVM => match val.service {
                 VM => 7,
                 Mgr => 8,
                 Svc => 9,
                 App => 10,
             },
-            AppVM => match self.service {
+            AppVM => match val.service {
                 VM => 11,
                 Mgr => 12,
                 Svc => 13,
@@ -175,14 +175,14 @@ impl TryFrom<pb::UnitStatus> for UnitStatus {
     }
 }
 
-impl Into<pb::UnitStatus> for UnitStatus {
-    fn into(self) -> pb::UnitStatus {
-        pb::UnitStatus {
-            name: self.name,
-            description: self.description,
-            load_state: self.load_state,
-            active_state: self.active_state,
-            path: self.path,
+impl From<UnitStatus> for pb::UnitStatus {
+    fn from(val: UnitStatus) -> Self {
+        Self {
+            name: val.name,
+            description: val.description,
+            load_state: val.load_state,
+            active_state: val.active_state,
+            path: val.path,
         }
     }
 }
@@ -217,32 +217,32 @@ impl TryFrom<pb::TransportConfig> for EndpointEntry {
     }
 }
 
-impl Into<pb::TransportConfig> for EndpointEntry {
-    fn into(self) -> pb::TransportConfig {
-        match self.address {
-            EndpointAddress::Tcp { addr, port } => pb::TransportConfig {
+impl From<EndpointEntry> for pb::TransportConfig {
+    fn from(val: EndpointEntry) -> Self {
+        match val.address {
+            EndpointAddress::Tcp { addr, port } => Self {
                 protocol: "tcp".into(),
                 address: addr,
                 port: port.to_string(),
-                name: self.tls_name,
+                name: val.tls_name,
             },
-            EndpointAddress::Unix(unix) => pb::TransportConfig {
+            EndpointAddress::Unix(unix) => Self {
                 protocol: "unix".into(),
                 address: unix,
                 port: "".into(),
-                name: self.tls_name,
+                name: val.tls_name,
             },
-            EndpointAddress::Abstract(abstr) => pb::TransportConfig {
+            EndpointAddress::Abstract(abstr) => Self {
                 protocol: "abstract".into(),
                 address: abstr,
                 port: "".into(),
-                name: self.tls_name,
+                name: val.tls_name,
             },
-            EndpointAddress::Vsock(vs) => pb::TransportConfig {
+            EndpointAddress::Vsock(vs) => Self {
                 protocol: "vsock".into(),
                 address: vs.cid().to_string(),
                 port: vs.port().to_string(),
-                name: self.tls_name,
+                name: val.tls_name,
             },
         }
     }

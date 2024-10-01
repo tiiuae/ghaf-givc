@@ -1,8 +1,9 @@
+use anyhow::anyhow;
 use clap::{Parser, Subcommand};
 use givc::endpoint::TlsConfig;
 use givc::types::*;
 use givc::utils::vsock::parse_vsock_addr;
-use givc_client::AdminClient;
+use givc_client::{client::WatchResult, AdminClient};
 use givc_common::address::EndpointAddress;
 use serde::ser::Serialize;
 use std::path::PathBuf;
@@ -173,11 +174,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 None => None,
             };
             let reply = admin.query(ty, by_name).await?;
-            dump(&reply, as_json)?
+            dump(reply, as_json)?
         }
         Commands::QueryList { as_json } => {
             let reply = admin.query_list().await?;
-            dump(&reply, as_json)?
+            dump(reply, as_json)?
         }
 
         Commands::SetLocale { locale } => {
@@ -187,28 +188,33 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         Commands::SetTimezone { timezone } => {
             admin.set_timezone(timezone).await?;
         }
+
         Commands::Watch {
             as_json,
             limit,
-            initial,
+            initial: dump_initial,
         } => {
-            let watch = admin.watch().await?;
-            let mut limit = limit;
+            let WatchResult {
+                initial,
+                channel,
+                mut task,
+            } = admin.watch().await?;
+            let mut limit = limit.map(|l| 0..l);
 
-            if initial {
-                dump(watch.initial.clone(), as_json)?
+            if dump_initial {
+                dump(initial, as_json)?
             }
 
-            loop {
-                let event = watch.channel.recv().await?;
-                dump(event, as_json)?;
-                if limit.as_mut().is_some_and(|l| {
-                    *l -= 1;
-                    *l == 0
-                }) {
-                    break;
-                }
-            }
+            tokio::select! {
+                res = async move {
+                    // Change to Option::is_none_or() with rust >1.82
+                    while !limit.as_mut().is_some_and(|l| l.next().is_none()) {
+                        dump(channel.recv().await?, as_json)?;
+                    }
+                    Ok(())
+                } => res,
+                _ = task.as_mut() => Err(anyhow!("Watch task stopped unexpectedly"))
+            }?
         }
     };
 

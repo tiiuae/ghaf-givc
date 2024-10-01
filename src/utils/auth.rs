@@ -48,7 +48,7 @@ pub fn ensure_host<R>(req: Request<R>, hostname: &str) -> Result<(), Status> {
     }
 }
 
-pub fn ensure_hosts<R>(req: Request<R>, hostnames: &Vec<&str>) -> Result<(), Status> {
+pub fn ensure_hosts<R>(req: Request<R>, hostnames: &[&str]) -> Result<(), Status> {
     let permit = req
         .extensions()
         .get::<SecurityInfo>()

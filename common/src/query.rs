@@ -55,13 +55,13 @@ impl TryFrom<pb::QueryListItem> for QueryResult {
     }
 }
 
-impl Into<pb::QueryListItem> for QueryResult {
-    fn into(self) -> pb::QueryListItem {
-        pb::QueryListItem {
-            name: self.name,
-            description: self.description,
-            vm_status: self.status.to_string(),
-            trust_level: self.trust_level.to_string(),
+impl From<QueryResult> for pb::QueryListItem {
+    fn from(val: QueryResult) -> Self {
+        Self {
+            name: val.name,
+            description: val.description,
+            vm_status: val.status.to_string(),
+            trust_level: val.trust_level.to_string(),
         }
     }
 }
@@ -117,12 +117,12 @@ impl TryFrom<pb::WatchItem> for Event {
     }
 }
 
-impl Into<pb::WatchItem> for Event {
-    fn into(self) -> pb::WatchItem {
-        match self {
-            Event::UnitRegistered(value) => Self::watch_item(Status::Added(value.into())),
-            Event::UnitStatusChanged(value) => Self::watch_item(Status::Updated(value.into())),
-            Event::UnitShutdown(value) => Self::watch_item(Status::Removed(value.into())),
+impl From<Event> for pb::WatchItem {
+    fn from(val: Event) -> Self {
+        match val {
+            Event::UnitRegistered(value) => Event::watch_item(Status::Added(value.into())),
+            Event::UnitStatusChanged(value) => Event::watch_item(Status::Updated(value.into())),
+            Event::UnitShutdown(value) => Event::watch_item(Status::Removed(value.into())),
         }
     }
 }

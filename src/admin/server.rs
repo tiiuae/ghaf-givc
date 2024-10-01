@@ -91,21 +91,21 @@ impl AdminServiceImpl {
             .agent()
             .with_context(|| "Resolving host agent".to_string())?;
         Ok(EndpointConfig {
-            transport: endpoint.into(),
+            transport: endpoint,
             tls: self.tls_config.clone(),
         })
     }
 
-    pub fn agent_endpoint(&self, name: &String) -> anyhow::Result<EndpointConfig> {
-        let endpoint = self.registry.by_name(&name)?.agent()?;
+    pub fn agent_endpoint(&self, name: &str) -> anyhow::Result<EndpointConfig> {
+        let endpoint = self.registry.by_name(name)?.agent()?;
         Ok(EndpointConfig {
-            transport: endpoint.into(),
+            transport: endpoint,
             tls: self.tls_config.clone(),
         })
     }
 
     pub fn app_entries(&self, name: String) -> anyhow::Result<Vec<String>> {
-        if name.contains("@") {
+        if name.contains('@') {
             let list = self.registry.find_names(&name)?;
             Ok(list)
         } else {
@@ -126,7 +126,7 @@ impl AdminServiceImpl {
         };
         let tls_name = transport.tls_name.clone();
         let endpoint = EndpointConfig {
-            transport: transport.into(),
+            transport,
             tls: self.tls_config.clone().map(|mut tls| {
                 tls.tls_name = Some(tls_name);
                 tls
@@ -287,7 +287,7 @@ impl AdminServiceImpl {
 
         let app_entry = RegistryEntry {
             name: app_name,
-            status: status,
+            status,
             watch: true,
             r#type: UnitType {
                 vm: VmType::AppVM,

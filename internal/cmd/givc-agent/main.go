@@ -27,7 +27,7 @@ import (
 func main() {
 
 	var err error
-	log.Infof("Executing %s", filepath.Base(os.Args[0]))
+	log.Infof("Running %s", filepath.Base(os.Args[0]))
 
 	name := os.Getenv("NAME")
 	if name == "" {

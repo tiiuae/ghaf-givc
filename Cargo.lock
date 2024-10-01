@@ -594,6 +594,7 @@ dependencies = [
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.30",
+ "prost 0.12.6",
  "serde",
  "serde_json",
  "strum 0.25.0",

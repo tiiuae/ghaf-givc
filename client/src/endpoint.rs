@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::anyhow;
@@ -32,11 +32,11 @@ pub struct EndpointConfig {
 
 impl TlsConfig {
     pub fn client_config(&self) -> anyhow::Result<ClientTlsConfig> {
-        let pem = std::fs::read_to_string(self.ca_cert_file_path.as_os_str())?;
+        let pem = std::fs::read(&self.ca_cert_file_path)?;
         let ca = Certificate::from_pem(pem);
 
-        let client_cert = std::fs::read(self.cert_file_path.as_os_str())?;
-        let client_key = std::fs::read(self.key_file_path.as_os_str())?;
+        let client_cert = std::fs::read(&self.cert_file_path)?;
+        let client_key = std::fs::read(&self.key_file_path)?;
         let client_identity = Identity::from_pem(client_cert, client_key);
         let tls_name = self
             .tls_name
@@ -49,8 +49,8 @@ impl TlsConfig {
     }
 
     pub fn server_config(&self) -> anyhow::Result<ServerTlsConfig> {
-        let cert = std::fs::read(self.cert_file_path.as_os_str())?;
-        let key = std::fs::read(self.key_file_path.as_os_str())?;
+        let cert = std::fs::read(&self.cert_file_path)?;
+        let key = std::fs::read(&self.key_file_path)?;
         let identity = Identity::from_pem(cert, key);
         let config = ServerTlsConfig::new().identity(identity);
         Ok(config)
