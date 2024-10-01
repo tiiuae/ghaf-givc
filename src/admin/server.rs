@@ -3,6 +3,7 @@ use crate::pb::{self, *};
 use anyhow::{bail, Context};
 use async_stream::try_stream;
 use givc_common::query::Event;
+use regex::Regex;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -45,6 +46,22 @@ pub struct AdminServiceImpl {
 #[derive(Debug, Clone)]
 pub struct AdminService {
     inner: Arc<AdminServiceImpl>,
+}
+
+struct Validator();
+
+impl Validator {
+    pub fn validate_locale(locale: &str) -> bool {
+        let validator = Regex::new(
+            r"^(?:C|POSIX|[a-z]{2}(?:_[A-Z]{2})?(?:@[a-zA-Z0-9]+)?)(?:\.[-a-zA-Z0-9]+)?$",
+        )
+        .unwrap();
+        validator.is_match(locale)
+    }
+    pub fn validate_timezone(timezone: &str) -> bool {
+        let validator = Regex::new(r"^[A-Z][-+a-zA-Z0-9]*(?:/[A-Z][-+a-zA-Z0-9_]*)*$").unwrap();
+        validator.is_match(timezone)
+    }
 }
 
 impl AdminService {
@@ -323,12 +340,38 @@ impl pb::admin_service_server::AdminService for AdminService {
         info!("Registering service {:?}", req);
         let entry = RegistryEntry::try_from(req)
             .map_err(|e| Status::new(Code::InvalidArgument, format!("{e}")))?;
+        let mut notify = None;
+
+        if matches!(
+            entry.r#type,
+            UnitType {
+                service: ServiceType::Mgr,
+                ..
+            }
+        ) {
+            notify = Some(entry.name.to_owned());
+        }
         self.inner.register(entry);
 
-        let res = RegistryResponse {
-            timezone: self.inner.timezone.lock().await.clone(),
-            locale: self.inner.locale.lock().await.clone(),
-        };
+        let res = RegistryResponse { error: None };
+
+        if let Some(name) = notify {
+            if let Ok(endpoint) = self.inner.agent_endpoint(&name) {
+                let locale = self.inner.locale.lock().await.clone();
+                let timezone = self.inner.timezone.lock().await.clone();
+                tokio::spawn(async move {
+                    if let Ok(conn) = endpoint.connect().await {
+                        let mut client =
+                            pb::locale::locale_client_client::LocaleClientClient::new(conn);
+                        let localemsg = pb::locale::LocaleMessage { locale };
+                        let _ = client.locale_set(localemsg).await;
+
+                        let timezonemsg = pb::locale::TimezoneMessage { timezone };
+                        let _ = client.timezone_set(timezonemsg).await;
+                    }
+                });
+            }
+        }
         info!("Responding with {res:?}");
         Ok(Response::new(res))
     }
@@ -458,6 +501,9 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<LocaleRequest>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         escalate(request, |req| async move {
+            if !Validator::validate_locale(&req.locale) {
+                bail!("Invalid locale");
+            }
             let _ = tokio::fs::write(LOCALE_CONF, format!("LANG={}", req.locale)).await;
             *self.inner.locale.lock().await = req.locale;
             Ok(Empty {})
@@ -470,6 +516,9 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<TimezoneRequest>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         escalate(request, |req| async move {
+            if !Validator::validate_timezone(&req.timezone) {
+                bail!("Invalid timezone");
+            }
             let _ = tokio::fs::write(TIMEZONE_CONF, &req.timezone).await;
             *self.inner.timezone.lock().await = req.timezone;
             Ok(Empty {})
@@ -503,5 +552,59 @@ impl pb::admin_service_server::AdminService for AdminService {
             Ok(Box::pin(stream) as Self::WatchStream)
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_locale_validator() -> anyhow::Result<()> {
+        if ![
+            "en_US.UTF-8",
+            "C",
+            "POSIX",
+            "C.UTF-8",
+            "ar_AE.UTF-8",
+            "fi_FI@euro.UTF-8",
+            "fi_FI@euro",
+        ]
+        .into_iter()
+        .all(Validator::validate_locale)
+        {
+            bail!("Valid locale rejected");
+        }
+        if ["`rm -Rf --no-preserve-root /`", "; whoami", "iwaenfli"]
+            .into_iter()
+            .any(Validator::validate_locale)
+        {
+            bail!("Invalid locale accepted");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_timezone_validator() -> anyhow::Result<()> {
+        if ![
+            "UTC",
+            "Europe/Helsinki",
+            "Asia/Abu_Dhabi",
+            "Etc/GMT+8",
+            "GMT-0",
+            "America/Argentina/Rio_Gallegos",
+        ]
+        .into_iter()
+        .all(Validator::validate_timezone)
+        {
+            bail!("Valid timezone rejected");
+        }
+        if ["/foobar", "`whoami`", "Almost//Valid"]
+            .into_iter()
+            .any(Validator::validate_timezone)
+        {
+            bail!("Invalid timezone accepted");
+        }
+        Ok(())
     }
 }

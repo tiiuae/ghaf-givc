@@ -9,6 +9,11 @@ fn main() {
         .unwrap();
 
     tonic_build::configure()
+        .file_descriptor_set_path(out_dir.join("locale_descriptor.bin"))
+        .compile(&["api/locale/locale.proto"], &["locale"])
+        .unwrap();
+
+    tonic_build::configure()
         .file_descriptor_set_path(out_dir.join("systemd_descriptor.bin"))
         .compile(&["api/systemd/systemd.proto"], &["systemd"])
         .unwrap();

@@ -28,8 +28,7 @@ message RegistryRequest {
 }
 
 message RegistryResponse {
-    string Timezone = 1;
-    string Locale = 2;
+    optional string Error = 1;
 }
 
 message ApplicationRequest {

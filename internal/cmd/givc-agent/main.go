@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/tls"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	givc_app "givc/internal/pkgs/applications"
 	givc_grpc "givc/internal/pkgs/grpc"
 	"givc/internal/pkgs/hwidmanager"
+	"givc/internal/pkgs/localelistener"
 	"givc/internal/pkgs/serviceclient"
 	"givc/internal/pkgs/servicemanager"
 	"givc/internal/pkgs/types"
@@ -177,29 +177,9 @@ func main() {
 		<-serverStarted
 
 		// Register agent
-		response, err := serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
+		_, err := serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
 		if err != nil {
 			log.Fatalf("Error register agent: %s", err)
-		} else {
-			if response.Locale != "" {
-				if err := exec.Command("localectl", "set-locale", response.Locale).Run(); err != nil {
-					log.Warningf("Failed to set locale: %s", err)
-				}
-				if givc_util.IsRoot() {
-					if err := exec.Command("systemctl", "set-environment", "LANG="+response.Locale).Run(); err != nil {
-						log.Warningf("Failed to set environment: %s", err)
-					}
-				} else {
-					if err := exec.Command("systemctl", "--user", "set-environment", "LANG="+response.Locale).Run(); err != nil {
-						log.Warningf("Failed to set environment: %s", err)
-					}
-				}
-			}
-			if response.Timezone != "" {
-				if err := exec.Command("timedatectl", "set-timezone", response.Timezone).Run(); err != nil {
-					log.Warningf("Failed to set timezone: %s", err)
-				}
-			}
 		}
 
 		// Register services
@@ -237,6 +217,12 @@ func main() {
 		log.Fatalf("Cannot create systemd control server")
 	}
 	grpcServices = append(grpcServices, systemdControlServer)
+
+	localeClientServer, err := localelistener.NewLocaleServer()
+	if err != nil {
+		log.Fatalf("Cannot create locale listener server")
+	}
+	grpcServices = append(grpcServices, localeClientServer)
 
 	if wifiEnabled {
 		// Create wifi control server

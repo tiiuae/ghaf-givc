@@ -1,0 +1,21 @@
+// Copyright 2024 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+option go_package = "./locale";
+package locale;
+
+message LocaleMessage {
+    string Locale = 1;
+}
+
+message TimezoneMessage {
+    string Timezone = 1;
+}
+
+message Empty {
+}
+
+service LocaleClient {
+    rpc LocaleSet(LocaleMessage) returns (Empty) {}
+    rpc TimezoneSet(TimezoneMessage) returns (Empty) {}
+}

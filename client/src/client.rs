@@ -63,7 +63,7 @@ impl AdminClient {
         ty: UnitType,
         endpoint: EndpointEntry,
         status: UnitStatus,
-    ) -> anyhow::Result<(String, String)> {
+    ) -> anyhow::Result<()> {
         // Convert everything into wire format
         let request = pb::admin::RegistryRequest {
             name,
@@ -78,7 +78,10 @@ impl AdminClient {
             .register_service(request)
             .await?
             .into_inner();
-        Ok((response.timezone, response.locale))
+        if let Some(err) = response.error {
+            bail!("{err}");
+        }
+        Ok(())
     }
 
     pub async fn start(
