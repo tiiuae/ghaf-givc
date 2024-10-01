@@ -2,8 +2,6 @@ use anyhow::bail;
 use async_channel::Receiver;
 use givc_common::pb;
 pub use givc_common::query::{Event, QueryResult};
-use std::future::Future;
-use std::pin::Pin;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tracing::debug;
@@ -20,8 +18,6 @@ pub struct WatchResult {
     // Design defence: we use `async-channel` here, as it could be used with both
     // tokio's and glib's eventloop, and recommended by gtk4-rs developers:
     pub channel: Receiver<Event>,
-
-    pub task: Pin<Box<dyn Future<Output = ()>>>,
 }
 
 #[derive(Debug)]
@@ -184,7 +180,7 @@ impl AdminClient {
             None => bail!("Protocol error, status field missing"),
         };
 
-        let task = async move {
+        tokio::spawn(async move {
             loop {
                 if let Ok(Some(event)) = watch.try_next().await {
                     let event = match Event::try_from(event) {
@@ -203,12 +199,11 @@ impl AdminClient {
                     break;
                 }
             }
-        };
+        });
 
         let result = WatchResult {
             initial: list,
             channel: rx,
-            task: Box::pin(task),
         };
         Ok(result)
     }

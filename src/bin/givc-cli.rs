@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use clap::{Parser, Subcommand};
 use givc::endpoint::TlsConfig;
 use givc::types::*;
@@ -194,27 +193,17 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             limit,
             initial: dump_initial,
         } => {
-            let WatchResult {
-                initial,
-                channel,
-                mut task,
-            } = admin.watch().await?;
+            let WatchResult { initial, channel } = admin.watch().await?;
             let mut limit = limit.map(|l| 0..l);
 
             if dump_initial {
                 dump(initial, as_json)?
             }
 
-            tokio::select! {
-                res = async move {
-                    // Change to Option::is_none_or() with rust >1.82
-                    while !limit.as_mut().is_some_and(|l| l.next().is_none()) {
-                        dump(channel.recv().await?, as_json)?;
-                    }
-                    Ok(())
-                } => res,
-                _ = task.as_mut() => Err(anyhow!("Watch task stopped unexpectedly"))
-            }?
+            // Change to Option::is_none_or() with rust >1.82
+            while !limit.as_mut().is_some_and(|l| l.next().is_none()) {
+                dump(channel.recv().await?, as_json)?;
+            }
         }
     };
 
