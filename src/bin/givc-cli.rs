@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use givc::endpoint::TlsConfig;
 use givc::types::*;
 use givc::utils::vsock::parse_vsock_addr;
-use givc_client::{client::WatchResult, AdminClient};
+use givc_client::client::AdminClient;
 use givc_common::address::EndpointAddress;
 use serde::ser::Serialize;
 use std::path::PathBuf;
@@ -193,16 +193,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             limit,
             initial: dump_initial,
         } => {
-            let WatchResult { initial, channel } = admin.watch().await?;
+            let watch = admin.watch().await?;
             let mut limit = limit.map(|l| 0..l);
 
             if dump_initial {
-                dump(initial, as_json)?
+                dump(watch.initial, as_json)?
             }
 
             // Change to Option::is_none_or() with rust >1.82
             while !limit.as_mut().is_some_and(|l| l.next().is_none()) {
-                dump(channel.recv().await?, as_json)?;
+                dump(watch.channel.recv().await?, as_json)?;
             }
         }
     };

@@ -1,12 +1,13 @@
 use anyhow::bail;
 use async_channel::Receiver;
-use givc_common::pb;
-pub use givc_common::query::{Event, QueryResult};
+use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tracing::debug;
 
 use givc_common::address::EndpointAddress;
+use givc_common::pb;
+pub use givc_common::query::{Event, QueryResult};
 use givc_common::types::*;
 
 use crate::endpoint::{EndpointConfig, TlsConfig};
@@ -18,6 +19,8 @@ pub struct WatchResult {
     // Design defence: we use `async-channel` here, as it could be used with both
     // tokio's and glib's eventloop, and recommended by gtk4-rs developers:
     pub channel: Receiver<Event>,
+
+    _quit: mpsc::Sender<()>,
 }
 
 #[derive(Debug)]
@@ -165,6 +168,7 @@ impl AdminClient {
         use pb::admin::watch_item::Status;
         use pb::admin::WatchItem;
         let (tx, rx) = async_channel::bounded::<Event>(10);
+        let (quittx, mut quitrx) = mpsc::channel(1);
 
         let mut watch = self
             .connect_to()
@@ -181,29 +185,35 @@ impl AdminClient {
         };
 
         tokio::spawn(async move {
-            loop {
-                if let Ok(Some(event)) = watch.try_next().await {
-                    let event = match Event::try_from(event) {
-                        Ok(event) => event,
-                        Err(e) => {
-                            debug!("Fail to decode: {e}");
+            tokio::select! {
+                _ = async move {
+                    loop {
+                        if let Ok(Some(event)) = watch.try_next().await {
+                            let event = match Event::try_from(event) {
+                                Ok(event) => event,
+                                Err(e) => {
+                                    debug!("Fail to decode: {e}");
+                                    break;
+                                }
+                            };
+                            if let Err(e) = tx.send(event).await {
+                                debug!("Fail to send event: {e}");
+                                break;
+                            }
+                        } else {
+                            debug!("Stream closed by server");
                             break;
                         }
-                    };
-                    if let Err(e) = tx.send(event).await {
-                        debug!("Fail to send event: {e}");
-                        break;
                     }
-                } else {
-                    debug!("Stream closed by server");
-                    break;
-                }
+                } => {}
+                _ = quitrx.recv() => {}
             }
         });
 
         let result = WatchResult {
             initial: list,
             channel: rx,
+            _quit: quittx,
         };
         Ok(result)
     }
