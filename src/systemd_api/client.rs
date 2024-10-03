@@ -81,7 +81,7 @@ impl SystemDClient {
     ) -> anyhow::Result<String> {
         let request = pb::systemd::AppUnitRequest {
             unit_name: unit,
-            args: args,
+            args,
         };
         let resp = self.connect().await?.start_application(request).await?;
         let status = resp.into_inner();

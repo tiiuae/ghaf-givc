@@ -71,7 +71,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let reflect = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(ADMIN_DESCRIPTOR)
-        .build()
+        .build_v1()
         .unwrap();
 
     let admin_service_svc =

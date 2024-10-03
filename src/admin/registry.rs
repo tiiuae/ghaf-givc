@@ -18,6 +18,12 @@ pub struct Registry {
     pubsub: broadcast::Sender<Event>,
 }
 
+impl Default for Registry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Registry {
     pub fn new() -> Self {
         Self {
@@ -34,6 +40,7 @@ impl Registry {
             info!("Replaced old entry {:#?}", old);
             self.send_event(Event::UnitShutdown(old.into()))
         };
+        info!("Sending event {event:?}");
         self.send_event(event)
     }
 
@@ -45,7 +52,10 @@ impl Registry {
                 self.send_event(Event::UnitShutdown(entry.into()));
                 Ok(())
             }
-            None => bail!("Can't deregister entry {}, it not registered", name),
+            None => Err(anyhow!(
+                "Can't deregister entry {}, it not registered",
+                name
+            )),
         }
     }
 
@@ -64,11 +74,16 @@ impl Registry {
             .filter(|x| x.starts_with(name))
             .cloned()
             .collect();
-        if list.len() == 0 {
+        if list.is_empty() {
             bail!("No entries match string {}", name)
         } else {
             Ok(list)
         }
+    }
+
+    pub fn find_map<T, F: FnMut(&RegistryEntry) -> Option<T>>(&self, filter: F) -> Vec<T> {
+        let state = self.map.lock().unwrap();
+        state.values().filter_map(filter).collect()
     }
 
     pub fn by_type_many(&self, ty: UnitType) -> Vec<RegistryEntry> {
@@ -115,7 +130,7 @@ impl Registry {
                 e.status = status;
                 self.send_event(Event::UnitStatusChanged(e.clone().into()))
             })
-            .ok_or_else(|| anyhow!("Can't update state for {}, is not registered", name))
+            .ok_or_else(|| anyhow!("Can't update state for {name}, is not registered"))
     }
 
     // FIXME: Should we dump full contents here for `query`/`query_list` high-level API
@@ -156,7 +171,7 @@ mod tests {
         r.register(bar);
 
         assert!(r.contains(&foo_key));
-        assert!(r.contains(&"bar".to_string()));
+        assert!(r.contains("bar"));
 
         let foo1 = r.by_name(&foo_key)?;
         assert_eq!(foo1, foo);

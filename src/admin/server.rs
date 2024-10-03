@@ -3,9 +3,11 @@ use crate::pb::{self, *};
 use anyhow::{bail, Context};
 use async_stream::try_stream;
 use givc_common::query::Event;
+use regex::Regex;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tonic::{Code, Response, Status};
 use tracing::{debug, error, info};
 
@@ -20,6 +22,8 @@ use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::*;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
+const TIMEZONE_CONF: &str = "/etc/timezone.conf";
+const LOCALE_CONF: &str = "/etc/locale-givc.conf";
 
 // FIXME: this is almost copy of sysfsm::Event.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -35,11 +39,29 @@ pub struct AdminServiceImpl {
     registry: Registry,
     state: State, // FIXME: use sysfsm statemachine
     tls_config: Option<TlsConfig>,
+    locale: Mutex<String>,
+    timezone: Mutex<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AdminService {
     inner: Arc<AdminServiceImpl>,
+}
+
+struct Validator();
+
+impl Validator {
+    pub fn validate_locale(locale: &str) -> bool {
+        let validator = Regex::new(
+            r"^(?:C|POSIX|[a-z]{2}(?:_[A-Z]{2})?(?:@[a-zA-Z0-9]+)?)(?:\.[-a-zA-Z0-9]+)?$",
+        )
+        .unwrap();
+        validator.is_match(locale)
+    }
+    pub fn validate_timezone(timezone: &str) -> bool {
+        let validator = Regex::new(r"^[A-Z][-+a-zA-Z0-9]*(?:/[A-Z][-+a-zA-Z0-9_]*)*$").unwrap();
+        validator.is_match(timezone)
+    }
 }
 
 impl AdminService {
@@ -49,16 +71,31 @@ impl AdminService {
         tokio::task::spawn(async move {
             clone.monitor().await;
         });
-        Self { inner: inner }
+        Self { inner }
     }
 }
 
 impl AdminServiceImpl {
     pub fn new(use_tls: Option<TlsConfig>) -> Self {
+        let timezone = std::fs::read_to_string(TIMEZONE_CONF)
+            .ok()
+            .and_then(|l| l.lines().next().map(ToOwned::to_owned))
+            .unwrap_or_default();
+        let locale = std::fs::read_to_string(LOCALE_CONF)
+            .ok()
+            .and_then(|l| {
+                l.lines()
+                    .filter_map(|l| l.strip_prefix("LANG="))
+                    .next()
+                    .map(ToOwned::to_owned)
+            })
+            .unwrap_or_default();
         Self {
             registry: Registry::new(),
             state: State::Init,
             tls_config: use_tls,
+            timezone: Mutex::new(timezone),
+            locale: Mutex::new(locale),
         }
     }
 
@@ -67,25 +104,22 @@ impl AdminServiceImpl {
             vm: VmType::Host,
             service: ServiceType::Mgr,
         })?;
-        let endpoint = host_mgr
-            .agent()
-            .with_context(|| "Resolving host agent".to_string())?;
+        self.endpoint(host_mgr).context("Resolving host agent")
+    }
+
+    pub fn endpoint(&self, reentry: RegistryEntry) -> anyhow::Result<EndpointConfig> {
         Ok(EndpointConfig {
-            transport: endpoint.into(),
+            transport: reentry.agent()?,
             tls: self.tls_config.clone(),
         })
     }
-
-    pub fn agent_endpoint(&self, name: &String) -> anyhow::Result<EndpointConfig> {
-        let endpoint = self.registry.by_name(&name)?.agent()?;
-        Ok(EndpointConfig {
-            transport: endpoint.into(),
-            tls: self.tls_config.clone(),
-        })
+    pub fn agent_endpoint(&self, name: &str) -> anyhow::Result<EndpointConfig> {
+        let reentry = self.registry.by_name(name)?;
+        self.endpoint(reentry)
     }
 
     pub fn app_entries(&self, name: String) -> anyhow::Result<Vec<String>> {
-        if name.contains("@") {
+        if name.contains('@') {
             let list = self.registry.find_names(&name)?;
             Ok(list)
         } else {
@@ -106,7 +140,7 @@ impl AdminServiceImpl {
         };
         let tls_name = transport.tls_name.clone();
         let endpoint = EndpointConfig {
-            transport: transport.into(),
+            transport,
             tls: self.tls_config.clone().map(|mut tls| {
                 tls.tls_name = Some(tls_name);
                 tls
@@ -169,7 +203,7 @@ impl AdminServiceImpl {
                 let name = parse_service_name(&entry.name)?;
                 self.start_vm(name)
                     .await
-                    .with_context(|| format!("handing error, by restart VM {}", &entry.name))?;
+                    .with_context(|| format!("handing error, by restart VM {}", entry.name))?;
                 Ok(()) // FIXME: should use `?` from line above, why it didn't work?
             }
             (x, y) => bail!(
@@ -208,7 +242,7 @@ impl AdminServiceImpl {
                     if inactive {
                         self.handle_error(entry)
                             .await
-                            .with_context(|| "during handle error")?
+                            .context("during handle error")?
                     }
                 }
             }
@@ -250,7 +284,7 @@ impl AdminServiceImpl {
             Err(_) => {
                 self.start_vm(&vm_name)
                     .await
-                    .context(format!("Starting vm for {}", &name))?;
+                    .with_context(|| format!("Starting vm for {name}"))?;
                 self.registry
                     .by_name(&systemd_agent)
                     .context("after starting VM")?
@@ -267,7 +301,7 @@ impl AdminServiceImpl {
 
         let app_entry = RegistryEntry {
             name: app_name,
-            status: status,
+            status,
             watch: true,
             r#type: UnitType {
                 vm: VmType::AppVM,
@@ -300,13 +334,42 @@ impl pb::admin_service_server::AdminService for AdminService {
     ) -> std::result::Result<tonic::Response<pb::RegistryResponse>, tonic::Status> {
         let req = request.into_inner();
 
+        info!("Registering service {:?}", req);
         let entry = RegistryEntry::try_from(req)
             .map_err(|e| Status::new(Code::InvalidArgument, format!("{e}")))?;
+        let mut notify = None;
+
+        if matches!(
+            entry.r#type,
+            UnitType {
+                service: ServiceType::Mgr,
+                ..
+            }
+        ) {
+            notify = Some(entry.name.to_owned());
+        }
         self.inner.register(entry);
 
-        let res = RegistryResponse {
-            cmd_status: String::from("Registration successful"),
-        };
+        let res = RegistryResponse { error: None };
+
+        if let Some(name) = notify {
+            if let Ok(endpoint) = self.inner.agent_endpoint(&name) {
+                let locale = self.inner.locale.lock().await.clone();
+                let timezone = self.inner.timezone.lock().await.clone();
+                tokio::spawn(async move {
+                    if let Ok(conn) = endpoint.connect().await {
+                        let mut client =
+                            pb::locale::locale_client_client::LocaleClientClient::new(conn);
+                        let localemsg = pb::locale::LocaleMessage { locale };
+                        let _ = client.locale_set(localemsg).await;
+
+                        let timezonemsg = pb::locale::TimezoneMessage { timezone };
+                        let _ = client.timezone_set(timezonemsg).await;
+                    }
+                });
+            }
+        }
+        info!("Responding with {res:?}");
         Ok(Response::new(res))
     }
     async fn start_application(
@@ -430,6 +493,73 @@ impl pb::admin_service_server::AdminService for AdminService {
         .await
     }
 
+    async fn set_locale(
+        &self,
+        request: tonic::Request<LocaleRequest>,
+    ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
+        escalate(request, |req| async move {
+            if !Validator::validate_locale(&req.locale) {
+                bail!("Invalid locale");
+            }
+            let _ = tokio::fs::write(LOCALE_CONF, format!("LANG={}", req.locale)).await;
+            let managers = self.inner.registry.find_map(|re| {
+                (re.r#type.service == ServiceType::Mgr)
+                    .then_some(())
+                    .and_then(|_| self.inner.endpoint(re.clone()).ok())
+            });
+            let locale = req.locale.clone();
+            tokio::spawn(async move {
+                for ec in managers {
+                    if let Ok(conn) = ec.connect().await {
+                        let mut client =
+                            pb::locale::locale_client_client::LocaleClientClient::new(conn);
+                        let localemsg = pb::locale::LocaleMessage {
+                            locale: locale.clone(),
+                        };
+                        let _ = client.locale_set(localemsg).await;
+                    }
+                }
+            });
+            *self.inner.locale.lock().await = req.locale;
+
+            Ok(Empty {})
+        })
+        .await
+    }
+
+    async fn set_timezone(
+        &self,
+        request: tonic::Request<TimezoneRequest>,
+    ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
+        escalate(request, |req| async move {
+            if !Validator::validate_timezone(&req.timezone) {
+                bail!("Invalid timezone");
+            }
+            let _ = tokio::fs::write(TIMEZONE_CONF, &req.timezone).await;
+            let managers = self.inner.registry.find_map(|re| {
+                (re.r#type.service == ServiceType::Mgr)
+                    .then_some(())
+                    .and_then(|_| self.inner.endpoint(re.clone()).ok())
+            });
+            let timezone = req.timezone.clone();
+            tokio::spawn(async move {
+                for ec in managers {
+                    if let Ok(conn) = ec.connect().await {
+                        let mut client =
+                            pb::locale::locale_client_client::LocaleClientClient::new(conn);
+                        let tzmsg = pb::locale::TimezoneMessage {
+                            timezone: timezone.clone(),
+                        };
+                        let _ = client.timezone_set(tzmsg).await;
+                    }
+                }
+            });
+            *self.inner.timezone.lock().await = req.timezone;
+            Ok(Empty {})
+        })
+        .await
+    }
+
     type WatchStream = Stream<WatchItem>;
     async fn watch(
         &self,
@@ -456,5 +586,59 @@ impl pb::admin_service_server::AdminService for AdminService {
             Ok(Box::pin(stream) as Self::WatchStream)
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_locale_validator() -> anyhow::Result<()> {
+        if ![
+            "en_US.UTF-8",
+            "C",
+            "POSIX",
+            "C.UTF-8",
+            "ar_AE.UTF-8",
+            "fi_FI@euro.UTF-8",
+            "fi_FI@euro",
+        ]
+        .into_iter()
+        .all(Validator::validate_locale)
+        {
+            bail!("Valid locale rejected");
+        }
+        if ["`rm -Rf --no-preserve-root /`", "; whoami", "iwaenfli"]
+            .into_iter()
+            .any(Validator::validate_locale)
+        {
+            bail!("Invalid locale accepted");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_timezone_validator() -> anyhow::Result<()> {
+        if ![
+            "UTC",
+            "Europe/Helsinki",
+            "Asia/Abu_Dhabi",
+            "Etc/GMT+8",
+            "GMT-0",
+            "America/Argentina/Rio_Gallegos",
+        ]
+        .into_iter()
+        .all(Validator::validate_timezone)
+        {
+            bail!("Valid timezone rejected");
+        }
+        if ["/foobar", "`whoami`", "Almost//Valid"]
+            .into_iter()
+            .any(Validator::validate_timezone)
+        {
+            bail!("Invalid timezone accepted");
+        }
+        Ok(())
     }
 }

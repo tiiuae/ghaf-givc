@@ -113,7 +113,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let reflect = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
-        .build()
+        .build_v1()
         .unwrap();
 
     let agent_service_svc = pb::systemd::unit_control_service_server::UnitControlServiceServer::new(

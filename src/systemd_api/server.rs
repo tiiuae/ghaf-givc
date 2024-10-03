@@ -4,12 +4,12 @@ use tonic::{Request, Response, Status};
 
 pub use pb::systemd::unit_control_service_server::UnitControlServiceServer;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SystemdService {}
 
 impl SystemdService {
     pub fn new() -> Self {
-        Self {}
+        Default::default()
     }
 }
 

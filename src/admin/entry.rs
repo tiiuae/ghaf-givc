@@ -2,7 +2,7 @@
 // Some of them would be rewritten, replaced, or even removed
 use crate::pb;
 use anyhow::anyhow;
-use std::convert::{Into, TryFrom};
+use std::convert::TryFrom;
 
 use givc_common::query::*;
 use givc_common::types::*;
@@ -85,25 +85,25 @@ impl TryFrom<pb::RegistryRequest> for RegistryEntry {
         // Protocol very inconsistent here
         Ok(Self {
             name: req.name,
-            status: status,
-            watch: watch,
+            status,
+            watch,
             r#type: ty,
             placement: Placement::Endpoint(endpoint),
         })
     }
 }
 
-impl Into<QueryResult> for RegistryEntry {
-    fn into(self) -> QueryResult {
-        let status = if self.status.is_running() {
+impl From<RegistryEntry> for QueryResult {
+    fn from(val: RegistryEntry) -> Self {
+        let status = if val.status.is_running() {
             VMStatus::Running
         } else {
             VMStatus::PoweredOff
         };
         QueryResult {
-            name: self.name,
-            description: self.status.description,
-            status: status,
+            name: val.name,
+            description: val.status.description,
+            status,
             trust_level: TrustLevel::default(),
         }
     }

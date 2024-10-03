@@ -175,6 +175,21 @@ in
       }
     ];
 
+    security.polkit = {
+      enable = true;
+      extraConfig = ''
+        polkit.addRule(function(action, subject) {
+            if (action.id == "org.freedesktop.locale1.set-locale" && subject.user == "ghaf") {
+                return polkit.Result.YES;
+            }
+        });
+        polkit.addRule(function(action, subject) {
+            if (action.id == "org.freedesktop.timedate1.set-timezone" && subject.user == "ghaf") {
+                return polkit.Result.YES;
+            }
+        });
+      '';
+    };
     systemd.user.services."givc-${cfg.name}" = {
       description = "GIVC remote service manager for application VMs.";
       enable = true;

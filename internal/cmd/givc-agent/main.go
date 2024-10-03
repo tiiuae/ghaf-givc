@@ -14,6 +14,7 @@ import (
 	givc_app "givc/internal/pkgs/applications"
 	givc_grpc "givc/internal/pkgs/grpc"
 	"givc/internal/pkgs/hwidmanager"
+	"givc/internal/pkgs/localelistener"
 	"givc/internal/pkgs/serviceclient"
 	"givc/internal/pkgs/servicemanager"
 	"givc/internal/pkgs/types"
@@ -26,7 +27,7 @@ import (
 func main() {
 
 	var err error
-	log.Infof("Executing %s", filepath.Base(os.Args[0]))
+	log.Infof("Running %s", filepath.Base(os.Args[0]))
 
 	name := os.Getenv("NAME")
 	if name == "" {
@@ -216,6 +217,12 @@ func main() {
 		log.Fatalf("Cannot create systemd control server")
 	}
 	grpcServices = append(grpcServices, systemdControlServer)
+
+	localeClientServer, err := localelistener.NewLocaleServer()
+	if err != nil {
+		log.Fatalf("Cannot create locale listener server")
+	}
+	grpcServices = append(grpcServices, localeClientServer)
 
 	if wifiEnabled {
 		// Create wifi control server

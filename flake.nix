@@ -66,13 +66,14 @@
                   ./internal
                 ];
               };
-            in
-            rec {
-              givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
               givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix {
                 inherit crane;
                 src = ./.;
               };
+            in
+            {
+              inherit givc-admin-rs;
+              givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
               givc-cli = givc-admin-rs.cli;
             };
         };
