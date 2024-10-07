@@ -49,6 +49,10 @@ in
                 addr = addrs.adminvm;
                 port = "9001";
                 tls = mkTls "admin-vm";
+                services = [
+                  "display-suspend.service"
+                  "display-resume.service"
+                ];
               };
             };
             hostvm = {
@@ -94,6 +98,12 @@ in
                   snakeOilPrivateKey
                   snakeOilPublicKey
                   ;
+                NotifyDisplaySuspend = pkgs.writeShellScript "NotifyDisplaySuspend" ''
+                  echo 'Service notification: Dummy display suspend service started successfully.'
+                '';
+                NotifyDisplayResume = pkgs.writeShellScript "NotifyDisplayResume" ''
+                  echo 'Service notification: Dummy display resume service started successfully.'
+                '';
               in
               {
                 imports = [ self.nixosModules.sysvm ];
@@ -107,6 +117,27 @@ in
                     openssh.authorizedKeys.keys = [ snakeOilPublicKey ];
                   };
                 };
+
+                systemd.services.display-suspend = {
+                  enable = true;
+                  description = "Dummy display suspend service";
+                  serviceConfig = {
+                    Type = "oneshot";
+                    ExecStart = "${NotifyDisplaySuspend}";
+                    RemainAfterExit = true;
+                  };
+                };
+
+                systemd.services.display-resume = {
+                  enable = true;
+                  description = "Dummy display resume service";
+                  serviceConfig = {
+                    Type = "oneshot";
+                    ExecStart = "${NotifyDisplayResume}";
+                    RemainAfterExit = true;
+                  };
+                };
+
                 services.getty.autologinUser = "ghaf";
                 # End of users
 
@@ -158,6 +189,8 @@ in
                     "reboot.target"
                     "sleep.target"
                     "suspend.target"
+                    "display-suspend.service"
+                    "display-resume.service"
                   ];
                 };
 
@@ -322,6 +355,17 @@ in
                   print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm foot-vm clearexit"))
                   time.sleep(20) # Give few seconds to application to spin up, exit, then start it again
                   print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm foot-vm clearexit"))
+
+              with subtest("suspend system"):
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} suspend"))
+                  time.sleep(10) # Give few seconds to application to spin up
+                  guivm.wait_for_unit("display-suspend.service")
+
+              with subtest("wakeup system"):
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} wakeup"))
+                  time.sleep(10) # Give few seconds to application to spin up
+                  guivm.wait_for_unit("display-resume.service")
+
             '';
         };
       };

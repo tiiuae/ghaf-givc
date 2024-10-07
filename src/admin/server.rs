@@ -158,6 +158,37 @@ impl AdminServiceImpl {
         Ok(())
     }
 
+    pub async fn start_unit_on_vm(&self, vmname: &str, unit: &str) -> anyhow::Result<()> {
+        let vmservice = format_service_name(vmname, None);
+
+        /* Return error if the vm is not registered */
+        let endpoint = self.agent_endpoint(&vmservice)?;
+        let client = SystemDClient::new(endpoint);
+
+        /* Check status of the unit */
+        match client.get_remote_status(unit.into()).await {
+            Ok(status) => {
+                if status.load_state == "loaded" {
+                    /* No action, if the unit is loaded and already running. */
+                    if status.active_state == "active" && status.sub_state == "running" {
+                        info!("Service {unit} is already in running state!");
+                    } else {
+                        /* Start the unit if it is loaded and not running. */
+                        client.start_remote(unit.into()).await?;
+                    }
+                    return Ok(());
+                } else {
+                    /* Error, if the unit is not loaded. */
+                    bail!("Service {unit} is not loaded!");
+                }
+            }
+            Err(e) => {
+                eprintln!("Error retrieving unit status: {}", e);
+                return Err(e.into());
+            }
+        }
+    }
+
     pub async fn start_vm(&self, name: &str) -> anyhow::Result<()> {
         let endpoint = self.host_endpoint()?;
         let client = SystemDClient::new(endpoint);
@@ -454,19 +485,20 @@ impl pb::admin_service_server::AdminService for AdminService {
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         escalate(request, |_| async {
             self.inner
-                .send_system_command(String::from("suspend.target"))
+                .start_unit_on_vm("gui", "display-suspend.service")
                 .await?;
             Ok(Empty {})
         })
         .await
     }
+
     async fn wakeup(
         &self,
         request: tonic::Request<Empty>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         escalate(request, |_| async {
             self.inner
-                .send_system_command(String::from("sleep.target"))
+                .start_unit_on_vm("gui", "display-resume.service")
                 .await?;
             Ok(Empty {})
         })
