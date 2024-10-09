@@ -223,7 +223,7 @@ impl AdminServiceImpl {
                     error!("could not get status of unit {}: {}", &entry.name, err);
                     self.handle_error(entry)
                         .await
-                        .with_context(|| "during handle error")?
+                        .context("during handle error")?
                 }
                 Ok(status) => {
                     let inactive = status.active_state != "active";

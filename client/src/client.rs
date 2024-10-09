@@ -167,7 +167,7 @@ impl AdminClient {
     pub async fn watch(&self) -> anyhow::Result<WatchResult> {
         use pb::admin::watch_item::Status;
         use pb::admin::WatchItem;
-        let (tx, rx) = async_channel::bounded::<Event>(10);
+        let (tx, rx) = async_channel::bounded(10);
         let (quittx, mut quitrx) = mpsc::channel(1);
 
         let mut watch = self
