@@ -179,12 +179,10 @@ in
       enable = true;
       extraConfig = ''
         polkit.addRule(function(action, subject) {
-            if (action.id == "org.freedesktop.locale1.set-locale" && subject.user == "ghaf") {
-                return polkit.Result.YES;
-            }
-        });
-        polkit.addRule(function(action, subject) {
-            if (action.id == "org.freedesktop.timedate1.set-timezone" && subject.user == "ghaf") {
+            if ((
+                 action.id == "org.freedesktop.locale1.set-locale" ||
+                 action.id == "org.freedesktop.timedate1.set-timezone"
+                ) && subject.isInGroup("users")) {
                 return polkit.Result.YES;
             }
         });
