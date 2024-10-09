@@ -27,7 +27,7 @@ pub fn parse_application_name(name: &str) -> anyhow::Result<(&str, i32)> {
     if let Some(name_no_suffix) = name.strip_suffix(".service") {
         if let Some((left, right)) = name_no_suffix.rsplit_once('@') {
             let num = right
-                .parse::<i32>()
+                .parse()
                 .with_context(|| format!("While parsing number part of {name}"))?;
             return Ok((left, num));
         }

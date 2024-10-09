@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::anyhow;
@@ -40,11 +41,11 @@ impl TlsConfig {
         let client_identity = Identity::from_pem(client_cert, client_key);
         let tls_name = self
             .tls_name
-            .as_ref()
+            .as_deref()
             .ok_or_else(|| anyhow!("Missing TLS name"))?;
         Ok(ClientTlsConfig::new()
             .ca_certificate(ca)
-            .domain_name(tls_name.as_str())
+            .domain_name(tls_name)
             .identity(client_identity))
     }
 
@@ -69,32 +70,20 @@ fn transport_config_to_url(ea: &EndpointAddress, with_tls: bool) -> String {
 }
 
 async fn connect_unix_socket(endpoint: Endpoint, path: &String) -> anyhow::Result<Channel> {
-    let mut path = Some(path.to_owned());
+    let path = Arc::new(path.to_owned());
     let ch = endpoint
         .connect_with_connector(service_fn(move |_: Uri| {
-            let path = path.take();
-            async move {
-                if let Some(path) = path {
-                    // Connect to a Uds socket
-                    Ok::<_, std::io::Error>(TokioIo::new(UnixStream::connect(path).await?))
-                } else {
-                    Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "Path already taken",
-                    ))
-                }
-            }
+            let path = path.clone();
+            async move { UnixStream::connect(path.as_ref()).await.map(TokioIo::new) }
         }))
         .await?;
     Ok(ch)
 }
 
-async fn connect_vsock_socket(endpoint: Endpoint, vs: &VsockAddr) -> anyhow::Result<Channel> {
-    let vs = vs.to_owned();
+async fn connect_vsock_socket(endpoint: Endpoint, vs: VsockAddr) -> anyhow::Result<Channel> {
     let ch = endpoint
         .connect_with_connector(service_fn(move |_: Uri| async move {
-            let stream = VsockStream::connect(vs).await?;
-            Ok::<_, std::io::Error>(TokioIo::new(stream))
+            VsockStream::connect(vs).await.map(TokioIo::new)
         }))
         .await?;
     Ok(ch)
@@ -114,7 +103,7 @@ impl EndpointConfig {
             EndpointAddress::Tcp { .. } => endpoint.connect().await?,
             EndpointAddress::Unix(unix) => connect_unix_socket(endpoint, unix).await?,
             EndpointAddress::Abstract(abs) => connect_unix_socket(endpoint, abs).await?,
-            EndpointAddress::Vsock(vs) => connect_vsock_socket(endpoint, vs).await?,
+            EndpointAddress::Vsock(vs) => connect_vsock_socket(endpoint, *vs).await?,
         };
         Ok(channel)
     }
