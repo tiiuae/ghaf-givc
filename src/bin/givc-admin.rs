@@ -23,7 +23,7 @@ struct Cli {
     #[arg(long, help = "Additionally listen Vsock socket (cid:port format)")]
     vsock: Option<String>,
 
-    #[arg(long, env = "TLS", default_missing_value = "false")]
+    #[arg(long, env = "TLS")]
     use_tls: bool,
 
     #[arg(long, env = "CA_CERT")]
