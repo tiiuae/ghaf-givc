@@ -104,18 +104,18 @@ impl AdminServiceImpl {
             vm: VmType::Host,
             service: ServiceType::Mgr,
         })?;
-        self.endpoint(host_mgr).context("Resolving host agent")
+        self.endpoint(&host_mgr).context("Resolving host agent")
     }
 
-    pub fn endpoint(&self, reentry: RegistryEntry) -> anyhow::Result<EndpointConfig> {
+    pub fn endpoint(&self, reentry: &RegistryEntry) -> anyhow::Result<EndpointConfig> {
         Ok(EndpointConfig {
-            transport: reentry.agent()?,
+            transport: reentry.agent()?.to_owned(),
             tls: self.tls_config.clone(),
         })
     }
     pub fn agent_endpoint(&self, name: &str) -> anyhow::Result<EndpointConfig> {
         let reentry = self.registry.by_name(name)?;
-        self.endpoint(reentry)
+        self.endpoint(&reentry)
     }
 
     pub fn app_entries(&self, name: String) -> anyhow::Result<Vec<String>> {
@@ -134,13 +134,14 @@ impl AdminServiceImpl {
         let transport = match &entry.placement {
             Placement::Managed(parent) => {
                 let parent = self.registry.by_name(parent)?;
-                parent.agent()? // Fail, if parent also `Managed`
+                parent.agent()?.to_owned() // Fail, if parent also `Managed`
             }
             Placement::Endpoint(endpoint) => endpoint.clone(), // FIXME: avoid clone!
         };
         let tls_name = transport.tls_name.clone();
+        info!("Get remote status for {tls_name}!");
         let endpoint = EndpointConfig {
-            transport,
+            transport: transport.to_owned(),
             tls: self.tls_config.clone().map(|mut tls| {
                 tls.tls_name = Some(tls_name);
                 tls
@@ -537,7 +538,7 @@ impl pb::admin_service_server::AdminService for AdminService {
             let managers = self.inner.registry.find_map(|re| {
                 (re.r#type.service == ServiceType::Mgr)
                     .then_some(())
-                    .and_then(|_| self.inner.endpoint(re.clone()).ok())
+                    .and_then(|_| self.inner.endpoint(re).ok())
             });
             let locale = req.locale.clone();
             tokio::spawn(async move {
@@ -571,7 +572,7 @@ impl pb::admin_service_server::AdminService for AdminService {
             let managers = self.inner.registry.find_map(|re| {
                 (re.r#type.service == ServiceType::Mgr)
                     .then_some(())
-                    .and_then(|_| self.inner.endpoint(re.clone()).ok())
+                    .and_then(|_| self.inner.endpoint(re).ok())
             });
             let timezone = req.timezone.clone();
             tokio::spawn(async move {
