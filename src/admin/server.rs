@@ -123,12 +123,12 @@ impl AdminServiceImpl {
         self.endpoint(&reentry)
     }
 
-    pub fn app_entries(&self, name: String) -> anyhow::Result<Vec<String>> {
+    pub fn app_entries(&self, name: &str) -> anyhow::Result<Vec<String>> {
         if name.contains('@') {
-            let list = self.registry.find_names(&name)?;
+            let list = self.registry.find_names(name)?;
             Ok(list)
         } else {
-            Ok(vec![name])
+            Ok(vec![name.to_owned()])
         }
     }
 
@@ -423,10 +423,10 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
-        escalate(request, |req| async {
+        escalate(request, |req| async move {
             let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
-            for each in self.inner.app_entries(req.app_name)? {
+            for each in self.inner.app_entries(&req.app_name)? {
                 _ = client.pause_remote(each).await?
             }
             app_success()
@@ -437,10 +437,10 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
-        escalate(request, |req| async {
+        escalate(request, |req| async move {
             let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
-            for each in self.inner.app_entries(req.app_name)? {
+            for each in self.inner.app_entries(&req.app_name)? {
                 _ = client.resume_remote(each).await?
             }
             app_success()
@@ -451,10 +451,10 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
-        escalate(request, |req| async {
+        escalate(request, |req| async move {
             let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
-            for each in self.inner.app_entries(req.app_name)? {
+            for each in self.inner.app_entries(&req.app_name)? {
                 _ = client.stop_remote(each).await?
             }
             app_success()
