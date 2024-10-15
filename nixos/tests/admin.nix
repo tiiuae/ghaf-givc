@@ -69,7 +69,7 @@ in
                 addr = addrs.host;
                 port = "9000";
                 admin = {
-                  name = "admin";
+                  name = "admin-vm";
                   addr = addrs.adminvm;
                   port = "9001";
                   protocol = "tcp"; # go version expect word "tcp" here, but it unused
