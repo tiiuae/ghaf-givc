@@ -5,7 +5,7 @@
   ...
 }:
 let
-  tls = false;
+  tls = true;
   snakeoil = ./snakeoil;
   addrs = {
     host = "192.168.101.10";
@@ -232,7 +232,8 @@ in
                 services.openssh.enable = true;
                 givc.appvm = {
                   enable = true;
-                  name = "foot-vm";
+                  debug = true;
+                  name = "chromium-vm";
                   addr = addrs.appvm;
                   admin = adminSettings;
                   tls = mkTls "chromium-vm";
@@ -339,7 +340,7 @@ in
                   adminvm.wait_for_file("/etc/timezone.conf")
 
               with subtest("Clean run"):
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start foot"))
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm foot"))
                   time.sleep(10) # Give few seconds to application to spin up
                   wait_for_window("ghaf@appvm")
 
@@ -348,13 +349,13 @@ in
                   appvm.succeed("pkill foot")
                   time.sleep(10)
                   # .. then ask to restart
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start foot"))
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm foot"))
                   wait_for_window("ghaf@appvm")
 
               with subtest("clear exit and restart"):
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm foot-vm clearexit"))
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm clearexit"))
                   time.sleep(20) # Give few seconds to application to spin up, exit, then start it again
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm foot-vm clearexit"))
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm clearexit"))
 
               with subtest("suspend system"):
                   print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} suspend"))
