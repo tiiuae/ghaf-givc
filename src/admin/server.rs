@@ -108,9 +108,14 @@ impl AdminServiceImpl {
     }
 
     pub fn endpoint(&self, reentry: &RegistryEntry) -> anyhow::Result<EndpointConfig> {
+        let transport = reentry.agent()?.to_owned();
+        let tls_name = transport.tls_name.clone();
         Ok(EndpointConfig {
-            transport: reentry.agent()?.to_owned(),
-            tls: self.tls_config.clone(),
+            transport,
+            tls: self.tls_config.clone().map(|mut tls| {
+                tls.tls_name = Some(tls_name);
+                tls
+            }),
         })
     }
     pub fn agent_endpoint(&self, name: &str) -> anyhow::Result<EndpointConfig> {
