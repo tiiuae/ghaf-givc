@@ -107,8 +107,17 @@ impl AdminServiceImpl {
         self.endpoint(&host_mgr).context("Resolving host agent")
     }
 
-    pub fn endpoint(&self, reentry: &RegistryEntry) -> anyhow::Result<EndpointConfig> {
-        let transport = reentry.agent()?.to_owned();
+    pub fn endpoint(&self, entry: &RegistryEntry) -> anyhow::Result<EndpointConfig> {
+        let transport = match &entry.placement {
+            Placement::Managed(parent) => {
+                let parent = self.registry.by_name(&parent)?;
+                parent
+                    .agent()
+                    .with_context(|| "When get_remote_status()")?
+                    .to_owned() // Fail, if parent also `Managed`
+            }
+            Placement::Endpoint(endpoint) => endpoint.clone(), // FIXME: avoid clone!
+        };
         let tls_name = transport.tls_name.clone();
         Ok(EndpointConfig {
             transport,
@@ -136,23 +145,7 @@ impl AdminServiceImpl {
         &self,
         entry: &RegistryEntry,
     ) -> anyhow::Result<crate::types::UnitStatus> {
-        let transport = match &entry.placement {
-            Placement::Managed(parent) => {
-                let parent = self.registry.by_name(parent)?;
-                parent.agent()?.to_owned() // Fail, if parent also `Managed`
-            }
-            Placement::Endpoint(endpoint) => endpoint.clone(), // FIXME: avoid clone!
-        };
-        let tls_name = transport.tls_name.clone();
-        info!("Get remote status for {tls_name}!");
-        let endpoint = EndpointConfig {
-            transport: transport.to_owned(),
-            tls: self.tls_config.clone().map(|mut tls| {
-                tls.tls_name = Some(tls_name);
-                tls
-            }),
-        };
-
+        let endpoint = self.endpoint(entry)?;
         let client = SystemDClient::new(endpoint);
         client.get_remote_status(entry.name.clone()).await
     }
