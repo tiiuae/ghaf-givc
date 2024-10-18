@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use hyper_util::rt::TokioIo;
 use tokio::net::UnixStream;
 use tokio_vsock::{VsockAddr, VsockStream};
@@ -43,6 +43,7 @@ impl TlsConfig {
             .tls_name
             .as_deref()
             .ok_or_else(|| anyhow!("Missing TLS name"))?;
+        info!("Using TLS name: {tls_name}");
         Ok(ClientTlsConfig::new()
             .ca_certificate(ca)
             .domain_name(tls_name)
@@ -93,14 +94,17 @@ impl EndpointConfig {
     pub async fn connect(&self) -> anyhow::Result<Channel> {
         let url = transport_config_to_url(&self.transport.address, self.tls.is_some());
         info!("Connecting to {url}, TLS name {:?}", &self.tls);
-        let mut endpoint = Endpoint::try_from(url)?
+        let mut endpoint = Endpoint::try_from(url.clone())?
             .timeout(Duration::from_secs(5))
             .concurrency_limit(30);
         if let Some(tls) = &self.tls {
             endpoint = endpoint.tls_config(tls.client_config()?)?;
         };
         let channel = match &self.transport.address {
-            EndpointAddress::Tcp { .. } => endpoint.connect().await?,
+            EndpointAddress::Tcp { .. } => endpoint
+                .connect()
+                .await
+                .with_context(|| format!("Connecting TCP {url} with {:?}", self.tls))?,
             EndpointAddress::Unix(unix) => connect_unix_socket(endpoint, unix).await?,
             EndpointAddress::Abstract(abs) => connect_unix_socket(endpoint, abs).await?,
             EndpointAddress::Vsock(vs) => connect_vsock_socket(endpoint, *vs).await?,

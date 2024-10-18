@@ -24,7 +24,7 @@ struct Cli {
     #[arg(long, env = "PORT", default_missing_value = "9001", value_parser = clap::value_parser!(u16).range(1..))]
     port: u16,
 
-    #[arg(long, env = "TLS", default_missing_value = "false")]
+    #[arg(long, env = "TLS")]
     use_tls: bool,
 
     #[arg(long, env = "TYPE")]

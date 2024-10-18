@@ -26,8 +26,8 @@ pub struct RegistryEntry {
 }
 
 impl RegistryEntry {
-    pub fn agent(self) -> anyhow::Result<EndpointEntry> {
-        match self.placement {
+    pub fn agent(&self) -> anyhow::Result<&EndpointEntry> {
+        match &self.placement {
             Placement::Endpoint(endpoint) => Ok(endpoint),
             Placement::Managed(by) => Err(anyhow!(
                 "Agent endpoint {} is managed by {}!",
