@@ -97,14 +97,32 @@ impl AdminClient {
         let _response = self.connect_to().await?.start_application(request).await?;
         Ok(())
     }
-    pub async fn stop(&self, _app: String) -> anyhow::Result<()> {
-        todo!();
+    pub async fn stop(&self, app_name: String) -> anyhow::Result<()> {
+        let request = pb::admin::ApplicationRequest {
+            app_name,
+            vm_name: None,
+            args: Vec::new(),
+        };
+        let _response = self.connect_to().await?.stop_application(request).await?;
+        Ok(())
     }
-    pub async fn pause(&self, _app: String) -> anyhow::Result<()> {
-        todo!();
+    pub async fn pause(&self, app_name: String) -> anyhow::Result<()> {
+        let request = pb::admin::ApplicationRequest {
+            app_name,
+            vm_name: None,
+            args: Vec::new(),
+        };
+        let _response = self.connect_to().await?.pause_application(request).await?;
+        Ok(())
     }
-    pub async fn resume(&self, _app: String) -> anyhow::Result<()> {
-        todo!();
+    pub async fn resume(&self, app_name: String) -> anyhow::Result<()> {
+        let request = pb::admin::ApplicationRequest {
+            app_name,
+            vm_name: None,
+            args: Vec::new(),
+        };
+        let _response = self.connect_to().await?.resume_application(request).await?;
+        Ok(())
     }
     pub async fn reboot(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};

@@ -352,6 +352,11 @@ in
                   print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm foot"))
                   wait_for_window("ghaf@appvm")
 
+              with subtest("stop application"):
+                  appvm.succeed("pgrep foot")
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} stop foot@1.service"))
+                  appvm.fail("pgrep foot")
+
               with subtest("clear exit and restart"):
                   print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm clearexit"))
                   time.sleep(20) # Give few seconds to application to spin up, exit, then start it again
