@@ -43,9 +43,9 @@
             help = "update git pre-commit hooks";
           }
           {
-            help = "Generate go files from protobuffers";
+            help = "Generate go files from protobuffers. Examples: '$ protogen systemd'";
             name = "protogen";
-            command = "./api/protoc.sh";
+            command = "./api/protoc.sh $@";
           }
           {
             help = "Like cURL, but for gRPC: Command-line tool for interacting with gRPC servers";

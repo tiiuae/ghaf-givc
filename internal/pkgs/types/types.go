@@ -37,12 +37,13 @@ const (
 )
 
 type UnitStatus struct {
-	Name        string
-	Description string
-	LoadState   string
-	ActiveState string
-	SubState    string
-	Path        string
+	Name         string
+	Description  string
+	LoadState    string
+	ActiveState  string
+	SubState     string
+	Path         string
+	FreezerState string
 }
 
 type TransportConfig struct {
