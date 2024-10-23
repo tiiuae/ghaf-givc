@@ -66,15 +66,22 @@ func (s *SystemdControlServer) GetUnitStatus(ctx context.Context, req *systemd_a
 		return nil, grpc_status.Error(grpc_codes.NotFound, errStr)
 	}
 
+	freezerState, err := s.Controller.GetUnitPropertyString(context.Background(), req.UnitName, "FreezerState")
+	if err != nil {
+		log.Infof("[GetUnitStatus] Error fetching freezer state: %v\n", err)
+		freezerState = "error"
+	}
+
 	resp := &systemd_api.UnitStatusResponse{
 		CmdStatus: "Command successful",
 		UnitStatus: &systemd_api.UnitStatus{
-			Name:        unitStatus[0].Name,
-			Description: unitStatus[0].Description,
-			LoadState:   unitStatus[0].LoadState,
-			ActiveState: unitStatus[0].ActiveState,
-			SubState:    unitStatus[0].SubState,
-			Path:        string(unitStatus[0].Path),
+			Name:         unitStatus[0].Name,
+			Description:  unitStatus[0].Description,
+			LoadState:    unitStatus[0].LoadState,
+			ActiveState:  unitStatus[0].ActiveState,
+			SubState:     unitStatus[0].SubState,
+			Path:         string(unitStatus[0].Path),
+			FreezerState: freezerState,
 		},
 	}
 

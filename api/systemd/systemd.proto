@@ -24,6 +24,7 @@ message UnitStatus {
 	string ActiveState = 4;
     string SubState = 5;
 	string Path = 6;
+    string FreezerState = 7;
 }
 
 message UnitStatusResponse {

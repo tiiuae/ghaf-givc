@@ -329,6 +329,29 @@ func (c *SystemdController) GetUnitProperties(ctx context.Context, unitName stri
 	return props, nil
 }
 
+func (c *SystemdController) GetUnitPropertyString(ctx context.Context, unitName string, propertyName string) (string, error) {
+
+	// Input validation
+	if ctx == nil {
+		return "", fmt.Errorf("context cannot be nil")
+	}
+	if unitName == "" {
+		return "", fmt.Errorf("incorrect input, must be unit name")
+	}
+	if propertyName == "" {
+		return "", fmt.Errorf("incorrect input, must be property name")
+	}
+
+	// Get unit properties
+	prop, err := c.conn.GetUnitPropertyContext(ctx, unitName, propertyName)
+	if err != nil {
+		return "", err
+	}
+
+	propString := strings.Trim(prop.Value.String(), "\"")
+	return propString, nil
+}
+
 func (c *SystemdController) StartApplication(ctx context.Context, serviceName string, serviceArgs []string) (string, error) {
 
 	cmdFailure := "Command failed."

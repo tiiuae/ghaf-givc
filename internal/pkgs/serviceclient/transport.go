@@ -43,12 +43,13 @@ func GetRemoteStatus(cfg *types.EndpointConfig, unitName string) (*types.UnitSta
 	}
 
 	response := &types.UnitStatus{
-		Name:        resp.UnitStatus.Name,
-		Description: resp.UnitStatus.Description,
-		LoadState:   resp.UnitStatus.LoadState,
-		ActiveState: resp.UnitStatus.ActiveState,
-		SubState:    resp.UnitStatus.SubState,
-		Path:        string(resp.UnitStatus.Path),
+		Name:         resp.UnitStatus.Name,
+		Description:  resp.UnitStatus.Description,
+		LoadState:    resp.UnitStatus.LoadState,
+		ActiveState:  resp.UnitStatus.ActiveState,
+		SubState:     resp.UnitStatus.SubState,
+		Path:         string(resp.UnitStatus.Path),
+		FreezerState: resp.UnitStatus.FreezerState,
 	}
 
 	return response, nil

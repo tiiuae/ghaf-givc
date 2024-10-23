@@ -7,6 +7,10 @@ gen_protoc() {
             "$1"/"$2"
 }
 
-for api in admin systemd wifi hwid locale; do
-	gen_protoc api/$api $api.proto
+if [ $# -eq 0 ]; then
+    set -- admin hwid locale systemd wifi
+fi
+
+for protob in "$@"; do
+	gen_protoc api/"$protob" "$protob".proto
 done
