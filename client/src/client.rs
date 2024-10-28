@@ -77,10 +77,10 @@ impl AdminClient {
             .register_service(request)
             .await?
             .into_inner();
-        if let Some(err) = response.error {
-            bail!("{err}");
-        }
-        Ok(())
+        response
+            .error
+            .map(|e| Err(anyhow::Error::msg(e)))
+            .unwrap_or(Ok(()))
     }
 
     pub async fn start(
@@ -97,6 +97,7 @@ impl AdminClient {
         let _response = self.connect_to().await?.start_application(request).await?;
         Ok(())
     }
+
     pub async fn stop(&self, app_name: String) -> anyhow::Result<()> {
         let request = pb::admin::ApplicationRequest {
             app_name,
@@ -106,6 +107,7 @@ impl AdminClient {
         let _response = self.connect_to().await?.stop_application(request).await?;
         Ok(())
     }
+
     pub async fn pause(&self, app_name: String) -> anyhow::Result<()> {
         let request = pb::admin::ApplicationRequest {
             app_name,
@@ -115,6 +117,7 @@ impl AdminClient {
         let _response = self.connect_to().await?.pause_application(request).await?;
         Ok(())
     }
+
     pub async fn resume(&self, app_name: String) -> anyhow::Result<()> {
         let request = pb::admin::ApplicationRequest {
             app_name,
@@ -124,21 +127,25 @@ impl AdminClient {
         let _response = self.connect_to().await?.resume_application(request).await?;
         Ok(())
     }
+
     pub async fn reboot(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
         let _response = self.connect_to().await?.reboot(request).await?;
         Ok(())
     }
+
     pub async fn poweroff(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
         let _response = self.connect_to().await?.poweroff(request).await?;
         Ok(())
     }
+
     pub async fn suspend(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
         let _response = self.connect_to().await?.suspend(request).await?;
         Ok(())
     }
+
     pub async fn wakeup(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
         let _response = self.connect_to().await?.wakeup(request).await?;
