@@ -1,6 +1,6 @@
 use super::entry::*;
 use crate::pb::{self, *};
-use anyhow::{bail, Context};
+use anyhow::{anyhow, bail, Context};
 use async_stream::try_stream;
 use givc_common::query::Event;
 use regex::Regex;
@@ -110,7 +110,7 @@ impl AdminServiceImpl {
     pub fn endpoint(&self, entry: &RegistryEntry) -> anyhow::Result<EndpointConfig> {
         let transport = match &entry.placement {
             Placement::Managed(parent) => {
-                let parent = self.registry.by_name(&parent)?;
+                let parent = self.registry.by_name(parent)?;
                 parent
                     .agent()
                     .with_context(|| "When get_remote_status()")?
@@ -166,24 +166,23 @@ impl AdminServiceImpl {
 
         /* Check status of the unit */
         match client.get_remote_status(unit.into()).await {
-            Ok(status) => {
-                if status.load_state == "loaded" {
-                    /* No action, if the unit is loaded and already running. */
-                    if status.active_state == "active" && status.sub_state == "running" {
-                        info!("Service {unit} is already in running state!");
-                    } else {
-                        /* Start the unit if it is loaded and not running. */
-                        client.start_remote(unit.into()).await?;
-                    }
-                    return Ok(());
+            Ok(status) if status.load_state == "loaded" => {
+                /* No action, if the unit is loaded and already running. */
+                if status.active_state == "active" && status.sub_state == "running" {
+                    info!("Service {unit} is already in running state!");
                 } else {
-                    /* Error, if the unit is not loaded. */
-                    bail!("Service {unit} is not loaded!");
+                    /* Start the unit if it is loaded and not running. */
+                    client.start_remote(unit.into()).await?;
                 }
+                Ok(())
+            }
+            Ok(_) => {
+                /* Error, if the unit is not loaded. */
+                Err(anyhow!("Service {unit} is not loaded!"))
             }
             Err(e) => {
-                eprintln!("Error retrieving unit status: {}", e);
-                return Err(e.into());
+                eprintln!("Error retrieving unit status: {e}");
+                Err(e)
             }
         }
     }
@@ -236,21 +235,17 @@ impl AdminServiceImpl {
                     .with_context(|| format!("handing error, by restart VM {}", entry.name))?;
                 Ok(()) // FIXME: should use `?` from line above, why it didn't work?
             }
-            (x, y) => bail!(
-                "Don't known how to handle_error for VM type: {:?}:{:?}",
-                x,
-                y
-            ),
+            (x, y) => bail!("Don't known how to handle_error for VM type: {x:?}:{y:?}"),
         }
     }
 
     async fn monitor_routine(&self) -> anyhow::Result<()> {
         let watch_list = self.registry.watch_list();
         for entry in watch_list {
-            debug!("Monitoring {}...", &entry.name);
+            debug!("Monitoring {}...", entry.name);
             match self.get_remote_status(&entry).await {
                 Err(err) => {
-                    error!("could not get status of unit {}: {}", &entry.name, err);
+                    error!("could not get status of unit {}: {}", entry.name, err);
                     self.handle_error(entry)
                         .await
                         .context("during handle error")?
@@ -261,11 +256,11 @@ impl AdminServiceImpl {
                     if inactive {
                         error!(
                             "Status of {} is {}, instead of active. Recovering.",
-                            &entry.name, status.active_state
+                            entry.name, status.active_state
                         )
                     };
 
-                    debug!("Status of {} is {:#?} (updated)", &entry.name, status);
+                    debug!("Status of {} is {:#?} (updated)", entry.name, status);
                     // We have immutable copy of entry here, but need update _in registry_ copy
                     self.registry.update_state(&entry.name, status)?;
 
@@ -286,7 +281,7 @@ impl AdminServiceImpl {
         loop {
             watch.tick().await;
             if let Err(err) = self.monitor_routine().await {
-                error!("Error during watch: {}", err);
+                error!("Error during watch: {err}");
             }
         }
     }
@@ -509,17 +504,15 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<Empty>,
     ) -> Result<tonic::Response<QueryListResponse>, tonic::Status> {
         escalate(request, |_| async {
-            // Kludge
-            let list: Vec<QueryResult> = self
+            let list = self
                 .inner
                 .registry
                 .contents()
                 .into_iter()
-                .map(|item| item.into())
+                .map(QueryResult::from)
+                .map(From::from)
                 .collect();
-            Ok(QueryListResponse {
-                list: list.into_iter().map(|item| item.into()).collect(), // Kludge
-            })
+            Ok(QueryListResponse { list })
         })
         .await
     }
@@ -540,14 +533,12 @@ impl pb::admin_service_server::AdminService for AdminService {
             });
             let locale = req.locale.clone();
             tokio::spawn(async move {
+                let localemsg = pb::locale::LocaleMessage { locale };
                 for ec in managers {
                     if let Ok(conn) = ec.connect().await {
                         let mut client =
                             pb::locale::locale_client_client::LocaleClientClient::new(conn);
-                        let localemsg = pb::locale::LocaleMessage {
-                            locale: locale.clone(),
-                        };
-                        let _ = client.locale_set(localemsg).await;
+                        let _ = client.locale_set(localemsg.clone()).await;
                     }
                 }
             });

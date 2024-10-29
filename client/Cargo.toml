@@ -10,9 +10,7 @@ version = "0.0.1"
 anyhow = "1.0.86"
 async-channel = "2.3.1"
 async-stream = "0.3"
-http = "0.2"
-http-body = "0.4.2"
-hyper-util = { version = "0.1.4"}
+hyper-util = { version = "0.1"}
 tokio = {version = "1.0", features = ["rt-multi-thread", "time", "macros"]}
 tokio-stream = "0.1"
 tokio-vsock = "*"
