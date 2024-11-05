@@ -148,11 +148,18 @@ pub struct UnitStatus {
     pub active_state: String,
     pub sub_state: String,
     pub path: String, // FIXME: PathBuf?
+    pub freezer_state: String,
 }
 
 impl UnitStatus {
     pub fn is_running(&self) -> bool {
-        self.active_state == "active" && self.load_state == "loaded" && self.sub_state == "running"
+        !self.is_paused()
+            && self.active_state == "active"
+            && self.load_state == "loaded"
+            && self.sub_state == "running"
+    }
+    pub fn is_paused(&self) -> bool {
+        self.freezer_state == "frozen"
     }
     pub fn is_exitted(&self) -> bool {
         self.active_state == "inactive"
@@ -171,6 +178,7 @@ impl TryFrom<pb::UnitStatus> for UnitStatus {
             active_state: us.active_state,
             sub_state: "stub".into(),
             path: us.path,
+            freezer_state: "bogus".into(),
         })
     }
 }

@@ -55,6 +55,7 @@ impl RegistryEntry {
                 load_state: "loaded".to_string(),
                 sub_state: "bogus".to_string(),
                 path: "bogus".to_string(),
+                freezer_state: "bogus".to_string(),
             },
             placement: Placement::Endpoint(EndpointEntry {
                 address: EndpointAddress::Tcp {
@@ -97,6 +98,8 @@ impl From<RegistryEntry> for QueryResult {
     fn from(val: RegistryEntry) -> Self {
         let status = if val.status.is_running() {
             VMStatus::Running
+        } else if val.status.is_paused() {
+            VMStatus::Paused
         } else {
             VMStatus::PoweredOff
         };

@@ -103,6 +103,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         active_state: String::from("bogus"),
         sub_state: String::from("bogus"),
         path: String::from("bogus"),
+        freezer_state: String::from("bogus"),
     };
 
     let admin_tls = tls.clone().map(|tls| (cli.admin_server_name, tls));
