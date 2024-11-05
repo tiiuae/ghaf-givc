@@ -20,16 +20,17 @@ pub fn trace_init() -> anyhow::Result<()> {
         .max_level_hint()
         .map_or_else(|| false, |level| level >= Level::DEBUG);
 
-    let stdout = tracing_subscriber::fmt::layer()
+    let output = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
         .with_target(is_debug_log_level)
         .with_file(is_debug_log_level)
         .with_line_number(is_debug_log_level)
         .with_thread_ids(is_debug_log_level);
 
-    let stdout = if is_debug_log_level {
-        stdout.pretty().boxed()
+    let output = if is_debug_log_level {
+        output.pretty().boxed()
     } else {
-        stdout.boxed()
+        output.boxed()
     };
 
     // enable journald logging only on release to avoid log spam on dev machines
@@ -40,7 +41,7 @@ pub fn trace_init() -> anyhow::Result<()> {
 
     let subscriber = tracing_subscriber::registry()
         .with(journald.with_filter(LevelFilter::INFO))
-        .with(stdout.with_filter(env_filter));
+        .with(output.with_filter(env_filter));
 
     tracing::subscriber::set_global_default(subscriber)
         .expect("tracing shouldn't already have been set up");
