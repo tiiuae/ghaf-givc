@@ -36,6 +36,7 @@ impl SystemDClient {
             active_state: status.active_state,
             sub_state: status.sub_state,
             path: status.path,
+            freezer_state: status.freezer_state,
         })
     }
 
