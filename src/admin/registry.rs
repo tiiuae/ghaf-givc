@@ -1,12 +1,12 @@
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
 
-use super::entry::RegistryEntry;
+use super::entry::{Placement, RegistryEntry};
 use crate::types::*;
 use anyhow::{anyhow, bail};
 use givc_common::query::{Event, QueryResult};
 use tokio::sync::broadcast;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 #[derive(Clone, Debug)]
 pub struct Registry {
@@ -48,6 +48,22 @@ impl Registry {
         let mut state = self.map.lock().unwrap();
         match state.remove(name) {
             Some(entry) => {
+                let cascade: Vec<String> = state
+                    .values()
+                    .filter_map(|re| match &re.placement {
+                        Placement::Managed(within) if within == name => Some(re.name.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                for each in cascade {
+                    match state.remove(&each) {
+                        Some(entry1) => {
+                            info!("Cascade deregistering {:#?}", entry1);
+                            self.send_event(Event::UnitShutdown(entry1.into()))
+                        }
+                        None => error!("Problems due cascade deregistering {each} (via {name})"),
+                    }
+                }
                 info!("Deregistering {:#?}", entry);
                 self.send_event(Event::UnitShutdown(entry.into()));
                 Ok(())
@@ -180,6 +196,38 @@ mod tests {
         assert!(!r.contains(&foo_key));
         assert!(r.by_name(&foo_key).is_err());
         assert!(r.deregister(&foo_key).is_err()); // fail to dereg second time
+        Ok(())
+    }
+
+    #[test]
+    fn test_cascade_deregister() -> anyhow::Result<()> {
+        let r = Registry::new();
+        let foo = RegistryEntry::dummy("foo".to_string());
+        let bar = RegistryEntry {
+            placement: Placement::Managed("foo".into()),
+            ..RegistryEntry::dummy("bar".to_string())
+        };
+        let baz = RegistryEntry {
+            placement: Placement::Managed("foo".into()),
+            ..RegistryEntry::dummy("baz".to_string())
+        };
+
+        r.register(foo);
+        r.register(bar);
+        r.register(baz);
+        assert!(r.contains("foo"));
+        assert!(r.contains("bar"));
+        assert!(r.contains("baz"));
+
+        r.deregister("baz");
+        assert!(r.contains("foo"));
+        assert!(r.contains("bar"));
+        assert!(!r.contains("baz"));
+
+        r.deregister("foo");
+        assert!(!r.contains("foo"));
+        assert!(!r.contains("bar"));
+
         Ok(())
     }
 
