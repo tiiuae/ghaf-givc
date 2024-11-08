@@ -1,3 +1,5 @@
+# Copyright 2024 TII (SSRC) and the Ghaf contributors
+# SPDX-License-Identifier: Apache-2.0
 {
   self,
   lib,
@@ -13,7 +15,7 @@ let
     appvm = "192.168.101.5";
     guivm = "192.168.101.3";
   };
-  adminSettings = {
+  admin = {
     name = "admin-vm";
     addr = addrs.adminvm;
     port = "9001";
@@ -45,9 +47,10 @@ in
               givc.admin = {
                 enable = true;
                 debug = true;
-                name = "admin-vm";
-                addr = addrs.adminvm;
-                port = "9001";
+                inherit (admin) name;
+                inherit (admin) addr;
+                inherit (admin) port;
+                inherit (admin) protocol;
                 tls = mkTls "admin-vm";
               };
             };
@@ -61,15 +64,13 @@ in
               ];
               givc.host = {
                 enable = true;
-                name = "ghaf-host";
-                addr = addrs.host;
-                port = "9000";
-                admin = {
-                  name = "admin-vm";
-                  addr = addrs.adminvm;
-                  port = "9001";
-                  protocol = "tcp"; # go version expect word "tcp" here, but it unused
+                agent = {
+                  name = "ghaf-host";
+                  addr = addrs.host;
+                  port = "9000";
+                  protocol = "tcp";
                 };
+                inherit admin;
                 services = [
                   "microvm@admin-vm.service"
                   "microvm@foot-vm.service"
@@ -150,9 +151,11 @@ in
                 '';
                 givc.sysvm = {
                   enable = true;
-                  admin = adminSettings;
-                  addr = addrs.guivm;
-                  name = "gui-vm";
+                  inherit admin;
+                  agent = {
+                    addr = addrs.guivm;
+                    name = "gui-vm";
+                  };
                   tls = mkTls "gui-vm";
                   services = [
                     "poweroff.target"
@@ -201,9 +204,11 @@ in
                 givc.appvm = {
                   enable = true;
                   debug = true;
-                  name = "chromium-vm";
-                  addr = addrs.appvm;
-                  admin = adminSettings;
+                  agent = {
+                    name = "chromium-vm";
+                    addr = addrs.appvm;
+                  };
+                  inherit admin;
                   tls = mkTls "chromium-vm";
                   applications = [
                     {

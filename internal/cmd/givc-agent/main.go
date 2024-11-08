@@ -5,21 +5,24 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
-	"givc/api/admin"
+	givc_admin "givc/api/admin"
 	givc_app "givc/internal/pkgs/applications"
 	givc_grpc "givc/internal/pkgs/grpc"
-	"givc/internal/pkgs/hwidmanager"
-	"givc/internal/pkgs/localelistener"
-	"givc/internal/pkgs/serviceclient"
-	"givc/internal/pkgs/servicemanager"
-	"givc/internal/pkgs/types"
+	givc_hwidmanager "givc/internal/pkgs/hwidmanager"
+	givc_localelistener "givc/internal/pkgs/localelistener"
+	givc_serviceclient "givc/internal/pkgs/serviceclient"
+	givc_servicemanager "givc/internal/pkgs/servicemanager"
+	givc_socketproxy "givc/internal/pkgs/socketproxy"
+	givc_types "givc/internal/pkgs/types"
 	givc_util "givc/internal/pkgs/utility"
-	"givc/internal/pkgs/wifimanager"
+	givc_wifimanager "givc/internal/pkgs/wifimanager"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -27,24 +30,22 @@ import (
 func main() {
 
 	var err error
+	serverStarted := make(chan struct{})
+
 	log.Infof("Running %s", filepath.Base(os.Args[0]))
 
-	name := os.Getenv("NAME")
-	if name == "" {
-		log.Fatalf("No 'NAME' environment variable present.")
+	// Parse fundamental parameters
+	var agent givc_types.TransportConfig
+	jsonTransportConfigString, transportConfigPresent := os.LookupEnv("AGENT")
+	if jsonTransportConfigString != "" && transportConfigPresent {
+		err := json.Unmarshal([]byte(jsonTransportConfigString), &agent)
+		if err != nil {
+			log.Fatalf("Error parsing application manifests: %s", err)
+		}
+	} else {
+		log.Fatalf("No 'AGENT' environment variable present.")
 	}
-	address := os.Getenv("ADDR")
-	if address == "" {
-		log.Fatalf("No 'ADDR' environment variable present.")
-	}
-	port := os.Getenv("PORT")
-	if port == "" {
-		log.Fatalf("No 'PORT' environment variable present.")
-	}
-	protocol := os.Getenv("PROTO")
-	if protocol == "" {
-		log.Fatalf("No 'PROTO' environment variable present.")
-	}
+
 	debug := os.Getenv("DEBUG")
 	if debug != "true" {
 		log.SetLevel(log.WarnLevel)
@@ -61,13 +62,15 @@ func main() {
 		log.Fatalf("No or wrong 'SUBTYPE' environment variable present.")
 	}
 
+	// Configure system services/units to be administrated by this agent
 	var services []string
 	servicesString, servicesPresent := os.LookupEnv("SERVICES")
 	if servicesPresent {
 		services = strings.Split(servicesString, " ")
 	}
 
-	var applications []types.ApplicationManifest
+	// Configure applications to be administrated by this agent
+	var applications []givc_types.ApplicationManifest
 	jsonApplicationString, appPresent := os.LookupEnv("APPLICATIONS")
 	if appPresent && jsonApplicationString != "" {
 		applications, err = givc_app.ParseApplicationManifests(jsonApplicationString)
@@ -76,22 +79,19 @@ func main() {
 		}
 	}
 
-	adminServerName := os.Getenv("ADMIN_SERVER_NAME")
-	if adminServerName == "" {
-		log.Fatalf("A name for the admin server is required in environment variable $ADMIN_SERVER_NAME.")
+	// Set admin server parameters
+	var admin givc_types.TransportConfig
+	jsonAdminServerString, adminPresent := os.LookupEnv("ADMIN_SERVER")
+	if jsonAdminServerString != "" && adminPresent {
+		err := json.Unmarshal([]byte(jsonAdminServerString), &admin)
+		if err != nil {
+			log.Fatalf("Error parsing admin server transport values: %s", err)
+		}
+	} else {
+		log.Fatalf("No 'ADMIN_SERVER' environment variable present.")
 	}
-	adminServerAddr := os.Getenv("ADMIN_SERVER_ADDR")
-	if adminServerAddr == "" {
-		log.Fatalf("An address for the admin server is required in environment variable $ADMIN_SERVER_ADDR.")
-	}
-	adminServerPort := os.Getenv("ADMIN_SERVER_PORT")
-	if adminServerPort == "" {
-		log.Fatalf("An port address for the admin server is required in environment variable $ADMIN_SERVER_PORT.")
-	}
-	adminServerProtocol := os.Getenv("ADMIN_SERVER_PROTO")
-	if adminServerProtocol == "" {
-		log.Fatalf("An address for the admin server is required in environment variable $ADMIN_SERVER_PROTO.")
-	}
+
+	// Configure optional services
 	wifiEnabled := false
 	wifiService, wifiOption := os.LookupEnv("WIFI")
 	if wifiOption && (wifiService != "false") {
@@ -107,100 +107,104 @@ func main() {
 		}
 		hwidEnabled = true
 	}
-	var tlsConfig *tls.Config
-	if os.Getenv("TLS") != "false" {
-		cacert := os.Getenv("CA_CERT")
-		if cacert == "" {
-			log.Fatalf("No 'CA_CERT' environment variable present. To turn off TLS set 'TLS' to 'false'.")
-		}
-		cert := os.Getenv("HOST_CERT")
-		if cert == "" {
-			log.Fatalf("No 'HOST_CERT' environment variable present. To turn off TLS set 'TLS' to 'false'.")
-		}
-		key := os.Getenv("HOST_KEY")
-		if key == "" {
-			log.Fatalf("No 'HOST_KEY' environment variable present. To turn off TLS set 'TLS' to 'false'.")
-		}
-		// @TODO add path and file checks
-		tlsConfig = givc_util.TlsServerConfig(cacert, cert, key, true)
-	}
-	// @TODO add path and file checks
 
-	cfgAdminServer := &types.EndpointConfig{
-		Transport: types.TransportConfig{
-			Name:     adminServerName,
-			Address:  adminServerAddr,
-			Port:     adminServerPort,
-			Protocol: adminServerProtocol,
-		},
+	localeListenerEnabled := false
+	localeListenerService, localeListenerOption := os.LookupEnv("LOCALE_LISTENER")
+	if localeListenerOption && (localeListenerService != "false") {
+		localeListenerEnabled = true
+	}
+
+	var proxyConfigs []givc_types.ProxyConfig
+	jsonDbusproxyString, socketProxyOption := os.LookupEnv("SOCKET_PROXY")
+	if socketProxyOption && jsonDbusproxyString != "" {
+		err = json.Unmarshal([]byte(jsonDbusproxyString), &proxyConfigs)
+		if err != nil {
+			log.Fatalf("error unmarshalling JSON string: %v", err)
+		}
+	}
+
+	// Configure TLS
+	var tlsConfigJson givc_types.TlsConfigJson
+	jsonTlsConfigString, tlsConfigOption := os.LookupEnv("TLS_CONFIG")
+	if tlsConfigOption && jsonTlsConfigString != "" {
+		err = json.Unmarshal([]byte(jsonTlsConfigString), &tlsConfigJson)
+		if err != nil {
+			log.Fatalf("error unmarshalling JSON string: %v", err)
+		}
+	}
+
+	var tlsConfig *tls.Config
+	if tlsConfigJson.Enable {
+		tlsConfig = givc_util.TlsServerConfig(tlsConfigJson.CaCertPath, tlsConfigJson.CertPath, tlsConfigJson.KeyPath, true)
+	}
+
+	// Set admin server configurations
+	cfgAdminServer := &givc_types.EndpointConfig{
+		Transport: admin,
 		TlsConfig: tlsConfig,
 	}
 
 	// Set agent configurations
-	cfgAgent := &types.EndpointConfig{
-		Transport: types.TransportConfig{
-			Name:     name,
-			Address:  address,
-			Port:     port,
-			Protocol: protocol,
-		},
+	cfgAgent := &givc_types.EndpointConfig{
+		Transport: agent,
 		TlsConfig: tlsConfig,
 	}
 
-	// Add services
-	agentServiceName := "givc-" + name + ".service"
+	// Create registeration entry
+	agentServiceName := "givc-" + agent.Name + ".service"
 	cfgAgent.Services = append(cfgAgent.Services, agentServiceName)
 	if servicesPresent {
 		cfgAgent.Services = append(cfgAgent.Services, services...)
 	}
 	log.Infof("Started with services: %v\n", cfgAgent.Services)
 
-	agentEntryRequest := &admin.RegistryRequest{
+	agentEntryRequest := &givc_admin.RegistryRequest{
 		Name:   agentServiceName,
 		Type:   uint32(agentType),
 		Parent: parentName,
-		Transport: &admin.TransportConfig{
+		Transport: &givc_admin.TransportConfig{
 			Protocol: cfgAgent.Transport.Protocol,
 			Address:  cfgAgent.Transport.Address,
 			Port:     cfgAgent.Transport.Port,
 			Name:     cfgAgent.Transport.Name,
 		},
-		State: &admin.UnitStatus{
+		State: &givc_admin.UnitStatus{
 			Name: agentServiceName,
 		},
 	}
 
 	// Register this instance
-	serverStarted := make(chan struct{})
 	go func() {
 		// Wait for server to start
 		<-serverStarted
 
-		// Register agent
-		_, err := serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
-		if err != nil {
-			log.Fatalf("Error register agent: %s", err)
+		// Register agent with admin server
+		_, err := givc_serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
+		for err != nil {
+			log.Warnf("Error register agent: %s", err)
+			time.Sleep(1 * time.Second)
+			_, err = givc_serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
 		}
 
-		// Register services
+		// Register services with admin server
 		for _, service := range services {
 			if strings.Contains(service, ".service") {
-				serviceEntryRequest := &admin.RegistryRequest{
+				serviceEntryRequest := &givc_admin.RegistryRequest{
 					Name:   service,
 					Parent: agentServiceName,
 					Type:   uint32(agentSubType),
-					Transport: &admin.TransportConfig{
+					Transport: &givc_admin.TransportConfig{
 						Name:     cfgAgent.Transport.Name,
 						Protocol: cfgAgent.Transport.Protocol,
 						Address:  cfgAgent.Transport.Address,
 						Port:     cfgAgent.Transport.Port,
 					},
-					State: &admin.UnitStatus{
+					State: &givc_admin.UnitStatus{
 						Name: service,
 					},
 				}
 				log.Infof("Trying to register service: %s", service)
-				_, err := serviceclient.RegisterRemoteService(cfgAdminServer, serviceEntryRequest)
+				_, err := givc_serviceclient.RegisterRemoteService(cfgAdminServer, serviceEntryRequest)
 				if err != nil {
 					log.Warnf("Error registering service: %s", err)
 				}
@@ -208,49 +212,112 @@ func main() {
 		}
 	}()
 
-	// Create and resgister gRPC services
-	var grpcServices []types.GrpcServiceRegistration
+	// Create and register gRPC services
+	var grpcServices []givc_types.GrpcServiceRegistration
 
 	// Create systemd control server
-	systemdControlServer, err := servicemanager.NewSystemdControlServer(cfgAgent.Services, applications)
+	systemdControlServer, err := givc_servicemanager.NewSystemdControlServer(cfgAgent.Services, applications)
 	if err != nil {
-		log.Fatalf("Cannot create systemd control server")
+		log.Fatalf("Cannot create systemd control server: %v", err)
 	}
 	grpcServices = append(grpcServices, systemdControlServer)
 
-	localeClientServer, err := localelistener.NewLocaleServer()
-	if err != nil {
-		log.Fatalf("Cannot create locale listener server")
+	if localeListenerEnabled {
+		// Create locale listener server
+		localeClientServer, err := givc_localelistener.NewLocaleServer()
+		if err != nil {
+			log.Fatalf("Cannot create locale listener server: %v", err)
+		}
+		grpcServices = append(grpcServices, localeClientServer)
 	}
-	grpcServices = append(grpcServices, localeClientServer)
 
+	// Create wifi control server (optional)
 	if wifiEnabled {
 		// Create wifi control server
-		wifiControlServer, err := wifimanager.NewWifiControlServer()
+		wifiControlServer, err := givc_wifimanager.NewWifiControlServer()
 		if err != nil {
-			log.Fatalf("Cannot create wifi control server")
+			log.Fatalf("Cannot create wifi control server: %v", err)
 		}
 		grpcServices = append(grpcServices, wifiControlServer)
 	}
 
+	// Create hwid server (optional)
 	if hwidEnabled {
-		hwidServer, err := hwidmanager.NewHwIdServer(hwidIface)
+		hwidServer, err := givc_hwidmanager.NewHwIdServer(hwidIface)
 		if err != nil {
-			log.Fatalf("Cannot create hwid server")
+			log.Fatalf("Cannot create hwid server: %v", err)
 		}
 		grpcServices = append(grpcServices, hwidServer)
 	}
 
-	// Create grpc server
-	grpcServer, err := givc_grpc.NewServer(cfgAgent, grpcServices)
-	if err != nil {
-		log.Fatalf("Cannot create grpc server config")
+	// Create socket proxy server (optional)
+	for _, proxyConfig := range proxyConfigs {
+
+		// Create socket proxy server for dbus
+		socketProxyServer, err := givc_socketproxy.NewSocketProxyServer(proxyConfig.Socket, proxyConfig.Server)
+		if err != nil {
+			log.Errorf("Cannot create socket proxy server: %v", err)
+		}
+
+		// Run proxy client
+		if !proxyConfig.Server {
+			log.Infof("Configuring socket proxy client: %v", proxyConfig)
+
+			go func(proxyConfig givc_types.ProxyConfig) {
+
+				// Configure client endpoint
+				socketClient := &givc_types.EndpointConfig{
+					Transport: proxyConfig.Transport,
+					TlsConfig: tlsConfig,
+				}
+
+				err = socketProxyServer.StreamToRemote(context.Background(), socketClient)
+				if err != nil {
+					log.Errorf("Socket client stream exited: %v", err)
+				}
+
+			}(proxyConfig)
+		}
+
+		// Run proxy server
+		if proxyConfig.Server {
+			log.Infof("Configuring socket proxy server: %v", proxyConfig)
+
+			go func(proxyConfig givc_types.ProxyConfig) {
+
+				// Socket proxy server config
+				cfgProxyServer := &givc_types.EndpointConfig{
+					Transport: givc_types.TransportConfig{
+						Name:     cfgAgent.Transport.Name,
+						Address:  cfgAgent.Transport.Address,
+						Port:     proxyConfig.Transport.Port,
+						Protocol: proxyConfig.Transport.Protocol,
+					},
+					TlsConfig: tlsConfig,
+				}
+
+				var grpcProxyService []givc_types.GrpcServiceRegistration
+				grpcProxyService = append(grpcProxyService, socketProxyServer)
+				grpcServer, err := givc_grpc.NewServer(cfgProxyServer, grpcProxyService)
+				if err != nil {
+					log.Errorf("Cannot create grpc proxy server config: %v", err)
+				}
+				err = grpcServer.ListenAndServe(context.Background(), make(chan struct{}))
+				if err != nil {
+					log.Errorf("Grpc socket proxy server failed: %v", err)
+				}
+
+			}(proxyConfig)
+		}
 	}
 
-	// Start server
-	ctx := context.Background()
-	err = grpcServer.ListenAndServe(ctx, serverStarted)
+	// Create and start main grpc server
+	grpcServer, err := givc_grpc.NewServer(cfgAgent, grpcServices)
 	if err != nil {
-		log.Fatalf("Grpc server failed: %s", err)
+		log.Fatalf("Cannot create grpc server config: %v", err)
+	}
+	err = grpcServer.ListenAndServe(context.Background(), serverStarted)
+	if err != nil {
+		log.Fatalf("Grpc server failed: %v", err)
 	}
 }

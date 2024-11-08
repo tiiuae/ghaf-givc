@@ -3,9 +3,9 @@
 { pkgs, src }:
 pkgs.buildGoModule {
   pname = "givc-agent";
-  version = "0.0.2";
+  version = "0.0.3";
   inherit src;
-  vendorHash = "sha256-QXzrdiRtd1eugUyWQQYaBthMNbiRoqiWW1y8MZV0d20=";
+  vendorHash = "sha256-qF9Amm8A55b8hu0WIVSlxFQqpF+4wFlKhKuUg8k/EiM=";
   subPackages = [
     "internal/pkgs/grpc"
     "internal/pkgs/servicemanager"

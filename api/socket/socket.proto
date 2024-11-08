@@ -1,0 +1,14 @@
+// Copyright 2024 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+option go_package = "./socketproxy";
+package socketproxy;
+
+message BytePacket {
+    bytes Data = 1;
+}
+
+service SocketStream {
+    rpc TransferData(stream BytePacket) returns (stream BytePacket) {}
+}
+
