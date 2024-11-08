@@ -5,12 +5,13 @@ package utility
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func IsRoot() bool {

@@ -84,6 +84,7 @@
           host = import ./nixos/modules/host.nix { inherit self; };
           sysvm = import ./nixos/modules/sysvm.nix { inherit self; };
           appvm = import ./nixos/modules/appvm.nix { inherit self; };
+          dbus = import ./nixos/modules/dbus.nix { inherit self; };
         };
 
         # Overlays

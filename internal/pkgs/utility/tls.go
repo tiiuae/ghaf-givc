@@ -19,15 +19,15 @@ var (
 	}
 )
 
-func TlsServerConfig(CACertFilePath string, CertFilePath string, KeyFilePath string, mutual bool) *tls.Config {
+func TlsServerConfig(cacertFilePath string, certFilePath string, keyFilePath string, mutual bool) *tls.Config {
 
 	// Load TLS certificates and key
-	serverTLSCert, err := tls.LoadX509KeyPair(filepath.Clean(CertFilePath), filepath.Clean(KeyFilePath))
+	serverTLSCert, err := tls.LoadX509KeyPair(filepath.Clean(certFilePath), filepath.Clean(keyFilePath))
 	if err != nil {
 		log.Fatalf("[TlsServerConfig] Error loading server certificate and key file: %v", err)
 	}
 	certPool := x509.NewCertPool()
-	caCertPEM, err := os.ReadFile(filepath.Clean(CACertFilePath))
+	caCertPEM, err := os.ReadFile(filepath.Clean(cacertFilePath))
 	if err != nil {
 		log.Fatalf("[TlsServerConfig] Error loading CA certificate: %v", err)
 	}
@@ -56,15 +56,15 @@ func TlsServerConfig(CACertFilePath string, CertFilePath string, KeyFilePath str
 	return tlsConfig
 }
 
-func TlsClientConfig(CACertFilePath string, CertFilePath string, KeyFilePath string, serverName string) *tls.Config {
+func TlsClientConfig(cacertFilePath string, certFilePath string, keyFilePath string, serverName string) *tls.Config {
 
 	// Load TLS certificates and key
-	clientTLSCert, err := tls.LoadX509KeyPair(CertFilePath, KeyFilePath)
+	clientTLSCert, err := tls.LoadX509KeyPair(certFilePath, keyFilePath)
 	if err != nil {
 		log.Fatalf("[TlsClientConfig] Error loading client certificate and key file: %v", err)
 	}
 	certPool := x509.NewCertPool()
-	caCertPEM, err := os.ReadFile(filepath.Clean(CACertFilePath))
+	caCertPEM, err := os.ReadFile(filepath.Clean(cacertFilePath))
 	if err != nil {
 		log.Fatalf("[TlsClientConfig] Error loading CA certificate: %v", err)
 	}

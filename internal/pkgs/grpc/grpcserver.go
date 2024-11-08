@@ -101,10 +101,13 @@ func (s *GrpcServer) ListenAndServe(ctx context.Context, started chan struct{}) 
 		listener, err = net.Listen(s.config.Transport.Protocol, addr)
 		if err != nil {
 			time.Sleep(LISTENER_WAIT_TIME)
-			log.WithFields(log.Fields{"addr": addr}).Info("Error binding address for GRPC server, retrying...")
+			log.WithFields(log.Fields{"addr": addr, "err": err}).Info("Error binding address for GRPC server, retrying...")
 			continue
 		}
 		break
+	}
+	if listener == nil {
+		return fmt.Errorf("unable to bind address for GRPC server: %s", addr)
 	}
 	defer listener.Close()
 

@@ -10,32 +10,6 @@ import (
 
 type UnitType uint32
 
-const (
-	UNIT_TYPE_HOST_MGR UnitType = 0
-	UNIT_TYPE_HOST_SVC UnitType = 1
-	UNIT_TYPE_HOST_APP UnitType = 2
-
-	UNIT_TYPE_ADMVM     UnitType = 3
-	UNIT_TYPE_ADMVM_MGR UnitType = 4
-	UNIT_TYPE_ADMVM_SVC UnitType = 5
-	UNIT_TYPE_ADMVM_APP UnitType = 6
-
-	UNIT_TYPE_SYSVM     UnitType = 7
-	UNIT_TYPE_SYSVM_MGR UnitType = 8
-	UNIT_TYPE_SYSVM_SVC UnitType = 9
-	UNIT_TYPE_SYSVM_APP UnitType = 10
-
-	UNIT_TYPE_APPVM     UnitType = 11
-	UNIT_TYPE_APPVM_MGR UnitType = 12
-	UNIT_TYPE_APPVM_SVC UnitType = 13
-	UNIT_TYPE_APPVM_APP UnitType = 14
-)
-
-const (
-	APP_ARG_FLAG = "flag"
-	APP_ARG_URL  = "url"
-)
-
 type UnitStatus struct {
 	Name         string
 	Description  string
@@ -47,15 +21,22 @@ type UnitStatus struct {
 }
 
 type TransportConfig struct {
-	Name     string
-	Address  string
-	Port     string
-	Protocol string
+	Name     string `json:"name"`
+	Address  string `json:"addr"`
+	Port     string `json:"port"`
+	Protocol string `json:"protocol"`
 }
 
 type EndpointConfig struct {
 	Transport TransportConfig
 	Services  []string
+	TlsConfig *tls.Config
+}
+
+type ProxyConfig struct {
+	Transport TransportConfig
+	Server    bool   `json:"server"`
+	Socket    string `json:"socket"`
 	TlsConfig *tls.Config
 }
 
@@ -69,12 +50,48 @@ type RegistryEntry struct {
 }
 
 type ApplicationManifest struct {
-	Name    string   `json:"Name"`
-	Command string   `json:"Command"`
-	Args    []string `json:"Args,omitempty"`
+	Name    string   `json:"name"`
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+}
+
+type TlsConfigJson struct {
+	Enable     bool   `json:"enable"`
+	CaCertPath string `json:"caCertPath"`
+	CertPath   string `json:"certPath"`
+	KeyPath    string `json:"keyPath"`
 }
 
 type GrpcServiceRegistration interface {
 	Name() string
 	RegisterGrpcService(*grpc.Server)
 }
+
+const (
+	UNIT_TYPE_HOST_MGR = iota
+	UNIT_TYPE_HOST_SVC
+	UNIT_TYPE_HOST_APP
+	UNIT_TYPE_ADMVM
+	UNIT_TYPE_ADMVM_MGR
+	UNIT_TYPE_ADMVM_SVC
+	UNIT_TYPE_ADMVM_APP
+	UNIT_TYPE_SYSVM
+	UNIT_TYPE_SYSVM_MGR
+	UNIT_TYPE_SYSVM_SVC
+	UNIT_TYPE_SYSVM_APP
+	UNIT_TYPE_APPVM
+	UNIT_TYPE_APPVM_MGR
+	UNIT_TYPE_APPVM_SVC
+	UNIT_TYPE_APPVM_APP
+)
+
+const (
+	PROXY_NULL             uint32 = 0
+	PROXY_SERVER_CONNECTED uint32 = 1
+	PROXY_CLIENT_CONNECTED uint32 = 2
+)
+
+const (
+	APP_ARG_FLAG = "flag"
+	APP_ARG_URL  = "url"
+)
