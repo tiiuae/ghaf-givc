@@ -473,14 +473,15 @@ impl pb::admin_service_server::AdminService for AdminService {
         })
         .await
     }
+
     async fn suspend(
         &self,
         request: tonic::Request<Empty>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         escalate(request, |_| async {
             self.inner
-                .start_unit_on_vm("gui", "display-suspend.service")
-                .await?;
+                .send_system_command(String::from("suspend.target"))
+                .await;
             Ok(Empty {})
         })
         .await
@@ -490,13 +491,8 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<Empty>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
-        escalate(request, |_| async {
-            self.inner
-                .start_unit_on_vm("gui", "display-resume.service")
-                .await?;
-            Ok(Empty {})
-        })
-        .await
+        println!("Not supported");
+        Err(Status::unimplemented("Not supported"))
     }
 
     async fn query_list(
