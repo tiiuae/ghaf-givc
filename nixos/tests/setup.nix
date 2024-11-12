@@ -5,14 +5,8 @@
   ...
 }:
 let
-  tls = true;
+  inherit (self.test-parts) tls addrs;
   snakeoil = ./snakeoil;
-  addrs = {
-    host = "192.168.101.10";
-    adminvm = "192.168.101.2";
-    appvm = "192.168.101.5";
-    guivm = "192.168.101.3";
-  };
   admin = {
     name = "admin-vm";
     addr = addrs.adminvm;
@@ -25,15 +19,66 @@ let
     certPath = "${snakeoil}/${name}/${name}-cert.pem";
     keyPath = "${snakeoil}/${name}/${name}-key.pem";
   };
+  nodes = self.test-parts.configurations;
+  inherit (self.test-parts) cli;
+  expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
 in
 {
   flake.test-parts = {
+    tls = true;
+    cli = "givc-cli --addr ${nodes.adminvm.givc.admin.addr} --port ${nodes.adminvm.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.givc.admin.name}";
+    addrs = {
+      host = "192.168.101.10";
+      adminvm = "192.168.101.2";
+      appvm = "192.168.101.5";
+      guivm = "192.168.101.3";
+    };
+
     snippets = {
       swayLib = builtins.readFile ./sway.py;
+      setup-gui = ''
+        with subtest("setup services"):
+            import time
+            hostvm.wait_for_unit("givc-ghaf-host.service")
+            adminvm.wait_for_unit("givc-admin.service")
+            guivm.wait_for_unit("multi-user.target")
+            appvm.wait_for_unit("multi-user.target")
+            guivm.wait_for_unit("givc-gui-vm")
+
+            time.sleep(1)
+            # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
+            print(hostvm.succeed("${cli} test ensure --retry 60 ${expected}"))
+
+        with subtest("setup gui vm"):
+            # Ensure that sway in guiVM finished startup
+            guivm.wait_for_file("/run/user/1000/wayland-1")
+            guivm.wait_for_file("/tmp/sway-ipc.sock")
+      '';
+
+      setup-appvm = ''
+        with subtest("setup ssh and keys"):
+            import time
+            swaymsg("exec ssh ${addrs.appvm} true && touch /tmp/ssh-ok")
+            guivm.wait_for_file("/tmp/ssh-ok")
+            swaymsg("exec waypipe --socket /tmp/vsock client")
+            guivm.wait_for_file("/tmp/vsock")
+            swaymsg("exec ssh -R /tmp/vsock:/tmp/vsock -f -N ${addrs.appvm}")
+            time.sleep(5) # Give ssh some time to setup remote socket
+      '';
     };
     configurations = {
+      common =
+        { pkgs, ... }:
+        {
+          environment.systemPackages = [
+            self.packages.${pkgs.stdenv.system}.givc-admin-rs.cli
+          ];
+        };
       adminvm = {
-        imports = [ self.nixosModules.admin ];
+        imports = [
+          self.nixosModules.admin
+          self.test-parts.configurations.common
+        ];
 
         networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
           {
@@ -55,7 +100,10 @@ in
         };
       };
       hostvm = {
-        imports = [ self.nixosModules.host ];
+        imports = [
+          self.nixosModules.host
+          self.test-parts.configurations.common
+        ];
         networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
           {
             address = addrs.host;
@@ -65,10 +113,10 @@ in
         givc.host = {
           enable = true;
           agent = {
-             name = "ghaf-host";
-             addr = addrs.host;
-             port = "9000";
-             protocol = "tcp";
+            name = "ghaf-host";
+            addr = addrs.host;
+            port = "9000";
+            protocol = "tcp";
           };
           inherit admin;
           services = [
