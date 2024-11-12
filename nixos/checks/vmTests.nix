@@ -13,6 +13,7 @@ let
     ;
 in
 {
+  imports = [ ./test-parts.nix ];
   perSystem =
     {
       config,
