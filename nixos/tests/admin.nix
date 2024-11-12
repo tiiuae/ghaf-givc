@@ -5,12 +5,12 @@
   ...
 }:
 let
-  tls = true;
+  inherit (self.test-parts) cli;
 in
 {
   imports = [ ./setup.nix ];
   perSystem =
-    { self', ... }:
+    _:
     {
       vmTests.tests.admin = {
         module = {
@@ -21,10 +21,6 @@ in
             inherit (self.test-parts.configurations) appvm;
           };
           testScript =
-            { nodes, ... }:
-            let
-              cli = "${self'.packages.givc-admin-rs.cli}/bin/givc-cli --addr ${nodes.adminvm.givc.admin.addr} --port ${nodes.adminvm.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.givc.admin.name}"; # Name which we _expect_ to see registered in admin server's registry
-            in
             # FIXME: why it so bizzare? (derived from name in cert)
             ''
               ${self.test-parts.snippets.swayLib}
