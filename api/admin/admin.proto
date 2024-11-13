@@ -50,6 +50,10 @@ message QueryListItem {
     string Description = 2;
     string VmStatus = 3;
     string TrustLevel = 4;
+    string VmType = 5;
+    string ServiceType = 6;
+    optional string VmName = 7; // None for host running services
+    optional string AgentName = 8; // None for agents
 }
 
 message QueryListResponse {

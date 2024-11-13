@@ -108,6 +108,10 @@ impl From<RegistryEntry> for QueryResult {
             description: val.status.description,
             status,
             trust_level: TrustLevel::default(),
+            vm_type: val.r#type.vm,
+            service_type: val.r#type.service,
+            vm_name: Some("FIXME".into()),
+            agent_name: Some("FIXME".into()),
         }
     }
 }

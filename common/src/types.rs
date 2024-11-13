@@ -5,6 +5,8 @@ use crate::pb;
 use std::convert::{Into, TryFrom};
 
 use anyhow::bail;
+use serde::Serialize;
+use strum::{Display, EnumString};
 use tokio_vsock::VsockAddr;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -13,7 +15,7 @@ pub struct UnitType {
     pub service: ServiceType,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, EnumString, Display)]
 pub enum VmType {
     Host,
     AdmVM,
@@ -21,7 +23,7 @@ pub enum VmType {
     AppVM,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, EnumString, Display)]
 pub enum ServiceType {
     Mgr,
     Svc,
