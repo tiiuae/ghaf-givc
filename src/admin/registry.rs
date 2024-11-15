@@ -50,9 +50,12 @@ impl Registry {
             Some(entry) => {
                 let cascade: Vec<String> = state
                     .values()
-                    .filter_map(|re| match &re.placement {
-                        Placement::Managed(within) if within == name => Some(re.name.clone()),
-                        _ => None,
+                    .filter_map(|re| {
+                        if re.agent_name() == Some(name) || re.vm_name() == Some(name) {
+                            Some(re.name.clone())
+                        } else {
+                            None
+                        }
                     })
                     .collect();
                 for each in cascade {
@@ -204,11 +207,17 @@ mod tests {
         let r = Registry::new();
         let foo = RegistryEntry::dummy("foo".to_string());
         let bar = RegistryEntry {
-            placement: Placement::Managed("foo".into()),
+            placement: Placement::Managed {
+                by: "foo".into(),
+                vm: "foo-vm".into(),
+            },
             ..RegistryEntry::dummy("bar".to_string())
         };
         let baz = RegistryEntry {
-            placement: Placement::Managed("foo".into()),
+            placement: Placement::Managed {
+                by: "foo".into(),
+                vm: "foo-vm".into(),
+            },
             ..RegistryEntry::dummy("baz".to_string())
         };
 

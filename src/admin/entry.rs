@@ -10,10 +10,13 @@ use givc_common::types::*;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Placement {
     // Service is a `givc-agent` and could be directly connected
-    Endpoint(EndpointEntry),
+    Endpoint { endpoint: EndpointEntry, vm: String },
 
     // Service or application managed by specified agent
-    Managed(String),
+    Managed { vm: String, by: String },
+
+    // Running on host
+    Host,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,14 +29,31 @@ pub struct RegistryEntry {
 }
 
 impl RegistryEntry {
+    pub fn agent_name(&self) -> Option<&str> {
+        match &self.placement {
+            Placement::Endpoint { .. } => Some(&self.name),
+            Placement::Managed { by, .. } => Some(by),
+            Placement::Host => None,
+        }
+    }
+
+    pub fn vm_name(&self) -> Option<&str> {
+        match &self.placement {
+            Placement::Endpoint { vm, .. } => Some(vm),
+            Placement::Managed { vm, .. } => Some(vm),
+            Placement::Host => None,
+        }
+    }
+
     pub fn agent(&self) -> anyhow::Result<&EndpointEntry> {
         match &self.placement {
-            Placement::Endpoint(endpoint) => Ok(endpoint),
-            Placement::Managed(by) => Err(anyhow!(
+            Placement::Endpoint { endpoint, .. } => Ok(endpoint),
+            Placement::Managed { by, .. } => Err(anyhow!(
                 "Agent endpoint {} is managed by {}!",
                 self.name,
                 by
             )),
+            Placement::Host => Err(anyhow!("Its a host!")),
         }
     }
 }
@@ -57,13 +77,16 @@ impl RegistryEntry {
                 path: "bogus".to_string(),
                 freezer_state: "bogus".to_string(),
             },
-            placement: Placement::Endpoint(EndpointEntry {
-                address: EndpointAddress::Tcp {
-                    addr: "127.0.0.1".to_string(),
-                    port: 42,
+            placement: Placement::Endpoint {
+                endpoint: EndpointEntry {
+                    address: EndpointAddress::Tcp {
+                        addr: "127.0.0.1".to_string(),
+                        port: 42,
+                    },
+                    tls_name: "bogus".to_string(),
                 },
-                tls_name: "bogus".to_string(),
-            }),
+                vm: "bogus".into(),
+            },
             watch: true,
         }
     }
@@ -89,7 +112,10 @@ impl TryFrom<pb::RegistryRequest> for RegistryEntry {
             status,
             watch,
             r#type: ty,
-            placement: Placement::Endpoint(endpoint),
+            placement: Placement::Endpoint {
+                endpoint,
+                vm: "bogus".into(),
+            },
         })
     }
 }
