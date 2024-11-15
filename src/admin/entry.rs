@@ -129,6 +129,8 @@ impl From<RegistryEntry> for QueryResult {
         } else {
             VMStatus::PoweredOff
         };
+        let vm_name = val.vm_name().map(|s| s.to_owned());
+        let agent_name = val.agent_name().map(|s| s.to_owned());
         QueryResult {
             name: val.name,
             description: val.status.description,
@@ -136,8 +138,8 @@ impl From<RegistryEntry> for QueryResult {
             trust_level: TrustLevel::default(),
             vm_type: val.r#type.vm,
             service_type: val.r#type.service,
-            vm_name: Some("FIXME".into()),
-            agent_name: Some("FIXME".into()),
+            vm_name,
+            agent_name,
         }
     }
 }
