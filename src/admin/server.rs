@@ -109,14 +109,15 @@ impl AdminServiceImpl {
 
     pub fn endpoint(&self, entry: &RegistryEntry) -> anyhow::Result<EndpointConfig> {
         let transport = match &entry.placement {
-            Placement::Managed(parent) => {
+            Placement::Managed { by: parent, .. } => {
                 let parent = self.registry.by_name(parent)?;
                 parent
                     .agent()
                     .with_context(|| "When get_remote_status()")?
                     .to_owned() // Fail, if parent also `Managed`
             }
-            Placement::Endpoint(endpoint) => endpoint.clone(), // FIXME: avoid clone!
+            Placement::Endpoint { endpoint, .. } => endpoint.clone(), // FIXME: avoid clone!
+            Placement::Host => bail!("endpoint() called for Host"), // impossible, FIXME: should never happens atm
         };
         let tls_name = transport.tls_name.clone();
         Ok(EndpointConfig {
@@ -340,7 +341,10 @@ impl AdminServiceImpl {
                 vm: VmType::AppVM,
                 service: ServiceType::App,
             },
-            placement: Placement::Managed(systemd_agent),
+            placement: Placement::Managed {
+                by: systemd_agent,
+                vm: vm_name,
+            },
         };
         self.registry.register(app_entry);
         Ok(())
