@@ -113,6 +113,7 @@ let
         '';
         type = policySubmodule;
       };
+      debug = mkEnableOption "Enable '--log' to enable monitoring to create dbus policies.";
     };
   };
 
@@ -121,7 +122,7 @@ in
   options.givc.dbusproxy = {
     enable = mkEnableOption ''
       Enables givc-dbusproxy module. This module is a wrapper for the `xdg-dbus-proxy`, and configures systemd services for
-      the system and/or session bus. The respective service is enabled if a policy for the bus is set.
+      the system and/or session bus.
 
       Filtering is enabled by default, and the config requires at least one policy value (see/talk/own) to be set. For more
       details, please refer to the xdg-dbus-proxy manual (e.g., https://www.systutorials.com/docs/linux/man/1-xdg-dbus-proxy/).
@@ -208,25 +209,28 @@ in
     systemd =
 
       optionalAttrs cfg.system.enable {
-        services."givc-dbusproxy-system" =
+        services.givc-dbusproxy-system =
           let
-            args = concatStringsSep " " [
-              "${optionalString (cfg.system.policy.see != null) (
-                concatMapStringsSep " " (x: "--see=${x}") cfg.system.policy.see
-              )}"
-              "${optionalString (cfg.system.policy.talk != null) (
-                concatMapStringsSep " " (x: "--talk=${x}") cfg.system.policy.talk
-              )}"
-              "${optionalString (cfg.system.policy.own != null) (
-                concatMapStringsSep " " (x: "--own=${x}") cfg.system.policy.own
-              )}"
-              "${optionalString (cfg.system.policy.call != null) (
-                concatMapStringsSep " " (x: "--call=${x}") cfg.system.policy.call
-              )}"
-              "${optionalString (cfg.system.policy.broadcast != null) (
-                concatMapStringsSep " " (x: "--broadcast=${x}") cfg.system.policy.broadcast
-              )}"
-            ];
+            args =
+              "--filter "
+              + concatStringsSep " " [
+                "${optionalString (cfg.system.policy.see != null) (
+                  concatMapStringsSep " " (x: "--see=${x}") cfg.system.policy.see
+                )}"
+                "${optionalString (cfg.system.policy.talk != null) (
+                  concatMapStringsSep " " (x: "--talk=${x}") cfg.system.policy.talk
+                )}"
+                "${optionalString (cfg.system.policy.own != null) (
+                  concatMapStringsSep " " (x: "--own=${x}") cfg.system.policy.own
+                )}"
+                "${optionalString (cfg.system.policy.call != null) (
+                  concatMapStringsSep " " (x: "--call=${x}") cfg.system.policy.call
+                )}"
+                "${optionalString (cfg.system.policy.broadcast != null) (
+                  concatMapStringsSep " " (x: "--broadcast=${x}") cfg.system.policy.broadcast
+                )}"
+              ]
+              + optionalString cfg.system.debug "--log";
           in
           {
             description = "GIVC local xdg-dbus-proxy system service";
@@ -235,7 +239,7 @@ in
             wantedBy = [ "givc-setup.target" ];
             serviceConfig = {
               Type = "exec";
-              ExecStart = "${pkgs.xdg-dbus-proxy}/bin/xdg-dbus-proxy unix:path=/run/dbus/system_bus_socket ${cfg.system.socket} --filter ${args}";
+              ExecStart = "${pkgs.xdg-dbus-proxy}/bin/xdg-dbus-proxy unix:path=/run/dbus/system_bus_socket ${cfg.system.socket} ${args}";
               Restart = "always";
               RestartSec = 1;
               User = cfg.system.user;
@@ -243,25 +247,28 @@ in
           };
       }
       // optionalAttrs cfg.session.enable {
-        user.services."givc-dbusproxy-session" =
+        user.services.givc-dbusproxy-session =
           let
-            args = concatStringsSep " " [
-              "${optionalString (cfg.session.policy.see != null) (
-                concatMapStringsSep " " (x: "--see=${x}") cfg.session.policy.see
-              )}"
-              "${optionalString (cfg.session.policy.talk != null) (
-                concatMapStringsSep " " (x: "--talk=${x}") cfg.session.policy.talk
-              )}"
-              "${optionalString (cfg.session.policy.own != null) (
-                concatMapStringsSep " " (x: "--own=${x}") cfg.session.policy.own
-              )}"
-              "${optionalString (cfg.session.policy.call != null) (
-                concatMapStringsSep " " (x: "--call=${x}") cfg.session.policy.call
-              )}"
-              "${optionalString (cfg.session.policy.broadcast != null) (
-                concatMapStringsSep " " (x: "--broadcast=${x}") cfg.session.policy.broadcast
-              )}"
-            ];
+            args =
+              "--filter "
+              + concatStringsSep " " [
+                "${optionalString (cfg.session.policy.see != null) (
+                  concatMapStringsSep " " (x: "--see=${x}") cfg.session.policy.see
+                )}"
+                "${optionalString (cfg.session.policy.talk != null) (
+                  concatMapStringsSep " " (x: "--talk=${x}") cfg.session.policy.talk
+                )}"
+                "${optionalString (cfg.session.policy.own != null) (
+                  concatMapStringsSep " " (x: "--own=${x}") cfg.session.policy.own
+                )}"
+                "${optionalString (cfg.session.policy.call != null) (
+                  concatMapStringsSep " " (x: "--call=${x}") cfg.session.policy.call
+                )}"
+                "${optionalString (cfg.session.policy.broadcast != null) (
+                  concatMapStringsSep " " (x: "--broadcast=${x}") cfg.session.policy.broadcast
+                )}"
+              ]
+              + optionalString cfg.session.debug "--log";
             uid = toString config.users.users.${cfg.session.user}.uid;
           in
           {
@@ -273,7 +280,7 @@ in
             unitConfig.ConditionUser = cfg.session.user;
             serviceConfig = {
               Type = "exec";
-              ExecStart = "${pkgs.xdg-dbus-proxy}/bin/xdg-dbus-proxy unix:path=/run/user/${uid}/bus ${cfg.session.socket} --filter ${args}";
+              ExecStart = "${pkgs.xdg-dbus-proxy}/bin/xdg-dbus-proxy unix:path=/run/user/${uid}/bus ${cfg.session.socket} ${args}";
               Restart = "always";
               RestartSec = 1;
             };
