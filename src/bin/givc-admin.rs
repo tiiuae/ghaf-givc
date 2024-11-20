@@ -13,12 +13,15 @@ use tracing::debug;
 #[command(about = "A givc admin", long_about = None)]
 struct Cli {
     #[arg(long, env = "ADDR", default_missing_value = "127.0.0.1")]
-    addr: String,
+    addr: Option<String>,
     #[arg(long, env = "PORT", default_missing_value = "9000", value_parser = clap::value_parser!(u16).range(1..))]
-    port: u16,
+    port: Option<u16>,
+
+    #[arg(long, help = "Additionally listen TCP socket (addr:port)")]
+    listen_tcp: Option<Vec<SocketAddr>>,
 
     #[arg(long, help = "Additionally listen UNIX socket (path)")]
-    unix: Option<String>,
+    listen_unix: Option<Vec<String>>,
 
     #[arg(long, help = "Additionally listen Vsock socket (cid:port format)")]
     vsock: Option<String>,
@@ -51,8 +54,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     debug!("CLI is {:#?}", cli);
 
-    let addr = SocketAddr::new(cli.addr.parse().unwrap(), cli.port);
-
     let mut builder = Server::builder();
 
     let tls = if cli.use_tls {
@@ -79,13 +80,25 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let sys_opts = tokio_listener::SystemOptions::default();
     let user_opts = tokio_listener::UserOptions::default();
-    let tcp_addr = tokio_listener::ListenerAddress::Tcp(addr);
 
-    let mut addrs = vec![tcp_addr];
+    let mut addrs: Vec<tokio_listener::ListenerAddress> = Vec::new();
 
-    if let Some(unix_sock) = cli.unix {
-        let unix_sock_addr = tokio_listener::ListenerAddress::Path(unix_sock.into());
-        addrs.push(unix_sock_addr)
+    if let (Some(addr), Some(port)) = (cli.addr, cli.port) {
+        let addr = SocketAddr::new(addr.parse().unwrap(), port);
+        addrs.push(tokio_listener::ListenerAddress::Tcp(addr))
+    }
+
+    if let Some(tcp_addrs) = cli.listen_tcp {
+        for each in tcp_addrs {
+            addrs.push(tokio_listener::ListenerAddress::Tcp(each))
+        }
+    }
+
+    if let Some(unix_socks) = cli.listen_unix {
+        for unix_sock in unix_socks {
+            let unix_sock_addr = tokio_listener::ListenerAddress::Path(unix_sock.into());
+            addrs.push(unix_sock_addr)
+        }
     }
 
     if let Some(vsock) = cli.vsock {
