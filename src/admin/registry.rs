@@ -176,6 +176,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::admin::entry::Placement;
     use crate::utils::naming::parse_application_name;
 
     #[test]
@@ -228,12 +229,12 @@ mod tests {
         assert!(r.contains("bar"));
         assert!(r.contains("baz"));
 
-        r.deregister("baz");
+        r.deregister("baz")?;
         assert!(r.contains("foo"));
         assert!(r.contains("bar"));
         assert!(!r.contains("baz"));
 
-        r.deregister("foo");
+        r.deregister("foo")?;
         assert!(!r.contains("foo"));
         assert!(!r.contains("bar"));
 
