@@ -83,14 +83,6 @@ in
       default = "";
     };
 
-    localeListener = mkOption {
-      description = ''
-        Locale handler.
-      '';
-      type = types.bool;
-      default = false;
-    };
-
     socketProxy = mkOption {
       description = ''
         Socket proxy module. If not provided, the module will not use a socket proxy.
@@ -163,7 +155,6 @@ in
         "WIFI" = "${trivial.boolToString cfg.wifiManager}";
         "HWID" = "${trivial.boolToString cfg.hwidService}";
         "HWID_IFACE" = "${cfg.hwidIface}";
-        "LOCALE_LISTENER" = "${trivial.boolToString cfg.localeListener}";
         "SOCKET_PROXY" = "${optionalString (cfg.socketProxy != null) (toJSON cfg.socketProxy)}";
         "PARENT" = "microvm@${cfg.agent.name}.service";
         "SERVICES" = "${concatStringsSep " " cfg.services}";

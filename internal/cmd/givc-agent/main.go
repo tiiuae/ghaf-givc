@@ -108,12 +108,6 @@ func main() {
 		hwidEnabled = true
 	}
 
-	localeListenerEnabled := false
-	localeListenerService, localeListenerOption := os.LookupEnv("LOCALE_LISTENER")
-	if localeListenerOption && (localeListenerService != "false") {
-		localeListenerEnabled = true
-	}
-
 	var proxyConfigs []givc_types.ProxyConfig
 	jsonDbusproxyString, socketProxyOption := os.LookupEnv("SOCKET_PROXY")
 	if socketProxyOption && jsonDbusproxyString != "" {
@@ -222,14 +216,12 @@ func main() {
 	}
 	grpcServices = append(grpcServices, systemdControlServer)
 
-	if localeListenerEnabled {
-		// Create locale listener server
-		localeClientServer, err := givc_localelistener.NewLocaleServer()
-		if err != nil {
-			log.Fatalf("Cannot create locale listener server: %v", err)
-		}
-		grpcServices = append(grpcServices, localeClientServer)
+	// Create locale listener server
+	localeClientServer, err := givc_localelistener.NewLocaleServer()
+	if err != nil {
+		log.Fatalf("Cannot create locale listener server: %v", err)
 	}
+	grpcServices = append(grpcServices, localeClientServer)
 
 	// Create wifi control server (optional)
 	if wifiEnabled {
