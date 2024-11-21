@@ -16,8 +16,14 @@ let
     mkIf
     types
     trivial
+    strings
     concatStringsSep
     attrsets
+    unique
+    ;
+  inherit (import ./definitions.nix { inherit config lib; })
+    transportSubmodule
+    tlsSubmodule
     ;
 in
 {
@@ -31,22 +37,9 @@ in
       default = "localhost";
     };
 
-    addr = mkOption {
-      description = "IPv4 address.";
-      type = types.str;
-      default = "127.0.0.1";
-    };
-
-    port = mkOption {
-      description = "Port of the admin service. Defaults to '9001'.";
-      type = types.str;
-      default = "9001";
-    };
-
-    protocol = mkOption {
-      description = "Transport protocol, defaults to 'tcp'.";
-      type = types.str;
-      default = "tcp";
+    addresses = mkOption {
+      description = "List of addresses for the admin service to listen on. Requires a list of 'transportSubmodule'. The host name should be ignored.";
+      type = types.listOf transportSubmodule;
     };
 
     services = mkOption {
@@ -64,38 +57,7 @@ in
         TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
         and requires paths to certificates and key being set. To disable it use 'tls.enable = false;'.
       '';
-      type =
-        with types;
-        submodule {
-          options = {
-            enable = mkOption {
-              description = "Enable TLS. Defaults to 'true'.";
-              type = bool;
-              default = true;
-            };
-            caCertPath = mkOption {
-              description = "Path to the CA certificate file.";
-              type = str;
-              default = "";
-            };
-            certPath = mkOption {
-              description = "Path to the service certificate file.";
-              type = str;
-              default = "";
-            };
-            keyPath = mkOption {
-              description = "Path to the service key file.";
-              type = str;
-              default = "";
-            };
-          };
-        };
-      default = {
-        enable = true;
-        caCertPath = "";
-        certPath = "";
-        keyPath = "";
-      };
+      type = tlsSubmodule;
     };
   };
 
@@ -108,43 +70,45 @@ in
       }
     ];
 
-    systemd.services.givc-admin = {
-      description = "GIVC admin module.";
-      enable = true;
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        Type = "exec";
-        ExecStart = "${givc-admin}/bin/givc-admin";
-        Restart = "always";
-        RestartSec = 1;
-      };
-      environment =
-        {
-          "NAME" = "${cfg.name}";
-          "ADDR" = "${cfg.addr}";
-          "PORT" = "${cfg.port}";
-          "PROTO" = "${cfg.protocol}";
-          "TYPE" = "4";
-          "SUBTYPE" = "5";
-          "TLS" = "${trivial.boolToString cfg.tls.enable}";
-          "SERVICES" = "${concatStringsSep " " cfg.services}";
-        }
-        // attrsets.optionalAttrs cfg.tls.enable {
-          "CA_CERT" = "${cfg.tls.caCertPath}";
-          "HOST_CERT" = "${cfg.tls.certPath}";
-          "HOST_KEY" = "${cfg.tls.keyPath}";
-        }
-        // attrsets.optionalAttrs cfg.debug {
-          "RUST_BACKTRACE" = "1";
-          "GIVC_LOG" = "debug";
-        };
-    };
-    networking.firewall.allowedTCPPorts =
+    systemd.services.givc-admin =
       let
-        port = lib.strings.toInt cfg.port;
+        tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
+        unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
+        args = concatStringsSep " " (
+          (map (addr: "--listen-tcp ${addr.addr}:${addr.port}") tcpAddresses)
+          ++ (map (addr: "--listen-unix ${addr.addr}") unixAddresses)
+        );
       in
-      [ port ];
+      {
+        description = "GIVC admin module.";
+        enable = true;
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          Type = "exec";
+          ExecStart = "${givc-admin}/bin/givc-admin ${args}";
+          Restart = "always";
+          RestartSec = 1;
+        };
+        environment =
+          {
+            "NAME" = "${cfg.name}";
+            "TYPE" = "4";
+            "SUBTYPE" = "5";
+            "TLS" = "${trivial.boolToString cfg.tls.enable}";
+            "SERVICES" = "${concatStringsSep " " cfg.services}";
+          }
+          // attrsets.optionalAttrs cfg.tls.enable {
+            "CA_CERT" = "${cfg.tls.caCertPath}";
+            "HOST_CERT" = "${cfg.tls.certPath}";
+            "HOST_KEY" = "${cfg.tls.keyPath}";
+          }
+          // attrsets.optionalAttrs cfg.debug {
+            "RUST_BACKTRACE" = "1";
+            "GIVC_LOG" = "debug";
+          };
+      };
+    networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) cfg.addresses);
   };
 }

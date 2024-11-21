@@ -16,12 +16,18 @@ let
     adminvm = "192.168.101.10";
     appvm = "192.168.101.100";
   };
-  admin = {
+  adminConfig = {
     name = "admin-vm";
-    addr = addrs.adminvm;
-    port = "9001";
-    protocol = "tcp";
+    addresses = [
+      {
+        name = "admin-vm";
+        addr = addrs.adminvm;
+        port = "9001";
+        protocol = "tcp";
+      }
+    ];
   };
+  admin = lib.head adminConfig.addresses;
   mkTls = name: {
     enable = tls;
     caCertPath = "${snakeoil}/${name}/ca-cert.pem";
@@ -48,10 +54,8 @@ in
               environment.systemPackages = [ pkgs.grpcurl ];
               givc.admin = {
                 enable = true;
-                inherit (admin) name;
-                inherit (admin) addr;
-                inherit (admin) port;
-                inherit (admin) protocol;
+                inherit (adminConfig) name;
+                inherit (adminConfig) addresses;
                 tls = mkTls "admin-vm";
                 debug = false;
               };

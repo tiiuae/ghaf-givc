@@ -15,12 +15,18 @@ let
     appvm = "192.168.101.5";
     guivm = "192.168.101.3";
   };
-  admin = {
+  adminConfig = {
     name = "admin-vm";
-    addr = addrs.adminvm;
-    port = "9001";
-    protocol = "tcp"; # go version expect word "tcp" here, but it unused
+    addresses = [
+      {
+        name = "admin-vm";
+        addr = addrs.adminvm;
+        port = "9001";
+        protocol = "tcp";
+      }
+    ];
   };
+  admin = lib.head adminConfig.addresses;
   mkTls = name: {
     enable = tls;
     caCertPath = "${snakeoil}/${name}/ca-cert.pem";
@@ -47,10 +53,8 @@ in
               givc.admin = {
                 enable = true;
                 debug = true;
-                inherit (admin) name;
-                inherit (admin) addr;
-                inherit (admin) port;
-                inherit (admin) protocol;
+                inherit (adminConfig) name;
+                inherit (adminConfig) addresses;
                 tls = mkTls "admin-vm";
               };
             };
@@ -297,7 +301,7 @@ in
 
                   time.sleep(1)
                   # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} test ensure --retry 60 ${expected}"))
+                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} test ensure --retry 60 ${expected}"))
 
               with subtest("setup gui vm"):
                   # Ensure that sway in guiVM finished startup
@@ -313,13 +317,13 @@ in
                   time.sleep(5) # Give ssh some time to setup remote socket
 
               with subtest("set locale and timezone"):
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} set-locale en_US.UTF-8"))
+                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} set-locale en_US.UTF-8"))
                   adminvm.wait_for_file("/etc/locale-givc.conf")
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} set-timezone UTC"))
+                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} set-timezone UTC"))
                   adminvm.wait_for_file("/etc/timezone.conf")
 
               with subtest("Clean run"):
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm foot"))
+                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} start --vm chromium-vm foot"))
                   time.sleep(10) # Give few seconds to application to spin up
                   wait_for_window("ghaf@appvm")
 
@@ -328,34 +332,34 @@ in
                   appvm.succeed("pkill foot")
                   time.sleep(10)
                   # .. then ask to restart
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm foot"))
+                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} start --vm chromium-vm foot"))
                   wait_for_window("ghaf@appvm")
 
               with subtest("pause/resume/stop application"):
                   appvm.succeed("pgrep foot")
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} pause foot@1.service"))
+                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} pause foot@1.service"))
                   time.sleep(20)
-                  js = hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} query-list --as-json 2>/dev/null")
+                  js = hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} query-list --as-json 2>/dev/null")
                   foot = by_name("foot@1.service", json.loads(js))
                   assert foot["status"] == "Paused"
                   res = appvm.succeed("cat /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-foot.slice/foot@1.service/cgroup.events")
                   assert "frozen 1" in res
 
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} resume foot@1.service"))
+                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} resume foot@1.service"))
                   time.sleep(20)
                   res = appvm.succeed("cat /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-foot.slice/foot@1.service/cgroup.events")
                   assert "frozen 0" in res
-                  js = hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} query-list --as-json 2>/dev/null")
+                  js = hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} query-list --as-json 2>/dev/null")
                   foot = by_name("foot@1.service", json.loads(js))
                   assert foot["status"] == "Running"
 
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} stop foot@1.service"))
+                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} stop foot@1.service"))
                   appvm.fail("pgrep foot")
 
               with subtest("clear exit and restart"):
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm clearexit"))
+                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} start --vm chromium-vm clearexit"))
                   time.sleep(20) # Give few seconds to application to spin up, exit, then start it again
-                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm clearexit"))
+                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} start --vm chromium-vm clearexit"))
             '';
         };
       };
