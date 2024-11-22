@@ -5,5 +5,6 @@
     ./admin.nix
     ./netvm.nix
     ./dbus.nix
+    ./zathura.nix
   ];
 }
