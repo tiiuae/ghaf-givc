@@ -306,13 +306,12 @@ impl AdminServiceImpl {
         let name = req.app_name;
         let vm = req.vm_name.as_deref();
         let vm_name = format_vm_name(&name, vm);
-        let systemd_agent = format_service_name(&name, vm);
+        let systemd_agent_name = format_service_name(&name, vm);
 
-        info!("Starting app {name} on {vm_name}");
-        info!("Agent: {systemd_agent}");
+        info!("Starting app {name} on {vm_name} via {systemd_agent_name}");
 
         // Entry unused in "go" code
-        match self.registry.by_name(&systemd_agent) {
+        match self.registry.by_name(&systemd_agent_name) {
             std::result::Result::Ok(e) => e,
             Err(_) => {
                 info!("Starting up VM {vm_name}");
@@ -320,13 +319,13 @@ impl AdminServiceImpl {
                     .await
                     .with_context(|| format!("Starting vm for {name}"))?;
                 self.registry
-                    .by_name(&systemd_agent)
+                    .by_name(&systemd_agent_name)
                     .context("after starting VM")?
             }
         };
-        let endpoint = self.agent_endpoint(&systemd_agent)?;
-        let client = SystemDClient::new(endpoint.clone());
-        let app_name = self.registry.create_unique_entry_name(&name.to_string());
+        let endpoint = self.agent_endpoint(&systemd_agent_name)?;
+        let client = SystemDClient::new(endpoint);
+        let app_name = self.registry.create_unique_entry_name(&name);
         client.start_application(app_name.clone(), req.args).await?;
         let status = client.get_remote_status(app_name.clone()).await?;
         if status.active_state != "active" {
@@ -342,7 +341,7 @@ impl AdminServiceImpl {
                 service: ServiceType::App,
             },
             placement: Placement::Managed {
-                by: systemd_agent,
+                by: systemd_agent_name,
                 vm: vm_name,
             },
         };
