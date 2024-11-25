@@ -21,6 +21,7 @@ let
     concatStringsSep
     optionalString
     optionals
+    optionalAttrs
     ;
   inherit (builtins) toJSON;
   inherit (import ./definitions.nix { inherit config lib; })
@@ -32,6 +33,7 @@ in
 {
   options.givc.sysvm = {
     enable = mkEnableOption "Enable givc-sysvm module.";
+    enableUserTlsAccess = mkEnableOption "Enable users to access TLS keys to run client.";
 
     agent = mkOption {
       description = ''
@@ -132,6 +134,18 @@ in
       bindsTo = [ "network-online.target" ];
       after = [ "network-online.target" ];
       wantedBy = [ "network-online.target" ];
+    };
+
+    systemd.services.givc-user-key-setup = optionalAttrs cfg.enableUserTlsAccess {
+      description = "Prepare givc keys and certificates for user access";
+      enable = true;
+      wantedBy = [ "local-fs.target" ];
+      after = [ "local-fs.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.rsync}/bin/rsync -r --chown=root:users --chmod=g+rx /etc/givc /run";
+        Restart = "no";
+      };
     };
 
     systemd.services."givc-${cfg.agent.name}" = {

@@ -116,6 +116,25 @@ in
       '';
     };
 
+    # Copy givc keys and certificates for user access
+    systemd.services.givc-user-key-setup = {
+      description = "Prepare givc keys and certificates for user access";
+      enable = true;
+      wantedBy = [ "local-fs.target" ];
+      after = [ "local-fs.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.rsync}/bin/rsync -r --chown=root:users --chmod=g+rx /etc/givc /run";
+        Restart = "no";
+      };
+    };
+    givc.appvm.tls = {
+      caCertPath = "/run/givc/ca-cert.pem";
+      certPath = "/run/givc/cert.pem";
+      keyPath = "/run/givc/key.pem";
+    };
+
+    # User agent
     systemd.user.services."givc-${cfg.agent.name}" = {
       description = "GIVC remote service manager for application VMs";
       enable = true;

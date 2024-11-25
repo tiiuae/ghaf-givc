@@ -23,7 +23,6 @@
     };
     crane = {
       url = "github:ipetkov/crane";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
     pre-commit-hooks-nix = {
       url = "github:cachix/pre-commit-hooks.nix";
@@ -85,6 +84,7 @@
           sysvm = import ./nixos/modules/sysvm.nix { inherit self; };
           appvm = import ./nixos/modules/appvm.nix { inherit self; };
           dbus = import ./nixos/modules/dbus.nix { inherit self; };
+          tls = import ./nixos/modules/tls.nix { inherit self; };
         };
 
         # Overlays

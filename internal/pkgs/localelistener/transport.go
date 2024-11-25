@@ -46,7 +46,7 @@ func (s *LocaleServer) LocaleSet(ctx context.Context, req *locale_api.LocaleMess
 	err := s.Controller.SetLocale(context.Background(), req.Locale)
 	if err != nil {
 		log.Infof("[SetLocale] Error setting locale: %v\n", err)
-		return nil, fmt.Errorf("Cannot set locale")
+		return nil, fmt.Errorf("cannot set locale")
 	}
 
 	return &locale_api.Empty{}, nil
@@ -57,8 +57,8 @@ func (s *LocaleServer) TimezoneSet(ctx context.Context, req *locale_api.Timezone
 
 	err := s.Controller.SetTimezone(context.Background(), req.Timezone)
 	if err != nil {
-		log.Infof("[SetLocale] Error setting timezone: %v\n", err)
-		return nil, fmt.Errorf("Cannot set timezone")
+		log.Infof("[SetTimezone] Error setting timezone: %v\n", err)
+		return nil, fmt.Errorf("cannot set timezone")
 	}
 
 	return &locale_api.Empty{}, nil
