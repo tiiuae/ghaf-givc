@@ -77,26 +77,28 @@ in
       }
     ];
 
-    systemd.services."givc-${cfg.agent.name}" = {
-      description = "GIVC remote service manager for the host.";
-      enable = true;
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        Type = "exec";
-        ExecStart = "${givc-agent}/bin/givc-agent";
-        Restart = "always";
-        RestartSec = 1;
-      };
-      environment = {
-        "AGENT" = "${toJSON cfg.agent}";
-        "DEBUG" = "${trivial.boolToString cfg.debug}";
-        "TYPE" = "0";
-        "SUBTYPE" = "1";
-        "SERVICES" = "${concatStringsSep " " cfg.services}";
-        "ADMIN_SERVER" = "${toJSON cfg.admin}";
-        "TLS_CONFIG" = "${toJSON cfg.tls}";
+    systemd.services = {
+      "givc-${cfg.agent.name}" = {
+        description = "GIVC remote service manager for the host.";
+        enable = true;
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          Type = "exec";
+          ExecStart = "${givc-agent}/bin/givc-agent";
+          Restart = "always";
+          RestartSec = 1;
+        };
+        environment = {
+          "AGENT" = "${toJSON cfg.agent}";
+          "DEBUG" = "${trivial.boolToString cfg.debug}";
+          "TYPE" = "0";
+          "SUBTYPE" = "1";
+          "SERVICES" = "${concatStringsSep " " cfg.services}";
+          "ADMIN_SERVER" = "${toJSON cfg.admin}";
+          "TLS_CONFIG" = "${toJSON cfg.tls}";
+        };
       };
     };
     networking.firewall.allowedTCPPorts =

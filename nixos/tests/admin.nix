@@ -29,9 +29,9 @@ let
   admin = lib.head adminConfig.addresses;
   mkTls = name: {
     enable = tls;
-    caCertPath = "${snakeoil}/${name}/ca-cert.pem";
-    certPath = "${snakeoil}/${name}/${name}-cert.pem";
-    keyPath = "${snakeoil}/${name}/${name}-key.pem";
+    caCertPath = lib.mkForce "${snakeoil}/${name}/ca-cert.pem";
+    certPath = lib.mkForce "${snakeoil}/${name}/${name}-cert.pem";
+    keyPath = lib.mkForce "${snakeoil}/${name}/${name}-key.pem";
   };
 in
 {

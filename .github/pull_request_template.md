@@ -21,7 +21,7 @@ Please check, [X], to all that applies. Leave [ ] if an item does not apply but 
 - [ ] Commits are squashed into relevant entities - avoid a lot of minimal dev time commits in the PR
 - [ ] [Contribution guidelines](https://github.com/tiiuae/ghaf/blob/main/CONTRIBUTING.md) followed
 - [ ] Test procedure added to nixos/tests
-- [ ] Author has run `nix flake check --accept-flake-config` and it passes
+- [ ] Author has run `nix flake check` and it passes
 - [ ] All automatic Github Action checks pass - see [actions](https://github.com/tiiuae/ghaf-givc/actions)
 - [ ] Author has added reviewers and removed PR draft status
 
