@@ -33,8 +33,8 @@ impl SecurityInfo {
         !self.enabled || self.dns_names.iter().any(|hn| hostname == hn)
     }
 
-    pub fn hostname(self) -> Option<String> {
-        self.dns_names.into_iter().next()
+    pub fn hostname(&self) -> Option<String> {
+        self.dns_names.iter().next().map(ToOwned::to_owned)
     }
 }
 

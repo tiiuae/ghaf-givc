@@ -18,6 +18,7 @@ use crate::systemd_api::client::SystemDClient;
 use crate::types::*;
 use crate::utils::naming::*;
 use crate::utils::tonic::*;
+use crate::utils::x509::SecurityInfo;
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::*;
 
@@ -360,10 +361,15 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<RegistryRequest>,
     ) -> std::result::Result<tonic::Response<pb::RegistryResponse>, tonic::Status> {
-        let req = request.into_inner();
+        let vm_name = request
+            .extensions()
+            .get::<SecurityInfo>()
+            .map(move |si| si.hostname().unwrap_or("bogus, no hostname in cert".into()))
+            .unwrap_or("bogus: no TLS".into());
 
+        let req = request.into_inner();
         info!("Registering service {:?}", req);
-        let entry = RegistryEntry::try_from(req)
+        let entry = RegistryEntry::try_from_request(req, vm_name)
             .map_err(|e| Status::new(Code::InvalidArgument, format!("{e}")))?;
         let mut notify = None;
 

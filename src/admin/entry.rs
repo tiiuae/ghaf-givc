@@ -92,9 +92,11 @@ impl RegistryEntry {
     }
 }
 
-impl TryFrom<pb::RegistryRequest> for RegistryEntry {
-    type Error = anyhow::Error;
-    fn try_from(req: pb::RegistryRequest) -> Result<Self, Self::Error> {
+impl RegistryEntry {
+    pub fn try_from_request(
+        req: pb::RegistryRequest,
+        vm_name: String,
+    ) -> Result<Self, anyhow::Error> {
         let ty = UnitType::try_from(req.r#type)?;
         let status = req
             .state
@@ -114,7 +116,7 @@ impl TryFrom<pb::RegistryRequest> for RegistryEntry {
             r#type: ty,
             placement: Placement::Endpoint {
                 endpoint,
-                vm: "bogus".into(),
+                vm: vm_name,
             },
         })
     }
