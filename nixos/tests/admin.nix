@@ -82,10 +82,14 @@ in
                 tls = mkTls "ghaf-host";
               };
               systemd.services."microvm@foot-vm" = {
+                preStart = ''
+                  expr $(cat /tmp/microvm@chromium-vm.count 2>/dev/null || true) + 1 >/tmp/microvm@chromium-vm.count
+                '';
                 script = ''
                   # Do nothing script, simulating microvm service
                   while true; do sleep 10; done
                 '';
+                wantedBy = [ "multi-user.target" ];
               };
             };
             guivm =
@@ -321,6 +325,7 @@ in
               with subtest("Clean run"):
                   print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm foot"))
                   time.sleep(10) # Give few seconds to application to spin up
+                  print(hostvm.succeed("cat /tmp/microvm@chromium-vm.count"))
                   wait_for_window("ghaf@appvm")
 
               with subtest("crash and restart"):
@@ -356,6 +361,14 @@ in
                   print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm clearexit"))
                   time.sleep(20) # Give few seconds to application to spin up, exit, then start it again
                   print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm clearexit"))
+              with subtest("VM restart"):
+                  appvm.crash()
+                  time.sleep(20)
+                  appvm.start()
+                  time.sleep(20)
+                  print(hostvm.succeed("${cli} --addr ${nodes.adminvm.config.givc.admin.addr} --port ${nodes.adminvm.config.givc.admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${nodes.adminvm.config.givc.admin.name} start --vm chromium-vm foot"))
+                  assert hostvm.succeed("cat /tmp/microvm@chromium-vm.count") == "2"
+                  wait_for_window("ghaf@appvm")
             '';
         };
       };
