@@ -18,6 +18,7 @@ use crate::systemd_api::client::SystemDClient;
 use crate::types::*;
 use crate::utils::naming::*;
 use crate::utils::tonic::*;
+use crate::utils::x509::SecurityInfo;
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::*;
 
@@ -109,14 +110,15 @@ impl AdminServiceImpl {
 
     pub fn endpoint(&self, entry: &RegistryEntry) -> anyhow::Result<EndpointConfig> {
         let transport = match &entry.placement {
-            Placement::Managed(parent) => {
+            Placement::Managed { by: parent, .. } => {
                 let parent = self.registry.by_name(parent)?;
                 parent
                     .agent()
                     .with_context(|| "When get_remote_status()")?
                     .to_owned() // Fail, if parent also `Managed`
             }
-            Placement::Endpoint(endpoint) => endpoint.clone(), // FIXME: avoid clone!
+            Placement::Endpoint { endpoint, .. } => endpoint.clone(), // FIXME: avoid clone!
+            Placement::Host => bail!("endpoint() called for Host"), // impossible, FIXME: should never happens atm
         };
         let tls_name = transport.tls_name.clone();
         Ok(EndpointConfig {
@@ -221,6 +223,10 @@ impl AdminServiceImpl {
     }
 
     pub async fn handle_error(&self, entry: RegistryEntry) -> anyhow::Result<()> {
+        info!(
+            "Handling error for {} vm type {} service type {}",
+            entry.name, entry.r#type.vm, entry.r#type.service
+        );
         match (entry.r#type.vm, entry.r#type.service) {
             (VmType::AppVM, ServiceType::App) => {
                 if entry.status.is_exitted() {
@@ -229,10 +235,11 @@ impl AdminServiceImpl {
                 Ok(())
             }
             (VmType::AppVM, ServiceType::Mgr) | (VmType::SysVM, ServiceType::Mgr) => {
-                let name = parse_service_name(&entry.name)?;
-                self.start_vm(name)
-                    .await
-                    .with_context(|| format!("handing error, by restart VM {}", entry.name))?;
+                if let Placement::Managed { vm: vm_name, .. } = entry.placement {
+                    self.start_vm(&vm_name)
+                        .await
+                        .with_context(|| format!("handing error, by restart VM {}", entry.name))?;
+                }
                 Ok(()) // FIXME: should use `?` from line above, why it didn't work?
             }
             (x, y) => bail!("Don't known how to handle_error for VM type: {x:?}:{y:?}"),
@@ -298,26 +305,25 @@ impl AdminServiceImpl {
         let name = req.app_name;
         let vm = req.vm_name.as_deref();
         let vm_name = format_vm_name(&name, vm);
-        let systemd_agent = format_service_name(&name, vm);
+        let systemd_agent_name = format_service_name(&name, vm);
 
-        info!("Starting app {name} on {vm_name}");
-        info!("Agent: {systemd_agent}");
+        info!("Starting app {name} on {vm_name} via {systemd_agent_name}");
 
         // Entry unused in "go" code
-        match self.registry.by_name(&systemd_agent) {
+        match self.registry.by_name(&systemd_agent_name) {
             std::result::Result::Ok(e) => e,
             Err(_) => {
                 self.start_vm(&vm_name)
                     .await
                     .with_context(|| format!("Starting vm for {name}"))?;
                 self.registry
-                    .by_name(&systemd_agent)
+                    .by_name(&systemd_agent_name)
                     .context("after starting VM")?
             }
         };
-        let endpoint = self.agent_endpoint(&systemd_agent)?;
-        let client = SystemDClient::new(endpoint.clone());
-        let app_name = self.registry.create_unique_entry_name(&name.to_string());
+        let endpoint = self.agent_endpoint(&systemd_agent_name)?;
+        let client = SystemDClient::new(endpoint);
+        let app_name = self.registry.create_unique_entry_name(&name);
         client.start_application(app_name.clone(), req.args).await?;
         let status = client.get_remote_status(app_name.clone()).await?;
         if status.active_state != "active" {
@@ -332,7 +338,10 @@ impl AdminServiceImpl {
                 vm: VmType::AppVM,
                 service: ServiceType::App,
             },
-            placement: Placement::Managed(systemd_agent),
+            placement: Placement::Managed {
+                by: systemd_agent_name,
+                vm: vm_name,
+            },
         };
         self.registry.register(app_entry);
         Ok(())
@@ -357,10 +366,15 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<RegistryRequest>,
     ) -> std::result::Result<tonic::Response<pb::RegistryResponse>, tonic::Status> {
-        let req = request.into_inner();
+        let vm_name = request
+            .extensions()
+            .get::<SecurityInfo>()
+            .map(move |si| si.hostname().unwrap_or("bogus, no hostname in cert".into()))
+            .unwrap_or("bogus: no TLS".into());
 
+        let req = request.into_inner();
         info!("Registering service {:?}", req);
-        let entry = RegistryEntry::try_from(req)
+        let entry = RegistryEntry::try_from_request(req, vm_name)
             .map_err(|e| Status::new(Code::InvalidArgument, format!("{e}")))?;
         let mut notify = None;
 
@@ -481,7 +495,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         escalate(request, |_| async {
             self.inner
                 .send_system_command(String::from("suspend.target"))
-                .await;
+                .await?;
             Ok(Empty {})
         })
         .await
@@ -489,7 +503,7 @@ impl pb::admin_service_server::AdminService for AdminService {
 
     async fn wakeup(
         &self,
-        request: tonic::Request<Empty>,
+        _request: tonic::Request<Empty>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         println!("Not supported");
         Err(Status::unimplemented("Not supported"))
