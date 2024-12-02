@@ -223,6 +223,10 @@ impl AdminServiceImpl {
     }
 
     pub async fn handle_error(&self, entry: RegistryEntry) -> anyhow::Result<()> {
+        info!(
+            "Handling error for {} vm type {} service type {}",
+            entry.name, entry.r#type.vm, entry.r#type.service
+        );
         match (entry.r#type.vm, entry.r#type.service) {
             (VmType::AppVM, ServiceType::App) => {
                 if entry.status.is_exitted() {
@@ -231,10 +235,11 @@ impl AdminServiceImpl {
                 Ok(())
             }
             (VmType::AppVM, ServiceType::Mgr) | (VmType::SysVM, ServiceType::Mgr) => {
-                let name = parse_service_name(&entry.name)?;
-                self.start_vm(name)
-                    .await
-                    .with_context(|| format!("handing error, by restart VM {}", entry.name))?;
+                if let Placement::Managed { vm: vm_name, .. } = entry.placement {
+                    self.start_vm(&vm_name)
+                        .await
+                        .with_context(|| format!("handing error, by restart VM {}", entry.name))?;
+                }
                 Ok(()) // FIXME: should use `?` from line above, why it didn't work?
             }
             (x, y) => bail!("Don't known how to handle_error for VM type: {x:?}:{y:?}"),
