@@ -11,6 +11,7 @@ pub use givc_common::query::{Event, QueryResult};
 use givc_common::types::*;
 
 use crate::endpoint::{EndpointConfig, TlsConfig};
+use crate::error::StatusWrapExt;
 
 type Client = pb::admin_service_client::AdminServiceClient<Channel>;
 
@@ -94,7 +95,12 @@ impl AdminClient {
             vm_name,
             args,
         };
-        let _response = self.connect_to().await?.start_application(request).await?;
+        let _response = self
+            .connect_to()
+            .await?
+            .start_application(request)
+            .await
+            .rewrap_err()?;
         Ok(())
     }
 
@@ -104,7 +110,12 @@ impl AdminClient {
             vm_name: None,
             args: Vec::new(),
         };
-        let _response = self.connect_to().await?.stop_application(request).await?;
+        let _response = self
+            .connect_to()
+            .await?
+            .stop_application(request)
+            .await
+            .rewrap_err()?;
         Ok(())
     }
 
@@ -114,7 +125,12 @@ impl AdminClient {
             vm_name: None,
             args: Vec::new(),
         };
-        let _response = self.connect_to().await?.pause_application(request).await?;
+        let _response = self
+            .connect_to()
+            .await?
+            .pause_application(request)
+            .await
+            .rewrap_err()?;
         Ok(())
     }
 
@@ -124,31 +140,56 @@ impl AdminClient {
             vm_name: None,
             args: Vec::new(),
         };
-        let _response = self.connect_to().await?.resume_application(request).await?;
+        let _response = self
+            .connect_to()
+            .await?
+            .resume_application(request)
+            .await
+            .rewrap_err()?;
         Ok(())
     }
 
     pub async fn reboot(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
-        let _response = self.connect_to().await?.reboot(request).await?;
+        let _response = self
+            .connect_to()
+            .await?
+            .reboot(request)
+            .await
+            .rewrap_err()?;
         Ok(())
     }
 
     pub async fn poweroff(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
-        let _response = self.connect_to().await?.poweroff(request).await?;
+        let _response = self
+            .connect_to()
+            .await?
+            .poweroff(request)
+            .await
+            .rewrap_err()?;
         Ok(())
     }
 
     pub async fn suspend(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
-        let _response = self.connect_to().await?.suspend(request).await?;
+        let _response = self
+            .connect_to()
+            .await?
+            .suspend(request)
+            .await
+            .rewrap_err()?;
         Ok(())
     }
 
     pub async fn wakeup(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
-        let _response = self.connect_to().await?.wakeup(request).await?;
+        let _response = self
+            .connect_to()
+            .await?
+            .wakeup(request)
+            .await
+            .rewrap_err()?;
         Ok(())
     }
 
@@ -165,7 +206,8 @@ impl AdminClient {
         self.connect_to()
             .await?
             .query_list(pb::admin::Empty {})
-            .await?
+            .await
+            .rewrap_err()?
             .into_inner()
             .list
             .into_iter()
@@ -177,7 +219,8 @@ impl AdminClient {
         self.connect_to()
             .await?
             .set_locale(pb::admin::LocaleRequest { locale })
-            .await?;
+            .await
+            .rewrap_err()?;
         Ok(())
     }
 
@@ -185,7 +228,8 @@ impl AdminClient {
         self.connect_to()
             .await?
             .set_timezone(pb::admin::TimezoneRequest { timezone })
-            .await?;
+            .await
+            .rewrap_err()?;
         Ok(())
     }
 
@@ -199,7 +243,8 @@ impl AdminClient {
             .connect_to()
             .await?
             .watch(pb::admin::Empty {})
-            .await?
+            .await
+            .rewrap_err()?
             .into_inner();
 
         let list = match watch.try_next().await? {

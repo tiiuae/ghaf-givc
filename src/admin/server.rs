@@ -161,7 +161,9 @@ impl AdminServiceImpl {
         let vmservice = format_service_name(vmname, None);
 
         /* Return error if the vm is not registered */
-        let endpoint = self.agent_endpoint(&vmservice)?;
+        let endpoint = self
+            .agent_endpoint(&vmservice)
+            .with_context(|| format!("{vmservice} not registered"))?;
         let client = SystemDClient::new(endpoint);
 
         /* Check status of the unit */
@@ -181,7 +183,7 @@ impl AdminServiceImpl {
                 Err(anyhow!("Service {unit} is not loaded!"))
             }
             Err(e) => {
-                eprintln!("Error retrieving unit status: {e}");
+                error!("Error retrieving unit status: {e}");
                 Err(e)
             }
         }
@@ -194,7 +196,7 @@ impl AdminServiceImpl {
         let status = client
             .get_remote_status(name.to_string())
             .await
-            .with_context(|| format!("cannot retrieve vm status for {name}"))?;
+            .with_context(|| format!("cannot retrieve vm status for {name}, host agent failed"))?;
 
         if status.load_state != "loaded" {
             bail!("vm {name} not loaded")
@@ -224,6 +226,7 @@ impl AdminServiceImpl {
         match (entry.r#type.vm, entry.r#type.service) {
             (VmType::AppVM, ServiceType::App) => {
                 if entry.status.is_exitted() {
+                    debug!("Deregister exitted {}", entry.name);
                     self.registry.deregister(&entry.name)?;
                 }
                 Ok(())
@@ -235,7 +238,10 @@ impl AdminServiceImpl {
                     .with_context(|| format!("handing error, by restart VM {}", entry.name))?;
                 Ok(()) // FIXME: should use `?` from line above, why it didn't work?
             }
-            (x, y) => bail!("Don't known how to handle_error for VM type: {x:?}:{y:?}"),
+            (x, y) => {
+                error!("Don't known how to handle_error for VM type: {x:?}:{y:?}");
+                Ok(())
+            }
         }
     }
 
@@ -283,6 +289,7 @@ impl AdminServiceImpl {
             if let Err(err) = self.monitor_routine().await {
                 error!("Error during watch: {err}");
             }
+            info!("{:#?}", self.registry)
         }
     }
 
@@ -307,6 +314,7 @@ impl AdminServiceImpl {
         match self.registry.by_name(&systemd_agent) {
             std::result::Result::Ok(e) => e,
             Err(_) => {
+                info!("Starting up VM {vm_name}");
                 self.start_vm(&vm_name)
                     .await
                     .with_context(|| format!("Starting vm for {name}"))?;
