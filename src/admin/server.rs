@@ -489,7 +489,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         escalate(request, |_| async {
             self.inner
                 .send_system_command(String::from("suspend.target"))
-                .await;
+                .await?;
             Ok(Empty {})
         })
         .await
@@ -497,7 +497,7 @@ impl pb::admin_service_server::AdminService for AdminService {
 
     async fn wakeup(
         &self,
-        request: tonic::Request<Empty>,
+        _request: tonic::Request<Empty>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         println!("Not supported");
         Err(Status::unimplemented("Not supported"))

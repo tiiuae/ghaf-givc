@@ -1,7 +1,6 @@
 use anyhow::Error;
 use tonic::Status;
 use tonic_types::StatusExt;
-use tracing::{debug, error};
 
 fn rewrap_error(status: Status) -> Error {
     let mut err = Error::msg(status.message().to_owned());

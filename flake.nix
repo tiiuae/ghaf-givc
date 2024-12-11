@@ -23,7 +23,6 @@
     };
     crane = {
       url = "github:ipetkov/crane";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
     pre-commit-hooks-nix = {
       url = "github:cachix/pre-commit-hooks.nix";
