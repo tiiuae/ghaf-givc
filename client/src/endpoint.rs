@@ -95,7 +95,6 @@ impl EndpointConfig {
         let url = transport_config_to_url(&self.transport.address, self.tls.is_some());
         info!("Connecting to {url}, TLS name {:?}", &self.tls);
         let mut endpoint = Endpoint::try_from(url.clone())?
-            .timeout(Duration::from_millis(500))
             .connect_timeout(Duration::from_millis(300))
             .concurrency_limit(30);
         if let Some(tls) = &self.tls {
