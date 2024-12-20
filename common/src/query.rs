@@ -1,4 +1,5 @@
 // Types related to QueryList and Watch API
+use super::types::{ServiceType, VmType};
 use crate::pb;
 use pb::admin::watch_item::Status;
 
@@ -33,6 +34,10 @@ pub struct QueryResult {
     pub description: String, //App name, some details
     pub status: VMStatus,
     pub trust_level: TrustLevel,
+    pub vm_type: VmType,
+    pub service_type: ServiceType,
+    pub vm_name: Option<String>,
+    pub agent_name: Option<String>,
 }
 
 impl QueryResult {
@@ -51,6 +56,12 @@ impl TryFrom<pb::QueryListItem> for QueryResult {
                 .with_context(|| format!("While parsing vm_status {}", item.vm_status))?,
             trust_level: TrustLevel::from_str(item.trust_level.as_str())
                 .with_context(|| format!("While parsing trust_level {}", item.trust_level))?,
+            vm_type: VmType::from_str(item.vm_type.as_str())
+                .with_context(|| format!("While parsing vm_type {}", item.vm_type))?,
+            service_type: ServiceType::from_str(item.service_type.as_str())
+                .with_context(|| format!("While parsing service_type {}", item.service_type))?,
+            agent_name: item.agent_name,
+            vm_name: item.vm_name,
         })
     }
 }
@@ -62,6 +73,10 @@ impl From<QueryResult> for pb::QueryListItem {
             description: val.description,
             vm_status: val.status.to_string(),
             trust_level: val.trust_level.to_string(),
+            vm_type: val.vm_type.to_string(),
+            service_type: val.service_type.to_string(),
+            agent_name: val.agent_name,
+            vm_name: val.vm_name,
         }
     }
 }

@@ -59,7 +59,7 @@ func (s *SystemdControlServer) GetUnitStatus(ctx context.Context, req *systemd_a
 	unitStatus, err := s.Controller.FindUnit(req.UnitName)
 	if err != nil {
 		log.Infof("[GetUnitStatus] Error finding unit: %v", err)
-		return nil, grpc_status.Error(grpc_codes.NotFound, "error fetching unit status")
+		return nil, grpc_status.Error(grpc_codes.NotFound, fmt.Sprintf("error fetching unit status: %s", req.UnitName))
 	}
 	if len(unitStatus) != 1 {
 		errStr := fmt.Sprintf("error, got %d units named %s", len(unitStatus), req.UnitName)
