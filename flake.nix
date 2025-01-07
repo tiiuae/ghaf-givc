@@ -1,7 +1,7 @@
 # Copyright 2024 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
 {
-  description = "Go modules for inter-vm communication with gRPC.";
+  description = "Inter-vm communication framework with gRPC.";
 
   # Inputs
   inputs = {
@@ -27,7 +27,6 @@
     pre-commit-hooks-nix = {
       url = "github:cachix/pre-commit-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.nixpkgs-stable.follows = "nixpkgs";
     };
   };
 
@@ -61,19 +60,18 @@
                 fileset = lib.fileset.unions [
                   ./go.mod
                   ./go.sum
-                  ./api
-                  ./internal
+                  ./modules
                 ];
               };
-              givc-admin-rs = pkgs.callPackage ./nixos/packages/givc-admin-rs.nix {
+              givc-admin = pkgs.callPackage ./nixos/packages/givc-admin.nix {
                 inherit crane;
                 src = ./.;
               };
             in
             {
-              inherit givc-admin-rs;
+              inherit givc-admin;
               givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
-              givc-cli = givc-admin-rs.cli;
+              givc-cli = givc-admin.cli;
             };
         };
       flake = {
@@ -88,7 +86,7 @@
 
         # Overlays
         overlays.default = _final: prev: {
-          givc-cli = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin-rs.cli;
+          givc-cli = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.cli;
         };
       };
     };

@@ -37,7 +37,6 @@ requests accordingly. The current implementation is a usage example to demonstra
 ## How To Use
 
 The project exposes NixOS modules, which aim to be used with the [Ghaf Framework](https://github.com/tiiuae/ghaf).
-An example configuration can be found [here](https://github.com/mbssrc/ghaf/tree/givc).
 
 ### Include the project
 
@@ -121,7 +120,7 @@ The `admin` module is configured similar to the `host` module, with exception of
 
 ### Example: Appvm module usage
 
-The `appvm` module runs as user service in an active user session, not as a system service. Currently, a single appvm in Ghaf is expected to run a single application, but this implementation allows to specify and run multiple applications.
+The `appvm` module runs as user service in an active user session, not as a system service. The implementation allows to specify and run multiple applications.
 
 To use the agent as application controller, include the `appvm` module as follows:
 

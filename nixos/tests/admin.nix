@@ -10,8 +10,8 @@ let
   tls = true;
   snakeoil = ./snakeoil;
   addrs = {
-    host = "192.168.101.10";
-    adminvm = "192.168.101.2";
+    host = "192.168.101.2";
+    adminvm = "192.168.101.10";
     appvm = "192.168.101.5";
     guivm = "192.168.101.3";
   };
@@ -226,7 +226,7 @@ in
           testScript =
             { nodes, ... }:
             let
-              cli = "${self'.packages.givc-admin-rs.cli}/bin/givc-cli";
+              cli = "${self'.packages.givc-admin.cli}/bin/givc-cli";
               expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
             in
             # FIXME: why it so bizzare? (derived from name in cert)
@@ -293,7 +293,7 @@ in
                   adminvm.wait_for_unit("givc-admin.service")
                   guivm.wait_for_unit("multi-user.target")
                   appvm.wait_for_unit("multi-user.target")
-                  guivm.wait_for_unit("givc-gui-vm")
+                  guivm.wait_for_unit("givc-gui-vm.service")
 
                   time.sleep(1)
                   # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
