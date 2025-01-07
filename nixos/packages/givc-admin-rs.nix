@@ -13,6 +13,8 @@ let
   # Common arguments can be set here to avoid repeating them later
   # Note: changes here will rebuild all dependency crates
   commonArgs = {
+    pname = "givc";
+    version = "0.0.1";
     src = lib.cleanSourceWith {
       src = craneLib.path src;
       filter = protoOrCargo;
@@ -42,7 +44,7 @@ let
       # MY_CUSTOM_VAR = "some value";
       postUnpack = ''
         # Avoid issue with source filtering, put symlink back into source tree
-        ln -sf ../api $sourceRoot/common/api
+        ln -sf ../../api $sourceRoot/crates/common/api
       '';
       postInstall = ''
         mkdir -p $cli/bin $agent/bin
