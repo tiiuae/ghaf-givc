@@ -9,7 +9,7 @@
 }:
 let
   cfg = config.givc.admin;
-  givc-admin = self.packages.${pkgs.stdenv.hostPlatform.system}.givc-admin-rs;
+  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-admin;
   inherit (lib)
     mkOption
     mkEnableOption

@@ -1,17 +1,27 @@
 # Copyright 2024 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
 { pkgs, src }:
-pkgs.buildGoModule {
+let
   pname = "givc-agent";
+in
+pkgs.buildGoModule {
+  inherit pname;
   version = "0.0.3";
   inherit src;
-  vendorHash = "sha256-qF9Amm8A55b8hu0WIVSlxFQqpF+4wFlKhKuUg8k/EiM=";
+  vendorHash = "sha256-EgrJbTYT6iLv0qq9JiBKpoIqIgIptFhByQDyJSeznhc=";
   subPackages = [
-    "internal/pkgs/grpc"
-    "internal/pkgs/servicemanager"
-    "internal/pkgs/serviceclient"
-    "internal/pkgs/applications"
-    "internal/pkgs/utility"
-    "internal/cmd/givc-agent"
+    "modules/cmd/${pname}"
   ];
+  configureFlags = [
+    "-trimpath"
+    "-buildmode=pie"
+    "-mod=readonly"
+  ];
+  ldflags = [
+    "-w"
+    "-s"
+    "-linkmode=external"
+    "-extldflags=-pie"
+  ];
+  NIX_CFLAGS_COMPILE = "-fstack-protector-all -fcf-protection=full -fstack-clash-protection";
 }

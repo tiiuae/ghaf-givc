@@ -129,9 +129,9 @@ in
     systemd.targets.givc-setup = {
       enable = true;
       description = "Ghaf givc target";
-      bindsTo = [ "network-online.target" ];
-      after = [ "network-online.target" ];
-      wantedBy = [ "network-online.target" ];
+      bindsTo = [ "network.target" ];
+      after = [ "network.target" ];
+      wantedBy = [ "network.target" ];
     };
 
     systemd.services."givc-${cfg.agent.name}" = {
