@@ -86,12 +86,6 @@ const (
 )
 
 const (
-	PROXY_NULL             uint32 = 0
-	PROXY_SERVER_CONNECTED uint32 = 1
-	PROXY_CLIENT_CONNECTED uint32 = 2
-)
-
-const (
 	APP_ARG_FLAG = "flag"
 	APP_ARG_URL  = "url"
 )
