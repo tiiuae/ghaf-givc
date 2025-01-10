@@ -16,17 +16,22 @@ let
     adminvm = "192.168.101.10";
     appvm = "192.168.101.100";
   };
-  admin = {
+  adminConfig = {
     name = "admin-vm";
-    addr = addrs.adminvm;
-    port = "9001";
-    protocol = "tcp";
+    addresses = [
+      {
+        name = "admin-vm";
+        addr = addrs.adminvm;
+        port = "9001";
+        protocol = "tcp";
+      }
+    ];
   };
   mkTls = name: {
     enable = tls;
-    caCertPath = "${snakeoil}/${name}/ca-cert.pem";
-    certPath = "${snakeoil}/${name}/${name}-cert.pem";
-    keyPath = "${snakeoil}/${name}/${name}-key.pem";
+    caCertPath = lib.mkForce "${snakeoil}/${name}/ca-cert.pem";
+    certPath = lib.mkForce "${snakeoil}/${name}/${name}-cert.pem";
+    keyPath = lib.mkForce "${snakeoil}/${name}/${name}-key.pem";
   };
 in
 {
@@ -48,10 +53,8 @@ in
               environment.systemPackages = [ pkgs.grpcurl ];
               givc.admin = {
                 enable = true;
-                inherit (admin) name;
-                inherit (admin) addr;
-                inherit (admin) port;
-                inherit (admin) protocol;
+                inherit (adminConfig) name;
+                inherit (adminConfig) addresses;
                 tls = mkTls "admin-vm";
                 debug = false;
               };
@@ -125,8 +128,8 @@ in
 
               givc.sysvm = {
                 enable = true;
-                inherit admin;
-                agent = {
+                admin = lib.head adminConfig.addresses;
+                transport = {
                   addr = addrs.guivm;
                   name = "gui-vm";
                 };
@@ -211,8 +214,8 @@ in
 
               givc.sysvm = {
                 enable = true;
-                inherit admin;
-                agent = {
+                admin = lib.head adminConfig.addresses;
+                transport = {
                   addr = addrs.netvm;
                   name = "net-vm";
                 };
@@ -289,8 +292,8 @@ in
 
               givc.sysvm = {
                 enable = true;
-                inherit admin;
-                agent = {
+                admin = lib.head adminConfig.addresses;
+                transport = {
                   addr = addrs.audiovm;
                   name = "audio-vm";
                 };
@@ -377,8 +380,8 @@ in
 
               givc.appvm = {
                 enable = true;
-                inherit admin;
-                agent = {
+                admin = lib.head adminConfig.addresses;
+                transport = {
                   addr = addrs.appvm;
                   name = "chromium-vm";
                 };

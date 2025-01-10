@@ -28,8 +28,8 @@ in
   options.givc.host = {
     enable = mkEnableOption "Enable givc-host module.";
 
-    agent = mkOption {
-      description = "Host configuration";
+    transport = mkOption {
+      description = "Transport configuration";
       type = transportSubmodule;
     };
 
@@ -77,11 +77,11 @@ in
       }
     ];
 
-    systemd.services."givc-${cfg.agent.name}" = {
+    systemd.services."givc-${cfg.transport.name}" = {
       description = "GIVC remote service manager for the host.";
       enable = true;
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
+      after = [ "network.target" ];
+      wants = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "exec";
@@ -90,7 +90,7 @@ in
         RestartSec = 1;
       };
       environment = {
-        "AGENT" = "${toJSON cfg.agent}";
+        "AGENT" = "${toJSON cfg.transport}";
         "DEBUG" = "${trivial.boolToString cfg.debug}";
         "TYPE" = "0";
         "SUBTYPE" = "1";
@@ -101,7 +101,7 @@ in
     };
     networking.firewall.allowedTCPPorts =
       let
-        port = lib.strings.toInt cfg.agent.port;
+        port = lib.strings.toInt cfg.transport.port;
       in
       [ port ];
   };

@@ -193,7 +193,7 @@ in
                 "-cacert ${nodes.adminvm.givc.admin.tls.caCertPath} -cert ${nodes.adminvm.givc.admin.tls.certPath} -key ${nodes.adminvm.givc.admin.tls.keyPath}"
               else
                 "-plaintext";
-            grpcurl_addr = "${nodes.netvm.givc.sysvm.agent.addr}:${nodes.netvm.givc.sysvm.agent.port} ";
+            grpcurl_addr = "${nodes.netvm.givc.sysvm.transport.addr}:${nodes.netvm.givc.sysvm.transport.port} ";
           in
           ''
             import time

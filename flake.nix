@@ -82,6 +82,7 @@
           sysvm = import ./nixos/modules/sysvm.nix { inherit self; };
           appvm = import ./nixos/modules/appvm.nix { inherit self; };
           dbus = import ./nixos/modules/dbus.nix { inherit self; };
+          tls = import ./nixos/modules/tls.nix { inherit self; };
         };
 
         # Overlays

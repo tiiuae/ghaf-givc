@@ -8,7 +8,7 @@ let
   transportSubmodule = types.submodule {
     options = {
       name = mkOption {
-        description = "Network host and TLS name";
+        description = "Identifier for network, host, and/or TLS name";
         type = types.str;
         default = "localhost";
       };
@@ -89,17 +89,17 @@ in
       caCertPath = mkOption {
         description = "Path to the CA certificate file.";
         type = types.str;
-        default = "";
+        default = "/etc/givc/ca-cert.pem";
       };
       certPath = mkOption {
         description = "Path to the service certificate file.";
         type = types.str;
-        default = "";
+        default = "/etc/givc/cert.pem";
       };
       keyPath = mkOption {
         description = "Path to the service key file.";
         type = types.str;
-        default = "";
+        default = "/etc/givc/key.pem";
       };
     };
   };
