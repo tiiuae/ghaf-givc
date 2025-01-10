@@ -55,6 +55,12 @@ in
       ];
     };
 
+    uid = mkOption {
+      description = "Limit running this agent only in session of user with this UID.";
+      type = types.int;
+      default = 1000;
+    };
+
     socketProxy = mkOption {
       description = ''
         Optional socket proxy module. If not provided, the module will not use a socket proxy.
@@ -141,6 +147,7 @@ in
       after = [ "sockets.target" ];
       wants = [ "sockets.target" ];
       wantedBy = [ "default.target" ];
+      unitConfig.ConditionUser = "${toString cfg.uid}";
       serviceConfig = {
         Type = "exec";
         ExecStart = "${givc-agent}/bin/givc-agent";
