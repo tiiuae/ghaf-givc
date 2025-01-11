@@ -33,8 +33,8 @@ in
   options.givc.appvm = {
     enable = mkEnableOption "Enable givc-appvm module.";
 
-    agent = mkOption {
-      description = "Host configuration";
+    transport = mkOption {
+      description = "Transport configuration";
       type = transportSubmodule;
     };
 
@@ -53,6 +53,12 @@ in
           args = [ "url" ];
         }
       ];
+    };
+
+    uid = mkOption {
+      description = "Limit running this agent only in session of user with this UID.";
+      type = types.int;
+      default = 1000;
     };
 
     socketProxy = mkOption {
@@ -116,12 +122,32 @@ in
       '';
     };
 
-    systemd.user.services."givc-${cfg.agent.name}" = {
+    # Copy givc keys and certificates for user access
+    systemd.services.givc-user-key-setup = {
+      description = "Prepare givc keys and certificates for user access";
+      enable = true;
+      wantedBy = [ "local-fs.target" ];
+      after = [ "local-fs.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.rsync}/bin/rsync -r --chown=root:users --chmod=g+rx /etc/givc /run";
+        Restart = "no";
+      };
+    };
+    givc.appvm.tls = {
+      caCertPath = "/run/givc/ca-cert.pem";
+      certPath = "/run/givc/cert.pem";
+      keyPath = "/run/givc/key.pem";
+    };
+
+    # User agent
+    systemd.user.services."givc-${cfg.transport.name}" = {
       description = "GIVC remote service manager for application VMs";
       enable = true;
       after = [ "sockets.target" ];
       wants = [ "sockets.target" ];
       wantedBy = [ "default.target" ];
+      unitConfig.ConditionUser = "${toString cfg.uid}";
       serviceConfig = {
         Type = "exec";
         ExecStart = "${givc-agent}/bin/givc-agent";
@@ -129,11 +155,11 @@ in
         RestartSec = 1;
       };
       environment = {
-        "AGENT" = "${toJSON cfg.agent}";
+        "AGENT" = "${toJSON cfg.transport}";
         "DEBUG" = "${trivial.boolToString cfg.debug}";
         "TYPE" = "12";
         "SUBTYPE" = "13";
-        "PARENT" = "microvm@${cfg.agent.name}.service";
+        "PARENT" = "microvm@${cfg.transport.name}.service";
         "APPLICATIONS" = "${toJSON cfg.applications}";
         "SOCKET_PROXY" = "${optionalString (cfg.socketProxy != null) (toJSON cfg.socketProxy)}";
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
@@ -142,7 +168,7 @@ in
     };
     networking.firewall.allowedTCPPorts =
       let
-        agentPort = strings.toInt cfg.agent.port;
+        agentPort = strings.toInt cfg.transport.port;
         proxyPorts = optionals (cfg.socketProxy != null) (
           map (p: (strings.toInt p.transport.port)) cfg.socketProxy
         );

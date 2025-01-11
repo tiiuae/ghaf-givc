@@ -1,65 +1,90 @@
-{ pkgs }:
+# Copyright 2025 TII (SSRC) and the Ghaf contributors
+# SPDX-License-Identifier: Apache-2.0
+{
+  lib,
+  pkgs,
+  agents,
+  adminTlsName,
+  adminAddresses,
+  generatorHostName,
+}:
 pkgs.writeShellScriptBin "givc-gen-certs" ''
   set -xeuo pipefail
 
   if [ $# -eq 1 ]; then
-    target="$1"
+    STORAGE_DIR="$1"
   else
-    echo "Usage: $0 <basedir>" >&2
+    echo "Usage: $0 <storage-dir>" >&2
     exit 1
   fi
 
-  acl_prefix="otherName.1:1.2.3.4.5.6;UTF8"
+  # acl_prefix="otherName.1:1.2.3.4.5.6;UTF8"
+
+  # Parameters
+  VALIDITY=3650
+  EXT_KEY_USAGE="extendedKeyUsage=serverAuth,clientAuth"
+  CA_NAME="GivcCA"
+  CA_CONSTRAINTS="basicConstraints=critical,CA:true,pathlen:1"
+  CA_DIRECTORY="/tmp/ca"
 
   # Function to create key/cert based on IP and/or DNS
   gen_cert(){
+
+      # Initialize name and storage path
       name="$1"
-      path="$target"/"$name"
+      case "$name" in
+        ${generatorHostName})
+          path="/etc/givc"
+          ;;
+        *)
+          path="''${STORAGE_DIR}/''${name}/etc/givc"
+      esac
+      [[ -d "$path" ]] && rm -r "$path"
       mkdir -p "$path"
-      usage="extendedKeyUsage=serverAuth,clientAuth"
-      if [ $# -ge 2 ]; then
-        ip1="$2"
-        alttext="subjectAltName=IP.1:''${ip1},DNS.1:''${name}"
-      else
-        alttext="subjectAltName=DNS.1:''${name}"
-      fi
-      ${pkgs.openssl}/bin/openssl genpkey -algorithm ED25519 -out "$path"/"$name"-key.pem
-      ${pkgs.openssl}/bin/openssl req -new -key "$path"/"$name"-key.pem -out "$path"/"$name"-csr.pem -subj "/CN=''${name}" -addext "$alttext" -addext "$usage"
-      ${pkgs.openssl}/bin/openssl x509 -req -in "$path"/"$name"-csr.pem -CA $ca_dir/ca-cert.pem -CAkey $ca_dir/ca-key.pem -CAcreateserial -out "$path"/"$name"-cert.pem -extfile <(printf "%s" "$alttext") -days $VALIDITY
-      cp $ca_dir/ca-cert.pem "$path"/ca-cert.pem
-      if [ "$(whoami)" == "root" ]; then
-        if [ "$name" == "ghaf-host.ghaf" ]; then
-          chown -R root:root "$path"
-          chmod -R 400 "$path"
-        else
-          chown -R microvm:kvm "$path"
-          chmod -R 770 "$path"
-        fi
-        rm "$path"/"$name"-csr.pem
-      else
-        echo "Insecure mode! Certificate for ''${name} have wrong permissions. Call as root on host to be secure"
-      fi
+
+      # Initialize DNS and IP entry
+      alttext="subjectAltName=DNS.1:''${name}"
+      shift
+      count=1
+      for ip in "$@"; do
+        alttext+=",IP.$count:$ip"
+        count=$((count+1))
+      done
+
+      # Generate and sign key-cert pair
+      ${pkgs.openssl}/bin/openssl genpkey -algorithm ED25519 -out "$path"/key.pem
+      ${pkgs.openssl}/bin/openssl req -new -key "$path"/key.pem -out "$path"/"$name"-csr.pem -subj "/CN=''${name}" -addext "$alttext" -addext "$EXT_KEY_USAGE"
+      ${pkgs.openssl}/bin/openssl x509 -req -in "$path"/"$name"-csr.pem -CA $CA_DIRECTORY/ca-cert.pem -CAkey $CA_DIRECTORY/ca-key.pem -CAcreateserial -out "$path"/cert.pem -extfile <(printf "%s" "$alttext") -days $VALIDITY
+
+      # Copy CA certificate
+      cp $CA_DIRECTORY/ca-cert.pem "$path"/ca-cert.pem
+
+      # Set permissions
+      chown -R root:root "$path"
+      chmod -R 500 "$path"
+
+      # Cleanup
+      rm "$path"/"$name"-csr.pem
   }
+
   # Create CA
-  VALIDITY=3650
-  CONSTRAINTS="basicConstraints=critical,CA:true,pathlen:1"
-  ca_dir="$target/ca.ghaf"
-  mkdir -p $ca_dir
-  ${pkgs.openssl}/bin/openssl genpkey -algorithm ED25519 -out $ca_dir/ca-key.pem
-  ${pkgs.openssl}/bin/openssl req -x509 -new -key $ca_dir/ca-key.pem -out $ca_dir/ca-cert.pem -subj "/CN=GivcCA" -addext $CONSTRAINTS -days $VALIDITY
-  if [ "$(whoami)" == "root" ]; then
-    chmod -R 400 $ca_dir
-  fi
-  # Generate keys/certificates
-  gen_cert "ghaf-host" "192.168.101.2" "$acl_prefix:host,acl_prefix:agent"
-  gen_cert "admin-vm" "192.168.101.10"
-  gen_cert "net-vm" "192.168.101.1"
-  gen_cert "gui-vm" "192.168.101.3"
-  gen_cert "ids-vm" "192.168.101.4"
-  gen_cert "audio-vm" "192.168.101.5"
-  gen_cert "element-vm" "192.168.100.253"
-  gen_cert "chromium-vm"
-  gen_cert "gala-vm"
-  gen_cert "zathura-vm"
-  gen_cert "appflowy-vm"
+  mkdir -p $CA_DIRECTORY
+  ${pkgs.openssl}/bin/openssl genpkey -algorithm ED25519 -out $CA_DIRECTORY/ca-key.pem
+  ${pkgs.openssl}/bin/openssl req -x509 -new -key $CA_DIRECTORY/ca-key.pem -out $CA_DIRECTORY/ca-cert.pem -subj "/CN=$CA_NAME" -addext $CA_CONSTRAINTS -days $VALIDITY
+  chmod -R 400 $CA_DIRECTORY
+
+  # Generate agent keys/certificates
+  ${lib.concatStringsSep "\n" (
+    map (entry: "gen_cert ${entry.name} ${entry.addr}") (
+      lib.filter (agent: agent.name != adminTlsName) agents
+    )
+  )}
+
+  # Generate admin key/certificate
+  gen_cert ${adminTlsName} ${lib.concatMapStringsSep " " (e: e.addr) adminAddresses}
+
+  # Cleanup
+  rm -r $CA_DIRECTORY
+
+  /run/current-system/systemd/bin/systemd-notify --ready
 ''

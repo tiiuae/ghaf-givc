@@ -20,6 +20,7 @@ let
     lists
     concatStringsSep
     optionalString
+    optionalAttrs
     optionals
     ;
   inherit (builtins) toJSON;
@@ -32,10 +33,11 @@ in
 {
   options.givc.sysvm = {
     enable = mkEnableOption "Enable givc-sysvm module.";
+    enableUserTlsAccess = mkEnableOption "Enable users to access TLS keys to run client.";
 
-    agent = mkOption {
+    transport = mkOption {
       description = ''
-        Host configuration for the system VM.
+        Transport configuration for the system VM.
       '';
       type = transportSubmodule;
     };
@@ -134,7 +136,19 @@ in
       wantedBy = [ "network.target" ];
     };
 
-    systemd.services."givc-${cfg.agent.name}" = {
+    systemd.services.givc-user-key-setup = optionalAttrs cfg.enableUserTlsAccess {
+      description = "Prepare givc keys and certificates for user access";
+      enable = true;
+      wantedBy = [ "local-fs.target" ];
+      after = [ "local-fs.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.rsync}/bin/rsync -r --chown=root:users --chmod=g+rx /etc/givc /run";
+        Restart = "no";
+      };
+    };
+
+    systemd.services."givc-${cfg.transport.name}" = {
       description = "GIVC remote service manager for system VMs";
       enable = true;
       after = [ "givc-setup.target" ];
@@ -148,7 +162,7 @@ in
       };
       path = [ pkgs.dbus ];
       environment = {
-        "AGENT" = "${toJSON cfg.agent}";
+        "AGENT" = "${toJSON cfg.transport}";
         "DEBUG" = "${trivial.boolToString cfg.debug}";
         "TYPE" = "8";
         "SUBTYPE" = "9";
@@ -156,7 +170,7 @@ in
         "HWID" = "${trivial.boolToString cfg.hwidService}";
         "HWID_IFACE" = "${cfg.hwidIface}";
         "SOCKET_PROXY" = "${optionalString (cfg.socketProxy != null) (toJSON cfg.socketProxy)}";
-        "PARENT" = "microvm@${cfg.agent.name}.service";
+        "PARENT" = "microvm@${cfg.transport.name}.service";
         "SERVICES" = "${concatStringsSep " " cfg.services}";
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
@@ -164,7 +178,7 @@ in
     };
     networking.firewall.allowedTCPPorts =
       let
-        agentPort = strings.toInt cfg.agent.port;
+        agentPort = strings.toInt cfg.transport.port;
         proxyPorts = optionals (cfg.socketProxy != null) (
           map (p: (strings.toInt p.transport.port)) cfg.socketProxy
         );

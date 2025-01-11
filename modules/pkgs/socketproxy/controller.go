@@ -25,7 +25,7 @@ func NewSocketProxyController(socket string, runAsServer bool) (*SocketProxyCont
 		// Remove socket file if it exists
 		err := os.Remove(socket)
 		if err != nil {
-			log.Warnf("Error removing socket: %v", err)
+			log.Infof("Cannot remove socket: %v", err)
 		}
 
 		// Listen on unix socket
