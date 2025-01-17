@@ -204,6 +204,7 @@ impl AdminServiceImpl {
         };
 
         if status.active_state != "active" {
+            debug!("Spawning VM {name}");
             client
                 .start_remote(name.to_string())
                 .await
@@ -313,6 +314,7 @@ impl AdminServiceImpl {
         let vm_name = format_vm_name(&name, vm);
         let systemd_agent_name = format_service_name(&name, vm);
 
+        self.start_vm(&vm_name).await?;
         info!("Starting app {name} on {vm_name} via {systemd_agent_name}");
 
         // Entry unused in "go" code
