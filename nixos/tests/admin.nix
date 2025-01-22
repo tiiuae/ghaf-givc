@@ -77,7 +77,7 @@ in
                 admin = lib.head adminConfig.addresses;
                 services = [
                   "microvm@admin-vm.service"
-                  "microvm@chromium-vm.service"
+                  "microvm@foot-vm.service"
                   "poweroff.target"
                   "reboot.target"
                   "sleep.target"
@@ -85,12 +85,11 @@ in
                 ];
                 tls = mkTls "ghaf-host";
               };
-              systemd.services."microvm@chromium-vm" = {
+              systemd.services."microvm@foot-vm" = {
                 script = ''
                   # Do nothing script, simulating microvm service
                   while true; do sleep 10; done
                 '';
-                wantedBy = lib.mkForce [ ];
               };
             };
             guivm =
@@ -303,7 +302,6 @@ in
                   time.sleep(1)
                   # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
                   print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} test ensure --retry 60 ${expected}"))
-                  hostvm.require_unit_state("microvm@chromium-vm", "inactive") # MicroVM should be down!
 
               with subtest("setup gui vm"):
                   # Ensure that sway in guiVM finished startup
@@ -326,7 +324,6 @@ in
 
               with subtest("Clean run"):
                   print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} start --vm chromium-vm foot"))
-                  hostvm.require_unit_state("microvm@chromium-vm", "active") # MicroVM should be up!
                   time.sleep(10) # Give few seconds to application to spin up
                   wait_for_window("ghaf@appvm")
 

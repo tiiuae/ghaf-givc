@@ -108,7 +108,7 @@ in
           }
           // attrsets.optionalAttrs cfg.debug {
             "RUST_BACKTRACE" = "1";
-            "GIVC_LOG" = "info,givc=debug";
+            "GIVC_LOG" = "debug";
           };
       };
     networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) cfg.addresses);
