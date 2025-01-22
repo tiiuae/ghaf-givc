@@ -32,13 +32,7 @@ pkgs.writeShellScriptBin "givc-gen-certs" ''
 
       # Initialize name and storage path
       name="$1"
-      case "$name" in
-        ${generatorHostName})
-          path="/etc/givc"
-          ;;
-        *)
-          path="''${STORAGE_DIR}/''${name}/etc/givc"
-      esac
+      path="/tmp/givc.tmp"
       [[ -d "$path" ]] && rm -r "$path"
       mkdir -p "$path"
 
@@ -59,12 +53,35 @@ pkgs.writeShellScriptBin "givc-gen-certs" ''
       # Copy CA certificate
       cp $CA_DIRECTORY/ca-cert.pem "$path"/ca-cert.pem
 
+      # Delete CSR
+      rm "$path"/"$name"-csr.pem
+
       # Set permissions
       chown -R root:root "$path"
       chmod -R 500 "$path"
 
+      # Store key/cert in image or directory
+      case "$name" in
+        ${generatorHostName})
+          [[ -d "/etc/givc" ]] && rm -r "/etc/givc"
+          mkdir -p "/etc/givc"
+          cp -r "$path" "/etc/givc"
+          ;;
+        *)
+          image="''${STORAGE_DIR}/''${name}.img"
+          [[ -f "$image" ]] && rm -r "$image"
+          ${pkgs.coreutils}/bin/truncate -s 2M "$image"
+          ${pkgs.e2fsprogs}/bin/mkfs.ext4 -L "givc-''${name}" "$image"
+          mnt="/tmp/mnt"
+          [[ -d "$mnt" ]] && rm -r "$mnt"
+          mkdir -p "$mnt"
+          ${pkgs.mount}/bin/mount "$image" "$mnt"
+          cp -r "$path"/* "$mnt"
+          ${pkgs.umount}/bin/umount "$mnt"
+      esac
+
       # Cleanup
-      rm "$path"/"$name"-csr.pem
+      rm -r "$path"
   }
 
   # Create CA
@@ -85,6 +102,9 @@ pkgs.writeShellScriptBin "givc-gen-certs" ''
 
   # Cleanup
   rm -r $CA_DIRECTORY
+
+  # Create lock file
+  ${pkgs.coreutils}/bin/install -m 000 /dev/null /etc/givc/tls.lock
 
   /run/current-system/systemd/bin/systemd-notify --ready
 ''
