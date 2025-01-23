@@ -65,7 +65,7 @@ pkgs.writeShellScriptBin "givc-gen-certs" ''
         ${generatorHostName})
           [[ -d "/etc/givc" ]] && rm -r "/etc/givc"
           mkdir -p "/etc/givc"
-          cp -r "$path" "/etc/givc"
+          cp -r "$path"/* "/etc/givc"
           ;;
         *)
           image="''${STORAGE_DIR}/''${name}.img"
