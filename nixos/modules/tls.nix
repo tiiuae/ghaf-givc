@@ -101,7 +101,6 @@ in
             StandardOutput = "journal";
             StandardError = "journal";
             ExecStart = "${givcCertGenerator}/bin/givc-gen-certs ${cfg.storagePath}";
-            ExecStartPost = "${pkgs.coreutils}/bin/install -m 000 /dev/null /etc/givc/tls.lock";
           };
         };
     };
