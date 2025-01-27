@@ -1,0 +1,14 @@
+// Copyright 2024 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+option go_package = "api/stats";
+import "stats_message/stats_message.proto";
+
+package stats;
+
+message StatsRequest {
+}
+
+service StatsService {
+    rpc GetStats(StatsRequest) returns (stats_message.StatsResponse) {}
+}

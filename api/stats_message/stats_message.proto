@@ -1,0 +1,16 @@
+// Copyright 2024 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+option go_package = "givc/modules/api/stats_message";
+package stats_message;
+
+message MemoryStats {
+    uint64 Total = 1;
+    uint64 Free = 2;
+    uint64 Available = 3;
+    uint64 Cached = 4;
+}
+
+message StatsResponse {
+    MemoryStats Memory = 1;
+}

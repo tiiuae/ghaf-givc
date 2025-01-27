@@ -20,6 +20,7 @@ import (
 	givc_serviceclient "givc/modules/pkgs/serviceclient"
 	givc_servicemanager "givc/modules/pkgs/servicemanager"
 	givc_socketproxy "givc/modules/pkgs/socketproxy"
+	givc_statsmanager "givc/modules/pkgs/statsmanager"
 	givc_types "givc/modules/pkgs/types"
 	givc_util "givc/modules/pkgs/utility"
 	givc_wifimanager "givc/modules/pkgs/wifimanager"
@@ -243,6 +244,12 @@ func main() {
 		}
 		grpcServices = append(grpcServices, hwidServer)
 	}
+
+	statsServer, err := givc_statsmanager.NewStatsServer()
+	if err != nil {
+		log.Fatalf("Cannot create statistics server: %v", err)
+	}
+	grpcServices = append(grpcServices, statsServer)
 
 	// Create socket proxy server (optional)
 	for _, proxyConfig := range proxyConfigs {

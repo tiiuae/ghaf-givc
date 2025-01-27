@@ -7,6 +7,7 @@ use tracing::debug;
 
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
+pub use givc_common::pb::stats_message::StatsResponse;
 pub use givc_common::query::{Event, QueryResult};
 use givc_common::types::*;
 
@@ -231,6 +232,15 @@ impl AdminClient {
             .await
             .rewrap_err()?;
         Ok(())
+    }
+
+    pub async fn get_stats(&self, vm_name: String) -> anyhow::Result<StatsResponse> {
+        self.connect_to()
+            .await?
+            .get_stats(pb::admin::StatsRequest { vm_name })
+            .await
+            .map(tonic::Response::into_inner)
+            .rewrap_err()
     }
 
     pub async fn watch(&self) -> anyhow::Result<WatchResult> {

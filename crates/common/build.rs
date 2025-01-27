@@ -1,20 +1,13 @@
 use std::env;
 use std::path::PathBuf;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    tonic_build::configure()
-        .file_descriptor_set_path(out_dir.join("admin_descriptor.bin"))
-        .compile_protos(&["api/admin/admin.proto"], &["admin"])
-        .unwrap();
+    for pkg in ["admin", "locale", "systemd", "stats", "stats_message"] {
+        tonic_build::configure()
+            .file_descriptor_set_path(out_dir.join(format!("{pkg}_descriptor.bin")))
+            .compile_protos(&[&format!("api/{pkg}/{pkg}.proto")], &["api"])?;
+    }
 
-    tonic_build::configure()
-        .file_descriptor_set_path(out_dir.join("locale_descriptor.bin"))
-        .compile_protos(&["api/locale/locale.proto"], &["locale"])
-        .unwrap();
-
-    tonic_build::configure()
-        .file_descriptor_set_path(out_dir.join("systemd_descriptor.bin"))
-        .compile_protos(&["api/systemd/systemd.proto"], &["systemd"])
-        .unwrap();
+    Ok(())
 }

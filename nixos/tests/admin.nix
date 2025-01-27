@@ -364,6 +364,9 @@ in
                   print(hostvm.succeed("${cli} ${cliArgs} set-timezone UTC"))
                   adminvm.wait_for_file("/etc/timezone.conf")
 
+              with subtest("get stats"):
+                  print(hostvm.succeed("${cli} ${cliArgs} get-stats app-vm"))
+
               with subtest("Clean run"):
                   print(hostvm.succeed("${cli} ${cliArgs} start --vm app-vm foot"))
                   time.sleep(10) # Give few seconds to application to spin up

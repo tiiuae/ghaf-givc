@@ -11,6 +11,7 @@ package admin
 
 import (
 	context "context"
+	stats_message "givc/modules/api/stats_message"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -29,6 +30,7 @@ const (
 	AdminService_StopApplication_FullMethodName   = "/admin.AdminService/StopApplication"
 	AdminService_SetLocale_FullMethodName         = "/admin.AdminService/SetLocale"
 	AdminService_SetTimezone_FullMethodName       = "/admin.AdminService/SetTimezone"
+	AdminService_GetStats_FullMethodName          = "/admin.AdminService/GetStats"
 	AdminService_Poweroff_FullMethodName          = "/admin.AdminService/Poweroff"
 	AdminService_Reboot_FullMethodName            = "/admin.AdminService/Reboot"
 	AdminService_Suspend_FullMethodName           = "/admin.AdminService/Suspend"
@@ -48,6 +50,7 @@ type AdminServiceClient interface {
 	StopApplication(ctx context.Context, in *ApplicationRequest, opts ...grpc.CallOption) (*ApplicationResponse, error)
 	SetLocale(ctx context.Context, in *LocaleRequest, opts ...grpc.CallOption) (*Empty, error)
 	SetTimezone(ctx context.Context, in *TimezoneRequest, opts ...grpc.CallOption) (*Empty, error)
+	GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*stats_message.StatsResponse, error)
 	Poweroff(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
 	Reboot(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
 	Suspend(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
@@ -134,6 +137,16 @@ func (c *adminServiceClient) SetTimezone(ctx context.Context, in *TimezoneReques
 	return out, nil
 }
 
+func (c *adminServiceClient) GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*stats_message.StatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(stats_message.StatsResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) Poweroff(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
@@ -214,6 +227,7 @@ type AdminServiceServer interface {
 	StopApplication(context.Context, *ApplicationRequest) (*ApplicationResponse, error)
 	SetLocale(context.Context, *LocaleRequest) (*Empty, error)
 	SetTimezone(context.Context, *TimezoneRequest) (*Empty, error)
+	GetStats(context.Context, *StatsRequest) (*stats_message.StatsResponse, error)
 	Poweroff(context.Context, *Empty) (*Empty, error)
 	Reboot(context.Context, *Empty) (*Empty, error)
 	Suspend(context.Context, *Empty) (*Empty, error)
@@ -250,6 +264,9 @@ func (UnimplementedAdminServiceServer) SetLocale(context.Context, *LocaleRequest
 }
 func (UnimplementedAdminServiceServer) SetTimezone(context.Context, *TimezoneRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetTimezone not implemented")
+}
+func (UnimplementedAdminServiceServer) GetStats(context.Context, *StatsRequest) (*stats_message.StatsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetStats not implemented")
 }
 func (UnimplementedAdminServiceServer) Poweroff(context.Context, *Empty) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Poweroff not implemented")
@@ -416,6 +433,24 @@ func _AdminService_SetTimezone_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetStats(ctx, req.(*StatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_Poweroff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
 	if err := dec(in); err != nil {
@@ -551,6 +586,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetTimezone",
 			Handler:    _AdminService_SetTimezone_Handler,
+		},
+		{
+			MethodName: "GetStats",
+			Handler:    _AdminService_GetStats_Handler,
 		},
 		{
 			MethodName: "Poweroff",
