@@ -76,9 +76,11 @@ in
       let
         tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
         unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
+        vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
         args = concatStringsSep " " (
           (map (addr: "--listen-tcp ${addr.addr}:${addr.port}") tcpAddresses)
           ++ (map (addr: "--listen-unix ${addr.addr}") unixAddresses)
+          ++ (map (addr: "--vsock ${addr.addr}:${addr.port}") vsockAddresses)
         );
       in
       {

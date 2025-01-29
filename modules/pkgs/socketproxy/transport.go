@@ -83,7 +83,7 @@ func (s *SocketProxyServer) StreamToRemote(ctx context.Context, cfg *givc_types.
 	defer s.socketController.Close()
 
 	// Setup and dial GRPC client
-	grpcClientConn, err := givc_grpc.NewClient(cfg, true)
+	grpcClientConn, err := givc_grpc.NewClient(cfg)
 	if err != nil {
 		return err
 	}

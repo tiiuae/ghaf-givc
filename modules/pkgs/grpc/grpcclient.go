@@ -5,15 +5,19 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"net"
+	"strings"
 	"time"
 
 	"givc/modules/pkgs/types"
 	givc_util "givc/modules/pkgs/utility"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
+	vsock "github.com/linuxkit/virtsock/pkg/vsock"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+
 	grpc_codes "google.golang.org/grpc/codes"
 	grpc_creds "google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -21,13 +25,11 @@ import (
 )
 
 var (
-	MAX_RETRY_SHORT = uint(10)
-	MAX_RETRY_LONG  = uint(60)
-	TIMEOUT_SHORT   = 50 * time.Millisecond
-	TIMEOUT_LONG    = 1 * time.Second
+	MAX_RETRY = uint(3)
+	TIMEOUT   = 150 * time.Millisecond
 )
 
-func NewClient(cfg *types.EndpointConfig, allowLongWaits bool) (*grpc.ClientConn, error) {
+func NewClient(cfg *types.EndpointConfig) (*grpc.ClientConn, error) {
 
 	// @TODO Input validation
 
@@ -46,23 +48,10 @@ func NewClient(cfg *types.EndpointConfig, allowLongWaits bool) (*grpc.ClientConn
 	}
 	options = append(options, tlsCredentials)
 
-	// Retry options
-	retries := MAX_RETRY_SHORT
-	timeout := TIMEOUT_SHORT
-	if allowLongWaits {
-		retries = MAX_RETRY_LONG
-		timeout = TIMEOUT_LONG
-	}
-	retryOpts := []retry.CallOption{
-		retry.WithCodes(grpc_codes.NotFound, grpc_codes.Unavailable, grpc_codes.Aborted),
-		retry.WithMax(retries),
-		retry.WithPerRetryTimeout(timeout),
-	}
-
 	// Setup GRPC config
 	interceptors := []grpc.UnaryClientInterceptor{
 		withOutgoingContext,
-		retry.UnaryClientInterceptor(retryOpts...),
+		withRetryOpts(),
 	}
 	options = append(options, grpc.WithChainUnaryInterceptor(interceptors...))
 
@@ -71,6 +60,9 @@ func NewClient(cfg *types.EndpointConfig, allowLongWaits bool) (*grpc.ClientConn
 	switch cfg.Transport.Protocol {
 	case "tcp":
 		addr = cfg.Transport.Address + ":" + cfg.Transport.Port
+	case "vsock":
+		addr = "passthrough:vsock:" + cfg.Transport.Address + ":" + cfg.Transport.Port
+		options = append(options, grpc.WithContextDialer(vsockDialer))
 	case "unix":
 		addr = cfg.Transport.Address
 	default:
@@ -86,8 +78,34 @@ func withOutgoingContext(ctx context.Context, method string, req, resp interface
 	if md, ok := grpc_metadata.FromOutgoingContext(ctx); ok {
 		outmd = md.Copy()
 	}
-
 	ctx = grpc_metadata.NewOutgoingContext(context.Background(), outmd)
 
 	return invoker(ctx, method, req, resp, cc, opts...)
+}
+
+func withRetryOpts() grpc.UnaryClientInterceptor {
+	retryOpts := []retry.CallOption{
+		retry.WithCodes(grpc_codes.NotFound, grpc_codes.Unavailable, grpc_codes.Aborted),
+		retry.WithMax(MAX_RETRY),
+		retry.WithPerRetryTimeout(TIMEOUT),
+	}
+	return retry.UnaryClientInterceptor(retryOpts...)
+}
+
+func vsockDialer(ctx context.Context, addr string) (net.Conn, error) {
+	log.Infof("Dialing vsock: %s", addr)
+
+	cid, port, err := givc_util.ParseVsockAddress(strings.TrimPrefix(addr, "vsock:"))
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse vsock address: %v", err)
+	}
+	dialConn, err := vsock.Dial(cid, port)
+	if err != nil {
+		return nil, fmt.Errorf("unable to connect to vsock: %s", addr)
+	}
+	conn, ok := dialConn.(net.Conn)
+	if !ok {
+		return nil, fmt.Errorf("unable to convert vsock connection to net.Conn")
+	}
+	return conn, nil
 }
