@@ -45,13 +45,29 @@ struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
-enum Commands {
-    Start {
+enum StartSub {
+    App {
         app: String,
         #[arg(long)]
-        vm: Option<String>,
+        vm: String,
         #[arg(last = true)]
         args: Vec<String>,
+    },
+    Vm {
+        vm: String,
+    },
+    Service {
+        servicename: String,
+        #[arg(long)]
+        vm: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    Start {
+        #[command(subcommand)]
+        start: StartSub,
     },
     Stop {
         app: String,
@@ -154,7 +170,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Test { test } => test_subcommands(test, admin).await?,
-        Commands::Start { app, vm, args } => admin.start(app, vm, args).await?,
+        Commands::Start { start } => match start {
+            StartSub::App { app, vm, args } => admin.start(app, Some(vm), args).await?,
+            StartSub::Vm { .. } => unimplemented!("VM"),
+            StartSub::Service { .. } => unimplemented!("Service"),
+        },
         Commands::Stop { app } => admin.stop(app).await?,
         Commands::Pause { app } => admin.pause(app).await?,
         Commands::Resume { app } => admin.resume(app).await?,
