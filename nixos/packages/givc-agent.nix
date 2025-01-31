@@ -6,9 +6,9 @@ let
 in
 pkgs.buildGoModule {
   inherit pname;
-  version = "0.0.3";
+  version = "0.0.4";
   inherit src;
-  vendorHash = "sha256-EgrJbTYT6iLv0qq9JiBKpoIqIgIptFhByQDyJSeznhc=";
+  vendorHash = "sha256-Qn5iLO/WTlR4H6NPdAhYKpc2voH9HdBagqbDgxzoklU=";
   subPackages = [
     "modules/cmd/${pname}"
   ];

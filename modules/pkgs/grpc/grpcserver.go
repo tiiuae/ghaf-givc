@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"givc/modules/pkgs/types"
+	givc_util "givc/modules/pkgs/utility"
 	"net"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
+	vsock "github.com/linuxkit/virtsock/pkg/vsock"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -86,11 +88,19 @@ func (s *GrpcServer) ListenAndServe(ctx context.Context, started chan struct{}) 
 	var err error
 	var listener net.Listener
 	var addr string
+	var cid uint32
+	var port uint32
 
 	// Set address
 	switch s.config.Transport.Protocol {
 	case "tcp":
 		addr = s.config.Transport.Address + ":" + s.config.Transport.Port
+	case "vsock":
+		addr = s.config.Transport.Address + ":" + s.config.Transport.Port
+		cid, port, err = givc_util.ParseVsockAddress(addr)
+		if err != nil {
+			return fmt.Errorf("unable to parse vsock address: %v", err)
+		}
 	case "unix":
 		addr = s.config.Transport.Address
 	default:
@@ -98,10 +108,14 @@ func (s *GrpcServer) ListenAndServe(ctx context.Context, started chan struct{}) 
 	}
 
 	for i := 0; i < LISTENER_RETRIES; i++ {
-		listener, err = net.Listen(s.config.Transport.Protocol, addr)
+		if s.config.Transport.Protocol == "vsock" {
+			listener, err = vsock.Listen(cid, port)
+		} else {
+			listener, err = net.Listen(s.config.Transport.Protocol, addr)
+		}
 		if err != nil {
 			time.Sleep(LISTENER_WAIT_TIME)
-			log.WithFields(log.Fields{"addr": addr, "err": err}).Info("Error binding address for GRPC server, retrying...")
+			log.WithFields(log.Fields{"addr": addr, "err": err}).Info("Error starting listener for GRPC server, retrying...")
 			continue
 		}
 		break

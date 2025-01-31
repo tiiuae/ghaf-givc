@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -172,4 +173,27 @@ func CheckStringInArray(element string, array []string) bool {
 		}
 	}
 	return false
+}
+
+func ParseVsockAddress(addr string) (uint32, uint32, error) {
+
+	if addr == "" {
+		return 0, 0, fmt.Errorf("vsock address is empty")
+	}
+	address := strings.Split(addr, ":")
+	if len(address) != 2 {
+		return 0, 0, fmt.Errorf("invalid vsock address format, expect 'CID:Port', got: %s", addr)
+	}
+	ui32, err := strconv.ParseUint(address[0], 10, 32)
+	if err != nil {
+		return 0, 0, fmt.Errorf("unable to convert address to integer: %v", err)
+	}
+	cid := uint32(ui32)
+	ui32, err = strconv.ParseUint(address[1], 10, 32)
+	if err != nil {
+		return 0, 0, fmt.Errorf("unable to convert port to integer: %v", err)
+	}
+	port := uint32(ui32)
+
+	return cid, port, nil
 }
