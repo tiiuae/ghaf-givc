@@ -8,6 +8,8 @@ import (
 	"givc/modules/pkgs/types"
 	"givc/modules/pkgs/utility"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -26,6 +28,36 @@ func validateServiceName(serviceName string) error {
 	)
 }
 
+func validateFilePath(filePathString string, directories []string) error {
+	err := validation.Validate(
+		filePathString,
+		validation.Required,
+		validation.Match(regexp.MustCompile(`^/[-a-zA-Z0-9_/\.\ \(\)\[\]\{\}]+$`)),
+	)
+	if err != nil {
+		log.Warnf("Invalid file path in args: %s Error: %v", filePathString, err)
+		return fmt.Errorf("failure parsing file path")
+	}
+	re := regexp.MustCompile(`\.\./`)
+	if re.MatchString(filePathString) {
+		log.Warnf("Invalid file path in args: %s", filePathString)
+		return fmt.Errorf("failure parsing file path")
+	}
+	// Extract path and check argument
+	if filepath.Clean(filePathString) != filePathString {
+		log.Warnf("Error cleaning file path: %s", filePathString)
+		return fmt.Errorf("failure parsing file path")
+	}
+	// Verify that file exists
+	for _, dir := range directories {
+		if strings.HasPrefix(filePathString, dir) {
+			_, err := os.Stat(filePathString)
+			return err
+		}
+	}
+	return fmt.Errorf("failure parsing file path")
+}
+
 func validateUrl(urlString string) error {
 	err := validation.Validate(
 		urlString,
@@ -33,28 +65,28 @@ func validateUrl(urlString string) error {
 		is.URL,
 	)
 	if err != nil {
-		log.Warnf("Invalid URL in args: %v Error: %v", urlString, err)
+		log.Warnf("Invalid URL in args: %s Error: %v", urlString, err)
 		return fmt.Errorf("failure in parsing URL")
 	}
 
 	// Disallow some more shenanigans
 	reqUrl, err := url.Parse(urlString)
 	if err != nil {
-		log.Warnf("Invalid URL in args: %v", urlString)
+		log.Warnf("Invalid URL in args: %s", urlString)
 		return fmt.Errorf("failure in parsing URL")
 	}
 	if reqUrl.Scheme != "https" && reqUrl.Scheme != "http" {
-		log.Warnf("Non-HTTP(S) scheme in URL: %v", reqUrl.Scheme)
+		log.Warnf("Non-HTTP(S) scheme in URL: %s", reqUrl.Scheme)
 		return fmt.Errorf("failure in parsing URL")
 	}
 	if reqUrl.User != nil {
-		log.Warnf("User info in URL: %v", reqUrl.User)
+		log.Warnf("User info in URL: %s", reqUrl.User)
 		return fmt.Errorf("failure in parsing URL")
 	}
 	return nil
 }
 
-func validateApplicationArgs(args []string, allowedArgs []string) error {
+func validateApplicationArgs(args []string, allowedArgs []string, directories []string) error {
 
 	checkAllowed := func(err error, argType string, allowedArgs []string) bool {
 		if err == nil {
@@ -79,6 +111,12 @@ func validateApplicationArgs(args []string, allowedArgs []string) error {
 
 		err = validateUrl(arg)
 		valid = checkAllowed(err, types.APP_ARG_URL, allowedArgs)
+		if valid {
+			continue
+		}
+
+		err = validateFilePath(arg, directories)
+		valid = checkAllowed(err, types.APP_ARG_FILE, allowedArgs)
 		if valid {
 			continue
 		}
@@ -121,6 +159,10 @@ func ParseApplicationManifests(jsonApplicationString string) ([]types.Applicatio
 				switch argType {
 				case types.APP_ARG_FLAG:
 				case types.APP_ARG_URL:
+				case types.APP_ARG_FILE:
+					if app.Directories == nil {
+						return nil, fmt.Errorf("file argument given but no directories specified")
+					}
 				default:
 					return nil, fmt.Errorf("application argument type not supported")
 				}
@@ -147,7 +189,7 @@ func ValidateAppUnitRequest(serviceName string, appArgs []string, applications [
 
 			// Validate application args
 			if appArgs != nil {
-				err = validateApplicationArgs(appArgs, app.Args)
+				err = validateApplicationArgs(appArgs, app.Args, app.Directories)
 				if err != nil {
 					return err
 				}

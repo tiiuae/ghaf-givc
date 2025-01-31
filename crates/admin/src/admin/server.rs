@@ -333,24 +333,24 @@ impl AdminServiceImpl {
         let app_name = self.registry.create_unique_entry_name(&name);
         client.start_application(app_name.clone(), req.args).await?;
         let status = client.get_remote_status(app_name.clone()).await?;
-        if status.active_state != "active" {
-            bail!("cannot start unit: {app_name}")
+        if status.active_state == "active" {
+            let app_entry = RegistryEntry {
+                name: app_name,
+                status,
+                watch: true,
+                r#type: UnitType {
+                    vm: VmType::AppVM,
+                    service: ServiceType::App,
+                },
+                placement: Placement::Managed {
+                    by: systemd_agent_name,
+                    vm: vm_name,
+                },
+            };
+            self.registry.register(app_entry);
+        } else {
+            info!("Failed to start application {name}, or command has finished")
         };
-
-        let app_entry = RegistryEntry {
-            name: app_name,
-            status,
-            watch: true,
-            r#type: UnitType {
-                vm: VmType::AppVM,
-                service: ServiceType::App,
-            },
-            placement: Placement::Managed {
-                by: systemd_agent_name,
-                vm: vm_name,
-            },
-        };
-        self.registry.register(app_entry);
         Ok(())
     }
 }

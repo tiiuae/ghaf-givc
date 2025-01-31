@@ -4,5 +4,6 @@
   imports = [
     ./admin.nix
     ./dbus.nix
+    ./app.nix
   ];
 }

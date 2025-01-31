@@ -50,7 +50,14 @@ in
           List of allowed argument types for the application. Currently implemented argument types:
           - 'url': URL provided to the application as string
           - 'flag': Flag (boolean) provided to the application as string
+          - 'file': File path provided to the application as string
+          If the file argument is used, a list of allowed directories must be provided.
         '';
+        type = types.listOf types.str;
+        default = [ ];
+      };
+      directories = mkOption {
+        description = "List of directories (absolute path) to be whitelisted and used with file arguments.";
         type = types.listOf types.str;
         default = [ ];
       };

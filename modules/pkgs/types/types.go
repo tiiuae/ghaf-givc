@@ -50,9 +50,10 @@ type RegistryEntry struct {
 }
 
 type ApplicationManifest struct {
-	Name    string   `json:"name"`
-	Command string   `json:"command"`
-	Args    []string `json:"args,omitempty"`
+	Name        string   `json:"name"`
+	Command     string   `json:"command"`
+	Args        []string `json:"args,omitempty"`
+	Directories []string `json:"directories,omitempty"`
 }
 
 type TlsConfigJson struct {
@@ -88,4 +89,5 @@ const (
 const (
 	APP_ARG_FLAG = "flag"
 	APP_ARG_URL  = "url"
+	APP_ARG_FILE = "file"
 )
