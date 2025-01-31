@@ -328,7 +328,9 @@ impl AdminServiceImpl {
                     .context("after starting VM")?
             }
         };
-        let endpoint = self.agent_endpoint(&systemd_agent_name)?;
+        let endpoint = self
+            .agent_endpoint(&systemd_agent_name)
+            .with_context(|| format!("while lookung up {systemd_agent_name} for {vm_name}"))?;
         let client = SystemDClient::new(endpoint);
         let app_name = self.registry.create_unique_entry_name(&name);
         client.start_application(app_name.clone(), req.args).await?;
