@@ -49,14 +49,20 @@ in
       example = [
         {
           name = "app";
-          command = "/bin/bash";
-          args = [ "url" ];
+          command = "/run/current-system/sw/bin/app";
+          args = [
+            "url"
+            "file"
+          ];
+          directories = [ "/tmp" ];
         }
       ];
     };
 
     uid = mkOption {
-      description = "Limit running this agent only in session of user with this UID.";
+      description = ''
+        Limit running this agent only in session of user with this UID.
+      '';
       type = types.int;
       default = 1000;
     };

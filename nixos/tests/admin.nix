@@ -8,7 +8,6 @@
 }:
 let
   tls = true;
-  snakeoil = ./snakeoil;
   addrs = {
     host = "192.168.101.2";
     adminvm = "192.168.101.10";
@@ -27,12 +26,6 @@ let
     ];
   };
   admin = lib.head adminConfig.addresses;
-  mkTls = name: {
-    enable = tls;
-    caCertPath = lib.mkForce "${snakeoil}/${name}/ca-cert.pem";
-    certPath = lib.mkForce "${snakeoil}/${name}/${name}-cert.pem";
-    keyPath = lib.mkForce "${snakeoil}/${name}/${name}-key.pem";
-  };
 in
 {
   perSystem =
@@ -42,7 +35,16 @@ in
         module = {
           nodes = {
             adminvm = {
-              imports = [ self.nixosModules.admin ];
+              imports = [
+                self.nixosModules.admin
+                ./snakeoil/gen-test-certs.nix
+              ];
+
+              # TLS parameter
+              givc-tls-test = {
+                inherit (admin) name;
+                addresses = admin.addr;
+              };
 
               networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
                 {
@@ -55,11 +57,21 @@ in
                 debug = true;
                 inherit (adminConfig) name;
                 inherit (adminConfig) addresses;
-                tls = mkTls "admin-vm";
+                tls.enable = tls;
               };
             };
             hostvm = {
-              imports = [ self.nixosModules.host ];
+              imports = [
+                self.nixosModules.host
+                ./snakeoil/gen-test-certs.nix
+              ];
+
+              # TLS parameter
+              givc-tls-test = {
+                name = "ghaf-host";
+                addresses = addrs.host;
+              };
+
               networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
                 {
                   address = addrs.host;
@@ -76,16 +88,15 @@ in
                 };
                 admin = lib.head adminConfig.addresses;
                 services = [
-                  "microvm@admin-vm.service"
-                  "microvm@foot-vm.service"
+                  "microvm@app-vm.service"
                   "poweroff.target"
                   "reboot.target"
                   "sleep.target"
                   "suspend.target"
                 ];
-                tls = mkTls "ghaf-host";
+                tls.enable = tls;
               };
-              systemd.services."microvm@foot-vm" = {
+              systemd.services."microvm@app-vm" = {
                 script = ''
                   # Do nothing script, simulating microvm service
                   while true; do sleep 10; done
@@ -101,8 +112,16 @@ in
                   ;
               in
               {
-                imports = [ self.nixosModules.sysvm ];
+                imports = [
+                  self.nixosModules.sysvm
+                  ./snakeoil/gen-test-certs.nix
+                ];
 
+                # TLS parameter
+                givc-tls-test = {
+                  name = "gui-vm";
+                  addresses = addrs.guivm;
+                };
                 # Setup users and keys
                 users.groups.ghaf = { };
                 users.users = {
@@ -160,7 +179,7 @@ in
                     addr = addrs.guivm;
                     name = "gui-vm";
                   };
-                  tls = mkTls "gui-vm";
+                  tls.enable = tls;
                   services = [
                     "poweroff.target"
                     "reboot.target"
@@ -178,13 +197,23 @@ in
                 inherit (import "${inputs.nixpkgs.outPath}/nixos/tests/ssh-keys.nix" pkgs) snakeOilPublicKey;
               in
               {
-                imports = [ self.nixosModules.appvm ];
+                imports = [
+                  self.nixosModules.appvm
+                  ./snakeoil/gen-test-certs.nix
+                ];
+
+                # TLS parameter
+                givc-tls-test = {
+                  name = "app-vm";
+                  addresses = addrs.appvm;
+                };
                 users.groups.ghaf = { };
                 users.users = {
                   ghaf = {
                     isNormalUser = true;
                     group = "ghaf";
                     openssh.authorizedKeys.keys = [ snakeOilPublicKey ];
+                    linger = true;
                   };
                 };
                 networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
@@ -209,11 +238,16 @@ in
                   enable = true;
                   debug = true;
                   transport = {
-                    name = "chromium-vm";
+                    name = "app-vm";
                     addr = addrs.appvm;
                   };
                   admin = lib.head adminConfig.addresses;
-                  tls = mkTls "chromium-vm";
+                  tls = {
+                    enable = tls;
+                    caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
+                    certPath = lib.mkForce "/etc/givc/cert.pem";
+                    keyPath = lib.mkForce "/etc/givc/key.pem";
+                  };
                   applications = [
                     {
                       name = "foot";
@@ -228,10 +262,18 @@ in
               };
           };
           testScript =
-            { nodes, ... }:
+            _:
             let
               cli = "${self'.packages.givc-admin.cli}/bin/givc-cli";
               expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
+              cliArgs =
+                "--name ${admin.name} --addr ${admin.addr} --port ${admin.port} "
+                + "${
+                  if tls then
+                    "--cacert /etc/givc/ca-cert.pem --cert /etc/givc/cert.pem --key /etc/givc/key.pem"
+                  else
+                    "--notls"
+                }";
             in
             # FIXME: why it so bizzare? (derived from name in cert)
             ''
@@ -301,7 +343,7 @@ in
 
                   time.sleep(1)
                   # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
-                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} test ensure --retry 60 ${expected}"))
+                  print(hostvm.succeed("${cli} ${cliArgs} test ensure --retry 60 ${expected}"))
 
               with subtest("setup gui vm"):
                   # Ensure that sway in guiVM finished startup
@@ -317,13 +359,13 @@ in
                   time.sleep(5) # Give ssh some time to setup remote socket
 
               with subtest("set locale and timezone"):
-                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} set-locale en_US.UTF-8"))
+                  print(hostvm.succeed("${cli} ${cliArgs} set-locale en_US.UTF-8"))
                   adminvm.wait_for_file("/etc/locale-givc.conf")
-                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} set-timezone UTC"))
+                  print(hostvm.succeed("${cli} ${cliArgs} set-timezone UTC"))
                   adminvm.wait_for_file("/etc/timezone.conf")
 
               with subtest("Clean run"):
-                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} start --vm chromium-vm foot"))
+                  print(hostvm.succeed("${cli} ${cliArgs} start --vm app-vm foot"))
                   time.sleep(10) # Give few seconds to application to spin up
                   wait_for_window("ghaf@appvm")
 
@@ -332,34 +374,34 @@ in
                   appvm.succeed("pkill foot")
                   time.sleep(10)
                   # .. then ask to restart
-                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} start --vm chromium-vm foot"))
+                  print(hostvm.succeed("${cli} ${cliArgs} start --vm app-vm foot"))
                   wait_for_window("ghaf@appvm")
 
               with subtest("pause/resume/stop application"):
                   appvm.succeed("pgrep foot")
-                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} pause foot@1.service"))
+                  print(hostvm.succeed("${cli} ${cliArgs} pause foot@1.service"))
                   time.sleep(20)
-                  js = hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} query-list --as-json 2>/dev/null")
+                  js = hostvm.succeed("${cli} ${cliArgs} query-list --as-json 2>/dev/null")
                   foot = by_name("foot@1.service", json.loads(js))
                   assert foot["status"] == "Paused"
                   res = appvm.succeed("cat /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-foot.slice/foot@1.service/cgroup.events")
                   assert "frozen 1" in res
 
-                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} resume foot@1.service"))
+                  print(hostvm.succeed("${cli} ${cliArgs} resume foot@1.service"))
                   time.sleep(20)
                   res = appvm.succeed("cat /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-foot.slice/foot@1.service/cgroup.events")
                   assert "frozen 0" in res
-                  js = hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} query-list --as-json 2>/dev/null")
+                  js = hostvm.succeed("${cli} ${cliArgs} query-list --as-json 2>/dev/null")
                   foot = by_name("foot@1.service", json.loads(js))
                   assert foot["status"] == "Running"
 
-                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} stop foot@1.service"))
+                  print(hostvm.succeed("${cli} ${cliArgs} stop foot@1.service"))
                   appvm.fail("pgrep foot")
 
               with subtest("clear exit and restart"):
-                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} start --vm chromium-vm clearexit"))
+                  print(hostvm.succeed("${cli} ${cliArgs} start --vm app-vm clearexit"))
                   time.sleep(20) # Give few seconds to application to spin up, exit, then start it again
-                  print(hostvm.succeed("${cli} --addr ${admin.addr} --port ${admin.port} --cacert ${nodes.hostvm.givc.host.tls.caCertPath} --cert ${nodes.hostvm.givc.host.tls.certPath} --key ${nodes.hostvm.givc.host.tls.keyPath} ${if tls then "" else "--notls"} --name ${admin.name} start --vm chromium-vm clearexit"))
+                  print(hostvm.succeed("${cli} ${cliArgs} start --vm app-vm clearexit"))
             '';
         };
       };

@@ -8,7 +8,6 @@
 }:
 let
   tls = true;
-  snakeoil = ./snakeoil;
   addrs = {
     netvm = "192.168.101.1";
     audiovm = "192.168.101.2";
@@ -27,12 +26,7 @@ let
       }
     ];
   };
-  mkTls = name: {
-    enable = tls;
-    caCertPath = lib.mkForce "${snakeoil}/${name}/ca-cert.pem";
-    certPath = lib.mkForce "${snakeoil}/${name}/${name}-cert.pem";
-    keyPath = lib.mkForce "${snakeoil}/${name}/${name}-key.pem";
-  };
+  admin = lib.head adminConfig.addresses;
 in
 {
   perSystem = _: {
@@ -42,7 +36,16 @@ in
           adminvm =
             { pkgs, ... }:
             {
-              imports = [ self.nixosModules.admin ];
+              imports = [
+                self.nixosModules.admin
+                ./snakeoil/gen-test-certs.nix
+              ];
+
+              # TLS parameter
+              givc-tls-test = {
+                inherit (admin) name;
+                addresses = admin.addr;
+              };
 
               networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
                 {
@@ -55,7 +58,7 @@ in
                 enable = true;
                 inherit (adminConfig) name;
                 inherit (adminConfig) addresses;
-                tls = mkTls "admin-vm";
+                tls.enable = tls;
                 debug = false;
               };
             };
@@ -70,8 +73,14 @@ in
             {
               imports = [
                 self.nixosModules.sysvm
+                ./snakeoil/gen-test-certs.nix
               ];
 
+              # TLS parameter
+              givc-tls-test = {
+                name = "gui-vm";
+                addresses = addrs.guivm;
+              };
               environment.systemPackages = [
                 pkgs.networkmanager
               ];
@@ -133,7 +142,7 @@ in
                   addr = addrs.guivm;
                   name = "gui-vm";
                 };
-                tls = mkTls "gui-vm";
+                tls.enable = tls;
                 socketProxy = [
                   {
                     transport = {
@@ -164,7 +173,7 @@ in
                   }
                   {
                     transport = {
-                      name = "chromium-vm";
+                      name = "app-vm";
                       addr = addrs.appvm;
                       port = "9013";
                       protocol = "tcp";
@@ -186,7 +195,14 @@ in
             {
               imports = [
                 self.nixosModules.sysvm
+                ./snakeoil/gen-test-certs.nix
               ];
+
+              # TLS parameter
+              givc-tls-test = {
+                name = "net-vm";
+                addresses = addrs.netvm;
+              };
 
               # Network
               networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
@@ -219,7 +235,7 @@ in
                   addr = addrs.netvm;
                   name = "net-vm";
                 };
-                tls = mkTls "net-vm";
+                tls.enable = tls;
                 socketProxy = [
                   {
                     transport = {
@@ -263,7 +279,14 @@ in
             {
               imports = [
                 self.nixosModules.sysvm
+                ./snakeoil/gen-test-certs.nix
               ];
+
+              # TLS parameter
+              givc-tls-test = {
+                name = "audio-vm";
+                addresses = addrs.audiovm;
+              };
 
               # Network
               networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
@@ -297,7 +320,7 @@ in
                   addr = addrs.audiovm;
                   name = "audio-vm";
                 };
-                tls = mkTls "audio-vm";
+                tls.enable = tls;
                 socketProxy = [
                   {
                     transport = {
@@ -352,7 +375,14 @@ in
             {
               imports = [
                 self.nixosModules.appvm
+                ./snakeoil/gen-test-certs.nix
               ];
+
+              # TLS parameter
+              givc-tls-test = {
+                name = "app-vm";
+                addresses = addrs.appvm;
+              };
 
               # Network
               networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
@@ -383,9 +413,14 @@ in
                 admin = lib.head adminConfig.addresses;
                 transport = {
                   addr = addrs.appvm;
-                  name = "chromium-vm";
+                  name = "app-vm";
                 };
-                tls = mkTls "chromium-vm";
+                tls = {
+                  enable = tls;
+                  caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
+                  certPath = lib.mkForce "/etc/givc/cert.pem";
+                  keyPath = lib.mkForce "/etc/givc/key.pem";
+                };
                 socketProxy = [
                   {
                     transport = {

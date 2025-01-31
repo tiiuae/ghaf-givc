@@ -4,6 +4,7 @@ package applications
 
 import (
 	"givc/modules/pkgs/types"
+	"os"
 	"reflect"
 	"testing"
 )
@@ -58,6 +59,7 @@ func Test_validateUrl(t *testing.T) {
 		// Invalid URLs
 		{"invalid protocol", args{urlString: "file:///etc/passwd"}, true},
 		{"inject shell cmd", args{urlString: "https://example.com$(touch IWASHERE)"}, true},
+		{"inject shell cmd", args{urlString: "https://example.com`touch IWASHERE`"}, true},
 		{"inject shell cmd", args{urlString: "https://example.com/ $(touch IWASHERE)"}, true},
 		{"inject shell cmd", args{urlString: "$(touch IWASHERE)https://google.com"}, true},
 		{"inject shell cmd", args{urlString: "https://example.com\\%20$(touch IWASHERE)"}, true},
@@ -75,6 +77,68 @@ func Test_validateUrl(t *testing.T) {
 	}
 }
 
+func Test_validateFilePath(t *testing.T) {
+
+	f1, err := os.CreateTemp("", "file")
+	if err != nil {
+		t.Errorf("Error creating test file: %v", err)
+	}
+	defer os.Remove(f1.Name())
+	f2, err := os.CreateTemp("", ".file")
+	if err != nil {
+		t.Errorf("Error creating test file: %v", err)
+	}
+	defer os.Remove(f2.Name())
+	f3, err := os.CreateTemp("", "another file")
+	if err != nil {
+		t.Errorf("Error creating test file: %v", err)
+	}
+	defer os.Remove(f3.Name())
+	f4, err := os.CreateTemp("", "another{2}[1]file(4).txt")
+	if err != nil {
+		t.Errorf("Error creating test file: %v", err)
+	}
+	defer os.Remove(f4.Name())
+
+	type args struct {
+		path        string
+		directories []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		// Valid file paths
+		{"valid file path", args{path: f1.Name(), directories: []string{os.TempDir()}}, false},
+		{"valid file path", args{path: f2.Name(), directories: []string{os.TempDir()}}, false},
+		{"valid file path", args{path: f3.Name(), directories: []string{os.TempDir()}}, false},
+		{"valid file path", args{path: f4.Name(), directories: []string{os.TempDir()}}, false},
+
+		// Invalid directory
+		{"valid file path", args{path: f1.Name(), directories: []string{"tmp"}}, true},
+		{"valid file path", args{path: f1.Name(), directories: nil}, true},
+		{"valid file path", args{path: f1.Name(), directories: []string{}}, true},
+		{"valid file path", args{path: f1.Name(), directories: []string{"/etc"}}, true},
+
+		// Invalid file paths
+		{"invalid file path", args{path: "//something.txt", directories: []string{"/etc"}}, true},
+		{"invalid file path", args{path: "../../something.txt", directories: []string{"/etc"}}, true},
+		{"invalid file path", args{path: "../something.txt", directories: []string{"/etc"}}, true},
+		{"invalid file path", args{path: "//../../something.txt ", directories: []string{"/etc"}}, true},
+		{"invalid file path", args{path: "/a/b/c/../something.txt ", directories: []string{"/etc"}}, true},
+		{"invalid file path", args{path: "/etc/password $(touch /etc/something)", directories: []string{"/etc"}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateFilePath(tt.args.path, tt.args.directories); (err != nil) != tt.wantErr {
+				t.Errorf("validateFilePath() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+
+	}
+}
+
 func TestParseApplicationManifests(t *testing.T) {
 	type args struct {
 		jsonApplicationString string
@@ -85,6 +149,7 @@ func TestParseApplicationManifests(t *testing.T) {
 		want    []types.ApplicationManifest
 		wantErr bool
 	}{
+		// Valid cases
 		{
 			"single application",
 			args{`[{
@@ -165,7 +230,30 @@ func TestParseApplicationManifests(t *testing.T) {
 			},
 			false,
 		},
+		{
+			"two applications with file args",
+			args{`[
+				{"Name":"test-app","Command":"chromium","Args":["flag","url","file"],"Directories":["/tmp"]},
+				{"Name":"test-app2","Command":"firefox","Args":["file"],"Directories":["/tmp"]}
+			]`},
+			[]types.ApplicationManifest{
+				{
+					Name:        "test-app",
+					Command:     "chromium",
+					Args:        []string{types.APP_ARG_FLAG, types.APP_ARG_URL, types.APP_ARG_FILE},
+					Directories: []string{"/tmp"},
+				},
+				{
+					Name:        "test-app2",
+					Command:     "firefox",
+					Args:        []string{types.APP_ARG_FILE},
+					Directories: []string{"/tmp"},
+				},
+			},
+			false,
+		},
 
+		// Error cases
 		{
 			"single application with wrong arg",
 			args{`[{"Name":"test-app","Command":"chromium", "Args":["argument"]}]`},
@@ -179,7 +267,7 @@ func TestParseApplicationManifests(t *testing.T) {
 			true,
 		},
 		{
-			"two applications, one with wrong args",
+			"two applications, with wrong args",
 			args{`[
 				{"Name":"test-app","Command":"chromium", "Args":["url", "argument"]"},
 				{"Name":"test-app2","Command":"firefox", "Args":["url", "argument"]"},
@@ -192,6 +280,23 @@ func TestParseApplicationManifests(t *testing.T) {
 			args{`[
 				{"Name":"test-app","Command":"chromium"},
 				{"Name":"test-app","Command":"firefox"}
+			]`},
+			nil,
+			true,
+		},
+		{
+			"one applications, missing directories but file flag",
+			args{`[
+				{"Name":"test-app","Command":"chromium", Args:["file"]},
+			]`},
+			nil,
+			true,
+		},
+		{
+			"two applications, one without file args",
+			args{`[
+				{"Name":"test-app","Command":"chromium","Args":["flag","url"],"Directories":["/tmp"]},
+				{"Name":"test-app2","Command":"firefox","Args":["file"],"Directories":["/tmp"]},
 			]`},
 			nil,
 			true,
