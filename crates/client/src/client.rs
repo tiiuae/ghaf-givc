@@ -84,24 +84,53 @@ impl AdminClient {
             .unwrap_or(Ok(()))
     }
 
-    pub async fn start(
+    pub async fn start_app(
         &self,
         app_name: String,
-        vm_name: Option<String>,
+        vm_name: String,
         args: Vec<String>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<pb::admin::StartResponse> {
         let request = pb::admin::ApplicationRequest {
             app_name,
-            vm_name,
+            vm_name: Some(vm_name),
             args,
         };
-        let _response = self
+        let response = self
             .connect_to()
             .await?
             .start_application(request)
             .await
             .rewrap_err()?;
-        Ok(())
+        Ok(response.into_inner())
+    }
+
+    pub async fn start_vm(&self, vm_name: String) -> anyhow::Result<pb::admin::StartResponse> {
+        let request = pb::admin::StartVmRequest { vm_name };
+        let response = self
+            .connect_to()
+            .await?
+            .start_vm(request)
+            .await
+            .rewrap_err()?;
+        Ok(response.into_inner())
+    }
+
+    pub async fn start_service(
+        &self,
+        service_name: String,
+        vm_name: String,
+    ) -> anyhow::Result<pb::admin::StartResponse> {
+        let request = pb::admin::StartServiceRequest {
+            service_name,
+            vm_name,
+        };
+        let response = self
+            .connect_to()
+            .await?
+            .start_service(request)
+            .await
+            .rewrap_err()?;
+        Ok(response.into_inner())
     }
 
     pub async fn stop(&self, app_name: String) -> anyhow::Result<()> {

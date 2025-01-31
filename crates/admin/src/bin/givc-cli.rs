@@ -59,7 +59,7 @@ enum StartSub {
     Service {
         servicename: String,
         #[arg(long)]
-        vm: Option<String>,
+        vm: String,
     },
 }
 
@@ -170,11 +170,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Test { test } => test_subcommands(test, admin).await?,
-        Commands::Start { start } => match start {
-            StartSub::App { app, vm, args } => admin.start(app, Some(vm), args).await?,
-            StartSub::Vm { .. } => unimplemented!("VM"),
-            StartSub::Service { .. } => unimplemented!("Service"),
-        },
+        Commands::Start { start } => {
+            let response = match start {
+                StartSub::App { app, vm, args } => admin.start_app(app, vm, args).await?,
+                StartSub::Vm { vm } => admin.start_vm(vm).await?,
+                StartSub::Service { servicename, vm } => {
+                    admin.start_service(servicename, vm).await?
+                }
+            };
+            println!("{:?}", response)
+        }
         Commands::Stop { app } => admin.stop(app).await?,
         Commands::Pause { app } => admin.pause(app).await?,
         Commands::Resume { app } => admin.resume(app).await?,
