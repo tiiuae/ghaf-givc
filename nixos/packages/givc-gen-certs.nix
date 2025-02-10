@@ -41,8 +41,10 @@ pkgs.writeShellScriptBin "givc-gen-certs" ''
       shift
       count=1
       for ip in "$@"; do
-        alttext+=",IP.$count:$ip"
-        count=$((count+1))
+        if ${pkgs.ipcalc}/bin/ipcalc -c "$ip"; then
+          alttext+=",IP.$count:$ip"
+          count=$((count+1))
+        fi
       done
 
       # Generate and sign key-cert pair

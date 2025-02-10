@@ -17,7 +17,7 @@ func GetRemoteStatus(cfg *types.EndpointConfig, unitName string) (*types.UnitSta
 
 	// Setup and dial GRPC client
 	var conn *grpc.ClientConn
-	conn, err := givc_grpc.NewClient(cfg, false)
+	conn, err := givc_grpc.NewClient(cfg)
 	if err != nil {
 		log.Errorf("Cannot create grpc client: %v", err)
 		return nil, err
@@ -59,7 +59,7 @@ func RegisterRemoteService(cfg *types.EndpointConfig, reg *givc_admin.RegistryRe
 
 	// Setup and dial GRPC client
 	var conn *grpc.ClientConn
-	conn, err := givc_grpc.NewClient(cfg, true)
+	conn, err := givc_grpc.NewClient(cfg)
 	if err != nil {
 		log.Errorf("Cannot create grpc client: %v", err)
 		return nil, err
@@ -90,7 +90,7 @@ func StartRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_syste
 
 	// Setup and dial GRPC client
 	var conn *grpc.ClientConn
-	conn, err := givc_grpc.NewClient(cfg, false)
+	conn, err := givc_grpc.NewClient(cfg)
 	if err != nil {
 		log.Errorf("Cannot create grpc client: %v", err)
 		return nil, err
@@ -123,7 +123,7 @@ func PauseRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_syste
 
 	// Setup and dial GRPC client
 	var conn *grpc.ClientConn
-	conn, err := givc_grpc.NewClient(cfg, false)
+	conn, err := givc_grpc.NewClient(cfg)
 	if err != nil {
 		log.Errorf("Cannot create grpc client: %v", err)
 		return nil, err
@@ -156,7 +156,7 @@ func ResumeRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_syst
 
 	// Setup and dial GRPC client
 	var conn *grpc.ClientConn
-	conn, err := givc_grpc.NewClient(cfg, false)
+	conn, err := givc_grpc.NewClient(cfg)
 	if err != nil {
 		log.Errorf("Cannot create grpc client: %v", err)
 		return nil, err
@@ -189,7 +189,7 @@ func StopRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_system
 
 	// Setup and dial GRPC client
 	var conn *grpc.ClientConn
-	conn, err := givc_grpc.NewClient(cfg, false)
+	conn, err := givc_grpc.NewClient(cfg)
 	if err != nil {
 		log.Errorf("Cannot create grpc client: %v", err)
 		return nil, err
