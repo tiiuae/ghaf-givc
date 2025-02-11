@@ -7,7 +7,7 @@ use tracing::debug;
 
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
-pub use givc_common::pb::stats_message::StatsResponse;
+pub use givc_common::pb::stats::StatsResponse;
 pub use givc_common::query::{Event, QueryResult};
 use givc_common::types::*;
 

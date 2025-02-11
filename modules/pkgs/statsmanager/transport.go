@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	stats_api "givc/modules/api/stats"
-	stats_msg "givc/modules/api/stats_message"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -41,7 +40,7 @@ func NewStatsServer() (*StatsServer, error) {
 	return &statsServer, nil
 }
 
-func (s *StatsServer) GetStats(ctx context.Context, req *stats_api.StatsRequest) (*stats_msg.StatsResponse, error) {
+func (s *StatsServer) GetStats(ctx context.Context, req *stats_api.StatsRequest) (*stats_api.StatsResponse, error) {
 	log.Infof("Incoming request to get hardware identifier\n")
 
 	memorystats, err := s.Controller.GetMemoryStats(context.Background())
@@ -50,5 +49,5 @@ func (s *StatsServer) GetStats(ctx context.Context, req *stats_api.StatsRequest)
 		return nil, fmt.Errorf("cannot get memory statistics")
 	}
 
-	return &stats_msg.StatsResponse{Memory: memorystats}, nil
+	return &stats_api.StatsResponse{Memory: memorystats}, nil
 }

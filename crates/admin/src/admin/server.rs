@@ -602,7 +602,7 @@ impl pb::admin_service_server::AdminService for AdminService {
     async fn get_stats(
         &self,
         request: tonic::Request<pb::StatsRequest>,
-    ) -> tonic::Result<tonic::Response<pb::stats_message::StatsResponse>> {
+    ) -> tonic::Result<tonic::Response<pb::stats::StatsResponse>> {
         escalate(request, |req| async move {
             let vm_name = format_service_name("", Some(&req.vm_name));
             let vm = self

@@ -1,7 +1,7 @@
 // Copyright 2024 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 syntax = "proto3";
-option go_package = "./socketproxy";
+option go_package = "givc/modules/api/socketproxy";
 package socketproxy;
 
 message BytePacket {

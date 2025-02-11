@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	stats_msg "givc/modules/api/stats_message"
+	stats_api "givc/modules/api/stats"
 )
 
 type StatsController struct {
@@ -20,7 +20,7 @@ func NewController() (*StatsController, error) {
 	return &StatsController{}, nil
 }
 
-func (c *StatsController) GetMemoryStats(ctx context.Context) (*stats_msg.MemoryStats, error) {
+func (c *StatsController) GetMemoryStats(ctx context.Context) (*stats_api.MemoryStats, error) {
 
 	// Input validation
 	if ctx == nil {
@@ -45,7 +45,7 @@ func (c *StatsController) GetMemoryStats(ctx context.Context) (*stats_msg.Memory
 		fields[items[0]] = val
 	}
 
-	return &stats_msg.MemoryStats{
+	return &stats_api.MemoryStats{
 		Total:     fields["MemTotal:"] * 1024,
 		Free:      fields["MemFree:"] * 1024,
 		Available: fields["MemAvailable:"] * 1024,

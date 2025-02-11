@@ -5,7 +5,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.1
-// source: hwid.proto
+// source: hwid/hwid.proto
 
 package hwid
 
@@ -120,5 +120,5 @@ var HwidService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "hwid.proto",
+	Metadata: "hwid/hwid.proto",
 }

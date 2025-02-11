@@ -5,7 +5,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.1
-// source: locale.proto
+// source: locale/locale.proto
 
 package locale
 
@@ -158,5 +158,5 @@ var LocaleClient_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "locale.proto",
+	Metadata: "locale/locale.proto",
 }

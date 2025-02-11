@@ -5,13 +5,12 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.1
-// source: stats.proto
+// source: stats/stats.proto
 
 package stats
 
 import (
 	context "context"
-	stats_message "givc/modules/api/stats_message"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -30,7 +29,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type StatsServiceClient interface {
-	GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*stats_message.StatsResponse, error)
+	GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsResponse, error)
 }
 
 type statsServiceClient struct {
@@ -41,9 +40,9 @@ func NewStatsServiceClient(cc grpc.ClientConnInterface) StatsServiceClient {
 	return &statsServiceClient{cc}
 }
 
-func (c *statsServiceClient) GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*stats_message.StatsResponse, error) {
+func (c *statsServiceClient) GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(stats_message.StatsResponse)
+	out := new(StatsResponse)
 	err := c.cc.Invoke(ctx, StatsService_GetStats_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -55,7 +54,7 @@ func (c *statsServiceClient) GetStats(ctx context.Context, in *StatsRequest, opt
 // All implementations must embed UnimplementedStatsServiceServer
 // for forward compatibility.
 type StatsServiceServer interface {
-	GetStats(context.Context, *StatsRequest) (*stats_message.StatsResponse, error)
+	GetStats(context.Context, *StatsRequest) (*StatsResponse, error)
 	mustEmbedUnimplementedStatsServiceServer()
 }
 
@@ -66,7 +65,7 @@ type StatsServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedStatsServiceServer struct{}
 
-func (UnimplementedStatsServiceServer) GetStats(context.Context, *StatsRequest) (*stats_message.StatsResponse, error) {
+func (UnimplementedStatsServiceServer) GetStats(context.Context, *StatsRequest) (*StatsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetStats not implemented")
 }
 func (UnimplementedStatsServiceServer) mustEmbedUnimplementedStatsServiceServer() {}
@@ -121,5 +120,5 @@ var StatsService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "stats.proto",
+	Metadata: "stats/stats.proto",
 }

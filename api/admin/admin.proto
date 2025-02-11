@@ -1,8 +1,8 @@
 // Copyright 2024 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 syntax = "proto3";
-option go_package = "./admin";
-import "stats_message/stats_message.proto";
+option go_package = "givc/modules/api/admin";
+import "stats/stats.proto";
 
 package admin;
 
@@ -91,7 +91,7 @@ service AdminService {
     rpc StopApplication(ApplicationRequest) returns (ApplicationResponse) {}
     rpc SetLocale(LocaleRequest) returns (Empty) {}
     rpc SetTimezone(TimezoneRequest) returns (Empty) {}
-    rpc GetStats(StatsRequest) returns (stats_message.StatsResponse) {}
+    rpc GetStats(StatsRequest) returns (stats.StatsResponse) {}
     rpc Poweroff(Empty) returns (Empty) {}
     rpc Reboot(Empty) returns (Empty) {}
     rpc Suspend(Empty) returns (Empty) {}
