@@ -119,3 +119,101 @@ var Exec_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "exec.proto",
 }
+
+const (
+	ExecAgent_RunCommandOnAgent_FullMethodName = "/exec.ExecAgent/RunCommandOnAgent"
+)
+
+// ExecAgentClient is the client API for ExecAgent service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type ExecAgentClient interface {
+	// Execute a command on remote agent and wait for it to complete
+	RunCommandOnAgent(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[CommandRelayRequest, CommandResponse], error)
+}
+
+type execAgentClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewExecAgentClient(cc grpc.ClientConnInterface) ExecAgentClient {
+	return &execAgentClient{cc}
+}
+
+func (c *execAgentClient) RunCommandOnAgent(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[CommandRelayRequest, CommandResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ExecAgent_ServiceDesc.Streams[0], ExecAgent_RunCommandOnAgent_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[CommandRelayRequest, CommandResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ExecAgent_RunCommandOnAgentClient = grpc.BidiStreamingClient[CommandRelayRequest, CommandResponse]
+
+// ExecAgentServer is the server API for ExecAgent service.
+// All implementations must embed UnimplementedExecAgentServer
+// for forward compatibility.
+type ExecAgentServer interface {
+	// Execute a command on remote agent and wait for it to complete
+	RunCommandOnAgent(grpc.BidiStreamingServer[CommandRelayRequest, CommandResponse]) error
+	mustEmbedUnimplementedExecAgentServer()
+}
+
+// UnimplementedExecAgentServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedExecAgentServer struct{}
+
+func (UnimplementedExecAgentServer) RunCommandOnAgent(grpc.BidiStreamingServer[CommandRelayRequest, CommandResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method RunCommandOnAgent not implemented")
+}
+func (UnimplementedExecAgentServer) mustEmbedUnimplementedExecAgentServer() {}
+func (UnimplementedExecAgentServer) testEmbeddedByValue()                   {}
+
+// UnsafeExecAgentServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ExecAgentServer will
+// result in compilation errors.
+type UnsafeExecAgentServer interface {
+	mustEmbedUnimplementedExecAgentServer()
+}
+
+func RegisterExecAgentServer(s grpc.ServiceRegistrar, srv ExecAgentServer) {
+	// If the following call pancis, it indicates UnimplementedExecAgentServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&ExecAgent_ServiceDesc, srv)
+}
+
+func _ExecAgent_RunCommandOnAgent_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ExecAgentServer).RunCommandOnAgent(&grpc.GenericServerStream[CommandRelayRequest, CommandResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ExecAgent_RunCommandOnAgentServer = grpc.BidiStreamingServer[CommandRelayRequest, CommandResponse]
+
+// ExecAgent_ServiceDesc is the grpc.ServiceDesc for ExecAgent service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var ExecAgent_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "exec.ExecAgent",
+	HandlerType: (*ExecAgentServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "RunCommandOnAgent",
+			Handler:       _ExecAgent_RunCommandOnAgent_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
+	Metadata: "exec.proto",
+}

@@ -6,6 +6,9 @@ pub mod pb {
     pub mod admin {
         tonic::include_proto!("admin");
     }
+    pub mod exec {
+        tonic::include_proto!("exec");
+    }
     pub mod locale {
         tonic::include_proto!("locale");
     }

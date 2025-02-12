@@ -112,6 +112,11 @@ enum Commands {
         #[arg(long)]
         limit: Option<u32>,
     },
+    ListGenerations {},
+    SetGeneration {
+        #[arg()]
+        path: String,
+    },
     Test {
         #[command(subcommand)]
         test: Test,
@@ -259,6 +264,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 dump(watch.channel.recv().await?, as_json)?;
             }
         }
+
+        Commands::ListGenerations {} => {
+            let response = admin.list_generations().await?;
+            println!("{:?}", response)
+        }
+
+        Commands::SetGeneration { path } => admin.set_generation(path).await?,
     };
 
     Ok(())
