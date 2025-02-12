@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.1
-// source: exec.proto
+// source: exec/exec.proto
 
 package exec
 
@@ -117,5 +117,5 @@ var Exec_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "exec.proto",
+	Metadata: "exec/exec.proto",
 }

@@ -75,8 +75,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .build_v1()
         .unwrap();
 
-    let admin_service_svc =
-        admin::server::AdminServiceServer::new(admin::server::AdminService::new(tls));
+    let admin_service = admin::server::AdminService::new(tls);
+    let exec_agent_svc =
+        admin::exec::ExecAgentServer::new(admin::exec::ExecAgentService::new(&admin_service));
+    let exec_svc = admin::exec::ExecServer::new(admin::exec::ExecService::new());
+    let admin_service_svc = admin::server::AdminServiceServer::new(admin_service);
 
     let sys_opts = tokio_listener::SystemOptions::default();
     let user_opts = tokio_listener::UserOptions::default();

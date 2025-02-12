@@ -9,6 +9,7 @@ message StartCommand {
   optional string working_directory = 3;   // (Optional) Directory to execute the command in
   map<string, string> env_vars = 4; // (Optional) Environment variables
   optional bytes stdin = 5; // Initial stdin sequence
+  optional string role = 6; // Role is actually a user name or security token
 }
 
 message CommandIO {
@@ -33,6 +34,11 @@ message CommandRequest {
         CommandIO Stdin = 2;
         SignalCommand Signal = 3;
     }
+}
+
+message CommandRelayRequest {
+    string Agent = 1;
+    CommandRequest Command = 2;
 }
 
 message CommandResponse {
