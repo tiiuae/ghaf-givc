@@ -9,6 +9,7 @@ message StartCommand {
   optional string working_directory = 3;   // (Optional) Directory to execute the command in
   map<string, string> env_vars = 4; // (Optional) Environment variables
   optional bytes stdin = 5; // Initial stdin sequence
+  optional string role = 6; // Role is actually a user name or security token
 }
 
 message CommandIO {
@@ -35,6 +36,11 @@ message CommandRequest {
     }
 }
 
+message CommandRelayRequest {
+    string Agent = 1;
+    CommandRequest Command = 2;
+}
+
 message CommandResponse {
     oneof Event {
         CommandIO Stdout = 1;
@@ -50,3 +56,7 @@ service Exec {
   rpc RunCommand(stream CommandRequest) returns (stream CommandResponse);
 }
 
+service ExecAgent {
+  // Execute a command on remote agent and wait for it to complete
+  rpc RunCommandOnAgent(stream CommandRelayRequest) returns (stream CommandResponse); 
+}
