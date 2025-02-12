@@ -5,7 +5,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.1
-// source: socket.proto
+// source: socket/socket.proto
 
 package socketproxy
 
@@ -114,5 +114,5 @@ var SocketStream_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "socket.proto",
+	Metadata: "socket/socket.proto",
 }

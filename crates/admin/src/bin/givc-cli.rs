@@ -85,6 +85,9 @@ enum Commands {
     SetTimezone {
         timezone: String,
     },
+    GetStats {
+        vm_name: String,
+    },
     Watch {
         #[arg(long, default_value_t = false)]
         as_json: bool,
@@ -186,6 +189,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
         Commands::SetTimezone { timezone } => {
             admin.set_timezone(timezone).await?;
+        }
+
+        Commands::GetStats { vm_name } => {
+            println!("{:?}", admin.get_stats(vm_name).await?);
         }
 
         Commands::Watch {

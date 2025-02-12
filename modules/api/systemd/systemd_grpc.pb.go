@@ -5,7 +5,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.1
-// source: systemd.proto
+// source: systemd/systemd.proto
 
 package systemd
 
@@ -390,5 +390,5 @@ var UnitControlService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "systemd.proto",
+	Metadata: "systemd/systemd.proto",
 }

@@ -423,6 +423,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         })
         .await
     }
+
     async fn pause_application(
         &self,
         request: tonic::Request<ApplicationRequest>,
@@ -437,6 +438,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         })
         .await
     }
+
     async fn resume_application(
         &self,
         request: tonic::Request<ApplicationRequest>,
@@ -451,6 +453,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         })
         .await
     }
+
     async fn stop_application(
         &self,
         request: tonic::Request<ApplicationRequest>,
@@ -465,6 +468,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         })
         .await
     }
+
     async fn poweroff(
         &self,
         request: tonic::Request<Empty>,
@@ -477,6 +481,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         })
         .await
     }
+
     async fn reboot(
         &self,
         request: tonic::Request<Empty>,
@@ -590,6 +595,33 @@ impl pb::admin_service_server::AdminService for AdminService {
             });
             *self.inner.timezone.lock().await = req.timezone;
             Ok(Empty {})
+        })
+        .await
+    }
+
+    async fn get_stats(
+        &self,
+        request: tonic::Request<pb::StatsRequest>,
+    ) -> tonic::Result<tonic::Response<pb::stats::StatsResponse>> {
+        escalate(request, |req| async move {
+            let vm_name = format_service_name("", Some(&req.vm_name));
+            let vm = self
+                .inner
+                .registry
+                .find_map(|re| {
+                    (re.r#type.service == ServiceType::Mgr && re.name == vm_name)
+                        .then(|| self.inner.endpoint(re))
+                })
+                .into_iter()
+                .next()
+                .with_context(|| format!("VM {vm_name} not found"))??;
+            Ok(vm
+                .connect()
+                .await
+                .map(pb::stats::stats_service_client::StatsServiceClient::new)?
+                .get_stats(pb::stats::StatsRequest {})
+                .await?
+                .into_inner())
         })
         .await
     }

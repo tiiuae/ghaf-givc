@@ -5,7 +5,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.1
-// source: wifi.proto
+// source: wifi/wifi.proto
 
 package wifi
 
@@ -310,5 +310,5 @@ var WifiService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "wifi.proto",
+	Metadata: "wifi/wifi.proto",
 }
