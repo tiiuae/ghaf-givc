@@ -4,6 +4,7 @@ pub mod types;
 
 pub mod pb {
     pub mod admin {
+        use serde::{Deserialize, Serialize};
         tonic::include_proto!("admin");
     }
     pub mod exec {

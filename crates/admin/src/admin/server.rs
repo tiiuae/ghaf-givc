@@ -726,7 +726,7 @@ impl pb::admin_service_server::AdminService for AdminService {
     ) -> Result<tonic::Response<ListGenerationsResponse>, tonic::Status> {
         escalate(request, |_| async {
             let endpoint = self.inner.host_endpoint()?;
-            let ota = super::OTA::OTA::connect(endpoint)?;
+            let ota = super::OTA::OTA::connect(endpoint).await?;
             let list = ota.list().await?;
             Ok(ListGenerationsResponse { list })
         })
@@ -740,7 +740,7 @@ impl pb::admin_service_server::AdminService for AdminService {
     ) -> Result<tonic::Response<Self::SetGenerationStream>, tonic::Status> {
         escalate(request, |req| async {
             let endpoint = self.inner.host_endpoint()?;
-            let ota = super::OTA::OTA::connect(endpoint)?;
+            let ota = super::OTA::OTA::connect(endpoint).await?;
             let stream = async_fn_stream::try_fn_stream(|emitter| async move {
                 ota.set(req.path)
                     .await
