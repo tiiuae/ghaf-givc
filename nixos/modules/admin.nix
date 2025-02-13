@@ -25,6 +25,9 @@ let
     transportSubmodule
     tlsSubmodule
     ;
+  tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
+  unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
+  vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
 in
 {
   options.givc.admin = {
@@ -74,9 +77,6 @@ in
 
     systemd.services.givc-admin =
       let
-        tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
-        unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
-        vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
         args = concatStringsSep " " (
           (map (addr: "--listen-tcp ${addr.addr}:${addr.port}") tcpAddresses)
           ++ (map (addr: "--listen-unix ${addr.addr}") unixAddresses)
@@ -113,6 +113,6 @@ in
             "GIVC_LOG" = "debug";
           };
       };
-    networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) cfg.addresses);
+    networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) tcpAddresses);
   };
 }
