@@ -73,6 +73,7 @@
               givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
               givc-cli = givc-admin.cli;
               inherit (givc-admin) update_server;
+              ota-update = givc-admin.ota;
             };
         };
       flake = {
@@ -90,6 +91,7 @@
         # Overlays
         overlays.default = _final: prev: {
           givc-cli = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.cli;
+          ota-update = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.ota;
         };
       };
     };
