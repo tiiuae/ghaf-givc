@@ -36,6 +36,7 @@ let
         "out"
         "cli"
         "agent"
+        "ota"
       ];
       cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
@@ -47,9 +48,10 @@ let
         ln -sf ../../api $sourceRoot/crates/common/api
       '';
       postInstall = ''
-        mkdir -p $cli/bin $agent/bin
+        mkdir -p $cli/bin $agent/bin $ota/bin
         mv $out/bin/givc-cli $cli/bin/givc-cli
         mv $out/bin/givc-agent $agent/bin/givc-agent
+        mv $out/bin/ota-update $ota/bin/ota-update
       '';
     }
   );

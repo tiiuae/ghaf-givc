@@ -6,5 +6,6 @@
     ./admin.nix
     ./dbus.nix
     ./app.nix
+    ./ota-update.nix
   ];
 }
