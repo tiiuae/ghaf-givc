@@ -364,6 +364,10 @@ in
                   print(hostvm.succeed("${cli} ${cliArgs} set-timezone UTC"))
                   adminvm.wait_for_file("/etc/timezone.conf")
 
+              with subtest("OTA"):
+                  print(hostvm.succeed("${cli} ${cliArgs} list-generations"))
+                  assert False
+
               with subtest("get stats"):
                   print(hostvm.succeed("${cli} ${cliArgs} get-stats app-vm"))
 
