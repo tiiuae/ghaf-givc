@@ -1,0 +1,62 @@
+syntax = "proto3";
+option go_package = "./exec";
+package exec;
+
+// Define the request to execute a subprocess command
+message StartCommand {
+  string command = 1;             // The shell command to execute
+  repeated string arguments = 2;  // Arguments for the command
+  optional string working_directory = 3;   // (Optional) Directory to execute the command in
+  map<string, string> env_vars = 4; // (Optional) Environment variables
+  optional bytes stdin = 5; // Initial stdin sequence
+  optional string role = 6; // Role is actually a user name or security token
+}
+
+message CommandIO {
+    bytes payload = 1;
+}
+
+message SignalCommand {
+    int32 signal = 1;
+}
+
+message StartedEvent {
+    int32 pid = 1;
+}
+
+message FinishedEvent {
+    int32 return_code = 1;
+}
+
+message CommandRequest {
+    oneof Command {
+        StartCommand Start = 1;
+        CommandIO Stdin = 2;
+        SignalCommand Signal = 3;
+    }
+}
+
+message CommandRelayRequest {
+    string Agent = 1;
+    CommandRequest Command = 2;
+}
+
+message CommandResponse {
+    oneof Event {
+        CommandIO Stdout = 1;
+        CommandIO Stderr = 2;
+        StartedEvent Started = 3;
+        FinishedEvent Finished = 4;
+    }
+}
+
+// Define the service to execute and manage subprocess commands
+service Exec {
+  // Execute a command and wait for it to complete
+  rpc RunCommand(stream CommandRequest) returns (stream CommandResponse);
+}
+
+service ExecAgent {
+  // Execute a command on remote agent and wait for it to complete
+  rpc RunCommandOnAgent(stream CommandRelayRequest) returns (stream CommandResponse); 
+}

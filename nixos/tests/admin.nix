@@ -364,11 +364,15 @@ in
                   print(hostvm.succeed("${cli} ${cliArgs} set-timezone UTC"))
                   adminvm.wait_for_file("/etc/timezone.conf")
 
+              with subtest("OTA"):
+                  print(hostvm.succeed("${cli} ${cliArgs} list-generations"))
+                  assert False
+
               with subtest("get stats"):
                   print(hostvm.succeed("${cli} ${cliArgs} get-stats app-vm"))
 
               with subtest("Clean run"):
-                  print(hostvm.succeed("${cli} ${cliArgs} start --vm app-vm foot"))
+                  print(hostvm.succeed("${cli} ${cliArgs} start app --vm app-vm foot"))
                   time.sleep(10) # Give few seconds to application to spin up
                   wait_for_window("ghaf@appvm")
 
@@ -377,7 +381,7 @@ in
                   appvm.succeed("pkill foot")
                   time.sleep(10)
                   # .. then ask to restart
-                  print(hostvm.succeed("${cli} ${cliArgs} start --vm app-vm foot"))
+                  print(hostvm.succeed("${cli} ${cliArgs} start app --vm app-vm foot"))
                   wait_for_window("ghaf@appvm")
 
               with subtest("pause/resume/stop application"):
@@ -402,9 +406,9 @@ in
                   appvm.fail("pgrep foot")
 
               with subtest("clear exit and restart"):
-                  print(hostvm.succeed("${cli} ${cliArgs} start --vm app-vm clearexit"))
+                  print(hostvm.succeed("${cli} ${cliArgs} start app --vm app-vm clearexit"))
                   time.sleep(20) # Give few seconds to application to spin up, exit, then start it again
-                  print(hostvm.succeed("${cli} ${cliArgs} start --vm app-vm clearexit"))
+                  print(hostvm.succeed("${cli} ${cliArgs} start app --vm app-vm clearexit"))
             '';
         };
       };

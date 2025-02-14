@@ -45,13 +45,29 @@ struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
-enum Commands {
-    Start {
+enum StartSub {
+    App {
         app: String,
         #[arg(long)]
-        vm: Option<String>,
+        vm: String,
         #[arg(last = true)]
         args: Vec<String>,
+    },
+    Vm {
+        vm: String,
+    },
+    Service {
+        servicename: String,
+        #[arg(long)]
+        vm: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    Start {
+        #[command(subcommand)]
+        start: StartSub,
     },
     Stop {
         app: String,
@@ -95,6 +111,11 @@ enum Commands {
         initial: bool,
         #[arg(long)]
         limit: Option<u32>,
+    },
+    ListGenerations {},
+    SetGeneration {
+        #[arg()]
+        path: String,
     },
     Test {
         #[command(subcommand)]
@@ -157,7 +178,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Test { test } => test_subcommands(test, admin).await?,
-        Commands::Start { app, vm, args } => admin.start(app, vm, args).await?,
+        Commands::Start { start } => {
+            let response = match start {
+                StartSub::App { app, vm, args } => admin.start_app(app, vm, args).await?,
+                StartSub::Vm { vm } => admin.start_vm(vm).await?,
+                StartSub::Service { servicename, vm } => {
+                    admin.start_service(servicename, vm).await?
+                }
+            };
+            println!("{:?}", response)
+        }
         Commands::Stop { app } => admin.stop(app).await?,
         Commands::Pause { app } => admin.pause(app).await?,
         Commands::Resume { app } => admin.resume(app).await?,
@@ -212,6 +242,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 dump(watch.channel.recv().await?, as_json)?;
             }
         }
+
+        Commands::ListGenerations {} => {
+            let response = admin.list_generations().await?;
+            println!("{:?}", response)
+        }
+
+        Commands::SetGeneration { path } => admin.set_generation(path).await?,
     };
 
     Ok(())

@@ -73,6 +73,10 @@ impl AdminService {
         });
         Self { inner }
     }
+
+    pub(crate) fn inner(&self) -> Arc<AdminServiceImpl> {
+        self.inner.clone()
+    }
 }
 
 impl AdminServiceImpl {
@@ -158,7 +162,7 @@ impl AdminServiceImpl {
         Ok(())
     }
 
-    pub async fn start_unit_on_vm(&self, vmname: &str, unit: &str) -> anyhow::Result<()> {
+    pub async fn start_unit_on_vm(&self, unit: &str, vmname: &str) -> anyhow::Result<String> {
         let vmservice = format_service_name(vmname, None);
 
         /* Return error if the vm is not registered */
@@ -177,7 +181,7 @@ impl AdminServiceImpl {
                     /* Start the unit if it is loaded and not running. */
                     client.start_remote(unit.into()).await?;
                 }
-                Ok(())
+                Ok(vmservice)
             }
             Ok(_) => {
                 /* Error, if the unit is not loaded. */
@@ -304,7 +308,7 @@ impl AdminServiceImpl {
         self.registry.register(entry)
     }
 
-    pub async fn start_app(&self, req: ApplicationRequest) -> anyhow::Result<()> {
+    pub async fn start_app(&self, req: ApplicationRequest) -> anyhow::Result<String> {
         if self.state != State::VmsRegistered {
             info!("not all required system-vms are registered")
         }
@@ -328,14 +332,16 @@ impl AdminServiceImpl {
                     .context("after starting VM")?
             }
         };
-        let endpoint = self.agent_endpoint(&systemd_agent_name)?;
+        let endpoint = self
+            .agent_endpoint(&systemd_agent_name)
+            .with_context(|| format!("while lookung up {systemd_agent_name} for {vm_name}"))?;
         let client = SystemDClient::new(endpoint);
         let app_name = self.registry.create_unique_entry_name(&name);
         client.start_application(app_name.clone(), req.args).await?;
         let status = client.get_remote_status(app_name.clone()).await?;
         if status.active_state == "active" {
             let app_entry = RegistryEntry {
-                name: app_name,
+                name: app_name.clone(),
                 status,
                 watch: true,
                 r#type: UnitType {
@@ -349,9 +355,9 @@ impl AdminServiceImpl {
             };
             self.registry.register(app_entry);
         } else {
-            info!("Failed to start application {name}, or command has finished")
+            bail!("Failed to start application {name}, or command has finished")
         };
-        Ok(())
+        Ok(app_name)
     }
 }
 
@@ -416,10 +422,40 @@ impl pb::admin_service_server::AdminService for AdminService {
     async fn start_application(
         &self,
         request: tonic::Request<ApplicationRequest>,
-    ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
+    ) -> std::result::Result<tonic::Response<StartResponse>, tonic::Status> {
         escalate(request, |req| async {
-            self.inner.start_app(req).await?;
-            app_success()
+            let registry_id = self.inner.start_app(req).await?;
+            Ok(StartResponse { registry_id })
+        })
+        .await
+    }
+
+    async fn start_vm(
+        &self,
+        request: tonic::Request<StartVmRequest>,
+    ) -> std::result::Result<tonic::Response<StartResponse>, tonic::Status> {
+        escalate(request, |req| async move {
+            let vm_name = format_vm_name(&req.vm_name, None);
+            self.inner.start_vm(&vm_name).await?;
+            let service_name = format_service_name(&req.vm_name, None);
+            Ok(StartResponse {
+                registry_id: service_name,
+            })
+        })
+        .await
+    }
+
+    async fn start_service(
+        &self,
+        request: tonic::Request<givc_common::pb::StartServiceRequest>,
+    ) -> std::result::Result<tonic::Response<StartResponse>, tonic::Status> {
+        escalate(request, |req| async move {
+            let vm_name = format_vm_name(&req.vm_name, None);
+            let registry_id = self
+                .inner
+                .start_unit_on_vm(&req.service_name, &vm_name)
+                .await?;
+            Ok(StartResponse { registry_id })
         })
         .await
     }
@@ -650,6 +686,45 @@ impl pb::admin_service_server::AdminService for AdminService {
                  }
             };
             Ok(Box::pin(stream) as Self::WatchStream)
+        })
+        .await
+    }
+
+    // OTA
+    async fn list_generations(
+        &self,
+        request: tonic::Request<givc_common::pb::Empty>,
+    ) -> Result<tonic::Response<ListGenerationsResponse>, tonic::Status> {
+        escalate(request, |_| async {
+            let endpoint = self.inner.host_endpoint()?;
+            let ota = super::OTA::OTA::connect(endpoint).await?;
+            let list = ota.list().await?;
+            Ok(ListGenerationsResponse { list })
+        })
+        .await
+    }
+
+    type SetGenerationStream = Stream<SetGenerationResponse>;
+    async fn set_generation(
+        &self,
+        request: tonic::Request<SetGenerationRequest>,
+    ) -> Result<tonic::Response<Self::SetGenerationStream>, tonic::Status> {
+        escalate(request, |req| async {
+            let endpoint = self.inner.host_endpoint()?;
+            let ota = super::OTA::OTA::connect(endpoint).await?;
+            let stream = async_fn_stream::try_fn_stream(|emitter| async move {
+                ota.set(req.path)
+                    .await
+                    .map_err(crate::utils::tonic::wrap_error)?;
+                emitter
+                    .emit(SetGenerationResponse {
+                        finished: true,
+                        output: None,
+                    })
+                    .await;
+                Ok(())
+            });
+            Ok(Box::pin(stream) as Self::SetGenerationStream)
         })
         .await
     }
