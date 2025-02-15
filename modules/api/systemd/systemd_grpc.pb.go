@@ -22,28 +22,28 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UnitControlService_GetUnitStatus_FullMethodName    = "/systemd.UnitControlService/GetUnitStatus"
+	UnitControlService_StartApplication_FullMethodName = "/systemd.UnitControlService/StartApplication"
 	UnitControlService_StartUnit_FullMethodName        = "/systemd.UnitControlService/StartUnit"
 	UnitControlService_StopUnit_FullMethodName         = "/systemd.UnitControlService/StopUnit"
 	UnitControlService_KillUnit_FullMethodName         = "/systemd.UnitControlService/KillUnit"
 	UnitControlService_FreezeUnit_FullMethodName       = "/systemd.UnitControlService/FreezeUnit"
 	UnitControlService_UnfreezeUnit_FullMethodName     = "/systemd.UnitControlService/UnfreezeUnit"
+	UnitControlService_GetUnitStatus_FullMethodName    = "/systemd.UnitControlService/GetUnitStatus"
 	UnitControlService_MonitorUnit_FullMethodName      = "/systemd.UnitControlService/MonitorUnit"
-	UnitControlService_StartApplication_FullMethodName = "/systemd.UnitControlService/StartApplication"
 )
 
 // UnitControlServiceClient is the client API for UnitControlService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type UnitControlServiceClient interface {
-	GetUnitStatus(ctx context.Context, in *UnitRequest, opts ...grpc.CallOption) (*UnitStatusResponse, error)
+	StartApplication(ctx context.Context, in *AppUnitRequest, opts ...grpc.CallOption) (*UnitResponse, error)
 	StartUnit(ctx context.Context, in *UnitRequest, opts ...grpc.CallOption) (*UnitResponse, error)
 	StopUnit(ctx context.Context, in *UnitRequest, opts ...grpc.CallOption) (*UnitResponse, error)
 	KillUnit(ctx context.Context, in *UnitRequest, opts ...grpc.CallOption) (*UnitResponse, error)
 	FreezeUnit(ctx context.Context, in *UnitRequest, opts ...grpc.CallOption) (*UnitResponse, error)
 	UnfreezeUnit(ctx context.Context, in *UnitRequest, opts ...grpc.CallOption) (*UnitResponse, error)
+	GetUnitStatus(ctx context.Context, in *UnitRequest, opts ...grpc.CallOption) (*UnitResponse, error)
 	MonitorUnit(ctx context.Context, in *UnitResourceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[UnitResourceResponse], error)
-	StartApplication(ctx context.Context, in *AppUnitRequest, opts ...grpc.CallOption) (*UnitResponse, error)
 }
 
 type unitControlServiceClient struct {
@@ -54,10 +54,10 @@ func NewUnitControlServiceClient(cc grpc.ClientConnInterface) UnitControlService
 	return &unitControlServiceClient{cc}
 }
 
-func (c *unitControlServiceClient) GetUnitStatus(ctx context.Context, in *UnitRequest, opts ...grpc.CallOption) (*UnitStatusResponse, error) {
+func (c *unitControlServiceClient) StartApplication(ctx context.Context, in *AppUnitRequest, opts ...grpc.CallOption) (*UnitResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UnitStatusResponse)
-	err := c.cc.Invoke(ctx, UnitControlService_GetUnitStatus_FullMethodName, in, out, cOpts...)
+	out := new(UnitResponse)
+	err := c.cc.Invoke(ctx, UnitControlService_StartApplication_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +114,16 @@ func (c *unitControlServiceClient) UnfreezeUnit(ctx context.Context, in *UnitReq
 	return out, nil
 }
 
+func (c *unitControlServiceClient) GetUnitStatus(ctx context.Context, in *UnitRequest, opts ...grpc.CallOption) (*UnitResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnitResponse)
+	err := c.cc.Invoke(ctx, UnitControlService_GetUnitStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *unitControlServiceClient) MonitorUnit(ctx context.Context, in *UnitResourceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[UnitResourceResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &UnitControlService_ServiceDesc.Streams[0], UnitControlService_MonitorUnit_FullMethodName, cOpts...)
@@ -133,28 +143,18 @@ func (c *unitControlServiceClient) MonitorUnit(ctx context.Context, in *UnitReso
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type UnitControlService_MonitorUnitClient = grpc.ServerStreamingClient[UnitResourceResponse]
 
-func (c *unitControlServiceClient) StartApplication(ctx context.Context, in *AppUnitRequest, opts ...grpc.CallOption) (*UnitResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UnitResponse)
-	err := c.cc.Invoke(ctx, UnitControlService_StartApplication_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // UnitControlServiceServer is the server API for UnitControlService service.
 // All implementations must embed UnimplementedUnitControlServiceServer
 // for forward compatibility.
 type UnitControlServiceServer interface {
-	GetUnitStatus(context.Context, *UnitRequest) (*UnitStatusResponse, error)
+	StartApplication(context.Context, *AppUnitRequest) (*UnitResponse, error)
 	StartUnit(context.Context, *UnitRequest) (*UnitResponse, error)
 	StopUnit(context.Context, *UnitRequest) (*UnitResponse, error)
 	KillUnit(context.Context, *UnitRequest) (*UnitResponse, error)
 	FreezeUnit(context.Context, *UnitRequest) (*UnitResponse, error)
 	UnfreezeUnit(context.Context, *UnitRequest) (*UnitResponse, error)
+	GetUnitStatus(context.Context, *UnitRequest) (*UnitResponse, error)
 	MonitorUnit(*UnitResourceRequest, grpc.ServerStreamingServer[UnitResourceResponse]) error
-	StartApplication(context.Context, *AppUnitRequest) (*UnitResponse, error)
 	mustEmbedUnimplementedUnitControlServiceServer()
 }
 
@@ -165,8 +165,8 @@ type UnitControlServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedUnitControlServiceServer struct{}
 
-func (UnimplementedUnitControlServiceServer) GetUnitStatus(context.Context, *UnitRequest) (*UnitStatusResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetUnitStatus not implemented")
+func (UnimplementedUnitControlServiceServer) StartApplication(context.Context, *AppUnitRequest) (*UnitResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartApplication not implemented")
 }
 func (UnimplementedUnitControlServiceServer) StartUnit(context.Context, *UnitRequest) (*UnitResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartUnit not implemented")
@@ -183,11 +183,11 @@ func (UnimplementedUnitControlServiceServer) FreezeUnit(context.Context, *UnitRe
 func (UnimplementedUnitControlServiceServer) UnfreezeUnit(context.Context, *UnitRequest) (*UnitResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnfreezeUnit not implemented")
 }
+func (UnimplementedUnitControlServiceServer) GetUnitStatus(context.Context, *UnitRequest) (*UnitResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetUnitStatus not implemented")
+}
 func (UnimplementedUnitControlServiceServer) MonitorUnit(*UnitResourceRequest, grpc.ServerStreamingServer[UnitResourceResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method MonitorUnit not implemented")
-}
-func (UnimplementedUnitControlServiceServer) StartApplication(context.Context, *AppUnitRequest) (*UnitResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StartApplication not implemented")
 }
 func (UnimplementedUnitControlServiceServer) mustEmbedUnimplementedUnitControlServiceServer() {}
 func (UnimplementedUnitControlServiceServer) testEmbeddedByValue()                            {}
@@ -210,20 +210,20 @@ func RegisterUnitControlServiceServer(s grpc.ServiceRegistrar, srv UnitControlSe
 	s.RegisterService(&UnitControlService_ServiceDesc, srv)
 }
 
-func _UnitControlService_GetUnitStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UnitRequest)
+func _UnitControlService_StartApplication_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppUnitRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(UnitControlServiceServer).GetUnitStatus(ctx, in)
+		return srv.(UnitControlServiceServer).StartApplication(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: UnitControlService_GetUnitStatus_FullMethodName,
+		FullMethod: UnitControlService_StartApplication_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UnitControlServiceServer).GetUnitStatus(ctx, req.(*UnitRequest))
+		return srv.(UnitControlServiceServer).StartApplication(ctx, req.(*AppUnitRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -318,6 +318,24 @@ func _UnitControlService_UnfreezeUnit_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UnitControlService_GetUnitStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UnitControlServiceServer).GetUnitStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UnitControlService_GetUnitStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UnitControlServiceServer).GetUnitStatus(ctx, req.(*UnitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _UnitControlService_MonitorUnit_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(UnitResourceRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -329,24 +347,6 @@ func _UnitControlService_MonitorUnit_Handler(srv interface{}, stream grpc.Server
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type UnitControlService_MonitorUnitServer = grpc.ServerStreamingServer[UnitResourceResponse]
 
-func _UnitControlService_StartApplication_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AppUnitRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(UnitControlServiceServer).StartApplication(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: UnitControlService_StartApplication_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UnitControlServiceServer).StartApplication(ctx, req.(*AppUnitRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // UnitControlService_ServiceDesc is the grpc.ServiceDesc for UnitControlService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -355,8 +355,8 @@ var UnitControlService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*UnitControlServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "GetUnitStatus",
-			Handler:    _UnitControlService_GetUnitStatus_Handler,
+			MethodName: "StartApplication",
+			Handler:    _UnitControlService_StartApplication_Handler,
 		},
 		{
 			MethodName: "StartUnit",
@@ -379,8 +379,8 @@ var UnitControlService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _UnitControlService_UnfreezeUnit_Handler,
 		},
 		{
-			MethodName: "StartApplication",
-			Handler:    _UnitControlService_StartApplication_Handler,
+			MethodName: "GetUnitStatus",
+			Handler:    _UnitControlService_GetUnitStatus_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
