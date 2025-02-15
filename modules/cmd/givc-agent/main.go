@@ -13,6 +13,7 @@ import (
 	"time"
 
 	givc_admin "givc/modules/api/admin"
+	givc_systemd "givc/modules/api/systemd"
 	givc_app "givc/modules/pkgs/applications"
 	givc_grpc "givc/modules/pkgs/grpc"
 	givc_hwidmanager "givc/modules/pkgs/hwidmanager"
@@ -153,7 +154,7 @@ func main() {
 	if servicesPresent {
 		cfgAgent.Services = append(cfgAgent.Services, services...)
 	}
-	log.Infof("Started with services: %v\n", cfgAgent.Services)
+	log.Infof("Allowed systemd units: %v\n", cfgAgent.Services)
 
 	agentEntryRequest := &givc_admin.RegistryRequest{
 		Name:   agentServiceName,
@@ -165,7 +166,7 @@ func main() {
 			Port:     cfgAgent.Transport.Port,
 			Name:     cfgAgent.Transport.Name,
 		},
-		State: &givc_admin.UnitStatus{
+		State: &givc_systemd.UnitStatus{
 			Name: agentServiceName,
 		},
 	}
@@ -196,7 +197,7 @@ func main() {
 						Address:  cfgAgent.Transport.Address,
 						Port:     cfgAgent.Transport.Port,
 					},
-					State: &givc_admin.UnitStatus{
+					State: &givc_systemd.UnitStatus{
 						Name: service,
 					},
 				}

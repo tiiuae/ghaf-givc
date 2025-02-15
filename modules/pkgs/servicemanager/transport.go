@@ -53,94 +53,148 @@ func (s *SystemdControlServer) Close() {
 	s.Controller.Close()
 }
 
-func (s *SystemdControlServer) GetUnitStatus(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitStatusResponse, error) {
-	log.Infof("Incoming request to fetch unit status: %v\n", req)
+func (s *SystemdControlServer) getUnitStatus(ctx context.Context, name string) (*givc_systemd.UnitStatus, error) {
 
-	unitStatus, err := s.Controller.FindUnit(req.UnitName)
+	unitStatus, err := s.Controller.FindUnit(name)
 	if err != nil {
 		log.Infof("[GetUnitStatus] Error finding unit: %v", err)
-		return nil, grpc_status.Error(grpc_codes.NotFound, fmt.Sprintf("error fetching unit status: %s", req.UnitName))
+		return nil, grpc_status.Error(grpc_codes.NotFound, fmt.Sprintf("error fetching unit status: %s", name))
 	}
 	if len(unitStatus) != 1 {
-		errStr := fmt.Sprintf("error, got %d units named %s", len(unitStatus), req.UnitName)
+		errStr := fmt.Sprintf("error, got %d units named %s", len(unitStatus), name)
 		return nil, grpc_status.Error(grpc_codes.NotFound, errStr)
 	}
 
-	freezerState, err := s.Controller.GetUnitPropertyString(context.Background(), req.UnitName, "FreezerState")
+	freezerState, err := s.Controller.getUnitPropertyString(ctx, name, "FreezerState")
 	if err != nil {
 		log.Infof("[GetUnitStatus] Error fetching freezer state: %v\n", err)
 		freezerState = "error"
 	}
 
-	resp := &givc_systemd.UnitStatusResponse{
-		CmdStatus: "Command successful",
-		UnitStatus: &givc_systemd.UnitStatus{
-			Name:         unitStatus[0].Name,
-			Description:  unitStatus[0].Description,
-			LoadState:    unitStatus[0].LoadState,
-			ActiveState:  unitStatus[0].ActiveState,
-			SubState:     unitStatus[0].SubState,
-			Path:         string(unitStatus[0].Path),
-			FreezerState: freezerState,
-		},
+	resp := &givc_systemd.UnitStatus{
+		Name:         unitStatus[0].Name,
+		Description:  unitStatus[0].Description,
+		LoadState:    unitStatus[0].LoadState,
+		ActiveState:  unitStatus[0].ActiveState,
+		SubState:     unitStatus[0].SubState,
+		Path:         string(unitStatus[0].Path),
+		FreezerState: freezerState,
 	}
 
+	return resp, nil
+}
+
+func (s *SystemdControlServer) GetUnitStatus(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
+	log.Infof("Incoming request to fetch unit status: %v\n", req)
+	unitStatus, err := s.getUnitStatus(ctx, req.UnitName)
+	if err != nil {
+		log.Infof("[GetUnitStatus] Error getting unit status: %v", err)
+		return nil, err
+	}
+	resp := &givc_systemd.UnitResponse{
+		UnitStatus: unitStatus,
+	}
 	return resp, nil
 }
 
 func (s *SystemdControlServer) StartUnit(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to (re)start %v\n", req)
 
-	err := s.Controller.StartUnit(context.Background(), req.UnitName)
+	err := s.Controller.StartUnit(ctx, req.UnitName)
 	if err != nil {
 		log.Infof("[StartUnit] Error starting unit: %v", err)
-		return nil, grpc_status.Error(grpc_codes.Unknown, "cannot start unit")
+		return nil, grpc_status.Error(grpc_codes.Unknown, fmt.Sprintf("cannot start unit: %s", err))
 	}
-	return &givc_systemd.UnitResponse{CmdStatus: "Command successful"}, nil
+	unitStatus, err := s.getUnitStatus(ctx, req.UnitName)
+	if err != nil {
+		return nil, err
+	}
+	resp := &givc_systemd.UnitResponse{
+		UnitStatus: unitStatus,
+	}
+	return resp, nil
 }
 
 func (s *SystemdControlServer) StopUnit(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to stop %v\n", req)
 
-	err := s.Controller.StopUnit(context.Background(), req.UnitName)
+	err := s.Controller.StopUnit(ctx, req.UnitName)
 	if err != nil {
 		log.Infof("[StopUnit] Error stopping unit: %v\n", err)
-		return nil, grpc_status.Error(grpc_codes.Unknown, "cannot stop unit")
+		return nil, grpc_status.Error(grpc_codes.Unknown, fmt.Sprintf("cannot stop unit: %s", err))
 	}
-	return &givc_systemd.UnitResponse{CmdStatus: "Command successful"}, nil
+	unitStatus, err := s.getUnitStatus(ctx, req.UnitName)
+	if err != nil {
+		// Override for transient units
+		unitStatus = &givc_systemd.UnitStatus{
+			Name:        req.UnitName,
+			ActiveState: "inactive",
+			SubState:    "dead",
+		}
+	}
+	resp := &givc_systemd.UnitResponse{
+		UnitStatus: unitStatus,
+	}
+	return resp, nil
 }
 
 func (s *SystemdControlServer) KillUnit(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to kill %v\n", req)
 
-	err := s.Controller.KillUnit(context.Background(), req.UnitName)
+	err := s.Controller.KillUnit(ctx, req.UnitName)
 	if err != nil {
-		log.Infof("[KillUnit] Error starting unit: %v\n", err)
-		return nil, grpc_status.Error(grpc_codes.Unknown, "cannot kill unit")
+		log.Infof("[KillUnit] Error killing unit: %v\n", err)
+		return nil, grpc_status.Error(grpc_codes.Unknown, fmt.Sprintf("cannot kill unit: %s", err))
 	}
-	return &givc_systemd.UnitResponse{CmdStatus: "Command successful"}, nil
+	unitStatus, err := s.getUnitStatus(ctx, req.UnitName)
+	if err != nil {
+		// Override for transient units
+		unitStatus = &givc_systemd.UnitStatus{
+			Name:        req.UnitName,
+			ActiveState: "inactive",
+			SubState:    "dead",
+		}
+	}
+	resp := &givc_systemd.UnitResponse{
+		UnitStatus: unitStatus,
+	}
+	return resp, nil
 }
 
 func (s *SystemdControlServer) FreezeUnit(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to freeze %v", req)
 
-	err := s.Controller.FreezeUnit(context.Background(), req.UnitName)
+	err := s.Controller.FreezeUnit(ctx, req.UnitName)
 	if err != nil {
 		log.Infof("[FreezeUnit] Error freezing unit: %v\n", err)
-		return nil, grpc_status.Error(grpc_codes.Unknown, "cannot freeze unit")
+		return nil, grpc_status.Error(grpc_codes.Unknown, fmt.Sprintf("cannot freeze unit: %s", err))
 	}
-	return &givc_systemd.UnitResponse{CmdStatus: "Command successful"}, nil
+	unitStatus, err := s.getUnitStatus(ctx, req.UnitName)
+	if err != nil {
+		return nil, err
+	}
+	resp := &givc_systemd.UnitResponse{
+		UnitStatus: unitStatus,
+	}
+	return resp, nil
 }
 
 func (s *SystemdControlServer) UnfreezeUnit(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to unfreeze %v\n", req)
 
-	err := s.Controller.UnfreezeUnit(context.Background(), req.UnitName)
+	err := s.Controller.UnfreezeUnit(ctx, req.UnitName)
 	if err != nil {
-		log.Infof("[StartUnit] Error un-freezing unit: %v\n", err)
-		return nil, grpc_status.Error(grpc_codes.Unknown, "cannot unfreeze unit")
+		log.Infof("[UnfreezeUnit] Error unfreezing unit: %v\n", err)
+		return nil, grpc_status.Error(grpc_codes.Unknown, fmt.Sprintf("cannot unfreeze unit: %s", err))
 	}
-	return &givc_systemd.UnitResponse{CmdStatus: "Command successful"}, nil
+	unitStatus, err := s.getUnitStatus(ctx, req.UnitName)
+	if err != nil {
+		return nil, err
+	}
+	resp := &givc_systemd.UnitResponse{
+		UnitStatus: unitStatus,
+	}
+	return resp, nil
 }
 
 func (s *SystemdControlServer) MonitorUnit(req *givc_systemd.UnitResourceRequest, stream givc_systemd.UnitControlService_MonitorUnitServer) error {
@@ -149,7 +203,7 @@ func (s *SystemdControlServer) MonitorUnit(req *givc_systemd.UnitResourceRequest
 	// Find unit
 	units, err := s.Controller.FindUnit(req.UnitName)
 	if err != nil {
-		return grpc_status.Error(grpc_codes.NotFound, "cannot monitor unit")
+		return grpc_status.Error(grpc_codes.NotFound, fmt.Sprintf("cannot monitor unit: %s", err))
 	}
 	if len(units) != 1 {
 		return fmt.Errorf("none or more than one unit found")
@@ -161,7 +215,7 @@ func (s *SystemdControlServer) MonitorUnit(req *givc_systemd.UnitResourceRequest
 	}
 
 	// Get pid from unit property or pid
-	unitProps, err := s.Controller.GetUnitProperties(context.Background(), unit.Name)
+	unitProps, err := s.Controller.getUnitProperties(context.Background(), unit.Name)
 	if err != nil {
 		return err
 	}
@@ -172,7 +226,7 @@ func (s *SystemdControlServer) MonitorUnit(req *givc_systemd.UnitResourceRequest
 	}
 
 	for i := 0; i < 50; i += 1 {
-		cpuUsage, memoryUsage, err := s.Controller.GetUnitCpuAndMem(context.Background(), pid)
+		cpuUsage, memoryUsage, err := s.Controller.getUnitCpuAndMem(context.Background(), pid)
 		if err != nil {
 			log.Infof("[MonitorUnit] Error fetching unit properties: %v\n", err)
 			return fmt.Errorf("cannot fetch unit properties")
@@ -191,9 +245,29 @@ func (s *SystemdControlServer) MonitorUnit(req *givc_systemd.UnitResourceRequest
 
 func (s *SystemdControlServer) StartApplication(ctx context.Context, req *givc_systemd.AppUnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Executing application start method for: %s\n", req.UnitName)
-	resp, err := s.Controller.StartApplication(ctx, req.UnitName, req.Args)
+
+	unitStatus, err := s.Controller.StartApplication(ctx, req.UnitName, req.Args)
 	if err != nil {
-		return nil, err
+		return nil, grpc_status.Error(grpc_codes.Unknown, fmt.Sprintf("cannot start application: %s", err))
 	}
-	return &givc_systemd.UnitResponse{CmdStatus: resp}, nil
+
+	freezerState, err := s.Controller.getUnitPropertyString(ctx, unitStatus.Name, "FreezerState")
+	if err != nil {
+		log.Infof("[StartApplication] Error fetching freezer state: %v\n", err)
+		freezerState = "error"
+	}
+
+	resp := &givc_systemd.UnitResponse{
+		UnitStatus: &givc_systemd.UnitStatus{
+			Name:         unitStatus.Name,
+			Description:  unitStatus.Description,
+			LoadState:    unitStatus.LoadState,
+			ActiveState:  unitStatus.ActiveState,
+			SubState:     unitStatus.SubState,
+			Path:         string(unitStatus.Path),
+			FreezerState: freezerState,
+		},
+	}
+
+	return resp, nil
 }

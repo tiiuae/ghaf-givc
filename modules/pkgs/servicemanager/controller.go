@@ -5,12 +5,16 @@ package servicemanager
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
+
+	// "sync"
 	"syscall"
+	"time"
 
 	givc_app "givc/modules/pkgs/applications"
-	types "givc/modules/pkgs/types"
-	util "givc/modules/pkgs/utility"
+	givc_types "givc/modules/pkgs/types"
+	givc_util "givc/modules/pkgs/utility"
 
 	"github.com/coreos/go-systemd/v22/dbus"
 	godbus "github.com/godbus/dbus/v5"
@@ -18,19 +22,26 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	NO_WAIT_FOR_MERGE = 0 * time.Second
+	WAIT_FOR_MERGE    = 2 * time.Second
+)
+
 type SystemdController struct {
 	conn         *dbus.Conn
 	whitelist    []string
-	applications []types.ApplicationManifest
+	applications []givc_types.ApplicationManifest
+	cancelCtx    context.CancelFunc
 }
 
-func NewController(whitelist []string, applications []types.ApplicationManifest) (*SystemdController, error) {
+func NewController(whitelist []string, applications []givc_types.ApplicationManifest) (*SystemdController, error) {
 	var err error
 	var c SystemdController
+	var ctx context.Context
 
 	// Create dbus connector
-	ctx := context.Background()
-	systemMode := util.IsRoot()
+	ctx, c.cancelCtx = context.WithCancel(context.Background())
+	systemMode := givc_util.IsRoot()
 	if systemMode {
 		c.conn, err = dbus.NewSystemConnectionContext(ctx)
 	} else {
@@ -45,28 +56,46 @@ func NewController(whitelist []string, applications []types.ApplicationManifest)
 	for _, name := range c.whitelist {
 		_, err := c.FindUnit(name)
 		if err != nil {
-			c.conn.Close()
+			c.Close()
 			return nil, err
 		}
 	}
-	c.applications = applications
+
+	// Whitelist applications
+	if applications != nil {
+		c.applications = applications
+		for _, app := range c.applications {
+			c.whitelist = append(c.whitelist, app.Name)
+		}
+	}
 
 	return &c, nil
 }
 
 func (c *SystemdController) Close() {
 	c.conn.Close()
+	c.cancelCtx()
 }
 
+// IsUnitWhitelisted checks if a unit is whitelisted.
 func (c *SystemdController) IsUnitWhitelisted(name string) bool {
 	for _, val := range c.whitelist {
+		// General units are whitelisted by their full name
 		if val == name {
+			return true
+		}
+		// Application instances are whitelisted based
+		// on their base name, so we match with regex
+		re := regexp.MustCompile(`^` + val + `@[0-9]+\.service$`)
+		if re.MatchString(name) {
 			return true
 		}
 	}
 	return false
 }
 
+// FindUnit returns the status of all units matching the name.
+// It performs a whitelist check to ensure the unit is allowed to be queried.
 func (c *SystemdController) FindUnit(name string) ([]dbus.UnitStatus, error) {
 
 	ok := c.IsUnitWhitelisted(name)
@@ -86,44 +115,7 @@ func (c *SystemdController) FindUnit(name string) ([]dbus.UnitStatus, error) {
 	return units, err
 }
 
-func (c *SystemdController) FindUnitFiles(name string) ([]dbus.UnitFile, error) {
-
-	ok := c.IsUnitWhitelisted(name)
-	if !ok {
-		return nil, fmt.Errorf("unit is not whitelisted")
-	}
-
-	var err error
-	units, err := c.conn.ListUnitFilesByPatternsContext(context.Background(), []string{"enabled"}, []string{name})
-	if err != nil {
-		return nil, fmt.Errorf("cannot find unit with name %s: %v", name, err)
-	}
-	if len(units) < 1 {
-		return nil, fmt.Errorf("no units found with name %s", name)
-	}
-
-	return units, err
-}
-
-func (c *SystemdController) FindUnitsByPattern(name string, states string) ([]dbus.UnitStatus, error) {
-
-	ok := c.IsUnitWhitelisted(name)
-	if !ok {
-		return nil, fmt.Errorf("unit is not whitelisted")
-	}
-
-	var err error
-	var units []dbus.UnitStatus
-	units, err = c.conn.ListUnitsByPatternsContext(context.Background(), []string{states}, []string{name})
-	if err != nil {
-		return nil, fmt.Errorf("cannot find unit with name %s: %v", name, err)
-	}
-	if len(units) < 1 {
-		return nil, fmt.Errorf("no units found with name %s", name)
-	}
-	return units, nil
-}
-
+// StartUnit starts any systemd unit.
 func (c *SystemdController) StartUnit(ctx context.Context, name string) error {
 
 	// Input validation
@@ -158,11 +150,11 @@ func (c *SystemdController) StartUnit(ctx context.Context, name string) error {
 			return fmt.Errorf("failed to (re)start unit %s: %s", name, status)
 		}
 	}
-	// @TODO This only verifies the start job; requires e.g., subscription to track (re)start
 
 	return nil
 }
 
+// StopUnit stops a unit by name.
 func (c *SystemdController) StopUnit(ctx context.Context, name string) error {
 
 	// Input validation
@@ -196,11 +188,11 @@ func (c *SystemdController) StopUnit(ctx context.Context, name string) error {
 			return fmt.Errorf("unit %s stop %s", name, status)
 		}
 	}
-	// @TODO This only verifies the stop job; requires e.g., subscription to track stop
 
 	return nil
 }
 
+// KillUnit forcefully terminates a unit.
 func (c *SystemdController) KillUnit(ctx context.Context, name string) error {
 
 	// Input validation
@@ -225,6 +217,7 @@ func (c *SystemdController) KillUnit(ctx context.Context, name string) error {
 	return nil
 }
 
+// FreezeUnit freezes a unit.
 func (c *SystemdController) FreezeUnit(ctx context.Context, name string) error {
 
 	// Input validation
@@ -252,6 +245,7 @@ func (c *SystemdController) FreezeUnit(ctx context.Context, name string) error {
 	return nil
 }
 
+// UnfreezeUnit unfreezes (thaw) a unit.
 func (c *SystemdController) UnfreezeUnit(ctx context.Context, name string) error {
 
 	// Input validation
@@ -279,7 +273,9 @@ func (c *SystemdController) UnfreezeUnit(ctx context.Context, name string) error
 	return nil
 }
 
-func (c *SystemdController) GetUnitCpuAndMem(ctx context.Context, pid uint32) (float64, float32, error) {
+// The function getUnitCpuAndMem returns the CPU and memory usage of a unit.
+// No check against unit whitelist is performed.
+func (c *SystemdController) getUnitCpuAndMem(ctx context.Context, pid uint32) (float64, float32, error) {
 
 	// Input validation
 	if ctx == nil {
@@ -310,7 +306,9 @@ func (c *SystemdController) GetUnitCpuAndMem(ctx context.Context, pid uint32) (f
 	return cpuPercent, memInfo, nil
 }
 
-func (c *SystemdController) GetUnitProperties(ctx context.Context, unitName string) (map[string]interface{}, error) {
+// The function getUnitProperties returns all properties of a unit as a map.
+// No check against unit whitelist is performed.
+func (c *SystemdController) getUnitProperties(ctx context.Context, unitName string) (map[string]interface{}, error) {
 
 	// Input validation
 	if ctx == nil {
@@ -329,7 +327,9 @@ func (c *SystemdController) GetUnitProperties(ctx context.Context, unitName stri
 	return props, nil
 }
 
-func (c *SystemdController) GetUnitPropertyString(ctx context.Context, unitName string, propertyName string) (string, error) {
+// The function getUnitPropertyString returns the value of a specific property of a unit as a string.
+// No check against unit whitelist is performed.
+func (c *SystemdController) getUnitPropertyString(ctx context.Context, unitName string, propertyName string) (string, error) {
 
 	// Input validation
 	if ctx == nil {
@@ -352,14 +352,21 @@ func (c *SystemdController) GetUnitPropertyString(ctx context.Context, unitName 
 	return propString, nil
 }
 
-func (c *SystemdController) StartApplication(ctx context.Context, serviceName string, serviceArgs []string) (string, error) {
+// StartApplication starts an application service with the dynamic arguments.
+// Dynamic arguments are validated in accordance with the application manifest.
+// The application is started as a transient systemd unit, which means it is not persisted.
+// Since applications may be merged into a single unit, this function implements a pre-start
+// analysis and a post-start watch mechanism to determine if the application is merged or not.
+func (c *SystemdController) StartApplication(ctx context.Context, serviceName string, serviceArgs []string) (*dbus.UnitStatus, error) {
 
-	cmdFailure := "Command failed."
+	if ctx == nil {
+		return nil, fmt.Errorf("context cannot be nil")
+	}
 
 	// Validate application request
 	err := givc_app.ValidateAppUnitRequest(serviceName, serviceArgs, c.applications)
 	if err != nil {
-		return cmdFailure, err
+		return nil, err
 	}
 
 	// Assemble command
@@ -371,14 +378,12 @@ func (c *SystemdController) StartApplication(ctx context.Context, serviceName st
 		}
 	}
 	if appCmd == "" {
-		return cmdFailure, fmt.Errorf("application unknown")
+		return nil, fmt.Errorf("application unknown")
 	}
 	cmd := strings.Split(appCmd, " ")
 	if len(cmd) == 0 {
-		return cmdFailure, fmt.Errorf("incorrect application string format")
+		return nil, fmt.Errorf("incorrect application string format")
 	}
-
-	// Add arguments
 	cmd = append(cmd, serviceArgs...)
 
 	// Setup properties
@@ -392,25 +397,125 @@ func (c *SystemdController) StartApplication(ctx context.Context, serviceName st
 	}
 	props = append(props, propDescription, propExecStart, propType, probEnvironment)
 
-	// Run command as transient service
+	// Since units are merged silently, we are matching running units with the
+	// current applications command before we start the application.
+	var serviceUnits []dbus.UnitStatus
+	runningUnits, err := c.conn.ListUnitsByPatternsContext(ctx, []string{"active"}, []string{"*@*.service"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up merge unit %s", appName)
+	}
+	log.Infof("Running units: %v", runningUnits)
+	for _, unit := range runningUnits {
+		// Determine if the unit is a candidate for merging
+		candidateUnits, err := c.conn.ListUnitsByPatternsContext(ctx, []string{"active"}, []string{unit.Name})
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up merge unit %s", appName)
+		}
+		if len(candidateUnits) != 1 {
+			// More than one instance indicates service does not merge, less
+			// means no candidate running
+			continue
+		}
+
+		// Fetch executed command
+		prop, err := c.conn.GetServicePropertyContext(ctx, candidateUnits[0].Name, "ExecStart")
+		if err != nil {
+			return nil, fmt.Errorf("error fetching ExecStart from unit %s", candidateUnits[0].Name)
+		}
+		candidateExecStart := prop.Value.String()
+
+		// If the applications runs waypipe, we need to check the second argument.
+		// This is Ghaf specific. Since commands can be arbitrarily concatenated,
+		// there is no automatic way to determine the correct index for comparison.
+		idx := 0
+		if strings.Contains(cmd[0], "waypipe") && len(cmd) > 1 {
+			idx = 1
+		}
+
+		// Check if the command matches our current command
+		if strings.Contains(candidateExecStart, cmd[idx]) {
+			// At this point, we have found a potential merge candidate
+			serviceUnits = candidateUnits
+			log.Infof("Found merge candidate: %s", serviceUnits[0].Name)
+			break
+		}
+	}
+
+	// Start application
 	jobStatus := make(chan string)
 	_, err = c.conn.StartTransientUnitContext(ctx, serviceName, "replace", props, jobStatus)
 	if err != nil {
-		return cmdFailure, fmt.Errorf("error starting application: %s (%s)", appCmd, err)
+		return nil, fmt.Errorf("error starting application: %s (%s)", appCmd, err)
 	}
 
-	// Check command started
 	status := <-jobStatus
 	switch status {
 	case "done":
-		log.Infof("application %s (re)start cmd successful\n", serviceName)
+		log.Infof("application %s (re)start cmd successful", serviceName)
 	default:
-		return cmdFailure, fmt.Errorf("failed to start app %s: %s", serviceName, status)
+		return nil, fmt.Errorf("failed to start app %s: %s", serviceName, status)
 	}
 
-	// Whitelist application service
-	c.whitelist = append(c.whitelist, serviceName)
-	// @TODO remove application from whitelist?
+	// Since for transient services the unit file is removed, we cannot distinguish if it
+	// finished or was merged. Hence we wait and watch its unit status for a while. After
+	// the deadline exceeds, we assume the application is running and needs to be registered.
+	// Contrary to a simple sleep, this construct allows to return faster if the unit finishes
+	// earlier than the watch time, is a first instance, or is merged into another unit.
+	// Note that the watch time only impacts the response time to the admin service, the
+	// application start time remains constant.
+	waitTime := NO_WAIT_FOR_MERGE
+	if len(serviceUnits) > 0 {
+		// Apply waittime iff a merge candidate was found
+		waitTime = WAIT_FOR_MERGE
+	}
+	deadline := time.After(waitTime)
 
-	return "Command successful.", nil
+watch:
+	for {
+		// Query unit file with exact name. This will always returns a unit status
+		runUnit, err := c.conn.ListUnitsByNamesContext(ctx, []string{serviceName})
+		if err != nil {
+			return nil, fmt.Errorf("failed to watch unit %s", serviceName)
+		}
+		activeState := runUnit[0].ActiveState
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("context cancelled during service watch")
+
+		case <-deadline:
+			// Service is still active, it needs to be registered with admin
+			serviceUnits = runUnit
+			break watch
+
+		default:
+			switch {
+			case activeState == "inactive":
+				// Service is reported inactive, which means the unit file was removed.
+				switch len(serviceUnits) {
+				case 0:
+					// Service is inactive and no merge candicate was found, so we report a dead unit.
+					serviceUnits = append(serviceUnits, dbus.UnitStatus{
+						Name:        serviceName,
+						Description: fmt.Sprintf("Exited application: %s", serviceName),
+						ActiveState: "inactive",
+						SubState:    "dead",
+					})
+					log.Infof("Failed to find unit with name %s after successful start of application", appName)
+				default:
+					// Service is inactive, but a merge candidate was found as serviceUnits is not empty.
+				}
+				break watch
+
+			case activeState == "failed":
+				// Service failed to execute successfully
+				return nil, fmt.Errorf("application started but failed: %s", serviceName)
+
+			default:
+				continue
+			}
+		}
+	}
+
+	return &serviceUnits[0], nil
 }
