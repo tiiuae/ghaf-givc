@@ -4,19 +4,6 @@ syntax = "proto3";
 option go_package = "givc/modules/api/systemd";
 package systemd;
 
-message UnitRequest {
-    string UnitName = 1;
-}
-
-message UnitResponse {
-    string CmdStatus = 1;
-}
-
-message AppUnitRequest {
-    string UnitName = 1;
-    repeated string Args = 2;
-}
-
 message UnitStatus {
     string Name = 1;
 	string Description = 2;
@@ -27,9 +14,17 @@ message UnitStatus {
     string FreezerState = 7;
 }
 
-message UnitStatusResponse {
-    string CmdStatus = 1;
-    UnitStatus UnitStatus = 2;
+message UnitRequest {
+    string UnitName = 1;
+}
+
+message AppUnitRequest {
+    string UnitName = 1;
+    repeated string Args = 2;
+}
+
+message UnitResponse {
+    UnitStatus UnitStatus = 1;
 }
 
 message UnitResourceRequest {
@@ -37,17 +32,17 @@ message UnitResourceRequest {
 }
 
 message UnitResourceResponse {
-    double CpuUsage = 1;
-    float MemoryUsage = 2;
+    double cpu_usage = 1;
+    float memory_usage = 2;
 }
 
 service UnitControlService {
-    rpc GetUnitStatus(UnitRequest) returns (UnitStatusResponse) {}
+    rpc StartApplication(AppUnitRequest) returns (UnitResponse) {}
     rpc StartUnit(UnitRequest) returns (UnitResponse) {}
     rpc StopUnit(UnitRequest) returns (UnitResponse) {}
     rpc KillUnit(UnitRequest) returns (UnitResponse) {}
     rpc FreezeUnit(UnitRequest) returns (UnitResponse) {}
     rpc UnfreezeUnit(UnitRequest) returns (UnitResponse) {}
+    rpc GetUnitStatus(UnitRequest) returns (UnitResponse) {}
     rpc MonitorUnit(UnitResourceRequest) returns (stream UnitResourceResponse) {}
-    rpc StartApplication(AppUnitRequest) returns (UnitResponse) {}
 }

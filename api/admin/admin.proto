@@ -3,16 +3,9 @@
 syntax = "proto3";
 option go_package = "givc/modules/api/admin";
 import "stats/stats.proto";
+import "systemd/systemd.proto";
 
 package admin;
-
-message UnitStatus {
-    string Name = 1;
-	string Description = 2;
-	string LoadState = 3;
-	string ActiveState = 4;
-	string Path = 5;
-}
 
 message TransportConfig {
     string Protocol = 1;
@@ -26,7 +19,7 @@ message RegistryRequest {
     string Parent = 2;
     uint32 Type = 3;
     TransportConfig Transport = 4;
-	UnitStatus State = 5;
+	systemd.UnitStatus State = 5;
 }
 
 message RegistryResponse {
@@ -53,7 +46,7 @@ message StartServiceRequest {
 }
 
 message StartResponse {
-    string registry_id = 1; // Registry ID for newly started app, service or vm
+    string registryId = 1; // Registry ID for newly started app, service or vm
 }
 
 message ApplicationResponse {
