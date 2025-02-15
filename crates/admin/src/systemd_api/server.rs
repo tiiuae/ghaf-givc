@@ -20,7 +20,7 @@ impl pb::systemd::unit_control_service_server::UnitControlService for SystemdSer
     async fn get_unit_status(
         &self,
         _request: Request<pb::systemd::UnitRequest>,
-    ) -> Result<Response<pb::systemd::UnitStatusResponse>, Status> {
+    ) -> Result<Response<pb::systemd::UnitResponse>, Status> {
         unimplemented!()
     }
     async fn start_unit(

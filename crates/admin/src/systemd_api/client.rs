@@ -1,6 +1,7 @@
 use crate::pb;
 use givc_client::endpoint::EndpointConfig;
 use givc_client::error::StatusWrapExt;
+use pb::systemd::UnitResponse;
 use tonic::transport::Channel;
 
 type Client = pb::systemd::unit_control_service_client::UnitControlServiceClient<Channel>;
@@ -20,17 +21,10 @@ impl SystemDClient {
         Ok(Client::new(channel))
     }
 
-    pub async fn get_remote_status(
+    fn status_response(
         &self,
-        unit: String,
+        response: tonic::Response<UnitResponse>,
     ) -> anyhow::Result<crate::types::UnitStatus> {
-        let request = pb::systemd::UnitRequest { unit_name: unit };
-        let response = self
-            .connect()
-            .await?
-            .get_unit_status(request)
-            .await
-            .rewrap_err()?;
         let status = response
             .into_inner()
             .unit_status
@@ -46,82 +40,90 @@ impl SystemDClient {
         })
     }
 
-    pub async fn start_remote(&self, unit: String) -> anyhow::Result<String> {
+    pub async fn get_remote_status(
+        &self,
+        unit: String,
+    ) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::UnitRequest { unit_name: unit };
-        let resp = self
+        let response = self
+            .connect()
+            .await?
+            .get_unit_status(request)
+            .await
+            .rewrap_err()?;
+        self.status_response(response)
+    }
+
+    pub async fn start_remote(&self, unit: String) -> anyhow::Result<crate::types::UnitStatus> {
+        let request = pb::systemd::UnitRequest { unit_name: unit };
+        let response = self
             .connect()
             .await?
             .start_unit(request)
             .await
             .rewrap_err()?;
-        let status = resp.into_inner();
-        Ok(status.cmd_status)
+        self.status_response(response)
     }
 
-    pub async fn stop_remote(&self, unit: String) -> anyhow::Result<String> {
+    pub async fn stop_remote(&self, unit: String) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::UnitRequest { unit_name: unit };
-        let resp = self
+        let response = self
             .connect()
             .await?
             .stop_unit(request)
             .await
             .rewrap_err()?;
-        let status = resp.into_inner();
-        Ok(status.cmd_status)
+        self.status_response(response)
     }
 
-    pub async fn kill_remote(&self, unit: String) -> anyhow::Result<String> {
+    pub async fn kill_remote(&self, unit: String) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::UnitRequest { unit_name: unit };
-        let resp = self
+        let response = self
             .connect()
             .await?
             .kill_unit(request)
             .await
             .rewrap_err()?;
-        let status = resp.into_inner();
-        Ok(status.cmd_status)
+        self.status_response(response)
     }
 
-    pub async fn pause_remote(&self, unit: String) -> anyhow::Result<String> {
+    pub async fn pause_remote(&self, unit: String) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::UnitRequest { unit_name: unit };
-        let resp = self
+        let response = self
             .connect()
             .await?
             .freeze_unit(request)
             .await
             .rewrap_err()?;
-        let status = resp.into_inner();
-        Ok(status.cmd_status)
+        self.status_response(response)
     }
 
-    pub async fn resume_remote(&self, unit: String) -> anyhow::Result<String> {
+    pub async fn resume_remote(&self, unit: String) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::UnitRequest { unit_name: unit };
-        let resp = self
+        let response = self
             .connect()
             .await?
             .unfreeze_unit(request)
             .await
             .rewrap_err()?;
-        let status = resp.into_inner();
-        Ok(status.cmd_status)
+        self.status_response(response)
     }
 
     pub async fn start_application(
         &self,
         unit: String,
         args: Vec<String>,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::AppUnitRequest {
             unit_name: unit,
             args,
         };
-        let resp = self
+        let response = self
             .connect()
             .await?
             .start_application(request)
             .await
             .rewrap_err()?;
-        let status = resp.into_inner();
-        Ok(status.cmd_status)
+        self.status_response(response)
     }
 }

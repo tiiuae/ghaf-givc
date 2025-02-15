@@ -333,12 +333,12 @@ impl AdminServiceImpl {
             .with_context(|| format!("while lookung up {systemd_agent_name} for {vm_name}"))?;
         let client = SystemDClient::new(endpoint);
         let app_name = self.registry.create_unique_entry_name(&name);
-        client.start_application(app_name.clone(), req.args).await?;
-        let status = client.get_remote_status(app_name.clone()).await?;
+        let status = client.start_application(app_name.clone(), req.args).await?;
+        let remote_name = status.clone().name;
         if status.active_state == "active" {
             let app_entry = RegistryEntry {
-                name: app_name.clone(),
-                status,
+                name: remote_name.clone(),
+                status: status.clone(),
                 watch: true,
                 r#type: UnitType {
                     vm: VmType::AppVM,
@@ -350,10 +350,8 @@ impl AdminServiceImpl {
                 },
             };
             self.registry.register(app_entry);
-        } else {
-            bail!("Failed to start application {name}, or command has finished")
         };
-        Ok(app_name)
+        Ok(remote_name)
     }
 }
 
@@ -415,13 +413,16 @@ impl pb::admin_service_server::AdminService for AdminService {
         info!("Responding with {res:?}");
         Ok(Response::new(res))
     }
+
     async fn start_application(
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<StartResponse>, tonic::Status> {
         escalate(request, |req| async {
-            let registry_id = self.inner.start_app(req).await?;
-            Ok(StartResponse { registry_id })
+            let app_name = self.inner.start_app(req).await?;
+            Ok(StartResponse {
+                registry_id: app_name,
+            })
         })
         .await
     }
@@ -464,7 +465,11 @@ impl pb::admin_service_server::AdminService for AdminService {
             let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
             for each in self.inner.app_entries(&req.app_name)? {
-                _ = client.pause_remote(each).await?
+                let name = each.clone();
+                let status = client.pause_remote(each).await?;
+                if !status.is_paused() {
+                    bail!("Failed to pause {name}");
+                }
             }
             app_success()
         })
@@ -479,7 +484,11 @@ impl pb::admin_service_server::AdminService for AdminService {
             let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
             for each in self.inner.app_entries(&req.app_name)? {
-                _ = client.resume_remote(each).await?
+                let name = each.clone();
+                let status = client.resume_remote(each).await?;
+                if !status.is_running() {
+                    bail!("Failed to resume {name}");
+                }
             }
             app_success()
         })
@@ -494,7 +503,11 @@ impl pb::admin_service_server::AdminService for AdminService {
             let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
             for each in self.inner.app_entries(&req.app_name)? {
-                _ = client.stop_remote(each).await?
+                let name = each.clone();
+                let status = client.stop_remote(each).await?;
+                if !status.is_exitted() {
+                    bail!("Failed to stop {name}");
+                }
             }
             app_success()
         })
