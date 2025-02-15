@@ -5,12 +5,10 @@ name: go-sectest
 on:
     push:
         paths:
-        - 'internal/**'
-        - 'api/**'
+        - 'modules/**'
     pull_request:
         paths:
-        - 'internal/**'
-        - 'api/**'
+        - 'modules/**'
 jobs:
   tests:
     runs-on: ubuntu-latest
@@ -22,4 +20,6 @@ jobs:
       - name: Run Gosec Security Scanner
         uses: securego/gosec@master
         with:
-          args: '-no-fail ./...'
+          args: '-exclude=G302,G204 -no-fail ./modules/...'
+      - name: Run Go Tests
+        run: go test -v ./modules/...

@@ -5,7 +5,9 @@ package servicemanager
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	// "sync"
@@ -280,6 +282,17 @@ func (c *SystemdController) getUnitCpuAndMem(ctx context.Context, pid uint32) (f
 	// Input validation
 	if ctx == nil {
 		return 0, 0, fmt.Errorf("context cannot be nil")
+	}
+	maxPidStr, err := os.ReadFile("/proc/sys/kernel/pid_max")
+	if err != nil {
+		log.Fatal(err)
+	}
+	maxPid, err := strconv.ParseUint(string(maxPidStr), 10, 32)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if pid < 2 && pid >= uint32(maxPid) {
+		return 0, 0, fmt.Errorf("incorrect input, must be PID")
 	}
 
 	// Get process information for the service PID
