@@ -247,18 +247,18 @@ in
                   appvm.succeed("sudo -u ghaf touch /tmp/testfile")
 
               with subtest("start app with file parameter"):
-                  guivm.succeed("${cli} ${cliArgs} start cat --vm appvm -- /tmp/testfile")
-                  guivm.succeed("${cli} ${cliArgs} start cat --vm appvm -- /etc/passwd")
+                  guivm.succeed("${cli} ${cliArgs} start app --vm appvm cat -- /tmp/testfile")
+                  guivm.succeed("${cli} ${cliArgs} start app --vm appvm cat -- /etc/passwd")
 
               with subtest("fail app start with file parameter"):
-                  guivm.fail("${cli} ${cliArgs} start cat --vm appvm -- /var/log/lastlog")
-                  guivm.fail("${cli} ${cliArgs} start cat--vm appvm -- /etc/../bin/sh")
+                  guivm.fail("${cli} ${cliArgs} start --vm appvm cat -- /var/log/lastlog")
+                  guivm.fail("${cli} ${cliArgs} start --vm appvm cat -- /etc/../bin/sh")
 
               with subtest("fail app start with wrong parameters"):
-                  guivm.fail("${cli} ${cliArgs} start cat2 --vm appvm -- /tmp/testfile")
-                  guivm.fail("${cli} ${cliArgs} start cat2 --vm appvm -- /etc/passwd")
-                  guivm.fail("${cli} ${cliArgs} start cat3 --vm appvm -- /tmp/testfile")
-                  guivm.fail("${cli} ${cliArgs} start cat3 --vm appvm -- /etc/passwd")
+                  guivm.fail("${cli} ${cliArgs} start app --vm appvm cat2 -- /tmp/testfile")
+                  guivm.fail("${cli} ${cliArgs} start app --vm appvm cat2 -- /etc/passwd")
+                  guivm.fail("${cli} ${cliArgs} start app --vm appvm cat3 -- /tmp/testfile")
+                  guivm.fail("${cli} ${cliArgs} start app --vm appvm cat3 -- /etc/passwd")
             '';
         };
       };
