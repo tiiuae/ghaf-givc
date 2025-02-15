@@ -7,6 +7,7 @@ import (
 	"fmt"
 	givc_util "givc/modules/pkgs/utility"
 	"os/exec"
+	"regexp"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -23,6 +24,10 @@ func (c *LocaleController) SetLocale(ctx context.Context, locale string) error {
 	// Input validation
 	if ctx == nil {
 		return fmt.Errorf("context cannot be nil")
+	}
+	re := regexp.MustCompile(`^(?:C|POSIX|[a-z]{2}(?:_[A-Z]{2})?(?:@[a-zA-Z0-9]+)?)(?:\.[-a-zA-Z0-9]+)?$`)
+	if !re.MatchString(locale) {
+		return fmt.Errorf("invalid locale")
 	}
 
 	if err := exec.Command("localectl", "set-locale", locale).Run(); err != nil {
@@ -46,6 +51,10 @@ func (c *LocaleController) SetTimezone(ctx context.Context, timezone string) err
 	// Input validation
 	if ctx == nil {
 		return fmt.Errorf("context cannot be nil")
+	}
+	re := regexp.MustCompile(`^[A-Z][-+a-zA-Z0-9]*(?:/[A-Z][-+a-zA-Z0-9_]*)*$`)
+	if !re.MatchString(timezone) {
+		return fmt.Errorf("invalid timezone")
 	}
 
 	if err := exec.Command("timedatectl", "set-timezone", timezone).Run(); err != nil {

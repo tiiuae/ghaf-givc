@@ -25,6 +25,8 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	AdminService_RegisterService_FullMethodName   = "/admin.AdminService/RegisterService"
 	AdminService_StartApplication_FullMethodName  = "/admin.AdminService/StartApplication"
+	AdminService_StartVM_FullMethodName           = "/admin.AdminService/StartVM"
+	AdminService_StartService_FullMethodName      = "/admin.AdminService/StartService"
 	AdminService_PauseApplication_FullMethodName  = "/admin.AdminService/PauseApplication"
 	AdminService_ResumeApplication_FullMethodName = "/admin.AdminService/ResumeApplication"
 	AdminService_StopApplication_FullMethodName   = "/admin.AdminService/StopApplication"
@@ -44,10 +46,15 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AdminServiceClient interface {
 	RegisterService(ctx context.Context, in *RegistryRequest, opts ...grpc.CallOption) (*RegistryResponse, error)
-	StartApplication(ctx context.Context, in *ApplicationRequest, opts ...grpc.CallOption) (*ApplicationResponse, error)
+	// Start things
+	StartApplication(ctx context.Context, in *ApplicationRequest, opts ...grpc.CallOption) (*StartResponse, error)
+	StartVM(ctx context.Context, in *StartVMRequest, opts ...grpc.CallOption) (*StartResponse, error)
+	StartService(ctx context.Context, in *StartServiceRequest, opts ...grpc.CallOption) (*StartResponse, error)
+	// Manage things
 	PauseApplication(ctx context.Context, in *ApplicationRequest, opts ...grpc.CallOption) (*ApplicationResponse, error)
 	ResumeApplication(ctx context.Context, in *ApplicationRequest, opts ...grpc.CallOption) (*ApplicationResponse, error)
 	StopApplication(ctx context.Context, in *ApplicationRequest, opts ...grpc.CallOption) (*ApplicationResponse, error)
+	// Misc
 	SetLocale(ctx context.Context, in *LocaleRequest, opts ...grpc.CallOption) (*Empty, error)
 	SetTimezone(ctx context.Context, in *TimezoneRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*stats.StatsResponse, error)
@@ -55,6 +62,7 @@ type AdminServiceClient interface {
 	Reboot(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
 	Suspend(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
 	Wakeup(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
+	// Query
 	QueryList(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*QueryListResponse, error)
 	Watch(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchItem], error)
 }
@@ -77,10 +85,30 @@ func (c *adminServiceClient) RegisterService(ctx context.Context, in *RegistryRe
 	return out, nil
 }
 
-func (c *adminServiceClient) StartApplication(ctx context.Context, in *ApplicationRequest, opts ...grpc.CallOption) (*ApplicationResponse, error) {
+func (c *adminServiceClient) StartApplication(ctx context.Context, in *ApplicationRequest, opts ...grpc.CallOption) (*StartResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ApplicationResponse)
+	out := new(StartResponse)
 	err := c.cc.Invoke(ctx, AdminService_StartApplication_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) StartVM(ctx context.Context, in *StartVMRequest, opts ...grpc.CallOption) (*StartResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartResponse)
+	err := c.cc.Invoke(ctx, AdminService_StartVM_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) StartService(ctx context.Context, in *StartServiceRequest, opts ...grpc.CallOption) (*StartResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartResponse)
+	err := c.cc.Invoke(ctx, AdminService_StartService_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -221,10 +249,15 @@ type AdminService_WatchClient = grpc.ServerStreamingClient[WatchItem]
 // for forward compatibility.
 type AdminServiceServer interface {
 	RegisterService(context.Context, *RegistryRequest) (*RegistryResponse, error)
-	StartApplication(context.Context, *ApplicationRequest) (*ApplicationResponse, error)
+	// Start things
+	StartApplication(context.Context, *ApplicationRequest) (*StartResponse, error)
+	StartVM(context.Context, *StartVMRequest) (*StartResponse, error)
+	StartService(context.Context, *StartServiceRequest) (*StartResponse, error)
+	// Manage things
 	PauseApplication(context.Context, *ApplicationRequest) (*ApplicationResponse, error)
 	ResumeApplication(context.Context, *ApplicationRequest) (*ApplicationResponse, error)
 	StopApplication(context.Context, *ApplicationRequest) (*ApplicationResponse, error)
+	// Misc
 	SetLocale(context.Context, *LocaleRequest) (*Empty, error)
 	SetTimezone(context.Context, *TimezoneRequest) (*Empty, error)
 	GetStats(context.Context, *StatsRequest) (*stats.StatsResponse, error)
@@ -232,6 +265,7 @@ type AdminServiceServer interface {
 	Reboot(context.Context, *Empty) (*Empty, error)
 	Suspend(context.Context, *Empty) (*Empty, error)
 	Wakeup(context.Context, *Empty) (*Empty, error)
+	// Query
 	QueryList(context.Context, *Empty) (*QueryListResponse, error)
 	Watch(*Empty, grpc.ServerStreamingServer[WatchItem]) error
 	mustEmbedUnimplementedAdminServiceServer()
@@ -247,8 +281,14 @@ type UnimplementedAdminServiceServer struct{}
 func (UnimplementedAdminServiceServer) RegisterService(context.Context, *RegistryRequest) (*RegistryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterService not implemented")
 }
-func (UnimplementedAdminServiceServer) StartApplication(context.Context, *ApplicationRequest) (*ApplicationResponse, error) {
+func (UnimplementedAdminServiceServer) StartApplication(context.Context, *ApplicationRequest) (*StartResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartApplication not implemented")
+}
+func (UnimplementedAdminServiceServer) StartVM(context.Context, *StartVMRequest) (*StartResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartVM not implemented")
+}
+func (UnimplementedAdminServiceServer) StartService(context.Context, *StartServiceRequest) (*StartResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartService not implemented")
 }
 func (UnimplementedAdminServiceServer) PauseApplication(context.Context, *ApplicationRequest) (*ApplicationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PauseApplication not implemented")
@@ -339,6 +379,42 @@ func _AdminService_StartApplication_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).StartApplication(ctx, req.(*ApplicationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_StartVM_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartVMRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).StartVM(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_StartVM_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).StartVM(ctx, req.(*StartVMRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_StartService_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartServiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).StartService(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_StartService_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).StartService(ctx, req.(*StartServiceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -566,6 +642,14 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StartApplication",
 			Handler:    _AdminService_StartApplication_Handler,
+		},
+		{
+			MethodName: "StartVM",
+			Handler:    _AdminService_StartVM_Handler,
+		},
+		{
+			MethodName: "StartService",
+			Handler:    _AdminService_StartService_Handler,
 		},
 		{
 			MethodName: "PauseApplication",

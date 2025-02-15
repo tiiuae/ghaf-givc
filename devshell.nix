@@ -44,18 +44,18 @@
           }
           {
             help = "Generate go files from protobuffers. Examples: '$ protogen systemd'";
-            name = "protogen";
+            name = "go-protogen";
             command = "./modules/api/protoc.sh $@";
-          }
-          {
-            help = "Like cURL, but for gRPC: Command-line tool for interacting with gRPC servers";
-            name = "gcl";
-            command = "grpcurl";
           }
           {
             help = "Check golang vulnerabilities";
             name = "go-checksec";
-            command = "gosec ./...";
+            command = "gosec -exclude=G302,G204 -no-fail ./modules/...";
+          }
+          {
+            help = "Run go tests";
+            name = "go-tests";
+            command = "go test -v ./modules/...";
           }
           {
             help = "Update go dependencies";

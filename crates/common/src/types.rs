@@ -164,15 +164,13 @@ impl UnitStatus {
         self.freezer_state == "frozen"
     }
     pub fn is_exitted(&self) -> bool {
-        self.active_state == "inactive"
-            && self.load_state == "not-found"
-            && self.sub_state == "dead"
+        self.active_state == "inactive" && self.sub_state == "dead"
     }
 }
 
-impl TryFrom<pb::UnitStatus> for UnitStatus {
+impl TryFrom<pb::systemd::UnitStatus> for UnitStatus {
     type Error = anyhow::Error;
-    fn try_from(us: pb::UnitStatus) -> Result<Self, Self::Error> {
+    fn try_from(us: pb::systemd::UnitStatus) -> Result<Self, Self::Error> {
         Ok(Self {
             name: us.name,
             description: us.description,
@@ -185,14 +183,16 @@ impl TryFrom<pb::UnitStatus> for UnitStatus {
     }
 }
 
-impl From<UnitStatus> for pb::UnitStatus {
+impl From<UnitStatus> for pb::systemd::UnitStatus {
     fn from(val: UnitStatus) -> Self {
         Self {
             name: val.name,
             description: val.description,
             load_state: val.load_state,
             active_state: val.active_state,
+            sub_state: val.sub_state,
             path: val.path,
+            freezer_state: val.freezer_state,
         }
     }
 }

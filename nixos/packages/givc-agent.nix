@@ -4,24 +4,22 @@
 let
   pname = "givc-agent";
 in
-pkgs.buildGoModule {
+pkgs.buildGo123Module {
   inherit pname;
-  version = "0.0.4";
+  version = "0.0.5";
   inherit src;
-  vendorHash = "sha256-Qn5iLO/WTlR4H6NPdAhYKpc2voH9HdBagqbDgxzoklU=";
+  vendorHash = "sha256-ZRXpK1z4vxuDMvwJODVOo8Fd4s4LP1CE2cJXTApyvY0=";
   subPackages = [
     "modules/cmd/${pname}"
+    "modules/pkgs/applications"
   ];
-  configureFlags = [
-    "-trimpath"
+  GOFLAGS = [
     "-buildmode=pie"
-    "-mod=readonly"
   ];
   ldflags = [
     "-w"
     "-s"
     "-linkmode=external"
-    "-extldflags=-pie"
   ];
   NIX_CFLAGS_COMPILE = "-fstack-protector-all -fcf-protection=full -fstack-clash-protection";
 }
