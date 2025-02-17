@@ -45,51 +45,78 @@ func NewExecServer() (*ExecServer, error) {
 
 func (s *ExecServer) RunCommand(stream pb.Exec_RunCommandServer) error {
 	var proc *process
-	/*
-		defer func() {
-			if proc != nil {
-				proc.cmd.Wait()
-				close(proc.done)
-			}
-		}()
-	*/
 
+	// Read first request (StartCommand expected)
+	req, err := stream.Recv()
+	if err != nil {
+		return fmt.Errorf("failed to receive start command: %w", err)
+	}
+
+	start, ok := req.Command.(*pb.CommandRequest_Start)
+	if !ok {
+		return fmt.Errorf("expected StartCommand, got something else")
+	}
+
+	proc, err = s.startCommand(start.Start, stream)
+	if err != nil {
+		return err
+	}
+
+	go handleInput(stream, proc)
+
+	// Wait for the process to finish
+	err = proc.cmd.Wait()
+	close(proc.done)
+	exitCode := 0
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode = exitErr.ExitCode()
+	}
+	log.Infof("Streaming Finished event: rc=%d\n", exitCode)
+	stream.Send(&pb.CommandResponse{
+		Event: &pb.CommandResponse_Finished{
+			Finished: &pb.FinishedEvent{ReturnCode: int32(exitCode)},
+		},
+	})
+	return nil
+
+}
+
+func handleInput(stream pb.Exec_RunCommandServer, proc *process) {
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			return nil
+			break
 		}
 		if err != nil {
-			return err
+			break
 		}
 
 		switch v := req.Command.(type) {
 		case *pb.CommandRequest_Start:
-			if proc != nil {
-				return fmt.Errorf("process already started")
-			}
-			proc, err = s.startCommand(v.Start, stream)
-			if err != nil {
-				return err
-			}
+			fmt.Errorf("process already started")
+			break
 		case *pb.CommandRequest_Stdin:
 			if proc == nil {
-				return fmt.Errorf("process not started")
+				fmt.Errorf("process not started")
+				break
 			}
 			_, err = proc.stdin.Write(v.Stdin.Payload)
 			if err != nil {
-				return err
+				fmt.Errorf("error: %v", err)
+				break
 			}
 		case *pb.CommandRequest_Signal:
 			if proc == nil {
-				return fmt.Errorf("process not started")
+				fmt.Errorf("process not started")
+				break
 			}
 			err = proc.cmd.Process.Signal(syscall.Signal(v.Signal.Signal))
 			if err != nil {
-				return err
+				fmt.Errorf("error: %v", err)
+				break
 			}
 		default:
-			return fmt.Errorf("unknown command request")
+			fmt.Errorf("unknown command request")
 		}
 	}
 }
@@ -163,21 +190,13 @@ func (s *ExecServer) startCommand(req *pb.StartCommand, stream pb.Exec_RunComman
 		}
 	})
 
-	// Wait for the process to finish
-	go func() {
-		err := cmd.Wait()
-		close(done)
-		exitCode := 0
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
+	// Write the initial stdin payload if provided
+	if req.Stdin != nil && stdin != nil {
+		_, err = stdin.Write(req.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write initial stdin: %v", err)
 		}
-		log.Infof("Streaming Finished event: rc=%d\n", exitCode)
-		stream.Send(&pb.CommandResponse{
-			Event: &pb.CommandResponse_Finished{
-				Finished: &pb.FinishedEvent{ReturnCode: int32(exitCode)},
-			},
-		})
-	}()
+	}
 
 	proc := &process{
 		cmd:    cmd,
@@ -185,15 +204,6 @@ func (s *ExecServer) startCommand(req *pb.StartCommand, stream pb.Exec_RunComman
 		stdout: stdout,
 		stderr: stderr,
 		done:   done,
-	}
-	s.processes.Store(cmd.Process.Pid, proc)
-
-	// Write the initial stdin payload if provided
-	if req.Stdin != nil && stdin != nil {
-		_, err = stdin.Write(req.Stdin)
-		if err != nil {
-			return nil, fmt.Errorf("failed to write initial stdin: %v", err)
-		}
 	}
 	return proc, nil
 }
