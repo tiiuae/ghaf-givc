@@ -6,8 +6,10 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -66,11 +68,30 @@ func main() {
 	}
 	agentSubType := uint32(parsedType)
 
-	// Configure system services/units to be administrated by this agent
-	var services []string
-	servicesString, servicesPresent := os.LookupEnv("SERVICES")
-	if servicesPresent {
-		services = strings.Split(servicesString, " ")
+	// Configure system services/units/vms to be administrated by this agent
+	services := make(map[string]uint32)
+	servicesString := os.Getenv("SERVICES")
+	if servicesString != "" {
+		servs := strings.Split(servicesString, " ")
+		for _, service := range servs {
+			services[service] = agentSubType
+		}
+	}
+
+	sysVmsString := os.Getenv("SYSVMS")
+	if sysVmsString != "" {
+		sysVms := strings.Split(sysVmsString, " ")
+		for _, service := range sysVms {
+			services[service] = givc_types.UNIT_TYPE_SYSVM
+		}
+	}
+
+	appVmsString := os.Getenv("APPVMS")
+	if appVmsString != "" {
+		appVms := strings.Split(appVmsString, " ")
+		for _, service := range appVms {
+			services[service] = givc_types.UNIT_TYPE_APPVM
+		}
 	}
 
 	// Configure applications to be administrated by this agent
@@ -142,18 +163,16 @@ func main() {
 		TlsConfig: tlsConfig,
 	}
 
+	// Create registeration entry
+	agentServiceName := "givc-" + agent.Name + ".service"
+
 	// Set agent configurations
 	cfgAgent := &givc_types.EndpointConfig{
 		Transport: agent,
 		TlsConfig: tlsConfig,
+		Services:  append([]string{agentServiceName}, slices.Collect(maps.Keys(services))...),
 	}
 
-	// Create registeration entry
-	agentServiceName := "givc-" + agent.Name + ".service"
-	cfgAgent.Services = append(cfgAgent.Services, agentServiceName)
-	if servicesPresent {
-		cfgAgent.Services = append(cfgAgent.Services, services...)
-	}
 	log.Infof("Allowed systemd units: %v\n", cfgAgent.Services)
 
 	agentEntryRequest := &givc_admin.RegistryRequest{
@@ -185,12 +204,12 @@ func main() {
 		}
 
 		// Register services with admin server
-		for _, service := range services {
+		for service, subType := range services {
 			if strings.Contains(service, ".service") {
 				serviceEntryRequest := &givc_admin.RegistryRequest{
 					Name:   service,
 					Parent: agentServiceName,
-					Type:   uint32(agentSubType),
+					Type:   uint32(subType),
 					Transport: &givc_admin.TransportConfig{
 						Name:     cfgAgent.Transport.Name,
 						Protocol: cfgAgent.Transport.Protocol,

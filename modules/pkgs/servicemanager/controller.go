@@ -88,7 +88,7 @@ func (c *SystemdController) IsUnitWhitelisted(name string) bool {
 		}
 		// Application instances are whitelisted based
 		// on their base name, so we match with regex
-		re := regexp.MustCompile(`^` + val + `@[0-9]+\.service$`)
+		re := regexp.MustCompile(`^\Q` + val + `\E@[0-9]+\.service$`)
 		if re.MatchString(name) {
 			return true
 		}
