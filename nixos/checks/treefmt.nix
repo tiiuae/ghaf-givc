@@ -26,6 +26,7 @@
           statix.enable = true; # prevents use of nix anti-patterns https://github.com/nerdypepper/statix
           gofmt.enable = true; # go formatter https://golang.org/cmd/gofmt/
           shellcheck.enable = true; # lints shell scripts https://github.com/koalaman/shellcheck
+          taplo.enable = true;
         };
       };
 
