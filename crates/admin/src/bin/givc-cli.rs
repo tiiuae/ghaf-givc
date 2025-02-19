@@ -7,7 +7,7 @@ use givc_common::address::EndpointAddress;
 use serde::ser::Serialize;
 use std::path::PathBuf;
 use std::time;
-use tokio::time::sleep;
+use tokio::time::interval;
 use tracing::info;
 
 #[derive(Debug, Parser)] // requires `derive` feature
@@ -118,28 +118,45 @@ enum Commands {
     },
 }
 
+fn unit_type_parse(s: &str) -> anyhow::Result<UnitType> {
+    s.parse::<u32>()?.try_into()
+}
+
 #[derive(Debug, Subcommand)]
 enum Test {
     Ensure {
         #[arg(long, default_missing_value = "1")]
         retry: i32,
         service: String,
+        #[arg(long, value_parser=unit_type_parse)]
+        r#type: Option<UnitType>,
     },
 }
 
 async fn test_subcommands(test: Test, admin: AdminClient) -> anyhow::Result<()> {
-    match test {
-        Test::Ensure { service, retry } => {
-            for _ in 0..retry {
-                let reply = admin.query_list().await?;
-                if reply.iter().any(|r| r.name == service) {
-                    return Ok(());
-                }
-                sleep(time::Duration::from_secs(1)).await
+    let Test::Ensure {
+        service,
+        retry,
+        r#type,
+    } = test;
+
+    let mut ival = interval(time::Duration::from_secs(1));
+    for _ in 0..retry {
+        ival.tick().await;
+        if let Some(r) = admin
+            .query_list()
+            .await?
+            .into_iter()
+            .find(|r| r.name == service)
+        {
+            if !r#type.is_some_and(|t| t.vm != r.vm_type || t.service != r.service_type) {
+                return Ok(());
+            } else {
+                anyhow::bail!("test failed '{service}' registered but of wrong type");
             }
-            anyhow::bail!("test failed '{service}' not registered")
         }
     }
+    anyhow::bail!("test failed '{service}' not registered");
 }
 
 #[tokio::main]

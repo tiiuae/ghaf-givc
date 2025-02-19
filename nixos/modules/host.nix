@@ -50,6 +50,26 @@ in
       example = "[ 'my-service.service' ]";
     };
 
+    systemVms = mkOption {
+      description = ''
+        List of systemd VM services for the manager to administrate. Expects a space separated list.
+        Should be a unit file of type 'service' or 'target'.
+      '';
+      type = types.listOf types.str;
+      default = [ ];
+      example = "[ 'microvm@net-vm.service' ]";
+    };
+
+    appVms = mkOption {
+      description = ''
+        List of systemd VM services for the manager to administrate. Expects a space separated list.
+        Should be a unit file of type 'service' or 'target'.
+      '';
+      type = types.listOf types.str;
+      default = [ ];
+      example = "[ 'microvm@chrome-vm.service' ]";
+    };
+
     admin = mkOption {
       description = "Admin server configuration.";
       type = transportSubmodule;
@@ -95,6 +115,8 @@ in
         "TYPE" = "0";
         "SUBTYPE" = "1";
         "SERVICES" = "${concatStringsSep " " cfg.services}";
+        "SYSVMS" = "${concatStringsSep " " cfg.systemVms}";
+        "APPVMS" = "${concatStringsSep " " cfg.appVms}";
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
       };
