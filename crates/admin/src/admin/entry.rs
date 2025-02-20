@@ -38,10 +38,14 @@ impl RegistryEntry {
     }
 
     pub fn vm_name(&self) -> Option<&str> {
-        match &self.placement {
-            Placement::Endpoint { vm, .. } => Some(vm),
-            Placement::Managed { vm, .. } => Some(vm),
-            Placement::Host => None,
+        match (self.r#type.service, &self.placement) {
+            (ServiceType::VM, _) => self
+                .name
+                .strip_prefix("microvm@")
+                .and_then(|name| name.strip_suffix(".service")),
+            (_, Placement::Endpoint { ref vm, .. }) => Some(vm),
+            (_, Placement::Managed { ref vm, .. }) => Some(vm),
+            (_, Placement::Host) => None,
         }
     }
 
