@@ -130,6 +130,8 @@ enum Test {
         service: String,
         #[arg(long, value_parser=unit_type_parse)]
         r#type: Option<UnitType>,
+        #[arg(long)]
+        vm: Option<String>,
     },
 }
 
@@ -138,6 +140,7 @@ async fn test_subcommands(test: Test, admin: AdminClient) -> anyhow::Result<()> 
         service,
         retry,
         r#type,
+        vm,
     } = test;
 
     let mut ival = interval(time::Duration::from_secs(1));
@@ -149,10 +152,12 @@ async fn test_subcommands(test: Test, admin: AdminClient) -> anyhow::Result<()> 
             .into_iter()
             .find(|r| r.name == service)
         {
-            if !r#type.is_some_and(|t| t.vm != r.vm_type || t.service != r.service_type) {
-                return Ok(());
-            } else {
+            if r#type.is_some_and(|t| t.vm != r.vm_type || t.service != r.service_type) {
                 anyhow::bail!("test failed '{service}' registered but of wrong type");
+            } else if vm.is_some() && vm != r.vm_name {
+                anyhow::bail!("test failed '{service}' registered but on wrong VM");
+            } else {
+                return Ok(());
             }
         }
     }
