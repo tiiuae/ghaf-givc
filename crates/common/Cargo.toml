@@ -10,15 +10,15 @@ version = "0.0.1"
 anyhow = "1.0.86"
 async-stream = "0.3"
 prost = "0.13"
-tokio = {version = "1.0", features = ["rt-multi-thread", "time", "macros"]}
-tokio-stream = "0.1"
-tokio-vsock = "*"
-tonic = {version="0.12", features = ["tls"]}
-tonic-types = {version="0.12"}
-tracing = "0.1"
-tracing-subscriber = {version = "0.3"}
-serde = { version = "1.0.202", features = ["derive"]}
+serde = { version = "1.0.202", features = ["derive"] }
 strum = { version = "0.26", features = ["derive"] }
+tokio-stream = "0.1"
+tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros"] }
+tokio-vsock = "*"
+tonic-types = "0.12"
+tonic = { version = "0.12", features = ["tls"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
 [build-dependencies]
-tonic-build = {version = "0.12", features = ["prost"]}
+tonic-build = { version = "0.12", features = ["prost"] }

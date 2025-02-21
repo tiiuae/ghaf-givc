@@ -346,7 +346,7 @@ in
                   time.sleep(1)
                   # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
                   print(hostvm.succeed("${cli} ${cliArgs} test ensure --retry 60 --type 0 ${expected}"))
-                  print(hostvm.succeed("${cli} ${cliArgs} test ensure --retry 60 --type 11 microvm@app-vm.service"))
+                  print(hostvm.succeed("${cli} ${cliArgs} test ensure --retry 60 --type 11 --vm app-vm microvm@app-vm.service"))
 
               with subtest("setup gui vm"):
                   # Ensure that sway in guiVM finished startup
