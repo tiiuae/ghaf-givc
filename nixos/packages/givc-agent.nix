@@ -21,5 +21,7 @@ pkgs.buildGo123Module {
     "-s"
     "-linkmode=external"
   ];
-  NIX_CFLAGS_COMPILE = "-fstack-protector-all -fcf-protection=full -fstack-clash-protection";
+  NIX_CFLAGS_COMPILE = pkgs.lib.optionalString (
+    pkgs.system == "x86_64-linux"
+  ) "-fstack-protector-all -fcf-protection=full -fstack-clash-protection";
 }

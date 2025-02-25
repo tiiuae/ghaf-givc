@@ -11,15 +11,27 @@ on:
       - main
 jobs:
   run-checks:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - arch: "x86_64-linux"
+            os: "ubuntu-latest"
+          - arch: "aarch64-linux"
+            os: "ubuntu-24.04-arm"
     steps:
+      - name: Platform
+        run: uname -a
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install nix
         uses: cachix/install-nix-action@v24
+        with:
+          enable_kvm: true
+          extra_nix_config: "system-features = nixos-test benchmark big-parallel kvm"
       - name: Check .nix formatting
         run: nix fmt -- --fail-on-change
       - name: Check nix flake show runs successfully
-        run: nix flake show
+        run: nix flake show --system ${{ matrix.arch }}
       - name: Run nix flake check
-        run: nix flake check
+        run: nix flake check --system ${{ matrix.arch }}

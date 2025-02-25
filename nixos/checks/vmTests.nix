@@ -42,7 +42,10 @@ in
                   systems = mkOption {
                     description = "The systems to run the test on.";
                     type = types.listOf types.str;
-                    default = [ "x86_64-linux" ];
+                    default = [
+                      "x86_64-linux"
+                      # "aarch64-linux" currently nested virtualization on gh runner not supported
+                    ];
                   };
                   module = mkOption {
                     description = "The NixOS test module. Required. See https://nixos.org/manual/nixos/stable/#sec-nixos-tests .";
