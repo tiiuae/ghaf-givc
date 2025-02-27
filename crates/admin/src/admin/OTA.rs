@@ -26,7 +26,9 @@ impl OTA {
                 None,
             )
             .await?;
-        info!("stderr: {}", String::from_utf8_lossy(&stderr));
+        if rc > 0 {
+            bail!("Exec error: {}", String::from_utf8_lossy(&stderr))
+        }
         info!("stdout: {}", String::from_utf8_lossy(&stdout));
         let gens: Vec<Generation> = serde_json::from_slice(&stdout)?;
         Ok(gens)
