@@ -176,9 +176,9 @@ impl TryFrom<pb::systemd::UnitStatus> for UnitStatus {
             description: us.description,
             load_state: us.load_state,
             active_state: us.active_state,
-            sub_state: "stub".into(),
+            sub_state: us.sub_state,
             path: us.path,
-            freezer_state: "bogus".into(),
+            freezer_state: us.freezer_state,
         })
     }
 }
