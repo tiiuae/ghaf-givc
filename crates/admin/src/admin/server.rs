@@ -251,36 +251,36 @@ impl AdminServiceImpl {
         }
     }
 
-    async fn monitor_routine(&self) -> anyhow::Result<()> {
-        let watch_list = self.registry.watch_list();
-        for entry in watch_list {
-            debug!("Monitoring {}...", entry.name);
-            match self.get_remote_status(&entry).await {
-                Err(err) => {
-                    error!("could not get status of unit {}: {}", entry.name, err);
+    async fn monitor_routine(&self, entry: RegistryEntry) -> anyhow::Result<()> {
+        match self.get_remote_status(&entry).await {
+            Err(err) => {
+                error!("could not get status of unit {}: {}", entry.name, err);
+                self.handle_error(entry)
+                    .await
+                    .context("during handle error")?
+            }
+            Ok(status) => {
+                let invalid = !status.is_valid();
+                if invalid {
+                    error!("Status of {} is invalid: {:?}", entry.name, status)
+                };
+                let inactive = status.active_state != "active";
+                // Difference from "go" algorithm -- save new status before recovering attempt
+                if inactive {
+                    error!(
+                        "Status of {} is {}, instead of active. Recovering.",
+                        entry.name, status.active_state
+                    )
+                };
+
+                debug!("Status of {} is {:#?} (updated)", entry.name, status);
+                // We have immutable copy of entry here, but need update _in registry_ copy
+                self.registry.update_state(&entry.name, status)?;
+
+                if invalid || inactive {
                     self.handle_error(entry)
                         .await
                         .context("during handle error")?
-                }
-                Ok(status) => {
-                    let inactive = status.active_state != "active";
-                    // Difference from "go" algorithm -- save new status before recovering attempt
-                    if inactive {
-                        error!(
-                            "Status of {} is {}, instead of active. Recovering.",
-                            entry.name, status.active_state
-                        )
-                    };
-
-                    debug!("Status of {} is {:#?} (updated)", entry.name, status);
-                    // We have immutable copy of entry here, but need update _in registry_ copy
-                    self.registry.update_state(&entry.name, status)?;
-
-                    if inactive {
-                        self.handle_error(entry)
-                            .await
-                            .context("during handle error")?
-                    }
                 }
             }
         }
@@ -292,8 +292,13 @@ impl AdminServiceImpl {
         watch.tick().await; // First tick fires instantly
         loop {
             watch.tick().await;
-            if let Err(err) = self.monitor_routine().await {
-                error!("Error during watch: {err}");
+            let watch_list = self.registry.watch_list();
+            for entry in watch_list {
+                debug!("Monitoring {}...", entry.name);
+                let name = entry.name.clone();
+                if let Err(err) = self.monitor_routine(entry).await {
+                    error!("Error during watch {}: {err}", name);
+                }
             }
             info!("{:#?}", self.registry)
         }
@@ -389,7 +394,18 @@ impl pb::admin_service_server::AdminService for AdminService {
         ) {
             notify = Some(entry.name.to_owned());
         }
+
+        let mut need_update = None;
+        if !entry.status.is_valid() {
+            need_update = Some(entry.clone());
+        };
+
         self.inner.register(entry);
+
+        if let Some(entry) = need_update {
+            let inner = self.inner.clone(); // is Arc<>
+            tokio::spawn(async move { inner.monitor_routine(entry).await });
+        }
 
         let res = RegistryResponse { error: None };
 

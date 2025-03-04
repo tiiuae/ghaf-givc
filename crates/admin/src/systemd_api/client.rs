@@ -3,6 +3,7 @@ use givc_client::endpoint::EndpointConfig;
 use givc_client::error::StatusWrapExt;
 use pb::systemd::UnitResponse;
 use tonic::transport::Channel;
+use tracing::debug;
 
 type Client = pb::systemd::unit_control_service_client::UnitControlServiceClient<Channel>;
 
@@ -29,7 +30,7 @@ impl SystemDClient {
             .into_inner()
             .unit_status
             .ok_or_else(|| anyhow::anyhow!("missing unit_status field"))?;
-        Ok(crate::types::UnitStatus {
+        let us = crate::types::UnitStatus {
             name: status.name,
             description: status.description,
             load_state: status.load_state,
@@ -37,7 +38,9 @@ impl SystemDClient {
             sub_state: status.sub_state,
             path: status.path,
             freezer_state: status.freezer_state,
-        })
+        };
+        debug!("Got remote status: {:?}", us);
+        Ok(us)
     }
 
     pub async fn get_remote_status(
