@@ -175,60 +175,6 @@ func main() {
 
 	log.Infof("Allowed systemd units: %v\n", cfgAgent.Services)
 
-	agentEntryRequest := &givc_admin.RegistryRequest{
-		Name:   agentServiceName,
-		Type:   uint32(agentType),
-		Parent: parentName,
-		Transport: &givc_admin.TransportConfig{
-			Protocol: cfgAgent.Transport.Protocol,
-			Address:  cfgAgent.Transport.Address,
-			Port:     cfgAgent.Transport.Port,
-			Name:     cfgAgent.Transport.Name,
-		},
-		State: &givc_systemd.UnitStatus{
-			Name: agentServiceName,
-		},
-	}
-
-	// Register this instance
-	go func() {
-		// Wait for server to start
-		<-serverStarted
-
-		// Register agent with admin server
-		_, err := givc_serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
-		for err != nil {
-			log.Warnf("Error register agent: %s", err)
-			time.Sleep(1 * time.Second)
-			_, err = givc_serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
-		}
-
-		// Register services with admin server
-		for service, subType := range services {
-			if strings.Contains(service, ".service") {
-				serviceEntryRequest := &givc_admin.RegistryRequest{
-					Name:   service,
-					Parent: agentServiceName,
-					Type:   uint32(subType),
-					Transport: &givc_admin.TransportConfig{
-						Name:     cfgAgent.Transport.Name,
-						Protocol: cfgAgent.Transport.Protocol,
-						Address:  cfgAgent.Transport.Address,
-						Port:     cfgAgent.Transport.Port,
-					},
-					State: &givc_systemd.UnitStatus{
-						Name: service,
-					},
-				}
-				log.Infof("Trying to register service: %s", service)
-				_, err := givc_serviceclient.RegisterRemoteService(cfgAdminServer, serviceEntryRequest)
-				if err != nil {
-					log.Warnf("Error registering service: %s", err)
-				}
-			}
-		}
-	}()
-
 	// Create and register gRPC services
 	var grpcServices []givc_types.GrpcServiceRegistration
 
@@ -331,6 +277,65 @@ func main() {
 			}(proxyConfig)
 		}
 	}
+
+	// Register this instance
+	go func() {
+		// Wait for server to start
+		<-serverStarted
+
+		unitStatus, err := systemdControlServer.GetUnitStatus(context.Background(), &givc_systemd.UnitRequest{UnitName: agentServiceName})
+		if err != nil {
+			log.Fatalf("Error getting unit status: %s", err)
+		}
+
+		agentEntryRequest := &givc_admin.RegistryRequest{
+			Name:   agentServiceName,
+			Type:   uint32(agentType),
+			Parent: parentName,
+			Transport: &givc_admin.TransportConfig{
+				Protocol: cfgAgent.Transport.Protocol,
+				Address:  cfgAgent.Transport.Address,
+				Port:     cfgAgent.Transport.Port,
+				Name:     cfgAgent.Transport.Name,
+			},
+			State: unitStatus.UnitStatus,
+		}
+
+		// Register agent with admin server
+		_, err = givc_serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
+		for err != nil {
+			log.Warnf("Error register agent: %s", err)
+			time.Sleep(1 * time.Second)
+			_, err = givc_serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
+		}
+
+		// Register services with admin server
+		for service, subType := range services {
+			if strings.Contains(service, ".service") {
+				unitStatus, err := systemdControlServer.GetUnitStatus(context.Background(), &givc_systemd.UnitRequest{UnitName: service})
+				if err != nil {
+					log.Warnf("Error getting unit status: %s", err)
+				}
+				serviceEntryRequest := &givc_admin.RegistryRequest{
+					Name:   service,
+					Parent: agentServiceName,
+					Type:   uint32(subType),
+					Transport: &givc_admin.TransportConfig{
+						Name:     cfgAgent.Transport.Name,
+						Protocol: cfgAgent.Transport.Protocol,
+						Address:  cfgAgent.Transport.Address,
+						Port:     cfgAgent.Transport.Port,
+					},
+					State: unitStatus.UnitStatus,
+				}
+				log.Infof("Trying to register service: %s", service)
+				_, err = givc_serviceclient.RegisterRemoteService(cfgAdminServer, serviceEntryRequest)
+				if err != nil {
+					log.Warnf("Error registering service: %s", err)
+				}
+			}
+		}
+	}()
 
 	// Create and start main grpc server
 	grpcServer, err := givc_grpc.NewServer(cfgAgent, grpcServices)
