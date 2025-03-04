@@ -108,7 +108,7 @@ impl TryFrom<pb::RegistryRequest> for RegistryEntry {
             .transport
             .ok_or(anyhow!("endpoint missing"))
             .and_then(EndpointEntry::try_from)?;
-        let watch = ty.service == ServiceType::Mgr;
+        let watch = (ty.service == ServiceType::Mgr) || (ty.vm == VmType::AppVM);
         // FIXME: We currently ignore `req.parent`, what we should do if we got both parent and endpoint
         // Protocol very inconsistent here
         Ok(Self {
