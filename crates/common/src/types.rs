@@ -154,6 +154,30 @@ pub struct UnitStatus {
 }
 
 impl UnitStatus {
+    pub fn is_valid(&self) -> bool {
+        matches!(
+            self.freezer_state.as_str(),
+            "frozen"
+                | "running"
+                | "freezing"
+                | "thawing"
+                | "frozen-by-parent"
+                | "freezing-by-parent"
+        ) && matches!(
+            self.load_state.as_str(),
+            "stub" | "loaded" | "not-found" | "bad-setting" | "merged" | "masked"
+        ) && matches!(
+            self.active_state.as_str(),
+            "active"
+                | "reloading"
+                | "inactive"
+                | "failed"
+                | "activating"
+                | "deactivating"
+                | "maintenance"
+                | "refreshing"
+        ) && matches!(self.sub_state.as_str(), "dead" | "running" | "exitted") // FIXME: 15 more states
+    }
     pub fn is_running(&self) -> bool {
         !self.is_paused()
             && self.active_state == "active"
