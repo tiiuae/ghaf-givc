@@ -5,9 +5,8 @@ package hwidmanager
 import (
 	"context"
 	"fmt"
-	"os"
+	"net"
 	"path/filepath"
-	"strings"
 )
 
 type HwIdController struct {
@@ -17,8 +16,18 @@ type HwIdController struct {
 func NewController(iface string) (*HwIdController, error) {
 	if iface == "" {
 		paths, err := filepath.Glob("/sys/class/net/wl*")
-		if err != nil || paths == nil || len(paths) > 1 {
-			return nil, fmt.Errorf("could not find device")
+		if err != nil {
+			return nil, fmt.Errorf("error querying wireless device name")
+		}
+		if paths == nil || len(paths) < 1 {
+			// if no wireless devices are found, try to find an ethernet device
+			paths, err = filepath.Glob("/sys/class/net/en*")
+			if err != nil {
+				return nil, fmt.Errorf("error querying ethernet device name")
+			}
+			if paths == nil || len(paths) < 1 {
+				return nil, fmt.Errorf("could not find wireless or ethernet device")
+			}
 		}
 		iface = filepath.Base(paths[0])
 	}
@@ -32,11 +41,14 @@ func (c *HwIdController) GetIdentifier(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("context cannot be nil")
 	}
 
-	addr, err := os.ReadFile(fmt.Sprintf("/sys/class/net/%s/address", c.iface))
-
+	// Verify that interface is up
+	iface, err := net.InterfaceByName(c.iface)
 	if err != nil {
-		return "", fmt.Errorf("could not get identifier")
+		return "", fmt.Errorf("could not get interface by name")
+	}
+	if iface.Flags&net.FlagRunning == 0 {
+		return "", fmt.Errorf("interface is down, could report unreliable information")
 	}
 
-	return strings.TrimSpace(string(addr)), nil
+	return iface.HardwareAddr.String(), nil
 }

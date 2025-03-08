@@ -45,8 +45,8 @@ func (s *HwIdServer) GetHwId(ctx context.Context, req *hwid.HwIdRequest) (*hwid.
 
 	identifier, err := s.Controller.GetIdentifier(context.Background())
 	if err != nil {
-		log.Infof("[GetHwId] Error getting hardware identifier: %v\n", err)
-		return nil, fmt.Errorf("cannot get hardware id")
+		log.Infof("[GetHwId] Error getting hardware identifier: %v", err)
+		return nil, fmt.Errorf("cannot get hardware id: %v", err)
 	}
 
 	return &hwid.HwIdResponse{Identifier: identifier}, nil

@@ -131,9 +131,9 @@ in
     systemd.targets.givc-setup = {
       enable = true;
       description = "Ghaf givc target";
-      bindsTo = [ "network.target" ];
+      requires = [ "network.target" ];
       after = [ "network.target" ];
-      wantedBy = [ "network.target" ];
+      wantedBy = [ "multi-user.target" ];
     };
 
     systemd.services.givc-user-key-setup = optionalAttrs cfg.enableUserTlsAccess {
