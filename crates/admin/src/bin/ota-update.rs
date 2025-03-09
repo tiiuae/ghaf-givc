@@ -1,11 +1,9 @@
-use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::process::{Command, Stdio};
 
 use clap::{ArgAction, Parser};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Parser, Debug)]
@@ -22,6 +20,10 @@ struct Cli {
     /// Set the configuration value
     #[arg(long, conflicts_with = "get")]
     set: Option<String>,
+
+    /// Source of configuration value
+    #[arg(long, conflicts_with = "get")]
+    source: Option<String>,
 }
 
 fn get_generations() -> anyhow::Result<()> {
@@ -60,13 +62,16 @@ fn is_valid_nix_path(path: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn set_generation(path: String) -> anyhow::Result<()> {
+fn set_generation(path: String, source: Option<String>) -> anyhow::Result<()> {
     is_valid_nix_path(&path)?;
+    let from = source
+        .as_deref()
+        .unwrap_or("https://prod-cache.vedenemo.dev");
 
     let nix = Command::new("nix")
         .arg("copy")
         .arg("--from")
-        .arg("https://prod-cache.vedenemo.dev")
+        .arg(&from)
         .arg(&path)
         .status()
         .expect("Failed to execute nix copy");
@@ -83,7 +88,7 @@ fn set_generation(path: String) -> anyhow::Result<()> {
     if !nix_env.success() {
         anyhow::bail!("nix-env failed")
     }
-    let boot_path = format!("{path}//bin/switch-to-configuration");
+    let boot_path = format!("{path}/bin/switch-to-configuration");
     let boot = Command::new(&boot_path)
         .arg("boot")
         .status()
@@ -100,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli.get {
         get_generations()?
     } else if let Some(path) = cli.set {
-        set_generation(path)?
+        set_generation(path, cli.source)?
     } else {
         eprintln!("Either --get or --set <path> must be specified.")
     };
