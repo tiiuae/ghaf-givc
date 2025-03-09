@@ -5,5 +5,6 @@
     ./admin.nix
     ./dbus.nix
     ./app.nix
+    ./empty.nix
   ];
 }

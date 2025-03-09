@@ -109,7 +109,10 @@ in
         Restart = "always";
         RestartSec = 1;
       };
-      path = [ ota-update pkgs.nixos-rebuild ];
+      path = [
+        ota-update
+        pkgs.nixos-rebuild
+      ];
       environment = {
         "AGENT" = "${toJSON cfg.transport}";
         "DEBUG" = "${trivial.boolToString cfg.debug}";
