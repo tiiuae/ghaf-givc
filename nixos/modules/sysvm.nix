@@ -99,8 +99,6 @@ in
     };
   };
 
-  imports = [ self.nixosModules.dbus ];
-
   config = mkIf cfg.enable {
 
     assertions = [

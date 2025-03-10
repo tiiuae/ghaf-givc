@@ -73,6 +73,7 @@ in
             {
               imports = [
                 self.nixosModules.sysvm
+                self.nixosModules.dbus
                 ./snakeoil/gen-test-certs.nix
               ];
 
@@ -195,6 +196,7 @@ in
             {
               imports = [
                 self.nixosModules.sysvm
+                self.nixosModules.dbus
                 ./snakeoil/gen-test-certs.nix
               ];
 
@@ -279,6 +281,7 @@ in
             {
               imports = [
                 self.nixosModules.sysvm
+                self.nixosModules.dbus
                 ./snakeoil/gen-test-certs.nix
               ];
 
@@ -375,6 +378,7 @@ in
             {
               imports = [
                 self.nixosModules.appvm
+                self.nixosModules.dbus
                 ./snakeoil/gen-test-certs.nix
               ];
 
