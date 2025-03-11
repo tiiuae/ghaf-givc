@@ -24,6 +24,9 @@ struct Cli {
     /// Source of configuration value
     #[arg(long, conflicts_with = "get")]
     source: Option<String>,
+
+    #[arg(long, conflicts_with = "get", action = ArgAction::SetTrue, required = false, default_value_t = false)]
+    no_check_signs: bool,
 }
 
 fn get_generations() -> anyhow::Result<()> {
@@ -54,7 +57,7 @@ fn get_generations() -> anyhow::Result<()> {
 }
 
 fn is_valid_nix_path(path: &str) -> anyhow::Result<()> {
-    let pattern = r"^/nix/store/[a-z0-9]{32}-nixos-system-ghaf-host-[0-9]{2}\.[0-9]{2}\.[0-9]{8}\.[a-f0-9]{7}$";
+    let pattern = r"^/nix/store/[a-z0-9]{32}-nixos-system-.+$";
     let re = Regex::new(pattern).expect("Invalid regex");
     if !re.is_match(path) {
         anyhow::bail!("Path {path} is not valid ghaf!")
@@ -62,19 +65,27 @@ fn is_valid_nix_path(path: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn set_generation(path: String, source: Option<String>) -> anyhow::Result<()> {
+fn set_generation(
+    path: String,
+    source: Option<String>,
+    no_check_signs: bool,
+) -> anyhow::Result<()> {
     is_valid_nix_path(&path)?;
     let from = source
         .as_deref()
         .unwrap_or("https://prod-cache.vedenemo.dev");
 
-    let nix = Command::new("nix")
-        .arg("copy")
-        .arg("--from")
-        .arg(&from)
-        .arg(&path)
-        .status()
-        .expect("Failed to execute nix copy");
+    let mut nix = Command::new("nix");
+    nix.arg("--extra-experimental-features");
+    nix.arg("nix-command");
+    nix.arg("copy");
+    nix.arg("--from");
+    nix.arg(&from);
+    nix.arg(&path);
+    if no_check_signs {
+        nix.arg("--no-check-sigs");
+    }
+    let nix = nix.status().expect("Failed to execute nix copy");
     if !nix.success() {
         anyhow::bail!("nix copy failed")
     }
@@ -105,9 +116,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli.get {
         get_generations()?
     } else if let Some(path) = cli.set {
-        set_generation(path, cli.source)?
+        set_generation(path, cli.source, cli.no_check_signs)?
     } else {
         eprintln!("Either --get or --set <path> must be specified.")
     };
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_nix_path;
+    #[test]
+    fn test_validation() -> anyhow::Result<()> {
+        let path = format!(
+            "/nix/store/{}",
+            "b4fmrar918b1l8hwfjzxqv7whnq5c33q-nixos-system-adminvm-test"
+        );
+        is_valid_nix_path(&path)
+    }
 }
