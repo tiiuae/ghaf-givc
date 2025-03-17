@@ -339,8 +339,17 @@ impl AdminClient {
         Ok(gens.list)
     }
 
-    pub async fn set_generation(&self, path: String) -> anyhow::Result<()> {
-        let req = pb::admin::SetGenerationRequest { path };
+    pub async fn set_generation(
+        &self,
+        path: String,
+        source: String,
+        no_check_signs: bool,
+    ) -> anyhow::Result<()> {
+        let req = pb::admin::SetGenerationRequest {
+            path,
+            source,
+            no_check_signs,
+        };
         let response = self
             .connect_to()
             .await?

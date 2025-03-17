@@ -106,6 +106,8 @@ message ListGenerationsResponse {
 
 message SetGenerationRequest {
     string Path = 1;
+    string Source = 2;
+    bool NoCheckSigns = 3;
 }
 
 message SetGenerationResponse {

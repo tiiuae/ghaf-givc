@@ -116,6 +116,10 @@ enum Commands {
     SetGeneration {
         #[arg()]
         path: String,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long, required = false, default_value_t = false)]
+        no_check_signs: bool,
     },
     Test {
         #[command(subcommand)]
@@ -270,7 +274,19 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             println!("{:?}", response)
         }
 
-        Commands::SetGeneration { path } => admin.set_generation(path).await?,
+        Commands::SetGeneration {
+            path,
+            source,
+            no_check_signs,
+        } => {
+            admin
+                .set_generation(
+                    path,
+                    source.unwrap_or("https://prod-cache.vedenemo.dev".into()),
+                    no_check_signs,
+                )
+                .await?
+        }
     };
 
     Ok(())

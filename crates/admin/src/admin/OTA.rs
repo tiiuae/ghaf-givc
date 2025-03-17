@@ -35,11 +35,20 @@ impl OTA {
     }
 
     // FIXME: Update going silently, it should report
-    pub async fn set(&self, path: String) -> anyhow::Result<()> {
+    pub async fn set(
+        &self,
+        path: String,
+        source: String,
+        no_check_signs: bool,
+    ) -> anyhow::Result<()> {
         let mut exec = ExecClient::connect(self.endpoint.clone()).await?;
-        let args = vec!["--set".to_owned(), path];
+        let mut args = vec!["--set".to_owned(), path, "--source".to_owned(), source];
+        if no_check_signs {
+            args.push("--no-check-signs".to_owned())
+        }
+        info!("Invoke ota-update: {:?}", args);
         let (stdout, stderr, rc) = exec
-            .start_command("ota-updater".to_string(), args, None, None, None, None)
+            .start_command("ota-update".to_string(), args, None, None, None, None)
             .await?;
         info!("stderr: {}", String::from_utf8_lossy(&stderr));
         info!("stdout: {}", String::from_utf8_lossy(&stdout));

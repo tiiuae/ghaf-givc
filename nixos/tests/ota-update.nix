@@ -89,7 +89,7 @@ let
 in
 {
   perSystem =
-    { pkgs, ... }:
+    { pkgs, self', ... }:
     {
       vmTests.tests = {
         ota-update = {
@@ -120,6 +120,59 @@ in
 
                 # Ensure, that `switch-to-configuration boot` is successfully invoked
                 hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
+              '';
+          };
+        };
+        ota-update-givc = {
+          module = {
+            inherit nodes;
+            testScript =
+              { nodes, ... }:
+              let
+                hostvm = nodes.hostvm.system.build.toplevel;
+                regInfoHost = pkgs.closureInfo { rootPaths = hostvm; };
+                adminvm = nodes.adminvm.system.build.toplevel;
+                regInfoAdmin = pkgs.closureInfo { rootPaths = adminvm; };
+                source = "ssh-ng://root@${(builtins.head nodes.adminvm.networking.interfaces.eth1.ipv4.addresses).address}";
+                admin = builtins.head nodes.adminvm.givc.admin.addresses;
+                expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
+                tls = nodes.adminvm.givc.admin.tls.enable;
+                cli = "${self'.packages.givc-admin.cli}/bin/givc-cli";
+                cliArgs =
+                  "--name ${admin.name} --addr ${admin.addr} --port ${admin.port} "
+                  + "${
+                    if tls then
+                      "--cacert /etc/givc/ca-cert.pem --cert /etc/givc/cert.pem --key /etc/givc/key.pem"
+                    else
+                      "--notls"
+                  }";
+              in
+              ''
+                hostvm.wait_for_unit("multi-user.target")
+                print(hostvm.succeed("nix-store --load-db <${regInfoHost}"))
+                print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
+
+                adminvm.wait_for_unit("multi-user.target")
+                print(adminvm.succeed("nix-store --load-db <${regInfoAdmin}"))
+                print(adminvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${adminvm}"))
+
+                import time
+                with subtest("setup services"):
+                    hostvm.wait_for_unit("givc-ghaf-host.service")
+                    adminvm.wait_for_unit("givc-admin.service")
+                    adminvm.wait_for_unit("multi-user.target")
+                    hostvm.wait_for_unit("multi-user.target")
+                    time.sleep(1)
+                    # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
+                    print(hostvm.succeed("${cli} ${cliArgs} test ensure --retry 60 --type 0 ${expected}"))
+
+                update = adminvm.succeed("find-software-update").strip()
+                with subtest("OTA"):
+                    print(hostvm.succeed("${cli} ${cliArgs} list-generations"))
+                    print(hostvm.succeed(f"${cli} ${cliArgs} set-generation {update} --source ${source} --no-check-signs"))
+                    # Ensure, that `switch-to-configuration boot` is successfully invoked
+                    hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
+                    print(hostvm.succeed("${cli} ${cliArgs} list-generations"))
               '';
           };
         };

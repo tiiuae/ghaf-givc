@@ -65,12 +65,14 @@ impl Validator {
 }
 
 impl AdminService {
-    pub fn new(use_tls: Option<TlsConfig>) -> Self {
+    pub fn new(use_tls: Option<TlsConfig>, monitoring: bool) -> Self {
         let inner = Arc::new(AdminServiceImpl::new(use_tls));
         let clone = inner.clone();
-        tokio::task::spawn(async move {
-            clone.monitor().await;
-        });
+        if monitoring {
+            tokio::task::spawn(async move {
+                clone.monitor().await;
+            });
+        }
         Self { inner }
     }
 
@@ -738,11 +740,11 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<SetGenerationRequest>,
     ) -> Result<tonic::Response<Self::SetGenerationStream>, tonic::Status> {
-        escalate(request, |req| async {
+        escalate(request, |req| async move {
             let endpoint = self.inner.host_endpoint()?;
             let ota = super::OTA::OTA::connect(endpoint).await?;
             let stream = async_fn_stream::try_fn_stream(|emitter| async move {
-                ota.set(req.path)
+                ota.set(req.path, req.source, req.no_check_signs)
                     .await
                     .wrap_error()?;
                 emitter
