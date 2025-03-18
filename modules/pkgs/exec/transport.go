@@ -21,7 +21,6 @@ type process struct {
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
 	stderr io.ReadCloser
-	done   chan struct{}
 }
 
 type ExecServer struct {
@@ -45,6 +44,7 @@ func NewExecServer() (*ExecServer, error) {
 
 func (s *ExecServer) RunCommand(stream pb.Exec_RunCommandServer) error {
 	var proc *process
+	var wg sync.WaitGroup
 
 	// Read first request (StartCommand expected)
 	req, err := stream.Recv()
@@ -57,7 +57,7 @@ func (s *ExecServer) RunCommand(stream pb.Exec_RunCommandServer) error {
 		return fmt.Errorf("expected StartCommand, got something else")
 	}
 
-	proc, err = s.startCommand(start.Start, stream)
+	proc, err = s.startCommand(start.Start, &wg, stream)
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,8 @@ func (s *ExecServer) RunCommand(stream pb.Exec_RunCommandServer) error {
 
 	// Wait for the process to finish
 	err = proc.cmd.Wait()
-	close(proc.done)
+	wg.Wait()
+
 	exitCode := 0
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		exitCode = exitErr.ExitCode()
@@ -121,7 +122,7 @@ func handleInput(stream pb.Exec_RunCommandServer, proc *process) {
 	}
 }
 
-func (s *ExecServer) startCommand(req *pb.StartCommand, stream pb.Exec_RunCommandServer) (*process, error) {
+func (s *ExecServer) startCommand(req *pb.StartCommand, wg *sync.WaitGroup, stream pb.Exec_RunCommandServer) (*process, error) {
 	cmd := exec.Command(req.Command, req.Arguments...)
 	if req.WorkingDirectory != nil {
 		cmd.Dir = *req.WorkingDirectory
@@ -156,10 +157,11 @@ func (s *ExecServer) startCommand(req *pb.StartCommand, stream pb.Exec_RunComman
 		return nil, err
 	}
 
-	done := make(chan struct{})
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+
+	wg.Add(2)
 
 	// Send the StartedEvent response
 	if err := stream.Send(&pb.CommandResponse{
@@ -171,7 +173,7 @@ func (s *ExecServer) startCommand(req *pb.StartCommand, stream pb.Exec_RunComman
 	}
 
 	// Stream stdout
-	go streamOutput(stdout, stream, func(data []byte) *pb.CommandResponse {
+	go streamOutput(stdout, stream, wg, func(data []byte) *pb.CommandResponse {
 		log.Infof("Streaming stdout: %d bytes\n", len(data))
 		return &pb.CommandResponse{
 			Event: &pb.CommandResponse_Stdout{
@@ -181,7 +183,7 @@ func (s *ExecServer) startCommand(req *pb.StartCommand, stream pb.Exec_RunComman
 	})
 
 	// Stream stderr
-	go streamOutput(stderr, stream, func(data []byte) *pb.CommandResponse {
+	go streamOutput(stderr, stream, wg, func(data []byte) *pb.CommandResponse {
 		log.Infof("Streaming stderr: %d bytes\n", len(data))
 		return &pb.CommandResponse{
 			Event: &pb.CommandResponse_Stderr{
@@ -203,22 +205,24 @@ func (s *ExecServer) startCommand(req *pb.StartCommand, stream pb.Exec_RunComman
 		stdin:  stdin,
 		stdout: stdout,
 		stderr: stderr,
-		done:   done,
 	}
 	return proc, nil
 }
 
-func streamOutput(reader io.ReadCloser, stream pb.Exec_RunCommandServer, makeResponse func(data []byte) *pb.CommandResponse) {
+func streamOutput(reader io.ReadCloser, stream pb.Exec_RunCommandServer, wg *sync.WaitGroup, makeResponse func(data []byte) *pb.CommandResponse) {
 	defer reader.Close()
+	defer wg.Done()
 	// Create a buffered reader
 	bufReader := bufio.NewReader(reader)
 	buffer := make([]byte, 1024)
 	for {
 		n, err := bufReader.Read(buffer)
 		if err == io.EOF {
+			log.Errorf("EOF during readong input: %v", err)
 			break
 		}
 		if err != nil {
+			log.Errorf("unknown error readong input: %v", err)
 			return
 		}
 		resp := makeResponse(buffer[:n])
