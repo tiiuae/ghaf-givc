@@ -112,6 +112,15 @@ enum Commands {
         #[arg(long)]
         limit: Option<u32>,
     },
+    ListGenerations {},
+    SetGeneration {
+        #[arg()]
+        path: String,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long, required = false, default_value_t = false)]
+        no_check_signs: bool,
+    },
     Test {
         #[command(subcommand)]
         test: Test,
@@ -258,6 +267,25 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             while !limit.as_mut().is_some_and(|l| l.next().is_none()) {
                 dump(watch.channel.recv().await?, as_json)?;
             }
+        }
+
+        Commands::ListGenerations {} => {
+            let response = admin.list_generations().await?;
+            println!("{:?}", response)
+        }
+
+        Commands::SetGeneration {
+            path,
+            source,
+            no_check_signs,
+        } => {
+            admin
+                .set_generation(
+                    path,
+                    source.unwrap_or("https://prod-cache.vedenemo.dev".into()),
+                    no_check_signs,
+                )
+                .await?
         }
     };
 

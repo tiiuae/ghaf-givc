@@ -9,7 +9,7 @@
 }:
 let
   cfg = config.givc.host;
-  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-agent;
+  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-agent ota-update;
   inherit (lib)
     mkOption
     mkEnableOption
@@ -109,6 +109,12 @@ in
         Restart = "always";
         RestartSec = 1;
       };
+      path = [
+        ota-update
+        pkgs.nix
+        pkgs.nixos-rebuild
+        pkgs.openssh
+      ];
       environment = {
         "AGENT" = "${toJSON cfg.transport}";
         "DEBUG" = "${trivial.boolToString cfg.debug}";

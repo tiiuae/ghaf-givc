@@ -72,6 +72,7 @@
               inherit givc-admin;
               givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
               givc-cli = givc-admin.cli;
+              ota-update = givc-admin.ota;
             };
         };
       flake = {

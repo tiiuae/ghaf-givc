@@ -17,6 +17,7 @@ import (
 	givc_admin "givc/modules/api/admin"
 	givc_systemd "givc/modules/api/systemd"
 	givc_app "givc/modules/pkgs/applications"
+	givc_exec "givc/modules/pkgs/exec"
 	givc_grpc "givc/modules/pkgs/grpc"
 	givc_hwidmanager "givc/modules/pkgs/hwidmanager"
 	givc_localelistener "givc/modules/pkgs/localelistener"
@@ -184,6 +185,13 @@ func main() {
 		log.Fatalf("Cannot create systemd control server: %v", err)
 	}
 	grpcServices = append(grpcServices, systemdControlServer)
+
+	// Create `exec` control server
+	execServer, err := givc_exec.NewExecServer()
+	if err != nil {
+		log.Fatalf("Cannot create exec server: %v", err)
+	}
+	grpcServices = append(grpcServices, execServer)
 
 	// Create locale listener server
 	localeClientServer, err := givc_localelistener.NewLocaleServer()

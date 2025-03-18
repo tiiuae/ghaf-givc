@@ -65,13 +65,19 @@ impl Validator {
 }
 
 impl AdminService {
-    pub fn new(use_tls: Option<TlsConfig>) -> Self {
+    pub fn new(use_tls: Option<TlsConfig>, monitoring: bool) -> Self {
         let inner = Arc::new(AdminServiceImpl::new(use_tls));
         let clone = inner.clone();
-        tokio::task::spawn(async move {
-            clone.monitor().await;
-        });
+        if monitoring {
+            tokio::task::spawn(async move {
+                clone.monitor().await;
+            });
+        }
         Self { inner }
+    }
+
+    pub(crate) fn inner(&self) -> Arc<AdminServiceImpl> {
+        self.inner.clone()
     }
 }
 
@@ -711,6 +717,45 @@ impl pb::admin_service_server::AdminService for AdminService {
                  }
             };
             Ok(Box::pin(stream) as Self::WatchStream)
+        })
+        .await
+    }
+
+    // OTA
+    async fn list_generations(
+        &self,
+        request: tonic::Request<givc_common::pb::Empty>,
+    ) -> Result<tonic::Response<ListGenerationsResponse>, tonic::Status> {
+        escalate(request, |_| async {
+            let endpoint = self.inner.host_endpoint()?;
+            let ota = super::OTA::OTA::connect(endpoint).await?;
+            let list = ota.list().await?;
+            Ok(ListGenerationsResponse { list })
+        })
+        .await
+    }
+
+    type SetGenerationStream = Stream<SetGenerationResponse>;
+    async fn set_generation(
+        &self,
+        request: tonic::Request<SetGenerationRequest>,
+    ) -> Result<tonic::Response<Self::SetGenerationStream>, tonic::Status> {
+        escalate(request, |req| async move {
+            let endpoint = self.inner.host_endpoint()?;
+            let ota = super::OTA::OTA::connect(endpoint).await?;
+            let stream = async_fn_stream::try_fn_stream(|emitter| async move {
+                ota.set(req.path, req.source, req.no_check_signs)
+                    .await
+                    .wrap_error()?;
+                emitter
+                    .emit(SetGenerationResponse {
+                        finished: true,
+                        output: None,
+                    })
+                    .await;
+                Ok(())
+            });
+            Ok(Box::pin(stream) as Self::SetGenerationStream)
         })
         .await
     }
