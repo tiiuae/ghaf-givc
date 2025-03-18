@@ -19,7 +19,7 @@ impl OTA {
         let (stdout, stderr, rc) = exec
             .start_command(
                 "ota-update".to_string(),
-                vec!["--get".to_string()],
+                vec!["get".to_string()],
                 None,
                 None,
                 None,
@@ -42,7 +42,7 @@ impl OTA {
         no_check_signs: bool,
     ) -> anyhow::Result<()> {
         let mut exec = ExecClient::connect(self.endpoint.clone()).await?;
-        let mut args = vec!["--set".to_owned(), path, "--source".to_owned(), source];
+        let mut args = vec!["set".to_owned(), path, "--source".to_owned(), source];
         if no_check_signs {
             args.push("--no-check-signs".to_owned())
         }
