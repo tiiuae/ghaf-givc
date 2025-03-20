@@ -406,7 +406,7 @@ func (c *SystemdController) StartApplication(ctx context.Context, serviceName st
 	propType := dbus.PropType("exec")
 	probEnvironment := dbus.Property{
 		Name:  "Environment",
-		Value: godbus.MakeVariant([]string{"XDG_CONFIG_DIRS=$XDG_CONFIG_DIRS:/etc/xdg"}),
+		Value: godbus.MakeVariant(os.Environ()),
 	}
 	props = append(props, propDescription, propExecStart, propType, probEnvironment)
 
