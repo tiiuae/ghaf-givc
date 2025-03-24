@@ -89,6 +89,7 @@
         # Overlays
         overlays.default = _final: prev: {
           givc-cli = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.cli;
+          ota-update = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.ota;
         };
       };
     };
