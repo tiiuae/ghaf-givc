@@ -89,6 +89,32 @@ message TimezoneRequest {
     string Timezone = 1;
 }
 
+message Generation {
+    int32 Generation = 1;
+    string Date = 2;
+    string NixosVersion = 3;
+    string KernelVersion = 4;
+    string ConfigurationRevision = 5;
+    repeated string specialisations = 6;
+    bool current = 7;
+    string StorePath = 8;
+}
+
+message ListGenerationsResponse {
+    repeated Generation List = 1;
+}
+
+message SetGenerationRequest {
+    string Path = 1;
+    string Source = 2;
+    bool NoCheckSigns = 3;
+}
+
+message SetGenerationResponse {
+    bool finished = 1;
+    optional string Output = 2;
+}
+
 service AdminService {
     rpc RegisterService(RegistryRequest) returns (RegistryResponse) {}
 
@@ -114,4 +140,8 @@ service AdminService {
     // Query
     rpc QueryList(Empty) returns (QueryListResponse) {}
     rpc Watch(Empty) returns (stream WatchItem) {}
+
+    // OTA
+    rpc ListGenerations(Empty) returns (ListGenerationsResponse) {}
+    rpc SetGeneration(SetGenerationRequest) returns (stream SetGenerationResponse) {}
 }

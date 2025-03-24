@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 {
   imports = [
+    ./shared-configs.nix
     ./admin.nix
     ./dbus.nix
     ./app.nix
+    ./ota-update.nix
   ];
 }
