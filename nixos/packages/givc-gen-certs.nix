@@ -4,38 +4,44 @@
   lib,
   pkgs,
   agents,
-  adminTlsName,
-  adminAddresses,
-  generatorHostName,
 }:
-pkgs.writeShellScriptBin "givc-gen-certs" ''
+pkgs.writeShellScriptBin "gen_mtls_creds" ''
   set -xeuo pipefail
+  validity=3650
 
-  if [ $# -eq 1 ]; then
-    STORAGE_DIR="$1"
+  if [ $# -eq 2 ]; then
+    output_dir="$1"
+    CA="$2"
+    if [[ "$CA" == /* || "$CA" == ./* ]]; then
+        if [ ! -f "$CA/ca-cert.pem" ] || [ ! -f "$CA/ca-key.pem" ]; then
+          echo "CA certificate or key not found." >&2
+          exit 1
+        fi
+        ca_dir="$2"
+    else
+      # Create a new CA
+      ca_dir="$output_dir/certification-authority"
+      mkdir -p $ca_dir
+      ca_constraints="basicConstraints=critical,CA:true,pathlen:1"
+      ca_name="$2"
+      ${pkgs.openssl}/bin/openssl genpkey -algorithm ED25519 -out $ca_dir/ca-key.pem
+      ${pkgs.openssl}/bin/openssl req -x509 -new -key $ca_dir/ca-key.pem -out $ca_dir/ca-cert.pem -subj "/CN=$ca_name" -addext $ca_constraints -days $validity
+      chown -R root:root "$ca_dir"
+      chmod -R 400 $ca_dir
+    fi
   else
-    echo "Usage: $0 <storage-dir>" >&2
+    echo "Usage: $0 <storage-dir> <ca-name/ca-path(Nix style)>" >&2
     exit 1
   fi
 
-  # acl_prefix="otherName.1:1.2.3.4.5.6;UTF8"
-
-  # Parameters
-  VALIDITY=3650
-  EXT_KEY_USAGE="extendedKeyUsage=serverAuth,clientAuth"
-  CA_NAME="GivcCA"
-  CA_CONSTRAINTS="basicConstraints=critical,CA:true,pathlen:1"
-  CA_DIRECTORY="/tmp/ca"
-
   # Function to create key/cert based on IP and/or DNS
   gen_cert(){
-
       # Initialize name and storage path
       name="$1"
-      printf "$name " >> /tmp/givc.certs
-      path="/tmp/givc.tmp"
-      [[ -d "$path" ]] && rm -r "$path"
-      mkdir -p "$path"
+      agent_dir="$output_dir/$name"
+      printf "$name " >> "$output_dir"/agents
+      mkdir -p $agent_dir
+      ext_key_usage="extendedKeyUsage=serverAuth,clientAuth"
 
       # Initialize DNS and IP entry
       alttext="subjectAltName=DNS.1:''${name}"
@@ -49,68 +55,19 @@ pkgs.writeShellScriptBin "givc-gen-certs" ''
       done
 
       # Generate and sign key-cert pair
-      ${pkgs.openssl}/bin/openssl genpkey -algorithm ED25519 -out "$path"/key.pem
-      ${pkgs.openssl}/bin/openssl req -new -key "$path"/key.pem -out "$path"/"$name"-csr.pem -subj "/CN=''${name}" -addext "$alttext" -addext "$EXT_KEY_USAGE"
-      ${pkgs.openssl}/bin/openssl x509 -req -in "$path"/"$name"-csr.pem -CA $CA_DIRECTORY/ca-cert.pem -CAkey $CA_DIRECTORY/ca-key.pem -CAcreateserial -out "$path"/cert.pem -extfile <(printf "%s" "$alttext") -days $VALIDITY
+      ${pkgs.openssl}/bin/openssl genpkey -algorithm ED25519 -out "$agent_dir"/key.pem
+      ${pkgs.openssl}/bin/openssl req -new -key "$agent_dir"/key.pem -out "$agent_dir/$name"-csr.pem -subj "/CN=''${name}" -addext "$alttext" -addext "$ext_key_usage"
+      ${pkgs.openssl}/bin/openssl x509 -req -in "$agent_dir/$name"-csr.pem -CA "$ca_dir"/ca-cert.pem -CAkey "$ca_dir"/ca-key.pem -CAcreateserial -out "$agent_dir"/cert.pem -extfile <(printf "%s" "$alttext") -days $validity
 
-      # Copy CA certificate
-      cp $CA_DIRECTORY/ca-cert.pem "$path"/ca-cert.pem
 
       # Delete CSR
-      rm "$path"/"$name"-csr.pem
+      rm "$agent_dir/$name"-csr.pem
 
       # Set permissions
-      chown -R root:root "$path"
-      chmod -R 500 "$path"
-
-      # Store key/cert in image or directory
-      case "$name" in
-        ${generatorHostName})
-          [[ -d "/etc/givc" ]] && rm -r "/etc/givc"
-          mkdir -p "/etc/givc"
-          cp -r "$path"/* "/etc/givc"
-          ;;
-        *)
-          image="''${STORAGE_DIR}/''${name}.img"
-          [[ -f "$image" ]] && rm -r "$image"
-          ${pkgs.coreutils}/bin/truncate -s 2M "$image"
-          ${pkgs.e2fsprogs}/bin/mkfs.ext4 -L "givc-''${name}" "$image"
-          mnt="/tmp/mnt"
-          [[ -d "$mnt" ]] && rm -r "$mnt"
-          mkdir -p "$mnt"
-          ${pkgs.mount}/bin/mount "$image" "$mnt"
-          cp -r "$path"/* "$mnt"
-          ${pkgs.umount}/bin/umount "$mnt"
-      esac
-
-      # Cleanup
-      rm -r "$path"
+      chown -R root:root "$agent_dir"
+      chmod -R 500 "$agent_dir"
   }
 
-  # Create CA
-  mkdir -p $CA_DIRECTORY
-  ${pkgs.openssl}/bin/openssl genpkey -algorithm ED25519 -out $CA_DIRECTORY/ca-key.pem
-  ${pkgs.openssl}/bin/openssl req -x509 -new -key $CA_DIRECTORY/ca-key.pem -out $CA_DIRECTORY/ca-cert.pem -subj "/CN=$CA_NAME" -addext $CA_CONSTRAINTS -days $VALIDITY
-  chmod -R 400 $CA_DIRECTORY
-
   # Generate agent keys/certificates
-  ${lib.concatStringsSep "\n" (
-    map (entry: "gen_cert ${entry.name} ${entry.addr}") (
-      lib.filter (agent: agent.name != adminTlsName) agents
-    )
-  )}
-
-  # Generate admin key/certificate
-  gen_cert ${adminTlsName} ${lib.concatMapStringsSep " " (e: e.addr) adminAddresses}
-
-  # Cleanup
-  rm -r $CA_DIRECTORY
-
-  # Create lock file
-  ${pkgs.coreutils}/bin/install -m 000 /dev/null /etc/givc/tls.lock
-
-  # Move the generated certs file
-  mv /tmp/givc.certs /etc/givc
-
-  /run/current-system/systemd/bin/systemd-notify --ready
+  ${lib.concatStringsSep "\n" (map (entry: "gen_cert ${entry.name} ${entry.addr}") agents)}
 ''
