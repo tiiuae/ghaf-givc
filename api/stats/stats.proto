@@ -2,9 +2,30 @@
 // SPDX-License-Identifier: Apache-2.0
 syntax = "proto3";
 option go_package = "givc/modules/api/stats";
+
 package stats;
 
 message StatsRequest {
+}
+
+message ProcessStat {
+    string Name = 1;
+    float User = 2;
+    float Sys = 3;
+    uint64 ResSetSize = 4;
+}
+
+message ProcessStats {
+    repeated ProcessStat CpuProcesses = 1;
+    repeated ProcessStat MemProcesses = 2;
+    uint64 Total = 3;
+    uint64 Running = 4;
+}
+
+message LoadStats {
+    float Load1Min = 1;
+    float Load5Min = 2;
+    float Load15Min = 3;
 }
 
 message MemoryStats {
@@ -16,6 +37,8 @@ message MemoryStats {
 
 message StatsResponse {
     MemoryStats Memory = 1;
+    LoadStats Load = 2;
+    ProcessStats Process = 3;
 }
 
 service StatsService {

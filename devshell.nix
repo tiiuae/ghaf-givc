@@ -6,7 +6,12 @@
   ];
 
   perSystem =
-    { pkgs, config, ... }:
+    {
+      self',
+      pkgs,
+      config,
+      ...
+    }:
     {
       devshells.default = {
         devshell = {
@@ -20,21 +25,19 @@
         packages = with pkgs; [
           config.treefmt.build.wrapper
           reuse
-          go
           gopls
           gosec
           gotests
           go-tools
           golangci-lint
-          rustc
           rustfmt
-          cargo
           pkgs.stdenv.cc # Need for build rust components
           protobuf
           protoc-gen-go
           protoc-gen-go-grpc
           grpcurl
         ];
+        packagesFrom = builtins.attrValues self'.packages;
         commands = [
           {
             name = "update-pre-commit-hooks";

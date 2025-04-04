@@ -4,7 +4,7 @@
 let
   pname = "givc-agent";
 in
-pkgs.buildGo123Module {
+pkgs.buildGo124Module {
   inherit pname;
   version = "0.0.5";
   inherit src;
