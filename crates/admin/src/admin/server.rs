@@ -288,7 +288,9 @@ impl AdminServiceImpl {
     }
 
     pub async fn monitor(&self) {
-        let mut watch = tokio::time::interval(Duration::from_secs(5));
+        use tokio::time::{interval, MissedTickBehavior};
+        let mut watch = interval(Duration::from_secs(5));
+        watch.set_missed_tick_behavior(MissedTickBehavior::Delay);
         watch.tick().await; // First tick fires instantly
         loop {
             watch.tick().await;

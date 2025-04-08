@@ -41,7 +41,7 @@ func NewStatsServer() (*StatsServer, error) {
 }
 
 func (s *StatsServer) GetStats(ctx context.Context, req *stats_api.StatsRequest) (*stats_api.StatsResponse, error) {
-	log.Infof("Incoming request to get hardware identifier\n")
+	log.Infof("Incoming request to get statistics\n")
 
 	memorystats, err := s.Controller.GetMemoryStats(context.Background())
 	if err != nil {
@@ -49,5 +49,21 @@ func (s *StatsServer) GetStats(ctx context.Context, req *stats_api.StatsRequest)
 		return nil, fmt.Errorf("cannot get memory statistics")
 	}
 
-	return &stats_api.StatsResponse{Memory: memorystats}, nil
+	loadstats, err := s.Controller.GetLoadStats(context.Background())
+	if err != nil {
+		log.Infof("[GetStats] Error getting load statistics: %v\n", err)
+		return nil, fmt.Errorf("cannot get load statistics")
+	}
+
+	processstats, err := s.Controller.GetProcessStats(context.Background())
+	if err != nil {
+		log.Infof("[GetStats] Error getting process statistics: %v\n", err)
+		return nil, fmt.Errorf("cannot get process statistics")
+	}
+
+	return &stats_api.StatsResponse{
+		Memory:  memorystats,
+		Load:    loadstats,
+		Process: processstats,
+	}, nil
 }
