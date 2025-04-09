@@ -20,6 +20,7 @@ use crate::utils::naming::*;
 use crate::utils::tonic::*;
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::*;
+use serde_json::{json, Value};
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 const TIMEZONE_CONF: &str = "/etc/timezone.conf";
@@ -41,6 +42,7 @@ pub struct AdminServiceImpl {
     tls_config: Option<TlsConfig>,
     locale: Mutex<String>,
     timezone: Mutex<String>,
+    opa_server_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +98,7 @@ impl AdminServiceImpl {
             tls_config: use_tls,
             timezone: Mutex::new(timezone),
             locale: Mutex::new(locale),
+            opa_server_url: "http://localhost:5050/v1/data/".to_string(),
         }
     }
 
@@ -156,6 +159,40 @@ impl AdminServiceImpl {
         let client = SystemDClient::new(endpoint);
         client.start_remote(name).await?;
         Ok(())
+    }
+
+    pub async fn send_query_to_opa_server(
+        &self,
+        policy_path: &str,
+        query: &str,
+    ) -> anyhow::Result<String> {
+        let opa_url = format!("{}{}", self.opa_server_url, policy_path);
+        info!("Policy QUERY: {:#?}, URL: {:#?} ", query, opa_url);
+        let input: Value = serde_json::from_str(query).unwrap();
+
+        let body = surf::Body::from_json(&input)
+            .map_err(|e| anyhow!("Failed to create JSON request body: {}", e))?;
+
+        let request = surf::post(opa_url).body(body);
+        let mut res = match request.await {
+            Ok(response) => response,
+            Err(e) => {
+                error!("Failed to send request to OPA server: {}", e);
+                return Ok("{}".to_string());
+            }
+        };
+
+        let result_json: Value = match res.body_json().await {
+            Ok(json) => json,
+            Err(e) => {
+                error!("Failed to parse response from OPA server: {}", e);
+                return Ok("{}".to_string());
+            }
+        };
+        info!("OPA server response: {:#?}", result_json);
+
+        let result = result_json["result"].to_string();
+        Ok(result)
     }
 
     pub async fn start_unit_on_vm(&self, unit: &str, vmname: &str) -> anyhow::Result<String> {
@@ -713,6 +750,21 @@ impl pb::admin_service_server::AdminService for AdminService {
             Ok(Box::pin(stream) as Self::WatchStream)
         })
         .await
+    }
+    async fn policy_query(
+        &self,
+        request: tonic::Request<PolicyQueryRequest>,
+    ) -> Result<tonic::Response<PolicyQueryResponse>, tonic::Status> {
+        let inner = request.into_inner();
+        let path = inner.policy_path.clone();
+        let query = inner.query.clone();
+        let result = self
+            .inner
+            .send_query_to_opa_server(&path, &query)
+            .await
+            .map_err(|e| tonic::Status::internal(format!("OPA query failed: {}", e)))?;
+
+        Ok(tonic::Response::new(PolicyQueryResponse { result }))
     }
 }
 

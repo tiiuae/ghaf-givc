@@ -28,6 +28,7 @@ let
   tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
   unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
   vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
+  opaServerPort = 5050;
 in
 {
   options.givc.admin = {
@@ -64,6 +65,22 @@ in
       '';
       type = tlsSubmodule;
     };
+    opa = {
+      enable = mkOption {
+        description = ''
+          Start open policy agent.
+        '';
+        type = types.bool;
+        default = true;
+      };
+
+      policies = mkOption {
+        description = ''
+          Directory path of Rego policies.
+        '';
+        type = types.path;
+      };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -73,7 +90,20 @@ in
           !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
       }
+      {
+        assertion = !cfg.opa.enable || cfg.opa.policies != null;
+        message = "If OPA is enabled, then givc.admin.opa.policies must be set to the directory containing Rego policies.";
+      }
     ];
+
+    systemd.services.opa-server = mkIf cfg.opa.enable {
+      description = "Ghaf Policy Agent (OPA)";
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        ExecStart = "${pkgs.open-policy-agent}/bin/opa run --server --addr localhost:${toString opaServerPort} ${cfg.opa.policies}";
+        Restart = "always";
+      };
+    };
 
     systemd.services.givc-admin =
       let
@@ -113,6 +143,8 @@ in
             "GIVC_LOG" = "givc=debug,info";
           };
       };
-    networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) tcpAddresses);
+    networking.firewall.allowedTCPPorts = unique (
+      (map (addr: strings.toInt addr.port) tcpAddresses) ++ lib.optional cfg.opa.enable opaServerPort
+    );
   };
 }

@@ -116,6 +116,10 @@ enum Commands {
         #[command(subcommand)]
         test: Test,
     },
+    PolicyQuery {
+        policy_path: String,
+        query: String,
+    },
 }
 
 fn unit_type_parse(s: &str) -> anyhow::Result<UnitType> {
@@ -258,6 +262,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             while !limit.as_mut().is_some_and(|l| l.next().is_none()) {
                 dump(watch.channel.recv().await?, as_json)?;
             }
+        }
+        Commands::PolicyQuery { policy_path, query } => {
+            let response = admin.policy_query(policy_path, query).await?;
+            println!("{:?}", response)
         }
     };
 
