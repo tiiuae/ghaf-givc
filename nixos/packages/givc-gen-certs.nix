@@ -32,6 +32,7 @@ pkgs.writeShellScriptBin "givc-gen-certs" ''
 
       # Initialize name and storage path
       name="$1"
+      printf "$name " >> /tmp/givc.certs
       path="/tmp/givc.tmp"
       [[ -d "$path" ]] && rm -r "$path"
       mkdir -p "$path"
@@ -107,6 +108,9 @@ pkgs.writeShellScriptBin "givc-gen-certs" ''
 
   # Create lock file
   ${pkgs.coreutils}/bin/install -m 000 /dev/null /etc/givc/tls.lock
+
+  # Move the generated certs file
+  mv /tmp/givc.certs /etc/givc
 
   /run/current-system/systemd/bin/systemd-notify --ready
 ''
