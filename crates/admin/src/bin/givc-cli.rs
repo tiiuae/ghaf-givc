@@ -117,8 +117,9 @@ enum Commands {
         test: Test,
     },
     PolicyQuery {
-        policy_path: String,
         query: String,
+        #[arg(default_value = "")]
+        policy_path: String,
     },
 }
 
@@ -263,14 +264,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 dump(watch.channel.recv().await?, as_json)?;
             }
         }
-        Commands::PolicyQuery { policy_path, query } => {
-            let response = admin.policy_query(policy_path, query).await?;
-            println!("{:?}", response)
+        Commands::PolicyQuery { query, policy_path } => {
+            let response = admin.policy_query(query, policy_path).await?;
+            println!("{:#?}", response.result)
         }
     };
 
     Ok(())
 }
+
 
 fn dump<Q>(qr: Q, as_json: bool) -> anyhow::Result<()>
 where
