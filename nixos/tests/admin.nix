@@ -410,7 +410,7 @@ in
                     print(hostvm.succeed("${cli} ${cliArgs} get-stats app-vm"))
 
                 with subtest("policy query for usb camera"):
-                    policy_input_storage_json = json.dumps({
+                    query_json = json.dumps({
                       "input": {
                         "usb_device": {
                           "device_type": "camera",
@@ -419,8 +419,9 @@ in
                         }
                       }
                     })
+                    query_json = "json:" + query_json
                     policy_path = "ghaf/usb/access/allowed_vms"
-                    givc_cmd = f"${cli} ${cliArgs} policy-query '{policy_path}' '{policy_input_storage_json}'"
+                    givc_cmd = f"${cli} ${cliArgs} policy-query '{query_json}' '{policy_path}'"
                     result_json = hostvm.succeed(givc_cmd)
                     match = re.search(r'result:\s*"(.*?)"\s*}', result_json)
                     if not match:
@@ -435,6 +436,12 @@ in
                         print(color_blue + "[TEST] Policy query for usb camera : PASSED" + color_default)
                     else:
                         print(color_red + "[TEST] Policy query for usb camera : FAILED" + color_default)
+
+                with subtest("policy query for usb storage"):
+                    usb_storage_cmd = "cmd:usb_access storage"
+                    givc_cmd = f"${cli} ${cliArgs} policy-query '{usb_storage_cmd}'"
+                    result_json = hostvm.succeed(givc_cmd)
+                    print(f"Retrieved: {result_json} ")
 
                 with subtest("Clean run"):
                     print(hostvm.succeed("${cli} ${cliArgs} start app --vm app-vm foot"))

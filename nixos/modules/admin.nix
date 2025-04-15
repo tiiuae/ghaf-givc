@@ -71,7 +71,7 @@ in
           Start open policy agent.
         '';
         type = types.bool;
-        default = true;
+        default = false;
       };
 
       policies = mkOption {

@@ -90,8 +90,8 @@ message TimezoneRequest {
 }
 
 message PolicyQueryRequest {
-    string PolicyPath = 1;
-    string Query = 2;
+    string Query = 1;
+    string PolicyPath = 2;
 }
 
 message PolicyQueryResponse {

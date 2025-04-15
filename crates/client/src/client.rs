@@ -274,10 +274,10 @@ impl AdminClient {
 
     pub async fn policy_query(
         &self,
-        policy_path: String,
         query: String,
+        policy_path: String,
     ) -> anyhow::Result<pb::admin::PolicyQueryResponse> {
-        let request = pb::admin::PolicyQueryRequest { policy_path, query };
+        let request = pb::admin::PolicyQueryRequest { query, policy_path };
         let response = self
             .connect_to()
             .await?
