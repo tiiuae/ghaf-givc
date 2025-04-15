@@ -7,17 +7,17 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.98"
 async-channel = "2.3.1"
 async-stream = "0.3"
 hyper-util = "0.1"
 serde = { version = "1.0.202", features = ["derive"] }
 tokio-stream = "0.1"
-tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros"] }
+tokio = { version = "1.44", features = ["rt-multi-thread", "time", "macros"] }
 tokio-vsock = "*"
-tonic-types = "0.12"
-tonic = { version = "0.12", features = ["tls"] }
-tower = "0.4"
+tonic-types = "0.13"
+tonic = { version = "0.13", features = ["tls-ring"] }
+tower = "0.5"
 tracing = "0.1"
 
 givc-common = { path = "../common" }
