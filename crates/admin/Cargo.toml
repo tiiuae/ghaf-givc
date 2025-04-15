@@ -7,7 +7,7 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.98"
 async-channel = "2.3.1"
 async-stream = "0.3"
 clap = { version = "4.5.4", features = ["derive", "env"] }
@@ -16,34 +16,34 @@ prost = "0.13"
 regex = "1.11"
 serde_json = "1.0.120"
 serde = { version = "1.0.202", features = ["derive"] }
-strum = { version = "0.26", features = ["derive"] }
+strum = { version = "0.27", features = ["derive"] }
 tokio-stream = "0.1"
-tokio = { version = "1.0", features = [
+tokio = { version = "1.44", features = [
   "rt-multi-thread",
   "time",
   "macros",
   "fs",
 ] }
-tokio-vsock = "0.5"
-tonic-reflection = "0.12"
-tonic-types = "0.12"
-tonic = { version = "0.12", features = ["tls"] }
-tower = "0.4"
+tokio-vsock = "0.7"
+tonic-reflection = "0.13"
+tonic-types = "0.13"
+tonic = { version = "0.13", features = ["tls-ring"] }
+tower = "0.5"
 tracing = "0.1"
-tracing-journald = "0.2.0"
+tracing-journald = "0.3"
 tracing-subscriber = { version = "0.3", features = [
   "env-filter",
   "tracing-log",
   "time",
   "local-time",
 ] }
-x509-parser = "0.16"
+x509-parser = "0.17"
 
 # GIVC subparts
 givc-common = { path = "../common" }
 givc-client = { path = "../client" }
 
 [dependencies.tokio-listener]
-features = ["multi-listener", "tonic012", "vsock"]
-git = "https://github.com/avnik/tokio-listener"
-branch = "avnik/vsock-ghaf"
+features = ["multi-listener", "vsock", "tonic013"]
+git = "https://github.com/slakkala/tokio-listener"
+branch = "tonic013"
