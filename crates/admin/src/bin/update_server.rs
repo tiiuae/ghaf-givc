@@ -12,8 +12,8 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use tokio::fs;
 use tokio::net::TcpListener;
-use tokio::{fs, io};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -22,19 +22,13 @@ struct Args {
     #[arg(long, default_value = "/nix/var/nix/profiles/per-user/update")]
     path: PathBuf,
 
-    /// Basename of the default symlink
-    #[arg(long, default_value = "update")]
-    default_name: String,
+    /// Allowed profile names
+    #[clap(long, use_value_delimiter = true)]
+    allowed_profiles: Vec<String>,
 
     /// Port to listen on
     #[arg(long, default_value_t = 3000)]
     port: u16,
-}
-
-#[derive(Clone)]
-struct AppState {
-    path: PathBuf,
-    default_name: String,
 }
 
 #[derive(Serialize)]
@@ -85,26 +79,18 @@ async fn get_update_list(
             Err(_) => continue,
         };
 
-        if file_name == default_name {
+        if file_name == default_name
+            || !file_name.starts_with(default_name)
+            || !file_name.ends_with("-link")
+        {
             continue;
         }
 
         let full_path = entry.path();
 
         let target_path = match fs::read_link(&full_path).await {
-            Ok(t) => {
-                let absolute = if t.is_absolute() {
-                    t
-                } else {
-                    full_path.parent().unwrap_or(Path::new("/")).join(t)
-                };
-
-                if !absolute.exists() {
-                    continue;
-                }
-
-                absolute
-            }
+            Ok(t) if t.is_absolute() && t.exists() => t,
+            Ok(_) => continue,
             Err(_) => continue,
         };
 
@@ -124,9 +110,13 @@ async fn get_update_list(
 }
 
 async fn update_handler(
-    State(state): State<Arc<AppState>>,
+    axum::extract::Path(profile): axum::extract::Path<String>,
+    State(args): State<Arc<Args>>,
 ) -> Result<Json<Vec<LinkInfo>>, AppError> {
-    let links = get_update_list(&state.path, &state.default_name).await?;
+    if !args.allowed_profiles.contains(&profile) {
+        return Ok(Json(vec![])); // or return an error status
+    }
+    let links = get_update_list(&args.path, &profile).await?;
     Ok(Json(links))
 }
 
@@ -134,16 +124,14 @@ async fn update_handler(
 async fn main() {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
-    let state = Arc::new(AppState {
-        path: args.path,
-        default_name: args.default_name,
-    });
+    let port = args.port;
+    let state = Arc::new(args);
 
     let app = Router::new()
-        .route("/update", get(update_handler))
+        .route("/update/:profile", get(update_handler))
         .with_state(state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     tracing::info!("Serving on http://{}", addr);
 
     let listener = TcpListener::bind(addr).await.unwrap();
