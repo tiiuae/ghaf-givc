@@ -13,6 +13,7 @@ use tracing::{debug, error, info};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
+use super::policy_server::PolicyServer;
 use crate::admin::registry::*;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::*;
@@ -41,6 +42,7 @@ pub struct AdminServiceImpl {
     tls_config: Option<TlsConfig>,
     locale: Mutex<String>,
     timezone: Mutex<String>,
+    policy_server: PolicyServer,
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +98,8 @@ impl AdminServiceImpl {
             tls_config: use_tls,
             timezone: Mutex::new(timezone),
             locale: Mutex::new(locale),
+            policy_server: PolicyServer::new("http://localhost:5050/v1/data/".to_string()),
+            //opa_server_url: "http://localhost:5050/v1/data/".to_string(),
         }
     }
 
@@ -156,6 +160,18 @@ impl AdminServiceImpl {
         let client = SystemDClient::new(endpoint);
         client.start_remote(name).await?;
         Ok(())
+    }
+
+    pub async fn send_query_to_opa_server(
+        &self,
+        query: &str,
+        policy_path: &str,
+    ) -> anyhow::Result<String> {
+        let result = self
+            .policy_server
+            .evaluate_query(query, policy_path)
+            .await?;
+        Ok(result)
     }
 
     pub async fn start_unit_on_vm(&self, unit: &str, vmname: &str) -> anyhow::Result<String> {
@@ -715,6 +731,21 @@ impl pb::admin_service_server::AdminService for AdminService {
             Ok(Box::pin(stream) as Self::WatchStream)
         })
         .await
+    }
+    async fn policy_query(
+        &self,
+        request: tonic::Request<PolicyQueryRequest>,
+    ) -> Result<tonic::Response<PolicyQueryResponse>, tonic::Status> {
+        let inner = request.into_inner();
+        let query = inner.query.clone();
+        let path = inner.policy_path.clone();
+        let result = self
+            .inner
+            .send_query_to_opa_server(&query, &path)
+            .await
+            .map_err(|e| tonic::Status::internal(format!("OPA query failed: {}", e)))?;
+
+        Ok(tonic::Response::new(PolicyQueryResponse { result }))
     }
 }
 
