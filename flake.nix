@@ -72,6 +72,7 @@
               inherit givc-admin;
               givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
               givc-cli = givc-admin.cli;
+              inherit (givc-admin) update_server;
             };
         };
       flake = {
@@ -83,6 +84,7 @@
           appvm = import ./nixos/modules/appvm.nix { inherit self; };
           dbus = import ./nixos/modules/dbus.nix { inherit self; };
           tls = import ./nixos/modules/tls.nix { inherit self; };
+          update-server = import ./nixos/modules/update-server.nix { inherit self; };
         };
 
         # Overlays
