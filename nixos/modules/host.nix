@@ -100,8 +100,14 @@ in
     systemd.services."givc-${cfg.transport.name}" = {
       description = "GIVC remote service manager for the host.";
       enable = true;
-      after = [ "network.target" ];
-      wants = [ "network.target" ];
+      after = [
+        "givc-key-setup.service"
+        "network.target"
+      ];
+      wants = [
+        "givc-key-setup.service"
+        "network.target"
+      ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "exec";
