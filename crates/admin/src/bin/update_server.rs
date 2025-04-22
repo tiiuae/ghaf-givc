@@ -34,8 +34,8 @@ struct Args {
 #[derive(Serialize)]
 struct LinkInfo {
     name: String,
-    target: String,
-    default: bool,
+    target: PathBuf,
+    current: bool,
 }
 
 // Make our own error that wraps `anyhow::Error`.
@@ -63,21 +63,15 @@ where
     }
 }
 
-async fn get_update_list(
-    path: &PathBuf,
-    default_name: &str,
-) -> Result<Vec<LinkInfo>, anyhow::Error> {
-    let default_link_path = path.to_owned().join(&default_name);
+async fn get_update_list(path: &Path, default_name: &str) -> Result<Vec<LinkInfo>, anyhow::Error> {
+    let default_link_path = path.join(&default_name);
     let default_target = fs::read_link(&default_link_path).await.ok();
 
     let mut updates = Vec::new();
     let mut dir = fs::read_dir(&path).await?;
 
     while let Some(entry) = dir.next_entry().await? {
-        let file_name = match entry.file_name().into_string() {
-            Ok(n) => n,
-            Err(_) => continue,
-        };
+        let file_name = entry.file_name().to_string_lossy().to_string();
 
         if file_name == default_name
             || !file_name.starts_with(default_name)
@@ -90,19 +84,18 @@ async fn get_update_list(
 
         let target_path = match fs::read_link(&full_path).await {
             Ok(t) if t.is_absolute() && t.exists() => t,
-            Ok(_) => continue,
-            Err(_) => continue,
+            _ => continue,
         };
 
         let is_default = match &default_target {
-            Some(def) => def == Path::new(&file_name),
+            Some(def) => def.as_os_str() == entry.file_name(),
             None => false,
         };
 
         updates.push(LinkInfo {
             name: file_name,
-            target: target_path.to_string_lossy().into_owned(),
-            default: is_default,
+            target: target_path,
+            current: is_default,
         });
     }
 
