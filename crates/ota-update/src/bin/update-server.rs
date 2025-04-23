@@ -32,7 +32,7 @@ struct Args {
 }
 
 #[derive(Serialize)]
-struct LinkInfo {
+struct UpdateInfo {
     name: String,
     target: PathBuf,
     current: bool,
@@ -63,7 +63,7 @@ where
     }
 }
 
-async fn get_update_list(path: &Path, default_name: &str) -> Result<Vec<LinkInfo>, anyhow::Error> {
+async fn get_update_list(path: &Path, default_name: &str) -> Result<Vec<UpdateInfo>, anyhow::Error> {
     let default_link_path = path.join(&default_name);
     let default_target = fs::read_link(&default_link_path).await.ok();
 
@@ -92,7 +92,7 @@ async fn get_update_list(path: &Path, default_name: &str) -> Result<Vec<LinkInfo
             None => false,
         };
 
-        updates.push(LinkInfo {
+        updates.push(UpdateInfo {
             name: file_name,
             target: target_path,
             current: is_default,
@@ -105,7 +105,7 @@ async fn get_update_list(path: &Path, default_name: &str) -> Result<Vec<LinkInfo
 async fn update_handler(
     axum::extract::Path(profile): axum::extract::Path<String>,
     State(args): State<Arc<Args>>,
-) -> Result<Json<Vec<LinkInfo>>, AppError> {
+) -> Result<Json<Vec<UpdateInfo>>, AppError> {
     if !args.allowed_profiles.contains(&profile) {
         return Ok(Json(vec![])); // or return an error status
     }

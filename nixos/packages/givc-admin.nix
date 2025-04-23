@@ -51,7 +51,7 @@ let
         mkdir -p $cli/bin $agent/bin $update_server/bin
         mv $out/bin/givc-cli $cli/bin/givc-cli
         mv $out/bin/givc-agent $agent/bin/givc-agent
-        mv $out/bin/update_server $update_server/bin/ota-update-server
+        mv $out/bin/update-server $update_server/bin/ota-update-server
       '';
     }
   );
