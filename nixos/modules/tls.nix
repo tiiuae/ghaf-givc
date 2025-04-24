@@ -92,7 +92,7 @@ in
           description = "Generate keys and certificates for givc";
           path = [ givcCertGenerator ];
           wantedBy = [ "local-fs.target" ];
-          after = [ "local-fs.target" ];
+          after = [ "givc-check-certs.service" ];
           unitConfig.ConditionPathExists = "!/etc/givc/tls.lock";
           serviceConfig = {
             Type = "notify";
@@ -101,6 +101,29 @@ in
             StandardOutput = "journal";
             StandardError = "journal";
             ExecStart = "${givcCertGenerator}/bin/givc-gen-certs ${cfg.storagePath}";
+          };
+        };
+      givc-check-certs =
+        let
+          givcCertChecker = pkgs.callPackage ../packages/givc-check-certs.nix {
+            inherit lib pkgs;
+            inherit (cfg)
+              agents
+              ;
+          };
+        in
+        {
+          enable = true;
+          description = "Check certificates for givc";
+          path = [ givcCertChecker ];
+          wantedBy = [ "local-fs.target" ];
+          after = [ "local-fs.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            Restart = "no";
+            StandardOutput = "journal";
+            StandardError = "journal";
+            ExecStart = "${givcCertChecker}/bin/givc-check-certs";
           };
         };
     };
