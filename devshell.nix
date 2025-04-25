@@ -31,6 +31,7 @@
           go-tools
           golangci-lint
           rustfmt
+          clippy
           pkgs.stdenv.cc # Need for build rust components
           protobuf
           protoc-gen-go
