@@ -5,7 +5,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use serde::Serialize;
 use std::{
     net::SocketAddr,
@@ -18,6 +18,18 @@ use tokio::net::TcpListener;
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Args {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+enum Commands {
+    Serve(Serve),
+}
+
+#[derive(Parser, Clone, Debug)]
+#[command(author, version, about)]
+struct Serve {
     /// Directory containing update symlinks
     #[arg(long, default_value = "/nix/var/nix/profiles/per-user/update")]
     path: PathBuf,
@@ -63,7 +75,10 @@ where
     }
 }
 
-async fn get_update_list(path: &Path, default_name: &str) -> Result<Vec<UpdateInfo>, anyhow::Error> {
+async fn get_update_list(
+    path: &Path,
+    default_name: &str,
+) -> Result<Vec<UpdateInfo>, anyhow::Error> {
     let default_link_path = path.join(&default_name);
     let default_target = fs::read_link(&default_link_path).await.ok();
 
@@ -104,12 +119,12 @@ async fn get_update_list(path: &Path, default_name: &str) -> Result<Vec<UpdateIn
 
 async fn update_handler(
     axum::extract::Path(profile): axum::extract::Path<String>,
-    State(args): State<Arc<Args>>,
+    State(serve): State<Arc<Serve>>,
 ) -> Result<Json<Vec<UpdateInfo>>, AppError> {
-    if !args.allowed_profiles.contains(&profile) {
+    if !serve.allowed_profiles.contains(&profile) {
         return Ok(Json(vec![])); // or return an error status
     }
-    let links = get_update_list(&args.path, &profile).await?;
+    let links = get_update_list(&serve.path, &profile).await?;
     Ok(Json(links))
 }
 
@@ -117,16 +132,21 @@ async fn update_handler(
 async fn main() {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
-    let port = args.port;
-    let state = Arc::new(args);
 
-    let app = Router::new()
-        .route("/update/:profile", get(update_handler))
-        .with_state(state);
+    match args.command {
+        Commands::Serve(serve) => {
+            let port = serve.port;
+            let state = Arc::new(serve);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    tracing::info!("Serving on http://{}", addr);
+            let app = Router::new()
+                .route("/update/:profile", get(update_handler))
+                .with_state(state);
 
-    let listener = TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+            let addr = SocketAddr::from(([127, 0, 0, 1], port));
+            tracing::info!("Serving on http://{}", addr);
+
+            let listener = TcpListener::bind(addr).await.unwrap();
+            axum::serve(listener, app).await.unwrap();
+        }
+    }
 }
