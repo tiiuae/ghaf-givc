@@ -54,6 +54,11 @@ message ApplicationResponse {
     string AppStatus = 2;
 }
 
+message UnitStatusRequest {
+    string VmName = 1;
+    string UnitName = 2;
+}
+
 message Empty {
 }
 
@@ -103,6 +108,7 @@ service AdminService {
     rpc StopApplication(ApplicationRequest) returns (ApplicationResponse) {}
 
     // Misc
+    rpc GetUnitStatus(UnitStatusRequest) returns (systemd.UnitStatus) {}
     rpc SetLocale(LocaleRequest) returns (Empty) {}
     rpc SetTimezone(TimezoneRequest) returns (Empty) {}
     rpc GetStats(StatsRequest) returns (stats.StatsResponse) {}

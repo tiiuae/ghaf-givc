@@ -95,6 +95,11 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         as_json: bool,
     },
+    GetStatus {
+        vm_name: String,
+        unit_name: String,
+    },
+
     SetLocale {
         locale: String,
     },
@@ -228,6 +233,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         Commands::QueryList { as_json } => {
             let reply = admin.query_list().await?;
             dump(reply, as_json)?
+        }
+
+        Commands::GetStatus { vm_name, unit_name } => {
+            let reply = admin.get_status(vm_name, unit_name).await?;
+            print!("{:?}", reply)
         }
 
         Commands::SetLocale { locale } => {

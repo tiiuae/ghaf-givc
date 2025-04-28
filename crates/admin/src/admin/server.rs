@@ -223,6 +223,26 @@ impl AdminServiceImpl {
         Ok(())
     }
 
+    pub async fn get_unit_status(
+        &self,
+        vm_service: String,
+        unit_name: String,
+    ) -> anyhow::Result<pb::systemd::UnitStatus> {
+        let endpoint = self
+            .agent_endpoint(&vm_service)
+            .with_context(|| format!("{vm_service} not registered"))?;
+        let client = SystemDClient::new(endpoint);
+
+        /* Check status of the unit */
+        match client.get_remote_status(unit_name).await {
+            Err(e) => {
+                error!("Error retrieving unit status: {e}");
+                Err(e)
+            }
+            Ok(status) => Ok(status.into()),
+        }
+    }
+
     pub async fn handle_error(&self, entry: RegistryEntry) -> anyhow::Result<()> {
         info!(
             "Handling error for {} vm type {} service type {}",
@@ -593,6 +613,19 @@ impl pb::admin_service_server::AdminService for AdminService {
                 .map(From::from)
                 .collect();
             Ok(QueryListResponse { list })
+        })
+        .await
+    }
+
+    async fn get_unit_status(
+        &self,
+        request: tonic::Request<UnitStatusRequest>,
+    ) -> Result<tonic::Response<pb::systemd::UnitStatus>, tonic::Status> {
+        escalate(request, |req| async move {
+            let unit_name = req.unit_name;
+            let vm_name = format_service_name("", Some(&req.vm_name));
+            let status = self.inner.get_unit_status(vm_name, unit_name).await?;
+            Ok(status)
         })
         .await
     }

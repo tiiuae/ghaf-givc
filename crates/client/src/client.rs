@@ -179,6 +179,21 @@ impl AdminClient {
         Ok(())
     }
 
+    pub async fn get_status(
+        &self,
+        vm_name: String,
+        unit_name: String,
+    ) -> anyhow::Result<pb::systemd::UnitStatus> {
+        let request = pb::admin::UnitStatusRequest { vm_name, unit_name };
+        let response = self
+            .connect_to()
+            .await?
+            .get_unit_status(request)
+            .await
+            .rewrap_err()?;
+        Ok(response.into_inner())
+    }
+
     pub async fn reboot(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
         let _response = self
