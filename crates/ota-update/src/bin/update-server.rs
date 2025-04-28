@@ -6,8 +6,10 @@ use axum::{
     Json, Router,
 };
 use clap::{Parser, Subcommand};
+use ota_update::profile;
 use serde::Serialize;
 use std::{
+    ffi::OsString,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
@@ -25,6 +27,11 @@ struct Args {
 #[derive(Subcommand, Clone, Debug)]
 enum Commands {
     Serve(Serve),
+    Register {
+        path: PathBuf,
+        profile: OsString,
+        closure: PathBuf,
+    },
 }
 
 #[derive(Parser, Clone, Debug)]
@@ -117,7 +124,7 @@ async fn update_handler(
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
 
@@ -133,8 +140,14 @@ async fn main() {
             let addr = SocketAddr::from(([127, 0, 0, 1], port));
             tracing::info!("Serving on http://{addr}");
 
-            let listener = TcpListener::bind(addr).await.unwrap();
-            axum::serve(listener, app).await.unwrap();
+            let listener = TcpListener::bind(addr).await?;
+            axum::serve(listener, app).await?;
         }
+        Commands::Register {
+            path,
+            profile,
+            closure,
+        } => profile::set(&path, &profile, &closure)?,
     }
+    Ok(())
 }
