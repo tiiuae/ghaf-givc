@@ -187,6 +187,7 @@ in
                     "reboot.target"
                     "sleep.target"
                     "suspend.target"
+                    "multi-user.target"
                   ];
                 };
 
@@ -340,6 +341,7 @@ in
                   hostvm.wait_for_unit("givc-ghaf-host.service")
                   adminvm.wait_for_unit("givc-admin.service")
                   guivm.wait_for_unit("multi-user.target")
+                  print(hostvm.succeed("${cli} ${cliArgs} get-status gui-vm multi-user.target"))
                   appvm.wait_for_unit("multi-user.target")
                   guivm.wait_for_unit("givc-gui-vm.service")
 
