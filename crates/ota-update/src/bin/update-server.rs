@@ -51,10 +51,12 @@ struct UpdateInfo {
 }
 
 // Make our own error that wraps `anyhow::Error`.
-struct AppError(anyhow::Error);
+#[derive(thiserror::Error, Debug)]
+#[error("{0}")]
+struct Error(#[from] anyhow::Error);
 
 // Tell axum how to convert `AppError` into a response.
-impl IntoResponse for AppError {
+impl IntoResponse for Error {
     fn into_response(self) -> Response {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -64,53 +66,39 @@ impl IntoResponse for AppError {
     }
 }
 
-// This enables using `?` on functions that return `Result<_, anyhow::Error>` to turn them into
-// `Result<_, AppError>`. That way you don't need to do that manually.
-impl<E> From<E> for AppError
-where
-    E: Into<anyhow::Error>,
-{
-    fn from(err: E) -> Self {
-        Self(err.into())
-    }
-}
-
 async fn get_update_list(
     path: &Path,
     default_name: &str,
 ) -> Result<Vec<UpdateInfo>, anyhow::Error> {
-    let default_link_path = path.join(&default_name);
+    let default_link_path = path.join(default_name);
     let default_target = fs::read_link(&default_link_path).await.ok();
 
     let mut updates = Vec::new();
     let mut dir = fs::read_dir(&path).await?;
 
     while let Some(entry) = dir.next_entry().await? {
-        let file_name = entry.file_name().to_string_lossy().to_string();
+        let name = entry.file_name().to_string_lossy().to_string();
 
-        if file_name == default_name
-            || !file_name.starts_with(default_name)
-            || !file_name.ends_with("-link")
-        {
+        if name == default_name || !name.starts_with(default_name) || !name.ends_with("-link") {
             continue;
         }
 
         let full_path = entry.path();
 
-        let target_path = match fs::read_link(&full_path).await {
+        let target = match fs::read_link(&full_path).await {
             Ok(t) if t.is_absolute() && t.exists() => t,
             _ => continue,
         };
 
-        let is_default = match &default_target {
+        let current = match &default_target {
             Some(def) => def.as_os_str() == entry.file_name(),
             None => false,
         };
 
         updates.push(UpdateInfo {
-            name: file_name,
-            target: target_path,
-            current: is_default,
+            name,
+            target,
+            current,
         });
     }
 
@@ -120,7 +108,7 @@ async fn get_update_list(
 async fn update_handler(
     axum::extract::Path(profile): axum::extract::Path<String>,
     State(serve): State<Arc<Serve>>,
-) -> Result<Json<Vec<UpdateInfo>>, AppError> {
+) -> Result<Json<Vec<UpdateInfo>>, Error> {
     if !serve.allowed_profiles.contains(&profile) {
         return Ok(Json(vec![])); // or return an error status
     }
@@ -143,7 +131,7 @@ async fn main() {
                 .with_state(state);
 
             let addr = SocketAddr::from(([127, 0, 0, 1], port));
-            tracing::info!("Serving on http://{}", addr);
+            tracing::info!("Serving on http://{addr}");
 
             let listener = TcpListener::bind(addr).await.unwrap();
             axum::serve(listener, app).await.unwrap();
