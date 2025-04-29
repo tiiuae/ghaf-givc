@@ -52,7 +52,7 @@ struct Serve {
 
 #[derive(Serialize)]
 struct UpdateInfo {
-    name: String,
+    name: OsString,
     target: PathBuf,
     current: bool,
 }
@@ -84,11 +84,15 @@ async fn get_update_list(
     let mut dir = fs::read_dir(&path).await?;
 
     while let Some(entry) = dir.next_entry().await? {
-        let name = entry.file_name().to_string_lossy().to_string();
+        let name = entry.file_name();
 
-        if name == default_name || !name.starts_with(default_name) || !name.ends_with("-link") {
+        if name
+            .to_str()
+            .and_then(|f| f.strip_suffix(default_name))
+            .is_none_or(|f| !f.ends_with("-link"))
+        {
             continue;
-        }
+        };
 
         let full_path = entry.path();
 
@@ -98,7 +102,7 @@ async fn get_update_list(
         };
 
         let current = match &default_target {
-            Some(def) => def.as_os_str() == entry.file_name(),
+            Some(def) => def.as_os_str() == name,
             None => false,
         };
 
