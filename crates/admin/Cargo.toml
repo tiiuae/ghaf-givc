@@ -10,6 +10,7 @@ version = "0.0.1"
 anyhow = "1.0.98"
 async-channel = "2.3.1"
 async-stream = "0.3"
+axum = "*"
 clap = { version = "4.5.4", features = ["derive", "env"] }
 console = "0.15"
 prost = "0.13"
