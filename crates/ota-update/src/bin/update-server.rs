@@ -1,9 +1,9 @@
 use axum::{
+    Json, Router,
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
-    Json, Router,
 };
 use clap::{Parser, Subcommand};
 use ota_update::profile;

@@ -1,5 +1,5 @@
 use anyhow::bail;
-use tokio_vsock::{VsockAddr, VMADDR_CID_HOST, VMADDR_CID_LOCAL};
+use tokio_vsock::{VMADDR_CID_HOST, VMADDR_CID_LOCAL, VsockAddr};
 
 pub fn parse_vsock_addr(addr: &str) -> anyhow::Result<VsockAddr> {
     if let Some((cid, port)) = addr.split_once(':') {

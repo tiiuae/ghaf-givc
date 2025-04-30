@@ -387,23 +387,23 @@ in
 
               with subtest("pause/resume/stop application"):
                   appvm.succeed("pgrep foot")
-                  print(hostvm.succeed("${cli} ${cliArgs} pause foot@1.service"))
+                  print(hostvm.succeed("${cli} ${cliArgs} pause foot@0.service"))
                   time.sleep(20)
                   js = hostvm.succeed("${cli} ${cliArgs} query-list --as-json 2>/dev/null")
-                  foot = by_name("foot@1.service", json.loads(js))
+                  foot = by_name("foot@0.service", json.loads(js))
                   assert foot["status"] == "Paused"
-                  res = appvm.succeed("cat /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-foot.slice/foot@1.service/cgroup.events")
+                  res = appvm.succeed("cat /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-foot.slice/foot@0.service/cgroup.events")
                   assert "frozen 1" in res
 
-                  print(hostvm.succeed("${cli} ${cliArgs} resume foot@1.service"))
+                  print(hostvm.succeed("${cli} ${cliArgs} resume foot@0.service"))
                   time.sleep(20)
-                  res = appvm.succeed("cat /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-foot.slice/foot@1.service/cgroup.events")
+                  res = appvm.succeed("cat /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-foot.slice/foot@0.service/cgroup.events")
                   assert "frozen 0" in res
                   js = hostvm.succeed("${cli} ${cliArgs} query-list --as-json 2>/dev/null")
-                  foot = by_name("foot@1.service", json.loads(js))
+                  foot = by_name("foot@0.service", json.loads(js))
                   assert foot["status"] == "Running"
 
-                  print(hostvm.succeed("${cli} ${cliArgs} stop foot@1.service"))
+                  print(hostvm.succeed("${cli} ${cliArgs} stop foot@0.service"))
                   appvm.fail("pgrep foot")
 
               with subtest("clear exit and restart"):

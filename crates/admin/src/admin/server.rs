@@ -1,6 +1,6 @@
 use super::entry::*;
 use crate::pb::{self, *};
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use async_stream::try_stream;
 use givc_common::query::Event;
 use regex::Regex;
@@ -308,7 +308,7 @@ impl AdminServiceImpl {
     }
 
     pub async fn monitor(&self) {
-        use tokio::time::{interval, MissedTickBehavior};
+        use tokio::time::{MissedTickBehavior, interval};
         let mut watch = interval(Duration::from_secs(5));
         watch.set_missed_tick_behavior(MissedTickBehavior::Delay);
         watch.tick().await; // First tick fires instantly

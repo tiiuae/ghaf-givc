@@ -12,7 +12,7 @@ pub use givc_common::types;
 pub fn trace_init() -> anyhow::Result<()> {
     use std::env;
     use tracing::Level;
-    use tracing_subscriber::{filter::LevelFilter, layer::SubscriberExt, EnvFilter, Layer};
+    use tracing_subscriber::{EnvFilter, Layer, filter::LevelFilter, layer::SubscriberExt};
 
     let env_filter =
         EnvFilter::try_from_env("GIVC_LOG").unwrap_or_else(|_| EnvFilter::from("info"));
