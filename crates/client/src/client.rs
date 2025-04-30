@@ -288,8 +288,8 @@ impl AdminClient {
     }
 
     pub async fn watch(&self) -> anyhow::Result<WatchResult> {
-        use pb::admin::watch_item::Status;
         use pb::admin::WatchItem;
+        use pb::admin::watch_item::Status;
         let (tx, rx) = async_channel::bounded(10);
         let (quittx, mut quitrx) = mpsc::channel(1);
 
@@ -302,8 +302,13 @@ impl AdminClient {
             .into_inner();
 
         let list = match watch.try_next().await? {
-            Some(WatchItem { status: Some(Status::Initial(init)) }) => QueryResult::parse_list(init.list)?,
-            Some(WatchItem { status: Some(item) }) => bail!("Protocol error, first item in stream not pb::admin::watch_item::Status::Initial, {:?}", item),
+            Some(WatchItem {
+                status: Some(Status::Initial(init)),
+            }) => QueryResult::parse_list(init.list)?,
+            Some(WatchItem { status: Some(item) }) => bail!(
+                "Protocol error, first item in stream not pb::admin::watch_item::Status::Initial, {:?}",
+                item
+            ),
             Some(_) => bail!("Protocol error, initial item missing"),
             None => bail!("Protocol error, status field missing"),
         };

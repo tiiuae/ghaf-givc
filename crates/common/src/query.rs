@@ -6,7 +6,7 @@ use pb::admin::watch_item::Status;
 use std::str::FromStr;
 use std::string::ToString;
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use serde::Serialize;
 use strum::{Display, EnumString};
 

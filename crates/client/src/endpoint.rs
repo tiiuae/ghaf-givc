@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use hyper_util::rt::TokioIo;
 use tokio::net::UnixStream;
 use tokio_vsock::{VsockAddr, VsockStream};
