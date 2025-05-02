@@ -51,9 +51,9 @@ fn get_generations() -> anyhow::Result<()> {
     let mut gens: Vec<Value> = serde_json::from_reader(reader)?;
     for obj in &mut gens {
         if let Value::Object(map) = obj {
-            if let Some(gen) = map.get("generation") {
-                let gen = gen.as_i64().unwrap();
-                let path = format!("/nix/var/nix/profiles/system-{gen}-link");
+            if let Some(generation) = map.get("generation") {
+                let generation = generation.as_i64().unwrap();
+                let path = format!("/nix/var/nix/profiles/system-{generation}-link");
                 let link = fs::read_link(&path)?.to_string_lossy().to_string();
                 map.insert("storePath".to_string(), Value::String(link));
             }
