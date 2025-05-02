@@ -1,3 +1,5 @@
+# Copyright 2025 TII (SSRC) and the Ghaf contributors
+# SPDX-License-Identifier: Apache-2.0
 { inputs, ... }:
 {
   imports = [
@@ -64,7 +66,7 @@
           {
             help = "Update go dependencies";
             name = "go-update";
-            command = "go get -u ./... && go mod tidy && echo Done - do not forget to update the vendorHash in the packages.";
+            command = "go get -u ./... && ./scripts/update-vendorHash.sh";
           }
           {
             help = "golang linter";
