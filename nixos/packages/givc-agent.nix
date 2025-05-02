@@ -8,7 +8,7 @@ pkgs.buildGo124Module {
   inherit pname;
   version = "0.0.5";
   inherit src;
-  vendorHash = "sha256-0E5AB9KlzD/nVo36TmhzOQ33KQMznza2AE0MjFqEOEs=";
+  vendorHash = "sha256-KHBnHMI7D9qnSHusGMr4CHT0nTPXR8vjXcgmf4fq2Mc=";
   subPackages = [
     "modules/cmd/${pname}"
     "modules/pkgs/applications"
