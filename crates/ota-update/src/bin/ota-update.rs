@@ -1,8 +1,11 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::io::BufReader;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use clap::{ArgAction, Parser, Subcommand};
+use ota_update::profile;
 use regex::Regex;
 use serde_json::Value;
 
@@ -25,7 +28,7 @@ enum Commands {
     /// Set the configuration value
     Set {
         #[arg()]
-        path: String,
+        path: PathBuf,
 
         /// Source of configuration value
         #[arg(long)]
@@ -63,7 +66,10 @@ fn get_generations() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn is_valid_nix_path(path: &str) -> anyhow::Result<()> {
+fn is_valid_nix_path(path: &Path) -> anyhow::Result<()> {
+    let path = path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("unable to convert `{}` to UTF-8", path.display()))?;
     // nix hashes don't contain [eotu]
     let pattern = r"^/nix/store/[a-df-np-sv-z0-9]{32}-nixos-system-[^/]+$";
     let re = Regex::new(pattern).expect("Invalid regex");
@@ -74,7 +80,7 @@ fn is_valid_nix_path(path: &str) -> anyhow::Result<()> {
 }
 
 fn set_generation(
-    path: String,
+    path: PathBuf,
     source: Option<String>,
     no_check_signs: bool,
 ) -> anyhow::Result<()> {
@@ -97,17 +103,14 @@ fn set_generation(
     if !nix.success() {
         anyhow::bail!("nix copy failed")
     }
-    let nix_env = Command::new("nix-env")
-        .arg("-p")
-        .arg("/nix/var/nix/profiles/system")
-        .arg("--set")
-        .arg(&path)
-        .status()
-        .expect("Fail to execute nix-env");
-    if !nix_env.success() {
-        anyhow::bail!("nix-env failed")
-    }
-    let boot_path = format!("{path}/bin/switch-to-configuration");
+
+    profile::set(
+        Path::new("/nix/var/nix/profiles/"),
+        OsStr::new("system"),
+        &path,
+    )?;
+
+    let boot_path = path.join("bin/switch-to-configuration");
     let boot = Command::new(&boot_path)
         .arg("boot")
         .status()
@@ -135,12 +138,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::is_valid_nix_path;
+    use std::path::PathBuf;
     #[test]
     fn test_validation() -> anyhow::Result<()> {
-        let path = format!(
+        let path = PathBuf::from(format!(
             "/nix/store/{}",
             "b4fmrar918b1l8hwfjzxqv7whnq5c33q-nixos-system-adminvm-test"
-        );
+        ));
         is_valid_nix_path(&path)
     }
 }
