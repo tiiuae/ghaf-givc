@@ -25,6 +25,11 @@ tokio = { version = "1.44", features = [
   "macros",
   "fs",
 ] }
+tokio-listener = { version = "0.5.1", features = [
+  "multi-listener",
+  "vsock",
+  "tonic013",
+] }
 tokio-vsock = "0.7"
 tonic-reflection = "0.13"
 tonic-types = "0.13"
@@ -43,8 +48,3 @@ x509-parser = "0.17"
 # GIVC subparts
 givc-common = { path = "../common" }
 givc-client = { path = "../client" }
-
-[dependencies.tokio-listener]
-features = ["multi-listener", "vsock", "tonic013"]
-git = "https://github.com/slakkala/tokio-listener"
-branch = "tonic013"
