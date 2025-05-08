@@ -4,6 +4,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use anyhow::Context;
 use clap::{ArgAction, Parser, Subcommand};
 use ota_update::profile;
 use regex::Regex;
@@ -27,12 +28,11 @@ enum Commands {
 
     /// Set the configuration value
     Set {
-        #[arg()]
         path: PathBuf,
 
         /// Source of configuration value
-        #[arg(long)]
-        source: Option<String>,
+        #[arg(long, default_value = "https://prod-cache.vedenemo.dev")]
+        source: String,
 
         #[arg(long, action = ArgAction::SetTrue, required = false, default_value_t = false)]
         no_check_signs: bool,
@@ -52,14 +52,11 @@ fn get_generations() -> anyhow::Result<()> {
         .expect("Failed to capture stdout");
     let reader = BufReader::new(stdout);
     let mut gens: Vec<Value> = serde_json::from_reader(reader)?;
-    for obj in &mut gens {
-        if let Value::Object(map) = obj {
-            if let Some(generation) = map.get("generation") {
-                let generation = generation.as_i64().unwrap();
-                let path = format!("/nix/var/nix/profiles/system-{generation}-link");
-                let link = fs::read_link(&path)?.to_string_lossy().to_string();
-                map.insert("storePath".to_string(), Value::String(link));
-            }
+    for map in gens.iter_mut().filter_map(Value::as_object_mut) {
+        if let Some(generation) = map.get("generation").and_then(Value::as_i64) {
+            let path = format!("/nix/var/nix/profiles/system-{generation}-link");
+            let link = fs::read_link(&path)?.to_string_lossy().to_string();
+            map.insert("storePath".to_string(), Value::String(link));
         }
     }
     println!("{}", serde_json::to_string(&gens)?);
@@ -79,27 +76,20 @@ fn is_valid_nix_path(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn set_generation(
-    path: PathBuf,
-    source: Option<String>,
-    no_check_signs: bool,
-) -> anyhow::Result<()> {
+fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyhow::Result<()> {
     is_valid_nix_path(&path)?;
-    let from = source
-        .as_deref()
-        .unwrap_or("https://prod-cache.vedenemo.dev");
 
     let mut nix = Command::new("nix");
     nix.arg("--extra-experimental-features")
         .arg("nix-command")
         .arg("copy")
         .arg("--from")
-        .arg(&from)
+        .arg(source)
         .arg(&path);
     if no_check_signs {
         nix.arg("--no-check-sigs");
     }
-    let nix = nix.status().expect("Failed to execute nix copy");
+    let nix = nix.status().context("Failed to execute nix copy")?;
     if !nix.success() {
         anyhow::bail!("nix copy failed")
     }
@@ -111,13 +101,10 @@ fn set_generation(
     )?;
 
     let boot_path = path.join("bin/switch-to-configuration");
-    let boot = Command::new(&boot_path)
+    Command::new(&boot_path)
         .arg("boot")
         .status()
-        .expect("Fail to execute switch-to-configuration");
-    if !boot.success() {
-        anyhow::bail!("switch-to-configuration failed")
-    }
+        .with_context(|| format!("Fail to execute {}", boot_path.display()))?;
     Ok(())
 }
 
@@ -130,21 +117,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             path,
             source,
             no_check_signs,
-        } => set_generation(path, source, no_check_signs)?,
-    };
+        } => set_generation(&path, &source, no_check_signs)?,
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::is_valid_nix_path;
-    use std::path::PathBuf;
+    use std::path::Path;
     #[test]
     fn test_validation() -> anyhow::Result<()> {
-        let path = PathBuf::from(format!(
-            "/nix/store/{}",
-            "b4fmrar918b1l8hwfjzxqv7whnq5c33q-nixos-system-adminvm-test"
-        ));
-        is_valid_nix_path(&path)
+        let path = Path::new("/nix/store")
+            .join("b4fmrar918b1l8hwfjzxqv7whnq5c33q-nixos-system-adminvm-test");
+        is_valid_nix_path(&path)?;
+        let path = Path::new("/nix/store").join("../dive/out/of/nix/store");
+        assert!(is_valid_nix_path(&path).is_err());
+        Ok(())
     }
 }
