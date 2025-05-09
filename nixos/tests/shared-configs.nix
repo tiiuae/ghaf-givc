@@ -182,6 +182,7 @@ in
             "reboot.target"
             "sleep.target"
             "suspend.target"
+            "multi-user.target"
           ];
         };
 
