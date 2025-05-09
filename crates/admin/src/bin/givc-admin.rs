@@ -85,25 +85,25 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     if let (Some(addr), Some(port)) = (cli.addr, cli.port) {
         let addr = SocketAddr::new(addr.parse().unwrap(), port);
-        addrs.push(tokio_listener::ListenerAddress::Tcp(addr))
+        addrs.push(tokio_listener::ListenerAddress::Tcp(addr));
     }
 
     if let Some(tcp_addrs) = cli.listen_tcp {
         for each in tcp_addrs {
-            addrs.push(tokio_listener::ListenerAddress::Tcp(each))
+            addrs.push(tokio_listener::ListenerAddress::Tcp(each));
         }
     }
 
     if let Some(unix_socks) = cli.listen_unix {
         for unix_sock in unix_socks {
             let unix_sock_addr = tokio_listener::ListenerAddress::Path(unix_sock.into());
-            addrs.push(unix_sock_addr)
+            addrs.push(unix_sock_addr);
         }
     }
 
     if let Some(vsock) = cli.vsock {
         let vsock_addr = parse_vsock_addr(&vsock)?.into();
-        addrs.push(vsock_addr)
+        addrs.push(vsock_addr);
     }
 
     let listener = tokio_listener::Listener::bind_multiple(&addrs, &sys_opts, &user_opts).await?;

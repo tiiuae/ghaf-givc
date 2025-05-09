@@ -11,13 +11,13 @@ struct Cli {
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    println!("CLI is {:#?}", cli);
+    println!("CLI is {cli:#?}");
 
     let cert_file = std::fs::read(cli.cert)?;
 
     let (_rem, pem) = parse_x509_pem(&cert_file)?;
 
     let x509 = SecurityInfo::try_from(pem.contents.as_slice())?;
-    println!("SI is {:?}", x509);
+    println!("SI is {x509:?}");
     Ok(())
 }

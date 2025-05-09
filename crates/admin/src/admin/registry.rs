@@ -2,7 +2,7 @@ use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::entry::RegistryEntry;
-use crate::types::*;
+use crate::types::{UnitStatus, UnitType};
 use anyhow::{anyhow, bail};
 use givc_common::query::{Event, QueryResult};
 use tokio::sync::broadcast;
@@ -25,6 +25,7 @@ impl Default for Registry {
 }
 
 impl Registry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             map: Arc::new(Mutex::new(HashMap::new())),
@@ -32,19 +33,19 @@ impl Registry {
         }
     }
 
-    pub fn register(&self, entry: RegistryEntry) {
+    pub(crate) fn register(&self, entry: RegistryEntry) {
         let mut state = self.map.lock().unwrap();
         info!("Registering {:#?}", entry);
         let event = Event::UnitRegistered(entry.clone().into());
         if let Some(old) = state.insert(entry.name.clone(), entry) {
             info!("Replaced old entry {:#?}", old);
-            self.send_event(Event::UnitShutdown(old.into()))
-        };
+            self.send_event(Event::UnitShutdown(old.into()));
+        }
         info!("Sending event {event:?}");
-        self.send_event(event)
+        self.send_event(event);
     }
 
-    pub fn deregister(&self, name: &str) -> anyhow::Result<()> {
+    pub(crate) fn deregister(&self, name: &str) -> anyhow::Result<()> {
         let mut state = self.map.lock().unwrap();
         match state.remove(name) {
             Some(entry) => {
@@ -59,12 +60,11 @@ impl Registry {
                     })
                     .collect();
                 for each in cascade {
-                    match state.remove(&each) {
-                        Some(entry1) => {
-                            info!("Cascade deregistering {:#?}", entry1);
-                            self.send_event(Event::UnitShutdown(entry1.into()))
-                        }
-                        None => error!("Problems due cascade deregistering {each} (via {name})"),
+                    if let Some(entry) = state.remove(&each) {
+                        info!("Cascade deregistering {entry:#?}");
+                        self.send_event(Event::UnitShutdown(entry.into()));
+                    } else {
+                        error!("Problems due cascade deregistering {each} (via {name})");
                     }
                 }
                 info!("Deregistering {:#?}", entry);
@@ -78,7 +78,7 @@ impl Registry {
         }
     }
 
-    pub fn by_name(&self, name: &str) -> anyhow::Result<RegistryEntry> {
+    pub(crate) fn by_name(&self, name: &str) -> anyhow::Result<RegistryEntry> {
         let state = self.map.lock().unwrap();
         state
             .get(name)
@@ -86,7 +86,7 @@ impl Registry {
             .ok_or_else(|| anyhow!("Service {name} not registered"))
     }
 
-    pub fn find_names(&self, name: &str) -> anyhow::Result<Vec<String>> {
+    pub(crate) fn find_names(&self, name: &str) -> anyhow::Result<Vec<String>> {
         let state = self.map.lock().unwrap();
         let list: Vec<String> = state
             .keys()
@@ -95,22 +95,21 @@ impl Registry {
             .collect();
         if list.is_empty() {
             bail!("No entries match string {}", name)
-        } else {
-            Ok(list)
         }
+        Ok(list)
     }
 
-    pub fn find_map<T, F: FnMut(&RegistryEntry) -> Option<T>>(&self, filter: F) -> Vec<T> {
+    pub(crate) fn find_map<T, F: FnMut(&RegistryEntry) -> Option<T>>(&self, filter: F) -> Vec<T> {
         let state = self.map.lock().unwrap();
         state.values().filter_map(filter).collect()
     }
 
-    pub fn by_type_many(&self, ty: UnitType) -> Vec<RegistryEntry> {
+    pub(crate) fn by_type_many(&self, ty: UnitType) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
         state.values().filter(|x| x.r#type == ty).cloned().collect()
     }
 
-    pub fn by_type(&self, ty: UnitType) -> anyhow::Result<RegistryEntry> {
+    pub(crate) fn by_type(&self, ty: UnitType) -> anyhow::Result<RegistryEntry> {
         let vec = self.by_type_many(ty);
         match vec.len() {
             1 => Ok(vec.into_iter().next().unwrap()),
@@ -119,12 +118,13 @@ impl Registry {
         }
     }
 
-    pub fn contains(&self, name: &str) -> bool {
+    #[allow(dead_code)]
+    pub(crate) fn contains(&self, name: &str) -> bool {
         let state = self.map.lock().unwrap();
         state.contains_key(name)
     }
 
-    pub fn create_unique_entry_name(&self, name: &str) -> String {
+    pub(crate) fn create_unique_entry_name(&self, name: &str) -> String {
         let state = self.map.lock().unwrap();
         let mut counter = 0;
         loop {
@@ -136,39 +136,40 @@ impl Registry {
         }
     }
 
-    pub fn watch_list(&self) -> Vec<RegistryEntry> {
+    pub(crate) fn watch_list(&self) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
         state.values().filter(|x| x.watch).cloned().collect()
     }
 
-    pub fn update_state(&self, name: &str, status: UnitStatus) -> anyhow::Result<()> {
+    pub(crate) fn update_state(&self, name: &str, status: UnitStatus) -> anyhow::Result<()> {
         let mut state = self.map.lock().unwrap();
         state
             .get_mut(name)
             .map(|e| {
                 e.status = status;
-                self.send_event(Event::UnitStatusChanged(e.clone().into()))
+                self.send_event(Event::UnitStatusChanged(e.clone().into()));
             })
             .ok_or_else(|| anyhow!("Can't update state for {name}, is not registered"))
     }
 
     // FIXME: Should we dump full contents here for `query`/`query_list` high-level API
     // FIXME: .by_types_many() should works, but I add this one for debug convenience
-    pub fn contents(&self) -> Vec<RegistryEntry> {
+    pub(crate) fn contents(&self) -> Vec<RegistryEntry> {
         let state = self.map.lock().unwrap();
         state.values().cloned().collect()
     }
 
-    pub fn subscribe(&self) -> (Vec<QueryResult>, broadcast::Receiver<Event>) {
+    #[must_use]
+    pub(crate) fn subscribe(&self) -> (Vec<QueryResult>, broadcast::Receiver<Event>) {
         let rx = self.pubsub.subscribe();
         let state = self.map.lock().unwrap();
-        let contents = state.values().cloned().map(|x| x.into()).collect();
+        let contents = state.values().cloned().map(Into::into).collect();
         (contents, rx)
     }
 
     fn send_event(&self, event: Event) {
         if let Err(e) = self.pubsub.send(event) {
-            debug!("error sending event: {}", e)
+            debug!("error sending event: {e}");
         }
     }
 }

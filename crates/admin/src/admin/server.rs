@@ -1,5 +1,11 @@
-use super::entry::*;
-use crate::pb::{self, *};
+#![allow(clippy::similar_names)]
+
+use super::entry::{Placement, RegistryEntry};
+use crate::pb::{
+    self, ApplicationRequest, ApplicationResponse, Empty, LocaleRequest, QueryListResponse,
+    RegistryRequest, RegistryResponse, StartResponse, StartVmRequest, TimezoneRequest,
+    UnitStatusRequest, WatchItem,
+};
 use anyhow::{Context, anyhow, bail};
 use async_stream::try_stream;
 use givc_common::query::Event;
@@ -13,13 +19,13 @@ use tracing::{debug, error, info};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
-use crate::admin::registry::*;
+use crate::admin::registry::Registry;
 use crate::systemd_api::client::SystemDClient;
-use crate::types::*;
-use crate::utils::naming::*;
-use crate::utils::tonic::*;
+use crate::types::{ServiceType, UnitType, VmType};
+use crate::utils::naming::{format_service_name, format_vm_name};
+use crate::utils::tonic::escalate;
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
-use givc_common::query::*;
+use givc_common::query::QueryResult;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 const TIMEZONE_CONF: &str = "/etc/timezone.conf";
@@ -65,6 +71,7 @@ impl Validator {
 }
 
 impl AdminService {
+    #[must_use]
     pub fn new(use_tls: Option<TlsConfig>) -> Self {
         let inner = Arc::new(AdminServiceImpl::new(use_tls));
         let clone = inner.clone();
@@ -76,6 +83,7 @@ impl AdminService {
 }
 
 impl AdminServiceImpl {
+    #[must_use]
     pub fn new(use_tls: Option<TlsConfig>) -> Self {
         let timezone = std::fs::read_to_string(TIMEZONE_CONF)
             .ok()
@@ -85,8 +93,7 @@ impl AdminServiceImpl {
             .ok()
             .and_then(|l| {
                 l.lines()
-                    .filter_map(|l| l.strip_prefix("LANG="))
-                    .next()
+                    .find_map(|l| l.strip_prefix("LANG="))
                     .map(ToOwned::to_owned)
             })
             .unwrap_or_default();
@@ -107,7 +114,7 @@ impl AdminServiceImpl {
         self.endpoint(&host_mgr).context("Resolving host agent")
     }
 
-    pub fn endpoint(&self, entry: &RegistryEntry) -> anyhow::Result<EndpointConfig> {
+    fn endpoint(&self, entry: &RegistryEntry) -> anyhow::Result<EndpointConfig> {
         let transport = match &entry.placement {
             Placement::Managed { by: parent, .. } => {
                 let parent = self.registry.by_name(parent)?;
@@ -128,12 +135,13 @@ impl AdminServiceImpl {
             }),
         })
     }
-    pub fn agent_endpoint(&self, name: &str) -> anyhow::Result<EndpointConfig> {
+
+    pub(crate) fn agent_endpoint(&self, name: &str) -> anyhow::Result<EndpointConfig> {
         let reentry = self.registry.by_name(name)?;
         self.endpoint(&reentry)
     }
 
-    pub fn app_entries(&self, name: &str) -> anyhow::Result<Vec<String>> {
+    pub(crate) fn app_entries(&self, name: &str) -> anyhow::Result<Vec<String>> {
         if name.contains('@') {
             let list = self.registry.find_names(name)?;
             Ok(list)
@@ -142,7 +150,7 @@ impl AdminServiceImpl {
         }
     }
 
-    pub async fn get_remote_status(
+    pub(crate) async fn get_remote_status(
         &self,
         entry: &RegistryEntry,
     ) -> anyhow::Result<crate::types::UnitStatus> {
@@ -151,14 +159,18 @@ impl AdminServiceImpl {
         client.get_remote_status(entry.name.clone()).await
     }
 
-    pub async fn send_system_command(&self, name: String) -> anyhow::Result<()> {
+    pub(crate) async fn send_system_command(&self, name: String) -> anyhow::Result<()> {
         let endpoint = self.host_endpoint()?;
         let client = SystemDClient::new(endpoint);
         client.start_remote(name).await?;
         Ok(())
     }
 
-    pub async fn start_unit_on_vm(&self, unit: &str, vmname: &str) -> anyhow::Result<String> {
+    pub(crate) async fn start_unit_on_vm(
+        &self,
+        unit: &str,
+        vmname: &str,
+    ) -> anyhow::Result<String> {
         let vmservice = format_service_name(vmname, None);
 
         /* Return error if the vm is not registered */
@@ -190,7 +202,7 @@ impl AdminServiceImpl {
         }
     }
 
-    pub async fn start_vm(&self, name: &str) -> anyhow::Result<()> {
+    pub(crate) async fn start_vm(&self, name: &str) -> anyhow::Result<()> {
         let endpoint = self.host_endpoint()?;
         let client = SystemDClient::new(endpoint);
 
@@ -200,8 +212,8 @@ impl AdminServiceImpl {
             .with_context(|| format!("cannot retrieve vm status for {name}, host agent failed"))?;
 
         if status.load_state != "loaded" {
-            bail!("vm {name} not loaded")
-        };
+            bail!("vm {name} not loaded");
+        }
 
         if status.active_state != "active" {
             client
@@ -223,7 +235,7 @@ impl AdminServiceImpl {
         Ok(())
     }
 
-    pub async fn get_unit_status(
+    pub(crate) async fn get_unit_status(
         &self,
         vm_service: String,
         unit_name: String,
@@ -243,7 +255,7 @@ impl AdminServiceImpl {
         }
     }
 
-    pub async fn handle_error(&self, entry: RegistryEntry) -> anyhow::Result<()> {
+    pub(crate) async fn handle_error(&self, entry: RegistryEntry) -> anyhow::Result<()> {
         info!(
             "Handling error for {} vm type {} service type {}",
             entry.name, entry.r#type.vm, entry.r#type.service
@@ -256,7 +268,7 @@ impl AdminServiceImpl {
                 }
                 Ok(())
             }
-            (VmType::AppVM, ServiceType::Mgr) | (VmType::SysVM, ServiceType::Mgr) => {
+            (VmType::AppVM | VmType::SysVM, ServiceType::Mgr) => {
                 if let Placement::Managed { vm: vm_name, .. } = entry.placement {
                     self.start_vm(&vm_name)
                         .await
@@ -277,21 +289,21 @@ impl AdminServiceImpl {
                 error!("could not get status of unit {}: {}", entry.name, err);
                 self.handle_error(entry)
                     .await
-                    .context("during handle error")?
+                    .context("during handle error")?;
             }
             Ok(status) => {
                 let invalid = !status.is_valid();
                 if invalid {
-                    error!("Status of {} is invalid: {:?}", entry.name, status)
-                };
+                    error!("Status of {} is invalid: {status:?}", entry.name);
+                }
                 let inactive = status.active_state != "active";
                 // Difference from "go" algorithm -- save new status before recovering attempt
                 if inactive {
                     error!(
                         "Status of {} is {}, instead of active. Recovering.",
                         entry.name, status.active_state
-                    )
-                };
+                    );
+                }
 
                 debug!("Status of {} is {:#?} (updated)", entry.name, status);
                 // We have immutable copy of entry here, but need update _in registry_ copy
@@ -300,7 +312,7 @@ impl AdminServiceImpl {
                 if invalid || inactive {
                     self.handle_error(entry)
                         .await
-                        .context("during handle error")?
+                        .context("during handle error")?;
                 }
             }
         }
@@ -322,18 +334,18 @@ impl AdminServiceImpl {
                     error!("Error during watch {}: {err}", name);
                 }
             }
-            info!("{:#?}", self.registry)
+            info!("{:#?}", self.registry);
         }
     }
 
     // Refactoring kludge
     pub fn register(&self, entry: RegistryEntry) {
-        self.registry.register(entry)
+        self.registry.register(entry);
     }
 
-    pub async fn start_app(&self, req: ApplicationRequest) -> anyhow::Result<String> {
+    pub(crate) async fn start_app(&self, req: ApplicationRequest) -> anyhow::Result<String> {
         if self.state != State::VmsRegistered {
-            info!("not all required system-vms are registered")
+            info!("not all required system-vms are registered");
         }
         let name = req.app_name;
         let vm = req.vm_name.as_deref();
@@ -343,18 +355,16 @@ impl AdminServiceImpl {
         info!("Starting app {name} on {vm_name} via {systemd_agent_name}");
 
         // Entry unused in "go" code
-        match self.registry.by_name(&systemd_agent_name) {
-            std::result::Result::Ok(e) => e,
-            Err(_) => {
-                info!("Starting up VM {vm_name}");
-                self.start_vm(&vm_name)
-                    .await
-                    .with_context(|| format!("Starting vm for {name}"))?;
-                self.registry
-                    .by_name(&systemd_agent_name)
-                    .context("after starting VM")?
-            }
-        };
+        if self.registry.by_name(&systemd_agent_name).is_err() {
+            info!("Starting up VM {vm_name}");
+            self.start_vm(&vm_name)
+                .await
+                .with_context(|| format!("Starting vm for {name}"))?;
+            let _ = self
+                .registry
+                .by_name(&systemd_agent_name)
+                .context("after starting VM")?;
+        }
         let endpoint = self
             .agent_endpoint(&systemd_agent_name)
             .with_context(|| format!("while lookung up {systemd_agent_name} for {vm_name}"))?;
@@ -377,11 +387,12 @@ impl AdminServiceImpl {
                 },
             };
             self.registry.register(app_entry);
-        };
+        }
         Ok(remote_name)
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn app_success() -> anyhow::Result<ApplicationResponse> {
     // FIXME: what should be response
     let res = ApplicationResponse {
@@ -414,13 +425,13 @@ impl pb::admin_service_server::AdminService for AdminService {
                 ..
             }
         ) {
-            notify = Some(entry.name.to_owned());
+            notify = Some(entry.name.clone());
         }
 
         let mut need_update = None;
         if !entry.status.is_valid() {
             need_update = Some(entry.clone());
-        };
+        }
 
         self.inner.register(entry);
 
@@ -642,7 +653,7 @@ impl pb::admin_service_server::AdminService for AdminService {
             let managers = self.inner.registry.find_map(|re| {
                 (re.r#type.service == ServiceType::Mgr)
                     .then_some(())
-                    .and_then(|_| self.inner.endpoint(re).ok())
+                    .and_then(|()| self.inner.endpoint(re).ok())
             });
             let locale = req.locale.clone();
             tokio::spawn(async move {
@@ -674,7 +685,7 @@ impl pb::admin_service_server::AdminService for AdminService {
             let managers = self.inner.registry.find_map(|re| {
                 (re.r#type.service == ServiceType::Mgr)
                     .then_some(())
-                    .and_then(|_| self.inner.endpoint(re).ok())
+                    .and_then(|()| self.inner.endpoint(re).ok())
             });
             let timezone = req.timezone.clone();
             tokio::spawn(async move {
