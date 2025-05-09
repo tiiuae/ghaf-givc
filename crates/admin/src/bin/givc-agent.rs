@@ -1,8 +1,8 @@
 use clap::Parser;
 use givc::endpoint::TlsConfig;
 use givc::systemd_api::server::SystemdService;
-use givc::types::*;
-use givc::utils::naming::*;
+use givc::types::{EndpointEntry, UnitStatus};
+use givc::utils::naming::format_service_name;
 use givc_client::AdminClient;
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
@@ -60,11 +60,11 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     givc::trace_init()?;
 
     let cli = Cli::parse();
-    info!("CLI is {:#?}", cli);
+    info!("CLI is {cli:#?}");
 
     let addr = SocketAddr::new(cli.addr.parse()?, cli.port);
 
