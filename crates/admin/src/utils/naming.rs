@@ -46,7 +46,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_service_name() -> Result<()> {
+    fn test_parse_service_name() -> anyhow::Result<()> {
         let good = parse_service_name("givc-good-vm.service")?;
         assert_eq!(good, "good");
 
@@ -60,7 +60,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_application_name() -> Result<()> {
+    fn test_parse_application_name() -> anyhow::Result<()> {
         let good = parse_application_name("good-app@42.service")?;
         assert_eq!(good, ("good-app", 42));
 

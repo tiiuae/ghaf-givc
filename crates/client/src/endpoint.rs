@@ -32,6 +32,8 @@ pub struct EndpointConfig {
 }
 
 impl TlsConfig {
+    /// # Errors
+    /// Fails if unable to read TLS certs/keys
     pub fn client_config(&self) -> anyhow::Result<ClientTlsConfig> {
         let pem = std::fs::read(&self.ca_cert_file_path)?;
         let ca = Certificate::from_pem(pem);
@@ -50,6 +52,8 @@ impl TlsConfig {
             .identity(client_identity))
     }
 
+    /// # Errors
+    /// Fails if unable to read TLS certs/keys
     pub fn server_config(&self) -> anyhow::Result<ServerTlsConfig> {
         let cert = std::fs::read(&self.cert_file_path)?;
         let key = std::fs::read(&self.key_file_path)?;
@@ -60,13 +64,10 @@ impl TlsConfig {
 }
 
 fn transport_config_to_url(ea: &EndpointAddress, with_tls: bool) -> String {
-    let scheme = match with_tls {
-        true => "https",
-        false => "http",
-    };
+    let scheme = if with_tls { "https" } else { "http" };
     match ea {
-        EndpointAddress::Tcp { addr, port } => format!("{}://{}:{}", scheme, addr, port),
-        _ => format!("{}://[::]:443", scheme), // Bogus url, to make tonic connector happy
+        EndpointAddress::Tcp { addr, port } => format!("{scheme}://{addr}:{port}"),
+        _ => format!("{scheme}://[::]:443"), // Bogus url, to make tonic connector happy
     }
 }
 
@@ -91,6 +92,9 @@ async fn connect_vsock_socket(endpoint: Endpoint, vs: VsockAddr) -> anyhow::Resu
 }
 
 impl EndpointConfig {
+    /// Connect to configured endpoint
+    /// # Errors
+    /// Fails if connection failed
     pub async fn connect(&self) -> anyhow::Result<Channel> {
         let url = transport_config_to_url(&self.transport.address, self.tls.is_some());
         info!("Connecting to {url}, TLS name {:?}", &self.tls);
@@ -99,7 +103,7 @@ impl EndpointConfig {
             .concurrency_limit(30);
         if let Some(tls) = &self.tls {
             endpoint = endpoint.tls_config(tls.client_config()?)?;
-        };
+        }
         let channel = match &self.transport.address {
             EndpointAddress::Tcp { .. } => endpoint
                 .connect()

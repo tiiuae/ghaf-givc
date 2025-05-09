@@ -36,6 +36,7 @@ pub enum ServiceType {
 impl TryFrom<u32> for UnitType {
     type Error = anyhow::Error;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
+        #![allow(clippy::enum_glob_use)]
         use ServiceType::*;
         use VmType::*;
         match value {
@@ -111,6 +112,7 @@ impl TryFrom<u32> for UnitType {
 //         Should we use TryInto, or fix type system?
 impl From<UnitType> for u32 {
     fn from(val: UnitType) -> Self {
+        #![allow(clippy::enum_glob_use)]
         use ServiceType::*;
         use VmType::*;
         match val.vm {
@@ -118,7 +120,7 @@ impl From<UnitType> for u32 {
                 Mgr => 0,
                 Svc => 1,
                 App => 2,
-                VM => 100500,
+                VM => 100_500,
             },
             AdmVM => match val.service {
                 VM => 3,
@@ -154,6 +156,7 @@ pub struct UnitStatus {
 }
 
 impl UnitStatus {
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         matches!(
             self.freezer_state.as_str(),
@@ -178,15 +181,21 @@ impl UnitStatus {
                 | "refreshing"
         ) && matches!(self.sub_state.as_str(), "dead" | "running" | "exitted") // FIXME: 15 more states
     }
+
+    #[must_use]
     pub fn is_running(&self) -> bool {
         !self.is_paused()
             && self.active_state == "active"
             && self.load_state == "loaded"
             && self.sub_state == "running"
     }
+
+    #[must_use]
     pub fn is_paused(&self) -> bool {
         self.freezer_state == "frozen"
     }
+
+    #[must_use]
     pub fn is_exitted(&self) -> bool {
         self.active_state == "inactive" && self.sub_state == "dead"
     }
@@ -263,13 +272,13 @@ impl From<EndpointEntry> for pb::TransportConfig {
             EndpointAddress::Unix(unix) => Self {
                 protocol: "unix".into(),
                 address: unix,
-                port: "".into(),
+                port: String::new(),
                 name: val.tls_name,
             },
             EndpointAddress::Abstract(abstr) => Self {
                 protocol: "abstract".into(),
                 address: abstr,
-                port: "".into(),
+                port: String::new(),
                 name: val.tls_name,
             },
             EndpointAddress::Vsock(vs) => Self {
