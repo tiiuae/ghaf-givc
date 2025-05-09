@@ -6,7 +6,7 @@ use pb::admin::watch_item::Status;
 use std::str::FromStr;
 use std::string::ToString;
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, bail};
 use serde::Serialize;
 use strum::{Display, EnumString};
 
@@ -41,6 +41,8 @@ pub struct QueryResult {
 }
 
 impl QueryResult {
+    /// # Errors
+    /// Fails if unable to parse `pb::QueryListItem` into `QueryResult`
     pub fn parse_list(items: Vec<pb::QueryListItem>) -> anyhow::Result<Vec<QueryResult>> {
         items.into_iter().map(Self::try_from).collect()
     }
@@ -89,19 +91,8 @@ pub enum Event {
 }
 
 impl Event {
-    pub fn from_initial(item: pb::WatchItem) -> anyhow::Result<Vec<QueryResult>> {
-        let status = item.status.ok_or_else(|| anyhow!("status field missing"))?;
-        if let Status::Initial(init) = status {
-            QueryResult::parse_list(init.list)
-        } else {
-            Err(anyhow!(
-                "Unexpected {status:?} instead of pb::admin::watch_item::Status::Initial"
-            ))
-        }
-    }
-
     pub fn into_initial(items: Vec<QueryResult>) -> pb::WatchItem {
-        let values = items.into_iter().map(|item| item.into()).collect();
+        let values = items.into_iter().map(Into::into).collect();
         let init = pb::QueryListResponse { list: values };
         pb::WatchItem {
             status: Some(Status::Initial(init)),

@@ -4,8 +4,8 @@ use crate::pb;
 use anyhow::anyhow;
 use std::convert::TryFrom;
 
-use givc_common::query::*;
-use givc_common::types::*;
+use givc_common::query::{QueryResult, TrustLevel, VMStatus};
+use givc_common::types::{EndpointEntry, ServiceType, UnitStatus, UnitType, VmType};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Placement {
@@ -29,7 +29,8 @@ pub struct RegistryEntry {
 }
 
 impl RegistryEntry {
-    pub fn agent_name(&self) -> Option<&str> {
+    #[must_use]
+    pub(crate) fn agent_name(&self) -> Option<&str> {
         match &self.placement {
             Placement::Endpoint { .. } => Some(&self.name),
             Placement::Managed { by, .. } => Some(by),
@@ -37,19 +38,19 @@ impl RegistryEntry {
         }
     }
 
-    pub fn vm_name(&self) -> Option<&str> {
+    #[must_use]
+    pub(crate) fn vm_name(&self) -> Option<&str> {
         match (self.r#type.service, &self.placement) {
             (ServiceType::VM, _) => self
                 .name
                 .strip_prefix("microvm@")
                 .and_then(|name| name.strip_suffix(".service")),
-            (_, Placement::Endpoint { ref vm, .. }) => Some(vm),
-            (_, Placement::Managed { ref vm, .. }) => Some(vm),
+            (_, Placement::Endpoint { ref vm, .. } | Placement::Managed { ref vm, .. }) => Some(vm),
             (_, Placement::Host) => None,
         }
     }
 
-    pub fn agent(&self) -> anyhow::Result<&EndpointEntry> {
+    pub(crate) fn agent(&self) -> anyhow::Result<&EndpointEntry> {
         match &self.placement {
             Placement::Endpoint { endpoint, .. } => Ok(endpoint),
             Placement::Managed { by, .. } => Err(anyhow!(
@@ -133,8 +134,8 @@ impl From<RegistryEntry> for QueryResult {
         } else {
             VMStatus::PoweredOff
         };
-        let vm_name = val.vm_name().map(|s| s.to_owned());
-        let agent_name = val.agent_name().map(|s| s.to_owned());
+        let vm_name = val.vm_name().map(ToOwned::to_owned);
+        let agent_name = val.agent_name().map(ToOwned::to_owned);
         QueryResult {
             name: val.name,
             description: val.status.description,

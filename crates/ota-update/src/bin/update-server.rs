@@ -92,7 +92,7 @@ async fn get_update_list(
             .is_none_or(|f| !f.ends_with("-link"))
         {
             continue;
-        };
+        }
 
         let full_path = entry.path();
 

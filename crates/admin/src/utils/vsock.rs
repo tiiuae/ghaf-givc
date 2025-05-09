@@ -1,6 +1,8 @@
 use anyhow::bail;
 use tokio_vsock::{VMADDR_CID_HOST, VMADDR_CID_LOCAL, VsockAddr};
 
+/// # Errors
+/// Return `Err` if vsock address is invalid
 pub fn parse_vsock_addr(addr: &str) -> anyhow::Result<VsockAddr> {
     if let Some((cid, port)) = addr.split_once(':') {
         let cid = match cid {
@@ -9,6 +11,6 @@ pub fn parse_vsock_addr(addr: &str) -> anyhow::Result<VsockAddr> {
             cid => cid.parse()?,
         };
         return Ok(VsockAddr::new(cid, port.parse()?));
-    };
+    }
     bail!("Address {addr} should be in CID:PORT format")
 }

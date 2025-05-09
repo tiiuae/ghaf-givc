@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use givc::endpoint::TlsConfig;
-use givc::types::*;
+use givc::types::UnitType;
 use givc::utils::vsock::parse_vsock_addr;
 use givc_client::client::AdminClient;
 use givc_common::address::EndpointAddress;
@@ -161,9 +161,8 @@ async fn test_subcommands(test: Test, admin: AdminClient) -> anyhow::Result<()> 
                 anyhow::bail!("test failed '{service}' registered but of wrong type");
             } else if vm.is_some() && vm != r.vm_name {
                 anyhow::bail!("test failed '{service}' registered but on wrong VM");
-            } else {
-                return Ok(());
             }
+            return Ok(());
         }
     }
     anyhow::bail!("test failed '{service}' not registered");
@@ -208,7 +207,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                     admin.start_service(servicename, vm).await?
                 }
             };
-            println!("{:?}", response)
+            println!("{response:?}");
         }
         Commands::Stop { app } => admin.stop(app).await?,
         Commands::Pause { app } => admin.pause(app).await?,
@@ -228,16 +227,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 None => None,
             };
             let reply = admin.query(ty, by_name).await?;
-            dump(reply, as_json)?
+            dump(reply, as_json)?;
         }
         Commands::QueryList { as_json } => {
             let reply = admin.query_list().await?;
-            dump(reply, as_json)?
+            dump(reply, as_json)?;
         }
 
         Commands::GetStatus { vm_name, unit_name } => {
             let reply = admin.get_status(vm_name, unit_name).await?;
-            print!("{:?}", reply)
+            print!("{reply:?}");
         }
 
         Commands::SetLocale { locale } => {
@@ -261,15 +260,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             let mut limit = limit.map(|l| 0..l);
 
             if dump_initial {
-                dump(watch.initial, as_json)?
+                dump(watch.initial, as_json)?;
             }
 
-            // Change to Option::is_none_or() with rust >1.82
-            while !limit.as_mut().is_some_and(|l| l.next().is_none()) {
+            while limit.as_mut().is_none_or(|l| l.next().is_some()) {
                 dump(watch.channel.recv().await?, as_json)?;
             }
         }
-    };
+    }
 
     Ok(())
 }
@@ -280,9 +278,9 @@ where
 {
     if as_json {
         let js = serde_json::to_string(&qr)?;
-        println!("{}", js)
+        println!("{js}");
     } else {
-        println!("{:#?}", qr)
-    };
+        println!("{qr:#?}");
+    }
     Ok(())
 }

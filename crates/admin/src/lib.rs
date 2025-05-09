@@ -1,3 +1,5 @@
+use anyhow::Context;
+
 pub mod admin;
 pub mod systemd_api;
 pub mod utils;
@@ -9,6 +11,11 @@ pub mod pb {
 pub use givc_client::endpoint;
 pub use givc_common::types;
 
+/// Init logging
+///
+/// # Errors
+///
+/// Will return `Err` if failed to initialize logging
 pub fn trace_init() -> anyhow::Result<()> {
     use std::env;
     use tracing::Level;
@@ -44,6 +51,6 @@ pub fn trace_init() -> anyhow::Result<()> {
         .with(output.with_filter(env_filter));
 
     tracing::subscriber::set_global_default(subscriber)
-        .expect("tracing shouldn't already have been set up");
+        .context("tracing shouldn't already have been set up")?;
     Ok(())
 }

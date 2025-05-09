@@ -9,7 +9,7 @@ use givc_common::address::EndpointAddress;
 use givc_common::pb;
 pub use givc_common::pb::stats::StatsResponse;
 pub use givc_common::query::{Event, QueryResult};
-use givc_common::types::*;
+use givc_common::types::{EndpointEntry, TransportConfig, UnitStatus, UnitType};
 
 use crate::endpoint::{EndpointConfig, TlsConfig};
 use crate::error::StatusWrapExt;
@@ -31,6 +31,9 @@ pub struct AdminClient {
 }
 
 impl AdminClient {
+    /// Connect to admin's client
+    /// # Errors
+    /// fails if unable to connect
     async fn connect_to(&self) -> anyhow::Result<Client> {
         let channel = self.endpoint.connect().await?;
         Ok(Client::new(channel))
@@ -38,10 +41,12 @@ impl AdminClient {
 
     // New style api, not yet implemented, stub atm to make current code happy
     // FIXME: Still doubt if constructor should be sync or async
+    #[must_use]
     pub fn new(addr: String, port: u16, tls_info: Option<(String, TlsConfig)>) -> Self {
         Self::from_endpoint_address(EndpointAddress::Tcp { addr, port }, tls_info)
     }
 
+    #[must_use]
     pub fn from_endpoint_address(
         address: EndpointAddress,
         tls_info: Option<(String, TlsConfig)>,
@@ -58,6 +63,9 @@ impl AdminClient {
         }
     }
 
+    /// Register service in admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn register_service(
         &self,
         name: String,
@@ -68,7 +76,7 @@ impl AdminClient {
         // Convert everything into wire format
         let request = pb::admin::RegistryRequest {
             name,
-            parent: "".to_owned(),
+            parent: String::new(),
             r#type: ty.into(),
             transport: Some(endpoint.into()),
             state: Some(status.into()),
@@ -81,10 +89,12 @@ impl AdminClient {
             .into_inner();
         response
             .error
-            .map(|e| Err(anyhow::Error::msg(e)))
-            .unwrap_or(Ok(()))
+            .map_or(Ok(()), |e| Err(anyhow::Error::msg(e)))
     }
 
+    /// Start application via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn start_app(
         &self,
         app_name: String,
@@ -105,6 +115,9 @@ impl AdminClient {
         Ok(response.into_inner())
     }
 
+    /// Start VM via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn start_vm(&self, vm_name: String) -> anyhow::Result<pb::admin::StartResponse> {
         let request = pb::admin::StartVmRequest { vm_name };
         let response = self
@@ -116,6 +129,9 @@ impl AdminClient {
         Ok(response.into_inner())
     }
 
+    /// Start service via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn start_service(
         &self,
         service_name: String,
@@ -134,6 +150,9 @@ impl AdminClient {
         Ok(response.into_inner())
     }
 
+    /// Stop app via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn stop(&self, app_name: String) -> anyhow::Result<()> {
         let request = pb::admin::ApplicationRequest {
             app_name,
@@ -149,6 +168,9 @@ impl AdminClient {
         Ok(())
     }
 
+    /// Pause app via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn pause(&self, app_name: String) -> anyhow::Result<()> {
         let request = pb::admin::ApplicationRequest {
             app_name,
@@ -164,6 +186,9 @@ impl AdminClient {
         Ok(())
     }
 
+    /// Resume app via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn resume(&self, app_name: String) -> anyhow::Result<()> {
         let request = pb::admin::ApplicationRequest {
             app_name,
@@ -179,6 +204,9 @@ impl AdminClient {
         Ok(())
     }
 
+    /// Get unit status via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn get_status(
         &self,
         vm_name: String,
@@ -194,6 +222,9 @@ impl AdminClient {
         Ok(response.into_inner())
     }
 
+    /// Issue reboot command via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn reboot(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
         let _response = self
@@ -205,6 +236,9 @@ impl AdminClient {
         Ok(())
     }
 
+    /// Issue poweroff command via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn poweroff(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
         let _response = self
@@ -216,6 +250,9 @@ impl AdminClient {
         Ok(())
     }
 
+    /// Issue suspend command via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn suspend(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
         let _response = self
@@ -227,6 +264,9 @@ impl AdminClient {
         Ok(())
     }
 
+    /// Issue wakeup command via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn wakeup(&self) -> anyhow::Result<()> {
         let request = pb::admin::Empty {};
         let _response = self
@@ -238,15 +278,20 @@ impl AdminClient {
         Ok(())
     }
 
+    /// Query state of registry via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn query(
         &self,
         _by_type: Option<UnitType>,
         _by_name: Vec<String>,
     ) -> anyhow::Result<Vec<QueryResult>> {
-        todo!();
+        self.query_list().await
     }
 
-    // FIXME: should be merged with query()
+    /// Query state of registry via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn query_list(&self) -> anyhow::Result<Vec<QueryResult>> {
         self.connect_to()
             .await?
@@ -260,6 +305,9 @@ impl AdminClient {
             .collect()
     }
 
+    /// Set locale via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn set_locale(&self, locale: String) -> anyhow::Result<()> {
         self.connect_to()
             .await?
@@ -269,6 +317,9 @@ impl AdminClient {
         Ok(())
     }
 
+    /// Set timezone via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn set_timezone(&self, timezone: String) -> anyhow::Result<()> {
         self.connect_to()
             .await?
@@ -278,6 +329,9 @@ impl AdminClient {
         Ok(())
     }
 
+    /// Get statistics via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn get_stats(&self, vm_name: String) -> anyhow::Result<StatsResponse> {
         self.connect_to()
             .await?
@@ -287,6 +341,9 @@ impl AdminClient {
             .rewrap_err()
     }
 
+    /// Watch event stream from admin server
+    /// # Errors
+    /// Fails if error happens during RPC
     pub async fn watch(&self) -> anyhow::Result<WatchResult> {
         use pb::admin::WatchItem;
         use pb::admin::watch_item::Status;
@@ -315,7 +372,7 @@ impl AdminClient {
 
         tokio::spawn(async move {
             tokio::select! {
-                _ = async move {
+                () = async move {
                     loop {
                         if let Ok(Some(event)) = watch.try_next().await {
                             let event = match Event::try_from(event) {

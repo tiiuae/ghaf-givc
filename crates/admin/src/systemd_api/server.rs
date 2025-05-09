@@ -8,8 +8,9 @@ pub use pb::systemd::unit_control_service_server::UnitControlServiceServer;
 pub struct SystemdService {}
 
 impl SystemdService {
+    #[must_use]
     pub fn new() -> Self {
-        Default::default()
+        SystemdService::default()
     }
 }
 

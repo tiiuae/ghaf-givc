@@ -1,6 +1,8 @@
 use super::x509::SecurityInfo;
 use tonic::{Request, Status};
 
+/// # Errors
+/// Return `Err(tonic::Status)` if IP in request have no certificate
 fn security_info_from_request(req: &Request<()>) -> Result<SecurityInfo, Status> {
     if let Some(certs) = req.peer_certs() {
         certs
@@ -12,6 +14,8 @@ fn security_info_from_request(req: &Request<()>) -> Result<SecurityInfo, Status>
     }
 }
 
+/// # Errors
+/// Return `Err(tonic::Status)` if IP in request headers mismatch IP in certificate
 pub fn auth_interceptor(mut req: Request<()>) -> Result<Request<()>, Status> {
     let info = security_info_from_request(&req)?;
     if let Some(addr) = req.remote_addr() {
@@ -28,12 +32,16 @@ pub fn auth_interceptor(mut req: Request<()>) -> Result<Request<()>, Status> {
     }
 }
 
+/// # Errors
+/// This function always success and return `Ok()`
 pub fn no_auth_interceptor(mut req: Request<()>) -> Result<Request<()>, Status> {
     req.extensions_mut().insert(SecurityInfo::disabled());
     Ok(req)
 }
 
-pub fn ensure_host<R>(req: Request<R>, hostname: &str) -> Result<(), Status> {
+/// # Errors
+/// This function fails if hostname permission not confirmed by certificate
+pub fn ensure_host<R>(req: &Request<R>, hostname: &str) -> Result<(), Status> {
     let permit = req
         .extensions()
         .get::<SecurityInfo>()
@@ -42,13 +50,14 @@ pub fn ensure_host<R>(req: Request<R>, hostname: &str) -> Result<(), Status> {
         Ok(())
     } else {
         Err(Status::permission_denied(format!(
-            "Permissions for {} not confirmed by certificate",
-            hostname
+            "Permissions for {hostname} not confirmed by certificate"
         )))
     }
 }
 
-pub fn ensure_hosts<R>(req: Request<R>, hostnames: &[&str]) -> Result<(), Status> {
+/// # Errors
+/// This function fails if hostname permission not confirmed by certificate
+pub fn ensure_hosts<R>(req: &Request<R>, hostnames: &[&str]) -> Result<(), Status> {
     let permit = req
         .extensions()
         .get::<SecurityInfo>()
