@@ -18,6 +18,7 @@ impl SecurityInfo {
         }
     }
 
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             enabled: false,
@@ -25,14 +26,17 @@ impl SecurityInfo {
         }
     }
 
+    #[must_use]
     pub fn check_address(&self, ia: &IpAddr) -> bool {
         !self.enabled || self.ip_addrs.iter().any(|a| a == ia)
     }
 
+    #[must_use]
     pub fn check_hostname(&self, hostname: &str) -> bool {
         !self.enabled || self.dns_names.iter().any(|hn| hostname == hn)
     }
 
+    #[must_use]
     pub fn hostname(self) -> Option<String> {
         self.dns_names.into_iter().next()
     }
@@ -47,16 +51,16 @@ impl TryFrom<&[u8]> for SecurityInfo {
             if let ParsedExtension::SubjectAlternativeName(san) = ext.parsed_extension() {
                 for name in &san.general_names {
                     match name {
-                        GeneralName::DNSName(s) => this.dns_names.push(s.to_string()),
+                        GeneralName::DNSName(s) => this.dns_names.push((*s).to_string()),
                         GeneralName::IPAddress(b) if b.len() == 4 => {
                             let b = <[u8; 4]>::try_from(*b).unwrap();
                             let ip = IpAddr::from(b);
-                            this.ip_addrs.push(ip)
+                            this.ip_addrs.push(ip);
                         }
                         GeneralName::IPAddress(b) if b.len() == 16 => {
                             let b = <[u8; 16]>::try_from(*b).unwrap();
                             let ip = IpAddr::from(b);
-                            this.ip_addrs.push(ip)
+                            this.ip_addrs.push(ip);
                         }
                         _ => (),
                     }

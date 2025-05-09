@@ -13,6 +13,7 @@ pub struct SystemDClient {
 }
 
 impl SystemDClient {
+    #[must_use]
     pub fn new(ec: EndpointConfig) -> Self {
         Self { endpoint: ec }
     }
@@ -23,7 +24,6 @@ impl SystemDClient {
     }
 
     fn status_response(
-        &self,
         response: tonic::Response<UnitResponse>,
     ) -> anyhow::Result<crate::types::UnitStatus> {
         let status = response
@@ -43,6 +43,9 @@ impl SystemDClient {
         Ok(us)
     }
 
+    /// Fetch status of `unit` from remote host
+    /// # Errors
+    /// Return `Err()` if something fail during RPC
     pub async fn get_remote_status(
         &self,
         unit: String,
@@ -54,9 +57,12 @@ impl SystemDClient {
             .get_unit_status(request)
             .await
             .rewrap_err()?;
-        self.status_response(response)
+        Self::status_response(response)
     }
 
+    /// Start `unit` on remote host
+    /// # Errors
+    /// Return `Err()` if something fail during RPC
     pub async fn start_remote(&self, unit: String) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::UnitRequest { unit_name: unit };
         let response = self
@@ -65,9 +71,12 @@ impl SystemDClient {
             .start_unit(request)
             .await
             .rewrap_err()?;
-        self.status_response(response)
+        Self::status_response(response)
     }
 
+    /// Stop `unit` on remote host
+    /// # Errors
+    /// Return `Err()` if something fail during RPC
     pub async fn stop_remote(&self, unit: String) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::UnitRequest { unit_name: unit };
         let response = self
@@ -76,9 +85,12 @@ impl SystemDClient {
             .stop_unit(request)
             .await
             .rewrap_err()?;
-        self.status_response(response)
+        Self::status_response(response)
     }
 
+    /// Kill `unit` on remote host
+    /// # Errors
+    /// Return `Err()` if something fail during RPC
     pub async fn kill_remote(&self, unit: String) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::UnitRequest { unit_name: unit };
         let response = self
@@ -87,9 +99,12 @@ impl SystemDClient {
             .kill_unit(request)
             .await
             .rewrap_err()?;
-        self.status_response(response)
+        Self::status_response(response)
     }
 
+    /// Pause/freeze `unit` on remote host
+    /// # Errors
+    /// Return `Err()` if something fail during RPC
     pub async fn pause_remote(&self, unit: String) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::UnitRequest { unit_name: unit };
         let response = self
@@ -98,9 +113,12 @@ impl SystemDClient {
             .freeze_unit(request)
             .await
             .rewrap_err()?;
-        self.status_response(response)
+        Self::status_response(response)
     }
 
+    /// Resume `unit` on remote host
+    /// # Errors
+    /// Return `Err()` if something fail during RPC
     pub async fn resume_remote(&self, unit: String) -> anyhow::Result<crate::types::UnitStatus> {
         let request = pb::systemd::UnitRequest { unit_name: unit };
         let response = self
@@ -109,9 +127,12 @@ impl SystemDClient {
             .unfreeze_unit(request)
             .await
             .rewrap_err()?;
-        self.status_response(response)
+        Self::status_response(response)
     }
 
+    /// Start `unit` on remote host
+    /// # Errors
+    /// Return `Err()` if something fail during RPC
     pub async fn start_application(
         &self,
         unit: String,
@@ -127,6 +148,6 @@ impl SystemDClient {
             .start_application(request)
             .await
             .rewrap_err()?;
-        self.status_response(response)
+        Self::status_response(response)
     }
 }
