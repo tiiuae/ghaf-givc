@@ -1056,6 +1056,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "regex",
  "serde",
  "serde_json",
  "thiserror",
@@ -1596,8 +1597,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-listener"
-version = "0.5.0"
-source = "git+https://github.com/slakkala/tokio-listener?branch=tonic013#4ead52160b2ce0345c2d5a29d131cedc86074bc5"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1450e1a6d3f831849ca4c0d1233c10c63e21439037205ce6026c74e81f91d3d6"
 dependencies = [
  "document-features",
  "futures-core",
