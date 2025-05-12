@@ -1,5 +1,4 @@
 use anyhow;
-use std::future::Future;
 use tonic::{Code, Response, Status};
 use tonic_types::{ErrorDetails, StatusExt};
 use tracing::error;
@@ -8,14 +7,10 @@ use tracing::error;
 /// Also rewrap result, processing error conversion from `anyhow` to `tonic`
 /// # Errors
 /// Return `Err(tonic::Status)` if inner function fails
-pub async fn escalate<T, R, F, FA>(
+pub async fn escalate<T, R>(
     request: tonic::Request<T>,
-    fun: F,
-) -> Result<tonic::Response<R>, tonic::Status>
-where
-    F: FnOnce(T) -> FA,
-    FA: Future<Output = anyhow::Result<R>>,
-{
+    fun: impl AsyncFnOnce(T) -> anyhow::Result<R>,
+) -> Result<tonic::Response<R>, tonic::Status> {
     let result = fun(request.into_inner()).await;
     match result {
         Ok(res) => Ok(Response::new(res)),

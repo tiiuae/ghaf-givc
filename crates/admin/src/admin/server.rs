@@ -480,7 +480,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<StartVmRequest>,
     ) -> std::result::Result<tonic::Response<StartResponse>, tonic::Status> {
-        escalate(request, |req| async move {
+        escalate(request, async move |req| {
             let vm_name = format_vm_name(&req.vm_name, None);
             self.inner.start_vm(&vm_name).await?;
             let service_name = format_service_name(&req.vm_name, None);
@@ -495,7 +495,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<givc_common::pb::StartServiceRequest>,
     ) -> std::result::Result<tonic::Response<StartResponse>, tonic::Status> {
-        escalate(request, |req| async move {
+        escalate(request, async move |req| {
             let vm_name = format_vm_name(&req.vm_name, None);
             let registry_id = self
                 .inner
@@ -510,7 +510,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
-        escalate(request, |req| async move {
+        escalate(request, async move |req| {
             let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
             for each in self.inner.app_entries(&req.app_name)? {
@@ -529,7 +529,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
-        escalate(request, |req| async move {
+        escalate(request, async move |req| {
             let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
             for each in self.inner.app_entries(&req.app_name)? {
@@ -548,7 +548,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<ApplicationRequest>,
     ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
-        escalate(request, |req| async move {
+        escalate(request, async move |req| {
             let agent = self.inner.agent_endpoint(&req.app_name)?;
             let client = SystemDClient::new(agent);
             for each in self.inner.app_entries(&req.app_name)? {
@@ -632,7 +632,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<UnitStatusRequest>,
     ) -> Result<tonic::Response<pb::systemd::UnitStatus>, tonic::Status> {
-        escalate(request, |req| async move {
+        escalate(request, async move |req| {
             let unit_name = req.unit_name;
             let vm_name = format_service_name("", Some(&req.vm_name));
             let status = self.inner.get_unit_status(vm_name, unit_name).await?;
@@ -645,7 +645,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<LocaleRequest>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
-        escalate(request, |req| async move {
+        escalate(request, async move |req| {
             if !Validator::validate_locale(&req.locale) {
                 bail!("Invalid locale");
             }
@@ -677,7 +677,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<TimezoneRequest>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
-        escalate(request, |req| async move {
+        escalate(request, async move |req| {
             if !Validator::validate_timezone(&req.timezone) {
                 bail!("Invalid timezone");
             }
@@ -710,7 +710,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<pb::StatsRequest>,
     ) -> tonic::Result<tonic::Response<pb::stats::StatsResponse>> {
-        escalate(request, |req| async move {
+        escalate(request, async move |req| {
             let vm_name = format_service_name("", Some(&req.vm_name));
             let vm = self
                 .inner
