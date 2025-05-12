@@ -3,6 +3,14 @@ pub mod query;
 pub mod types;
 
 pub mod pb {
+    // Suppress clippy on generated code
+    #![allow(clippy::all)]
+    #![allow(clippy::missing_errors_doc)]
+    #![allow(clippy::default_trait_access)]
+    #![allow(clippy::too_many_lines)]
+    #![allow(clippy::manual_string_new)]
+    #![allow(clippy::must_use_candidate)]
+    #![allow(clippy::similar_names)]
     pub mod admin {
         tonic::include_proto!("admin");
     }

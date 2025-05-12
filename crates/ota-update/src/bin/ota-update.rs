@@ -77,7 +77,7 @@ fn is_valid_nix_path(path: &Path) -> anyhow::Result<()> {
 }
 
 fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyhow::Result<()> {
-    is_valid_nix_path(&path)?;
+    is_valid_nix_path(path)?;
 
     let mut nix = Command::new("nix");
     nix.arg("--extra-experimental-features")
@@ -85,19 +85,19 @@ fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyhow::Re
         .arg("copy")
         .arg("--from")
         .arg(source)
-        .arg(&path);
+        .arg(path);
     if no_check_signs {
         nix.arg("--no-check-sigs");
     }
     let nix = nix.status().context("Failed to execute nix copy")?;
     if !nix.success() {
-        anyhow::bail!("nix copy failed")
+        anyhow::bail!("nix copy failed");
     }
 
     profile::set(
         Path::new("/nix/var/nix/profiles/"),
         OsStr::new("system"),
-        &path,
+        path,
     )?;
 
     let boot_path = path.join("bin/switch-to-configuration");

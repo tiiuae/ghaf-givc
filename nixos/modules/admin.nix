@@ -78,9 +78,9 @@ in
     systemd.services.givc-admin =
       let
         args = concatStringsSep " " (
-          (map (addr: "--listen-tcp ${addr.addr}:${addr.port}") tcpAddresses)
-          ++ (map (addr: "--listen-unix ${addr.addr}") unixAddresses)
-          ++ (map (addr: "--vsock ${addr.addr}:${addr.port}") vsockAddresses)
+          (map (addr: "--listen ${addr.addr}:${addr.port}") tcpAddresses)
+          ++ (map (addr: "--listen ${addr.addr}") unixAddresses)
+          ++ (map (addr: "--listen vsock:${addr.addr}:${addr.port}") vsockAddresses)
         );
       in
       {

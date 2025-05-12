@@ -1,18 +1,17 @@
 use anyhow;
-use std::future::Future;
 use tonic::{Code, Response, Status};
 use tonic_types::{ErrorDetails, StatusExt};
 use tracing::error;
 
-pub async fn escalate<T, R, F, FA>(
-    req: tonic::Request<T>,
-    fun: F,
-) -> Result<tonic::Response<R>, tonic::Status>
-where
-    F: FnOnce(T) -> FA,
-    FA: Future<Output = anyhow::Result<R>>,
-{
-    let result = fun(req.into_inner()).await;
+/// Wrap function `fun` converting unwrapping incoming `tonic::Request<T>`
+/// Also rewrap result, processing error conversion from `anyhow` to `tonic`
+/// # Errors
+/// Return `Err(tonic::Status)` if inner function fails
+pub async fn escalate<T, R>(
+    request: tonic::Request<T>,
+    fun: impl AsyncFnOnce(T) -> anyhow::Result<R>,
+) -> Result<tonic::Response<R>, tonic::Status> {
+    let result = fun(request.into_inner()).await;
     match result {
         Ok(res) => Ok(Response::new(res)),
         Err(any_err) => {
@@ -22,7 +21,9 @@ where
 
             // ...then dump them...
             error!("Local error cause is {cause}");
-            stack.iter().for_each(|e| error!("Local reasons is {e}"));
+            for e in &stack {
+                error!("Local reasons is {e}");
+            }
 
             // ...then pack to ErrorDetails
             let err_details = ErrorDetails::with_debug_info(stack, cause);
