@@ -1,9 +1,7 @@
 use clap::Parser;
 use givc::admin;
 use givc::endpoint::TlsConfig;
-use givc::utils::vsock::parse_vsock_addr;
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use tonic::transport::Server;
 use tracing::debug;
@@ -12,19 +10,11 @@ use tracing::debug;
 #[command(name = "givc-admin")]
 #[command(about = "A givc admin", long_about = None)]
 struct Cli {
-    #[arg(long, env = "ADDR", default_missing_value = "127.0.0.1")]
-    addr: Option<String>,
-    #[arg(long, env = "PORT", default_missing_value = "9000", value_parser = clap::value_parser!(u16).range(1..))]
-    port: Option<u16>,
-
-    #[arg(long, help = "Additionally listen TCP socket (addr:port)")]
-    listen_tcp: Option<Vec<SocketAddr>>,
-
-    #[arg(long, help = "Additionally listen UNIX socket (path)")]
-    listen_unix: Option<Vec<String>>,
-
-    #[arg(long, help = "Additionally listen Vsock socket (cid:port format)")]
-    vsock: Option<String>,
+    #[arg(
+        long,
+        help = "Additionally listen socket (addr:port, unix path, vsock:cid:port)"
+    )]
+    listen: Vec<tokio_listener::ListenerAddress>,
 
     #[arg(long, env = "TLS")]
     use_tls: bool,
@@ -81,32 +71,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let sys_opts = tokio_listener::SystemOptions::default();
     let user_opts = tokio_listener::UserOptions::default();
 
-    let mut addrs: Vec<tokio_listener::ListenerAddress> = Vec::new();
-
-    if let (Some(addr), Some(port)) = (cli.addr, cli.port) {
-        let addr = SocketAddr::new(addr.parse().unwrap(), port);
-        addrs.push(tokio_listener::ListenerAddress::Tcp(addr));
-    }
-
-    if let Some(tcp_addrs) = cli.listen_tcp {
-        for each in tcp_addrs {
-            addrs.push(tokio_listener::ListenerAddress::Tcp(each));
-        }
-    }
-
-    if let Some(unix_socks) = cli.listen_unix {
-        for unix_sock in unix_socks {
-            let unix_sock_addr = tokio_listener::ListenerAddress::Path(unix_sock.into());
-            addrs.push(unix_sock_addr);
-        }
-    }
-
-    if let Some(vsock) = cli.vsock {
-        let vsock_addr = parse_vsock_addr(&vsock)?.into();
-        addrs.push(vsock_addr);
-    }
-
-    let listener = tokio_listener::Listener::bind_multiple(&addrs, &sys_opts, &user_opts).await?;
+    let listener =
+        tokio_listener::Listener::bind_multiple(&cli.listen, &sys_opts, &user_opts).await?;
 
     builder
         .add_service(reflect)
