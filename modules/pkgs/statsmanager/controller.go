@@ -60,7 +60,7 @@ const (
 type process struct {
 	name   string
 	state  string
-	values []int64
+	values []uint64
 }
 
 type StatsController struct {
@@ -225,14 +225,17 @@ outer:
 		}
 
 		state, rest, found := strings.Cut(staterest, " ")
-		intfields := make([]int64, ProcResidentSetSize+1)
+		intfields := make([]uint64, ProcResidentSetSize+1)
 		i := ProcParentPid
 		for field := range strings.FieldsSeq(rest) {
-			val, err := strconv.ParseInt(field, 10, 64)
-			if err != nil {
-				continue outer
+			// TtyProcGroup and Priorty can be negative; not used so just skip
+			if i != ProcTtyProcGroup && i != ProcPriority {
+				val, err := strconv.ParseUint(field, 10, 64)
+				if err != nil {
+					continue outer
+				}
+				intfields[i] = val
 			}
-			intfields[i] = val
 			i++
 			if i == ProcResidentSetSize+1 {
 				break
@@ -245,7 +248,7 @@ outer:
 
 		prev, found := lastprocesses[pid]
 		if found {
-			var delta []int64
+			var delta []uint64
 			delta = append(delta, intfields...)
 			for i := ProcUserTime; i <= ProcChildSysTime; i += 1 {
 				delta[i] -= prev.values[i]
@@ -271,7 +274,7 @@ outer:
 	for _, proc := range changes[:min(5, len(changes))] {
 		userPct := float32(proc.values[ProcUserTime]) * 100 / float32(djiffies)
 		sysPct := float32(proc.values[ProcSysTime]) * 100 / float32(djiffies)
-		cpuProcs = append(cpuProcs, &stats_api.ProcessStat{Name: proc.name, User: userPct, Sys: sysPct, ResSetSize: uint64(proc.values[ProcResidentSetSize])})
+		cpuProcs = append(cpuProcs, &stats_api.ProcessStat{Name: proc.name, User: userPct, Sys: sysPct, ResSetSize: proc.values[ProcResidentSetSize]})
 	}
 
 	slices.SortFunc(changes, func(a, b process) int {
@@ -282,7 +285,7 @@ outer:
 	for _, proc := range changes[:min(5, len(changes))] {
 		userPct := float32(proc.values[ProcUserTime]) * 100 / float32(djiffies)
 		sysPct := float32(proc.values[ProcSysTime]) * 100 / float32(djiffies)
-		memProcs = append(cpuProcs, &stats_api.ProcessStat{Name: proc.name, User: userPct, Sys: sysPct, ResSetSize: uint64(proc.values[ProcResidentSetSize])})
+		memProcs = append(cpuProcs, &stats_api.ProcessStat{Name: proc.name, User: userPct, Sys: sysPct, ResSetSize: proc.values[ProcResidentSetSize]})
 	}
 
 	return &stats_api.ProcessStats{CpuProcesses: cpuProcs, MemProcesses: memProcs, UserCycles: usercycles, SysCycles: syscycles, TotalCycles: djiffies, Total: 0, Running: 0}, nil
