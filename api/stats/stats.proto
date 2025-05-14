@@ -20,6 +20,9 @@ message ProcessStats {
     repeated ProcessStat MemProcesses = 2;
     uint64 Total = 3;
     uint64 Running = 4;
+    uint64 UserCycles = 5;
+    uint64 SysCycles = 6;
+    uint64 TotalCycles = 7;
 }
 
 message LoadStats {

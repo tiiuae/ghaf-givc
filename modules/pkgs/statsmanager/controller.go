@@ -16,45 +16,61 @@ import (
 	stats_api "givc/modules/api/stats"
 )
 
+type StatPidFields int
+
+const (
+	ProcParentPid StatPidFields = iota
+	ProcProcessGroup
+	ProcSessionId
+	ProcTtyNumber
+	ProcTtyProcGroup
+	ProcFlags
+	ProcMinorFaults
+	ProcChildMinorFaults
+	ProcMajorFaults
+	ProcChildMajorFaults
+	ProcUserTime
+	ProcSysTime
+	ProcChildUserTime
+	ProcChildSysTime
+	ProcPriority
+	ProcNice
+	ProcNumThreads
+	ProcJiffiesToAlrm
+	ProcStartTime
+	ProcVmSize
+	ProcResidentSetSize
+)
+
 type StatFields int
 
 const (
-	ParentPid StatFields = iota
-	ProcessGroup
-	SessionId
-	TtyNumber
-	TtyProcGroup
-	Flags
-	MinorFaults
-	ChildMinorFaults
-	MajorFaults
-	ChildMajorFaults
-	UserTime
-	SysTime
-	ChildUserTime
-	ChildSysTime
-	Priority
-	Nice
-	NumThreads
-	JiffiesToAlrm
-	StartTime
-	VmSize
-	ResidentSetSize
+	SysUserTime StatFields = iota
+	SysNiceTime
+	SysSystemTime
+	SysIdleTime
+	SysIoWaitTime
+	SysIrq
+	SysSoftIrq
+	SysSteal
+	SysGuest
+	SysGuestNice
 )
 
 type process struct {
 	name   string
 	state  string
-	values []int64
+	values []uint64
 }
 
 type StatsController struct {
 	jiffies   uint64
 	processes map[uint64]process
+	totals    []uint64
 }
 
 func NewController() (*StatsController, error) {
-	return &StatsController{jiffies: 0, processes: make(map[uint64]process)}, nil
+	return &StatsController{jiffies: 0, processes: make(map[uint64]process), totals: make([]uint64, SysGuestNice+1)}, nil
 }
 
 func (c *StatsController) GetMemoryStats(ctx context.Context) (*stats_api.MemoryStats, error) {
@@ -158,12 +174,20 @@ func (c *StatsController) GetProcessStats(ctx context.Context) (*stats_api.Proce
 	}
 
 	var jiffies uint64
+	totals := make([]uint64, SysGuestNice+1)
+	i := SysUserTime
+
 	for field := range strings.FieldsSeq(values) {
 		jif, err := strconv.ParseUint(field, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read stats")
 		}
 		jiffies += jif
+		totals[i] = jif
+		i++
+		if i > SysGuestNice {
+			break
+		}
 	}
 
 	procs, err := os.ReadDir("/proc")
@@ -201,29 +225,32 @@ outer:
 		}
 
 		state, rest, found := strings.Cut(staterest, " ")
-		intfields := make([]int64, ResidentSetSize+1)
-		i := ParentPid
+		intfields := make([]uint64, ProcResidentSetSize+1)
+		i := ProcParentPid
 		for field := range strings.FieldsSeq(rest) {
-			val, err := strconv.ParseInt(field, 10, 64)
-			if err != nil {
-				continue outer
+			// TtyProcGroup and Priorty can be negative; not used so just skip
+			if i != ProcTtyProcGroup && i != ProcPriority {
+				val, err := strconv.ParseUint(field, 10, 64)
+				if err != nil {
+					continue outer
+				}
+				intfields[i] = val
 			}
-			intfields[i] = val
 			i++
-			if i == ResidentSetSize+1 {
+			if i == ProcResidentSetSize+1 {
 				break
 			}
 		}
 
-		if i <= ResidentSetSize {
+		if i <= ProcResidentSetSize {
 			continue
 		}
 
 		prev, found := lastprocesses[pid]
 		if found {
-			var delta []int64
+			var delta []uint64
 			delta = append(delta, intfields...)
-			for i := UserTime; i <= ChildSysTime; i += 1 {
+			for i := ProcUserTime; i <= ProcChildSysTime; i += 1 {
 				delta[i] -= prev.values[i]
 			}
 			changes = append(changes, process{name, state, delta})
@@ -233,29 +260,33 @@ outer:
 	}
 
 	slices.SortFunc(changes, func(a, b process) int {
-		return cmp.Compare(b.values[UserTime]+b.values[SysTime], a.values[UserTime]+a.values[SysTime])
+		return cmp.Compare(b.values[ProcUserTime]+b.values[ProcSysTime], a.values[ProcUserTime]+a.values[ProcSysTime])
 	})
 
 	djiffies := jiffies - c.jiffies
 	c.jiffies = jiffies
 
+	usercycles := totals[SysUserTime] - c.totals[SysUserTime]
+	syscycles := totals[SysSystemTime] - c.totals[SysSystemTime]
+	c.totals = totals
+
 	var cpuProcs []*stats_api.ProcessStat
 	for _, proc := range changes[:min(5, len(changes))] {
-		userPct := float32(proc.values[UserTime]) * 100 / float32(djiffies)
-		sysPct := float32(proc.values[SysTime]) * 100 / float32(djiffies)
-		cpuProcs = append(cpuProcs, &stats_api.ProcessStat{Name: proc.name, User: userPct, Sys: sysPct, ResSetSize: uint64(proc.values[ResidentSetSize])})
+		userPct := float32(proc.values[ProcUserTime]) * 100 / float32(djiffies)
+		sysPct := float32(proc.values[ProcSysTime]) * 100 / float32(djiffies)
+		cpuProcs = append(cpuProcs, &stats_api.ProcessStat{Name: proc.name, User: userPct, Sys: sysPct, ResSetSize: proc.values[ProcResidentSetSize]})
 	}
 
 	slices.SortFunc(changes, func(a, b process) int {
-		return cmp.Compare(b.values[ResidentSetSize], a.values[ResidentSetSize])
+		return cmp.Compare(b.values[ProcResidentSetSize], a.values[ProcResidentSetSize])
 	})
 
 	var memProcs []*stats_api.ProcessStat
 	for _, proc := range changes[:min(5, len(changes))] {
-		userPct := float32(proc.values[UserTime]) * 100 / float32(djiffies)
-		sysPct := float32(proc.values[SysTime]) * 100 / float32(djiffies)
-		memProcs = append(cpuProcs, &stats_api.ProcessStat{Name: proc.name, User: userPct, Sys: sysPct, ResSetSize: uint64(proc.values[ResidentSetSize])})
+		userPct := float32(proc.values[ProcUserTime]) * 100 / float32(djiffies)
+		sysPct := float32(proc.values[ProcSysTime]) * 100 / float32(djiffies)
+		memProcs = append(cpuProcs, &stats_api.ProcessStat{Name: proc.name, User: userPct, Sys: sysPct, ResSetSize: proc.values[ProcResidentSetSize]})
 	}
 
-	return &stats_api.ProcessStats{CpuProcesses: cpuProcs, MemProcesses: memProcs, Total: 0, Running: 0}, nil
+	return &stats_api.ProcessStats{CpuProcesses: cpuProcs, MemProcesses: memProcs, UserCycles: usercycles, SysCycles: syscycles, TotalCycles: djiffies, Total: 0, Running: 0}, nil
 }
