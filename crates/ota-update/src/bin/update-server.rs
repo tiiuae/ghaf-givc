@@ -6,8 +6,7 @@ use axum::{
     routing::get,
 };
 use clap::{Parser, Subcommand};
-use ota_update::profile;
-use serde::Serialize;
+use ota_update::{profile, types::UpdateInfo};
 use std::{
     ffi::OsString,
     net::SocketAddr,
@@ -50,13 +49,6 @@ struct Serve {
     port: u16,
 }
 
-#[derive(Serialize)]
-struct UpdateInfo {
-    name: OsString,
-    target: PathBuf,
-    current: bool,
-}
-
 // Make our own error that wraps `anyhow::Error`.
 #[derive(thiserror::Error, Debug)]
 #[error("{0}")]
@@ -93,7 +85,7 @@ async fn get_update_list(path: &Path, default_name: &str) -> anyhow::Result<Vec<
 
         let full_path = entry.path();
 
-        let target = match fs::read_link(&full_path).await {
+        let store_path = match fs::read_link(&full_path).await {
             Ok(t) if t.is_absolute() && t.exists() => t,
             _ => continue,
         };
@@ -105,7 +97,7 @@ async fn get_update_list(path: &Path, default_name: &str) -> anyhow::Result<Vec<
 
         updates.push(UpdateInfo {
             name,
-            target,
+            store_path,
             current,
         });
     }
