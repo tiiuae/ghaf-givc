@@ -94,6 +94,15 @@ message TimezoneRequest {
     string Timezone = 1;
 }
 
+message PolicyQueryRequest {
+    string Query = 1;
+    string PolicyPath = 2;
+}
+
+message PolicyQueryResponse {
+    string result = 1;
+}
+
 service AdminService {
     rpc RegisterService(RegistryRequest) returns (RegistryResponse) {}
 
@@ -120,4 +129,5 @@ service AdminService {
     // Query
     rpc QueryList(Empty) returns (QueryListResponse) {}
     rpc Watch(Empty) returns (stream WatchItem) {}
+    rpc PolicyQuery(PolicyQueryRequest) returns (PolicyQueryResponse) {}
 }
