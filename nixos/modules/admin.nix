@@ -28,6 +28,41 @@ let
   tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
   unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
   vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
+  opaServerPort = 8181;
+  ghafPolicy = pkgs.stdenv.mkDerivation {
+    name = "ghaf-policy";
+    src = pkgs.fetchurl {
+      inherit (cfg.opa.policies) url;
+      inherit (cfg.opa.policies) sha256;
+    };
+
+    phases = [
+      "unpackPhase"
+      "installPhase"
+    ];
+    nativeBuildInputs = [ pkgs.coreutils ];
+    installPhase = ''
+      mkdir -p $out/policies
+      cp -r ./* $out/policies/
+    '';
+  };
+  setupOpaPolicies = pkgs.writeShellScriptBin "setup-opa-policies" ''
+    set -euo pipefail
+
+    echo "Setting up OPA policies"
+
+    if [ ! -d /etc/opa ]; then
+      echo "Creating /etc/opa and copying policies"
+      mkdir -p /etc/opa
+    else
+      echo "Cleaning old /etc/opa"
+      rm -rf /etc/opa/*
+    fi
+
+    cp -r "${ghafPolicy}/policies/"* /etc/opa/
+    chown -R root:root /etc/opa
+    chmod -R 644 /etc/opa/*
+  '';
 in
 {
   options.givc.admin = {
@@ -64,6 +99,33 @@ in
       '';
       type = tlsSubmodule;
     };
+
+    opa = {
+      enable = mkOption {
+        description = ''
+          Start open policy agent.
+        '';
+        type = types.bool;
+        default = false;
+      };
+
+      policies = {
+        url = mkOption {
+          description = "Policy url.";
+          type = types.str;
+          default = "";
+        };
+        sha256 = mkOption {
+          description = "SHA256 of policy archive.";
+          type = types.str;
+        };
+        dir = mkOption {
+          description = "Policy dir inside the source.";
+          type = types.str;
+          default = "";
+        };
+      };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -73,7 +135,22 @@ in
           !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
       }
+
+      {
+        assertion = !(cfg.opa.enable && (cfg.opa.policies.url == ""));
+        message = "If OPA is enabled, url: ${cfg.opa.policies.url} then givc.admin.opa.policies.url must be set to the directory containing Rego policies.";
+      }
     ];
+
+    systemd.services.opa-server = mkIf cfg.opa.enable {
+      description = "Ghaf Policy Agent (OPA)";
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        ExecStartPre = "${setupOpaPolicies}/bin/setup-opa-policies";
+        ExecStart = "${pkgs.open-policy-agent}/bin/opa run --server --addr localhost:${toString opaServerPort} --watch /etc/opa/${cfg.opa.policies.dir}";
+        Restart = "always";
+      };
+    };
 
     systemd.services.givc-admin =
       let
@@ -113,6 +190,8 @@ in
             "GIVC_LOG" = "givc=debug,info";
           };
       };
-    networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) tcpAddresses);
+    networking.firewall.allowedTCPPorts = unique (
+      (map (addr: strings.toInt addr.port) tcpAddresses) ++ lib.optional cfg.opa.enable opaServerPort
+    );
   };
 }
