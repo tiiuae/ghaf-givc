@@ -61,10 +61,7 @@ in
         tls.enable = tls;
         opa = {
           enable = true;
-          policies = {
-            url = "https://github.com/gngram/ghaf-rego-policies/archive/refs/heads/main.tar.gz";
-            sha256 = "sha256-+c0KDyEG+kRyeLN7FSScCnY3U53rcxVw06Vm6Z6kxBw=";
-          };
+          policyPath = ./test_policy/policies;
         };
       };
     };
