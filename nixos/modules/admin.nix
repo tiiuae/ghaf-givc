@@ -29,23 +29,6 @@ let
   unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
   vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
   opaServerPort = 8181;
-  ghafPolicy = pkgs.stdenv.mkDerivation {
-    name = "ghaf-policy";
-    src = pkgs.fetchurl {
-      inherit (cfg.opa.policies) url;
-      inherit (cfg.opa.policies) sha256;
-    };
-
-    phases = [
-      "unpackPhase"
-      "installPhase"
-    ];
-    nativeBuildInputs = [ pkgs.coreutils ];
-    installPhase = ''
-      mkdir -p $out/policies
-      cp -r ./* $out/policies/
-    '';
-  };
   setupOpaPolicies = pkgs.writeShellScriptBin "setup-opa-policies" ''
     set -euo pipefail
 
@@ -59,7 +42,7 @@ let
       rm -rf /etc/opa/*
     fi
 
-    cp -r "${ghafPolicy}/policies/"* /etc/opa/
+    cp -r "${cfg.opa.policyPath}/"* /etc/opa/
     chown -R root:root /etc/opa
     chmod -R 644 /etc/opa/*
   '';
@@ -109,16 +92,10 @@ in
         default = false;
       };
 
-      policies = {
-        url = mkOption {
-          description = "Policy url.";
-          type = types.str;
-          default = "";
-        };
-        sha256 = mkOption {
-          description = "SHA256 of policy archive.";
-          type = types.str;
-        };
+      policyPath = mkOption {
+        description = "Policy path.";
+        type = types.path;
+        default = null;
       };
     };
   };
@@ -132,7 +109,7 @@ in
       }
 
       {
-        assertion = !(cfg.opa.enable && (cfg.opa.policies.url == ""));
+        assertion = !(cfg.opa.enable && (cfg.opa.policyPath == null));
         message = "If OPA is enabled, url: ${cfg.opa.policies.url} then givc.admin.opa.policies.url must be set to the directory containing Rego policies.";
       }
     ];
@@ -142,7 +119,7 @@ in
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         ExecStartPre = "${setupOpaPolicies}/bin/setup-opa-policies";
-        ExecStart = "${pkgs.open-policy-agent}/bin/opa run --server --addr localhost:${toString opaServerPort} /etc/opa";
+        ExecStart = "${pkgs.open-policy-agent}/bin/opa run --server --addr localhost:${toString opaServerPort} --watch /etc/opa/";
         Restart = "always";
       };
     };
