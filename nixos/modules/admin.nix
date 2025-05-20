@@ -119,6 +119,11 @@ in
           description = "SHA256 of policy archive.";
           type = types.str;
         };
+        dir = mkOption {
+          description = "Policy dir inside the source.";
+          type = types.str;
+          default = "";
+        };
       };
     };
   };
@@ -142,7 +147,7 @@ in
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         ExecStartPre = "${setupOpaPolicies}/bin/setup-opa-policies";
-        ExecStart = "${pkgs.open-policy-agent}/bin/opa run --server --addr localhost:${toString opaServerPort} /etc/opa";
+        ExecStart = "${pkgs.open-policy-agent}/bin/opa run --server --addr localhost:${toString opaServerPort} --watch /etc/opa/${cfg.opa.policies.dir}";
         Restart = "always";
       };
     };
