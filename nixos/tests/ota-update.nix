@@ -28,7 +28,7 @@ let
           StrictHostKeyChecking=no
         '';
       };
-    adminvm =
+    updatevm =
       { pkgs, config, ... }:
       let
         inherit (import "${inputs.nixpkgs.outPath}/nixos/tests/ssh-keys.nix" pkgs)
@@ -70,7 +70,7 @@ let
           '';
         };
 
-        # We need way to know path to software update in runtime, we need in adminvm as registered paths
+        # We need way to know path to software update in runtime, we need in updatevm as registered paths
         # which create infinite recursion, so just add script printing out path, then invoke it in test
         find-software-update = pkgs.writeShellScriptBin "find-software-update" ''
           echo ${software-update}
@@ -78,7 +78,7 @@ let
       in
       {
         imports = [
-          self.nixosModules.tests-adminvm
+          self.nixosModules.tests-updatevm
         ];
         users.users.root.openssh.authorizedKeys.keys = [ snakeOilPublicKey ];
         services.openssh.enable = true;
@@ -100,20 +100,20 @@ in
               let
                 hostvm = nodes.hostvm.system.build.toplevel;
                 regInfoHost = pkgs.closureInfo { rootPaths = hostvm; };
-                adminvm = nodes.adminvm.system.build.toplevel;
-                regInfoAdmin = pkgs.closureInfo { rootPaths = adminvm; };
-                source = "ssh-ng://root@${(builtins.head nodes.adminvm.networking.interfaces.eth1.ipv4.addresses).address}";
+                updatevm = nodes.updatevm.system.build.toplevel;
+                regInfoUpdateVM = pkgs.closureInfo { rootPaths = updatevm; };
+                source = "ssh-ng://root@${(builtins.head nodes.updatevm.networking.interfaces.eth1.ipv4.addresses).address}";
               in
               ''
                 hostvm.wait_for_unit("multi-user.target")
                 print(hostvm.succeed("nix-store --load-db <${regInfoHost}"))
                 print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
 
-                adminvm.wait_for_unit("multi-user.target")
-                print(adminvm.succeed("nix-store --load-db <${regInfoAdmin}"))
-                print(adminvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${adminvm}"))
+                updatevm.wait_for_unit("multi-user.target")
+                print(updatevm.succeed("nix-store --load-db <${regInfoUpdateVM}"))
+                print(updatevm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${updatevm}"))
 
-                update = adminvm.succeed("find-software-update").strip()
+                update = updatevm.succeed("find-software-update").strip()
                 print(hostvm.succeed(f"ota-update set {update} --no-check-signs --source ${source}", timeout=120))
 
                 print(hostvm.succeed("nixos-rebuild list-generations --json"))
