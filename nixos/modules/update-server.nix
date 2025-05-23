@@ -8,7 +8,6 @@
   ...
 }:
 let
-  cfg = config.givc.update-server;
   inherit (lib)
     mkOption
     mkEnableOption
@@ -17,15 +16,16 @@ let
     concatStringsSep
     ;
   inherit (self.packages.${pkgs.stdenv.hostPlatform.system}.givc-admin) update_server;
+  cfg = config.services.ota-update-server;
 in
 {
-  options.givc.update-server = {
+  options = {   
     enable = mkEnableOption "Nix profile update listing service";
 
     package = mkOption {
       type = types.nullOr types.package;
       description = "Package providing the `update-server` binary.";
-      default = null;
+      default = self.packages.${pkgs.system}.ota-update-server;
     };
 
     port = mkOption {
@@ -36,7 +36,7 @@ in
 
     path = mkOption {
       type = types.str;
-      default = "/nix/var/nix/profiles/per-user/update";
+      default = "/nix/var/nix/profiles/per-user/updates";
       description = "Base path to profiles.";
     };
 
@@ -48,7 +48,7 @@ in
   };
 
   config = mkIf cfg.enable {
-    systemd.services.update-server =
+    systemd.services.ota-update-server =
       let
         ota-update-server = if cfg.package != null then cfg.package else update_server;
       in
@@ -72,5 +72,8 @@ in
           NoNewPrivileges = true;
         };
       };
-  };
+    };
+    environment.systemPackages = [
+      cfg.package
+    ];
 }

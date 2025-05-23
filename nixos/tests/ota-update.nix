@@ -1,16 +1,12 @@
-{ self, inputs, ... }:
+{ self, ... }:
 let
   nodes = {
     hostvm =
       { pkgs, ... }:
-      let
-        inherit (import "${inputs.nixpkgs.outPath}/nixos/tests/ssh-keys.nix" pkgs)
-          snakeOilPrivateKey
-          ;
-      in
       {
         imports = [
           self.nixosModules.tests-hostvm
+          self.nixosModules.tests-writable-storage
         ];
         boot.loader.systemd-boot.enable = true;
         users.mutableUsers = false;
@@ -18,23 +14,14 @@ let
           pkgs.nixos-rebuild
           self.packages.${pkgs.stdenv.hostPlatform.system}.ota-update
         ];
-        system.activationScripts.ssh-key-init = ''
-          # Also configure a ssh private key, before run sway
-          install -d -m700 /root/.ssh
-          install -m600 ${snakeOilPrivateKey} /root/.ssh/id_rsa
-        '';
-        programs.ssh.extraConfig = ''
-          UserKnownHostsFile=/dev/null
-          StrictHostKeyChecking=no
+        networking.extraHosts = ''
+          # FIXME: Proper retrieve address, or move it to shared-configs.nix
+          192.168.101.200 test-updates.example.com
         '';
       };
     updatevm =
       { pkgs, config, ... }:
       let
-        inherit (import "${inputs.nixpkgs.outPath}/nixos/tests/ssh-keys.nix" pkgs)
-          snakeOilPublicKey
-          ;
-
         # Design defence: using real bootloader in tests too slow and consume too much space
         # (2GB images per test run created on builder, and copied to local store)
         # so create fake switch-to-configuration script
@@ -79,50 +66,80 @@ let
       {
         imports = [
           self.nixosModules.tests-updatevm
+          self.nixosModules.tests-writable-storage
+          self.nixosModules.ota-update-server
         ];
-        users.users.root.openssh.authorizedKeys.keys = [ snakeOilPublicKey ];
-        services.openssh.enable = true;
+        services.nix-serve = {
+          enable = true;
+          secretKeyFile = "${./snakeoil/nix-serve.key}";
+        };
+        services.ota-update-server = {
+          enable = true;
+          allowedProfiles = [ "ghaf-updates" ];
+        };
+        services.nginx = {
+          enable = true;
+          virtualHosts."test-updates.example.com" = {
+            listen = [
+              {
+                addr = "192.168.101.200"; # FIXME: hardcoded address
+                port = 80;
+              }
+            ];
+            forceSSL = false;
+            default = true;
+            locations = {
+              "/update" = {
+                proxyPass = "http://127.0.0.1:${toString config.services.ota-update-server.port}";
+              };
+              "/" = {
+                proxyPass = "http://${config.services.nix-serve.bindAddress}:${toString config.services.nix-serve.port}";
+              };
+            };
+          };
+        };
+        networking.firewall.allowedTCPPorts = [ 80 ];
+
+        # FIXME: move to adminvm/givc OTA update test
         systemd.services.givc-admin.environment.GIVC_MONITORING = "false";
         environment.systemPackages = [ find-software-update ];
       };
   };
 in
 {
-  perSystem =
-    { pkgs, ... }:
-    {
-      vmTests.tests = {
-        ota-update = {
-          module = {
-            inherit nodes;
-            testScript =
-              { nodes, ... }:
-              let
-                hostvm = nodes.hostvm.system.build.toplevel;
-                regInfoHost = pkgs.closureInfo { rootPaths = hostvm; };
-                updatevm = nodes.updatevm.system.build.toplevel;
-                regInfoUpdateVM = pkgs.closureInfo { rootPaths = updatevm; };
-                source = "ssh-ng://root@${(builtins.head nodes.updatevm.networking.interfaces.eth1.ipv4.addresses).address}";
-              in
-              ''
-                hostvm.wait_for_unit("multi-user.target")
-                print(hostvm.succeed("nix-store --load-db <${regInfoHost}"))
-                print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
+  perSystem = _: {
+    vmTests.tests = {
+      ota-update-http = {
+        module = {
+          inherit nodes;
+          testScript =
+            { nodes, ... }:
+            let
+              hostvm = nodes.hostvm.system.build.toplevel;
+              source = "http://test-updates.example.com";
+            in
+            ''
+              hostvm.wait_for_unit("multi-user.target")
+              print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
 
-                updatevm.wait_for_unit("multi-user.target")
-                print(updatevm.succeed("nix-store --load-db <${regInfoUpdateVM}"))
-                print(updatevm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${updatevm}"))
+              updatevm.wait_for_unit("multi-user.target")
+              updatevm.wait_for_unit("ota-update-server.service")
 
-                update = updatevm.succeed("find-software-update").strip()
-                print(hostvm.succeed(f"ota-update set {update} --no-check-signs --source ${source}", timeout=120))
+              update = updatevm.succeed("find-software-update").strip()
+              updatevm.succeed("mkdir -p /nix/var/nix/profiles/per-user/updates") # FIXME: Move it somewhere into setup phase (or even to module)
+              updatevm.succeed(f"ota-update-server register /nix/var/nix/profiles/per-user/updates ghaf-updates {update}")
+              print(updatevm.succeed("find /nix/var/nix/profiles/per-user/updates"))
+              print(hostvm.succeed("curl -v ${source}/update/ghaf-updates"))
+              result = hostvm.succeed("ota-update query --source ${source} --raw --current").strip()
+              assert result == update
 
-                print(hostvm.succeed("nixos-rebuild list-generations --json"))
+              hostvm.succeed(f"uta-update set {result} --source ${source}")
 
-                # Ensure, that `switch-to-configuration boot` is successfully invoked
-                hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
-              '';
-          };
+              # Ensure, that `switch-to-configuration boot` is successfully invoked
+              hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
+            '';
         };
       };
     };
+  };
 }
