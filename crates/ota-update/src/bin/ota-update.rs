@@ -6,6 +6,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::Context;
 use clap::{ArgAction, Parser, Subcommand};
+use ota_update::cli::{QueryUpdates, query_updates};
 use ota_update::profile;
 use regex::Regex;
 use serde_json::Value;
@@ -37,6 +38,9 @@ enum Commands {
         #[arg(long, action = ArgAction::SetTrue, required = false, default_value_t = false)]
         no_check_signs: bool,
     },
+
+    /// Query updates list
+    Query(QueryUpdates),
 }
 
 fn get_generations() -> anyhow::Result<()> {
@@ -118,6 +122,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             source,
             no_check_signs,
         } => set_generation(&path, &source, no_check_signs)?,
+        Commands::Query(query) => {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            rt.block_on(query_updates(query))?;
+        }
     }
     Ok(())
 }
