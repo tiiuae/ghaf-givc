@@ -11,7 +11,7 @@ anyhow = "1.0.98"
 async-channel = "2.3.1"
 async-stream = "0.3"
 axum = "*"
-clap = { version = "4.5.38", features = ["derive", "env"] }
+clap = { version = "4.5.39", features = ["derive", "env"] }
 console = "0.15"
 prost = "0.13"
 regex = "1.11"
