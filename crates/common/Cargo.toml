@@ -9,6 +9,7 @@ version = "0.0.1"
 [dependencies]
 anyhow = "1.0.98"
 async-stream = "0.3"
+glib = { version = "*", optional = true, features = [] }
 prost = "0.13"
 serde = { version = "1.0.202", features = ["derive"] }
 strum = { version = "0.27", features = ["derive"] }
@@ -22,3 +23,6 @@ tracing-subscriber = "0.3"
 
 [build-dependencies]
 tonic-build = { version = "0.13", features = ["prost"] }
+
+[features]
+glib = ["dep:glib"]
