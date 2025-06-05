@@ -1,5 +1,7 @@
 // Copyright 2024 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
+
+// Package serviceclient provides functionality to interact with remote services via gRPC.
 package serviceclient
 
 import (
@@ -13,6 +15,7 @@ import (
 	"google.golang.org/grpc"
 )
 
+// GetRemoteStatus retrieves the status of a remote service by its unit name.
 func GetRemoteStatus(cfg *types.EndpointConfig, unitName string) (*types.UnitStatus, error) {
 
 	// Setup and dial GRPC client
@@ -55,6 +58,7 @@ func GetRemoteStatus(cfg *types.EndpointConfig, unitName string) (*types.UnitSta
 	return response, nil
 }
 
+// RegisterRemoteService registers a givc agent and its services with the admin server.
 func RegisterRemoteService(cfg *types.EndpointConfig, reg *givc_admin.RegistryRequest) (*givc_admin.RegistryResponse, error) {
 
 	// Setup and dial GRPC client
@@ -86,6 +90,7 @@ func RegisterRemoteService(cfg *types.EndpointConfig, reg *givc_admin.RegistryRe
 	return resp, nil
 }
 
+// StartRemoteService starts a remote service at an endpoint by its unit name.
 func StartRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_systemd.UnitResponse, error) {
 
 	// Setup and dial GRPC client
@@ -119,6 +124,7 @@ func StartRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_syste
 	return resp, nil
 }
 
+// PauseRemoteService pauses a remote service at an endpoint by its unit name.
 func PauseRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_systemd.UnitResponse, error) {
 
 	// Setup and dial GRPC client
@@ -152,6 +158,7 @@ func PauseRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_syste
 	return resp, nil
 }
 
+// ResumeRemoteService resumes a remote service at an endpoint by its unit name.
 func ResumeRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_systemd.UnitResponse, error) {
 
 	// Setup and dial GRPC client
@@ -185,6 +192,7 @@ func ResumeRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_syst
 	return resp, nil
 }
 
+// StopRemoteService stops a remote service at an endpoint by its unit name.
 func StopRemoteService(cfg *types.EndpointConfig, unitName string) (*givc_systemd.UnitResponse, error) {
 
 	// Setup and dial GRPC client

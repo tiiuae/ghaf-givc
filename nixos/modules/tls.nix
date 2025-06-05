@@ -11,9 +11,9 @@ let
   cfg = config.givc.tls;
   inherit (lib)
     mkOption
-    mkEnableOption
     mkIf
     types
+    literalExpression
     ;
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
@@ -21,21 +21,57 @@ let
 in
 {
   options.givc.tls = {
-    enable = mkEnableOption "Enable givc-tls module. This module generates keys and certificates for givc's mTLS in /etc/givc.";
+    enable = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Whether to enable the givc TLS module. This module generates GIVC keys and certificates using a transient CA that is removed after generation.
+
+        The hosts lock file '/etc/givc/tls.lock' is used to lock generation at boot. If removed, a new CA
+        is generated and all keys and certificates are re-generated.
+
+        The lock file is automatically removed if a new VM is detected, thus trigerring re-generation. Removal of a VM will
+        currently not result in removal of the VMs key and certificates.
+
+        > **Caution**
+        > This module is not intended to be used in production. Use in development and testing environments.
+      '';
+    };
 
     agents = mkOption {
-      description = "List of agents to generate TLS certificates for. Requires a list of 'transportSubmodule'.";
       type = types.listOf transportSubmodule;
+      default = [ ];
+      example = literalExpression ''
+        agents = [
+          {
+            {
+              name = "app1-vm";
+              addr = "192.168.100.123";
+            }
+            {
+              name = "app2-vm";
+              addr = "192.168.100.124";
+            }
+          }
+        ];'';
+      description = ''
+        List of agents to generate TLS certificates for. Requires a list of 'transportSubmodule'.
+        > **Note**
+        > This module generates an ext4 image file for each agent (except the host). The image file is created in the storage path
+        > and named after the agent name. The image can be mounted read-only into a VM using virtiofs.
+      '';
     };
 
     generatorHostName = mkOption {
-      description = "Host name of the certificate generator. This will prevent to write the TLS data into the storage path.";
       type = types.str;
+      default = "localhost";
+      description = "Host name of the certificate generator. This is necessary to prevent generating an image file for the host.";
     };
 
     storagePath = mkOption {
-      description = "Storage path for generated keys and certificates. Will use subdirectories for each agent by name.";
       type = types.str;
+      default = "/etc/givc";
+      description = "Storage path for generated keys and certificates. Will use subdirectories for each agent by name.";
     };
 
   };
@@ -44,7 +80,7 @@ in
     assertions = [
       {
         assertion = cfg.agents != [ ];
-        message = "The TLS module requires a list of agents to generate keys and certificates for.";
+        message = "The TLS module requires a list of agents to generate keys and certificates.";
       }
       {
         assertion = cfg.generatorHostName != "";

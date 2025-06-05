@@ -24,21 +24,22 @@
             $(type -p update-pre-commit-hooks &>/dev/null && update-pre-commit-hooks)
           '';
         };
-        packages = with pkgs; [
+        packages = [
           config.treefmt.build.wrapper
-          reuse
-          gopls
-          gosec
-          gotests
-          go-tools
-          golangci-lint
-          rustfmt
-          clippy
+          pkgs.reuse
+          pkgs.gopls
+          pkgs.gosec
+          pkgs.gotests
+          pkgs.go-tools
+          pkgs.golangci-lint
+          pkgs.rustfmt
+          pkgs.clippy
           pkgs.stdenv.cc # Need for build rust components
-          protobuf
-          protoc-gen-go
-          protoc-gen-go-grpc
-          grpcurl
+          pkgs.protobuf
+          pkgs.protoc-gen-go
+          pkgs.protoc-gen-go-grpc
+          pkgs.grpcurl
+          pkgs.protoc-gen-doc
         ];
         packagesFrom = builtins.attrValues self'.packages;
         commands = [
