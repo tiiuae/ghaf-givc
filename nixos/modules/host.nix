@@ -17,6 +17,7 @@ let
     types
     concatStringsSep
     trivial
+    literalExpression
     ;
   inherit (builtins) toJSON;
   inherit (import ./definitions.nix { inherit config lib; })
@@ -26,20 +27,35 @@ let
 in
 {
   options.givc.host = {
-    enable = mkEnableOption "Enable givc-host module.";
+    enable = mkEnableOption ''givc host agent module, which is responsible for managing system VMs and app VMs.'';
 
     transport = mkOption {
-      description = "Transport configuration";
       type = transportSubmodule;
+      default = { };
+      example = literalExpression ''
+        transport =
+          {
+            name = "host";
+            addr = "192.168.100.2";
+            protocol = "tcp";
+            port = "9000";
+          };'';
+      description = ''
+        Transport configuration of the GIVC agent of type `transportSubmodule`.
+
+        > **Caution**
+        > This parameter is used to generate and validate the TLS host name.
+      '';
     };
 
-    debug = mkEnableOption "Enable verbose logs for debugging.";
+    debug = mkEnableOption ''
+      enable appvm GIVC agent debug logging. This increases the verbosity of the logs.
+
+      > **Caution**
+      > Enabling debug logging may expose sensitive information in the logs, especially if the appvm uses the DBUS submodule.
+    '';
 
     services = mkOption {
-      description = ''
-        List of systemd services for the manager to administrate. Expects a space separated list.
-        Should be a unit file of type 'service' or 'target'.
-      '';
       type = types.listOf types.str;
       default = [
         "reboot.target"
@@ -47,37 +63,90 @@ in
         "sleep.target"
         "suspend.target"
       ];
-      example = "[ 'my-service.service' ]";
+      example = literalExpression ''
+        services = [
+          "poweroff.target"
+          "reboot.target"
+        ];'';
+      description = ''
+        List of systemd units for the manager to administrate. Expects a space separated list.
+        Should be a unit file of type 'service' or 'target'.
+      '';
     };
 
     systemVms = mkOption {
-      description = ''
-        List of systemd VM services for the manager to administrate. Expects a space separated list.
-        Should be a unit file of type 'service' or 'target'.
-      '';
       type = types.listOf types.str;
       default = [ ];
-      example = "[ 'microvm@net-vm.service' ]";
+      example = literalExpression ''
+        services = [
+          "microvm@net-vm.service"
+          "microvm@gui-vm.service"
+        ];'';
+      description = ''
+        List of system VM services for the host to administrate, which is joined with the generic "services" option.
+        Expects a space separated list. Should be a unit file of type 'service'.
+      '';
     };
 
     appVms = mkOption {
-      description = ''
-        List of systemd VM services for the manager to administrate. Expects a space separated list.
-        Should be a unit file of type 'service' or 'target'.
-      '';
       type = types.listOf types.str;
       default = [ ];
-      example = "[ 'microvm@chrome-vm.service' ]";
+      example = literalExpression ''
+        services = [
+          "microvm@app1-vm.service"
+          "microvm@app2-vm.service"
+        ];'';
+      description = ''
+        List of app VM services for the host to administrate. Expects a space separated list.
+        Should be a unit file of type 'service' or 'target'.
+      '';
     };
 
     admin = mkOption {
-      description = "Admin server configuration.";
       type = transportSubmodule;
+      default = { };
+      defaultText = literalExpression ''
+        {
+          name = "localhost";
+          addr = "127.0.0.1";
+          protocol = "tcp";
+          port = "9000";
+        };'';
+      example = literalExpression ''
+        transport =
+          {
+            name = "admin-vm";
+            addr = "192.168.100.3";
+            protocol = "tcp";
+            port = "9001";
+          };'';
+      description = ''Admin server transport configuration. This configuration tells the agent how to reach the admin server.'';
     };
 
     tls = mkOption {
-      description = "TLS configuration.";
       type = tlsSubmodule;
+      default = { };
+      defaultText = literalExpression ''
+        tls = {
+          enable = true;
+          caCertPath = "/etc/givc/ca-cert.pem";
+          certPath = /etc/givc/cert.pem";
+          keyPath = "/etc/givc/key.pem";
+        };'';
+      example = literalExpression ''
+        tls = {
+          enable = true;
+          caCertPath = "/etc/ssl/certs/ca-certificates.crt";
+          certPath = "/etc/ssl/certs/server.crt";
+          keyPath = "/etc/ssl/private/server.key";
+        };'';
+      description = ''
+        TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
+        and requires paths to certificates and key being set. To disable it use `tls.enable = false;`.
+
+        > **Caution**
+        > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
+      '';
     };
   };
 
