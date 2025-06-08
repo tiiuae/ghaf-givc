@@ -11,16 +11,16 @@
 with lib;
 
 let
-  cfg = config.services.update-server;
+  cfg = config.services.ota-update-server;
 in
 {
-  options.services.update-server = {
+  options.services.ota-update-server = {
     enable = mkEnableOption "Nix profile update listing service";
 
     package = mkOption {
       type = types.package;
       description = "Package providing the `update-server` binary.";
-      default = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform}.update-server;
+      default = self.packages.${pkgs.system}.ota-update-server;
     };
 
     port = mkOption {
@@ -43,7 +43,7 @@ in
   };
 
   config = mkIf cfg.enable {
-    systemd.services.update-server = {
+    systemd.services.ota-update-server = {
       description = "NixOS Update Profile Listing Service";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
@@ -63,5 +63,8 @@ in
         NoNewPrivileges = true;
       };
     };
+    environment.systemPackages = [
+      cfg.package
+    ];
   };
 }

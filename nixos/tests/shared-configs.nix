@@ -13,6 +13,7 @@ let
     adminvm = "192.168.101.10";
     appvm = "192.168.101.5";
     guivm = "192.168.101.3";
+    updatevm = "192.168.101.200";
   };
   adminConfig = {
     name = "admin-vm";
@@ -254,5 +255,13 @@ in
           ];
         };
       };
+    tests-updatevm = {
+      networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
+        {
+          address = addrs.updatevm;
+          prefixLength = 24;
+        }
+      ];
+    };
   };
 }
