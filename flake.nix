@@ -72,8 +72,8 @@
               inherit givc-admin;
               givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
               givc-cli = givc-admin.cli;
-              inherit (givc-admin) update_server;
               ota-update = givc-admin.ota;
+              ota-update-server = givc-admin.update_server;
             };
         };
       flake = {
@@ -85,13 +85,14 @@
           appvm = import ./nixos/modules/appvm.nix { inherit self; };
           dbus = import ./nixos/modules/dbus.nix { inherit self; };
           tls = import ./nixos/modules/tls.nix { inherit self; };
-          update-server = import ./nixos/modules/update-server.nix { inherit self; };
+          ota-update-server = import ./nixos/modules/update-server.nix { inherit self; };
         };
 
         # Overlays
         overlays.default = _final: prev: {
           givc-cli = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.cli;
           ota-update = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.ota;
+          ota-update-server = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.update-server;
         };
       };
     };
