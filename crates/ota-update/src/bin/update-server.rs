@@ -127,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
             let state = Arc::new(serve);
 
             let app = Router::new()
-                .route("/update/:profile", get(update_handler))
+                .route("/update/{profile}", get(update_handler))
                 .with_state(state);
 
             let addr = SocketAddr::from(([127, 0, 0, 1], port));
