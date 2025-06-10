@@ -47,6 +47,7 @@
         ./nixos/checks/vmTests.nix
         ./devshell.nix
         ./nixos/tests
+        ./nixos/cachix
       ];
 
       perSystem =
