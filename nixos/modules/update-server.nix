@@ -3,24 +3,29 @@
 { self }:
 {
   config,
-  lib,
   pkgs,
+  lib,
   ...
 }:
-
-with lib;
-
 let
-  cfg = config.services.update-server;
+  cfg = config.givc.update-server;
+  inherit (lib)
+    mkOption
+    mkEnableOption
+    mkIf
+    types
+    concatStringsSep
+    ;
+  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}.givc-admin) update_server;
 in
 {
-  options.services.update-server = {
+  options.givc.update-server = {
     enable = mkEnableOption "Nix profile update listing service";
 
     package = mkOption {
-      type = types.package;
+      type = types.nullOr types.package;
       description = "Package providing the `update-server` binary.";
-      default = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform}.update-server;
+      default = null;
     };
 
     port = mkOption {
@@ -43,25 +48,29 @@ in
   };
 
   config = mkIf cfg.enable {
-    systemd.services.update-server = {
-      description = "NixOS Update Profile Listing Service";
-      after = [ "network.target" ];
-      wantedBy = [ "multi-user.target" ];
+    systemd.services.update-server =
+      let
+        ota-update-server = if cfg.package != null then cfg.package else update_server;
+      in
+      {
+        description = "NixOS Update Profile Listing Service";
+        after = [ "network.target" ];
+        wantedBy = [ "multi-user.target" ];
 
-      serviceConfig = {
-        ExecStart = ''
-          ${cfg.package}/bin/ota-update-server serve \
-            --port ${toString cfg.port} \
-            --path ${cfg.path} \
-            --allowed-profiles ${concatStringsSep "," cfg.allowedProfiles}
-        '';
-        Restart = "on-failure";
-        DynamicUser = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        NoNewPrivileges = true;
+        serviceConfig = {
+          ExecStart = ''
+            ${ota-update-server}/bin/ota-update-server serve \
+              --port ${toString cfg.port} \
+              --path ${cfg.path} \
+              --allowed-profiles ${concatStringsSep "," cfg.allowedProfiles}
+          '';
+          Restart = "on-failure";
+          DynamicUser = true;
+          ProtectSystem = "strict";
+          ProtectHome = true;
+          PrivateTmp = true;
+          NoNewPrivileges = true;
+        };
       };
-    };
   };
 }

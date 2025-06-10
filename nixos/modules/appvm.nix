@@ -20,6 +20,7 @@ let
     lists
     optionalString
     optionals
+    literalExpression
     ;
   inherit (builtins) toJSON;
   inherit (import ./definitions.nix { inherit config lib; })
@@ -31,58 +32,145 @@ let
 in
 {
   options.givc.appvm = {
-    enable = mkEnableOption "Enable givc-appvm module.";
+    enable = mkEnableOption "GIVC appvm agent module";
 
     transport = mkOption {
-      description = "Transport configuration";
       type = transportSubmodule;
+      default = { };
+      example = literalExpression ''
+        transport =
+          {
+            name = "app-vm";
+            addr = "192.168.100.123";
+            protocol = "tcp";
+            port = "9000";
+          };'';
+      description = ''
+        Transport configuration of the GIVC agent of type `transportSubmodule`.
+
+        > **Caution**
+        > This parameter is used to generate and validate the TLS host name.
+      '';
     };
 
-    debug = mkEnableOption "Enable verbose logs for debugging.";
+    debug = mkEnableOption ''
+      enable appvm GIVC agent debug logging. This increases the verbosity of the logs.
+
+      > **Caution**
+      > Enabling debug logging may expose sensitive information in the logs, especially if the appvm uses the DBUS submodule.
+    '';
 
     applications = mkOption {
-      description = ''
-        List of applications to be supported by the service.
-      '';
       type = types.listOf applicationSubmodule;
       default = [ { } ];
-      example = [
-        {
-          name = "app";
-          command = "/run/current-system/sw/bin/app";
-          args = [
-            "url"
-            "file"
-          ];
-          directories = [ "/tmp" ];
-        }
-      ];
+      example = literalExpression ''
+        applications = [
+          {
+            name = "app";
+            command = "/run/current-system/sw/bin/app";
+            args = [
+              "url"
+              "file"
+            ];
+            directories = [ "/tmp" ];
+          }
+        ];'';
+      description = ''
+        List of applications to be supported by the `appvm` module. Interface and options are detailed under `givc.appvm.applications.*.<option>`.
+      '';
     };
 
     uid = mkOption {
-      description = ''
-        Limit running this agent only in session of user with this UID.
-      '';
       type = types.int;
       default = 1000;
+      description = ''
+        UID of the user session to run the `appvm` module in. This prevents to run agent instances for other users (e.g., admin) on login.
+
+        > **Note**
+        > If the application VM is expected to run upon start, the user corresponding to the given UID is expected to
+        [linger](https://search.nixos.org/options?channel=unstable&show=users.users.%3Cname%3E.linger&from=0&size=50&sort=relevance&type=packages&query=linger)
+        to keep the user session alive in the application VM without specific login.
+      '';
     };
 
     socketProxy = mkOption {
-      description = ''
-        Optional socket proxy module. If not provided, the module will not use a socket proxy.
-      '';
       type = types.nullOr (types.listOf proxySubmodule);
       default = null;
+      example = literalExpression ''
+        givc.appvm.socketProxy = [
+          {
+            # Configure the remote endpoint
+            transport = {
+              name = "gui-vm";
+              addr = "192.168.100.5;
+              port = "9013";
+              protocol = "tcp";
+            };
+            # Socket path
+            socket = "/tmp/.dbusproxy_app.sock";
+          }
+        ];
+      '';
+      description = ''
+        Optional socket proxy module. The socket proxy provides a VM-to-VM streaming mechanism with socket enpoints, and can be used
+        to remote DBUS functionality across VMs. Hereby, the side running the dbusproxy (e.g., a network VM running NetworkManager) is
+        considered the 'server', and the receiving end (e.g., the GUI VM) is considered the 'client'.
+
+        The socket proxy module must be configured on both ends with explicit transport information, and must run on a dedicated TCP port.
+        The detailed socket proxy options are described in the respective `.socketProxy.*` options.
+
+        > **Note**
+        > The socket proxy module is a possible transport mechanism for the DBUS proxy module, and must be appropriately configured on both
+        > ends if used. In this use case, the `server` option is configured automatically and does not need to be set.
+      '';
     };
 
     admin = mkOption {
-      description = "Admin server configuration.";
       type = transportSubmodule;
+      default = { };
+      defaultText = literalExpression ''
+        {
+          name = "localhost";
+          addr = "127.0.0.1";
+          protocol = "tcp";
+          port = "9000";
+        };'';
+      example = literalExpression ''
+        admin =
+          {
+            name = "admin-vm";
+            addr = "192.168.100.3";
+            protocol = "tcp";
+            port = "9001";
+          };'';
+      description = ''Admin server transport configuration. This configuration tells the agent how to reach the admin server.'';
     };
 
     tls = mkOption {
-      description = "TLS configuration.";
       type = tlsSubmodule;
+      default = { };
+      defaultText = literalExpression ''
+        tls = {
+          enable = true;
+          caCertPath = "/run/givc/ca-cert.pem";
+          certPath = "/run/givc/cert.pem";
+          keyPath = "/run/givc/key.pem";
+        };'';
+      example = literalExpression ''
+        tls = {
+          enable = true;
+          caCertPath = "/etc/ssl/certs/ca-certificates.crt";
+          certPath = "/etc/ssl/certs/server.crt";
+          keyPath = "/etc/ssl/private/server.key";
+        };'';
+      description = ''
+        TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
+        and requires paths to certificates and key being set. To disable it use `tls.enable = false;`. The
+        TLS modules default paths' are overwritten for the `appvm` module to allow access for the appvm user (see UID).
+
+        > **Caution**
+        > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
+      '';
     };
   };
 

@@ -36,6 +36,9 @@ type SystemdController struct {
 	cancelCtx    context.CancelFunc
 }
 
+// NewController creates a new SystemdController instance, connecting to either the system or session bus, depending
+// on the user (root or other). It further initializes the whitelist to restrict service/application access to only
+// pre-defined units.
 func NewController(whitelist []string, applications []givc_types.ApplicationManifest) (*SystemdController, error) {
 	var err error
 	var c SystemdController
@@ -276,7 +279,7 @@ func (c *SystemdController) UnfreezeUnit(ctx context.Context, name string) error
 }
 
 // The function getUnitCpuAndMem returns the CPU and memory usage of a unit.
-// No check against unit whitelist is performed.
+// No check against unit whitelist is performed and must be enforced by the caller. This functionality is deprecated.
 func (c *SystemdController) getUnitCpuAndMem(ctx context.Context, pid uint32) (float64, float32, error) {
 
 	// Input validation
@@ -320,7 +323,7 @@ func (c *SystemdController) getUnitCpuAndMem(ctx context.Context, pid uint32) (f
 }
 
 // The function getUnitProperties returns all properties of a unit as a map.
-// No check against unit whitelist is performed.
+// No check against unit whitelist is performed and must be enforced by the caller.
 func (c *SystemdController) getUnitProperties(ctx context.Context, unitName string) (map[string]interface{}, error) {
 
 	// Input validation
@@ -341,7 +344,7 @@ func (c *SystemdController) getUnitProperties(ctx context.Context, unitName stri
 }
 
 // The function getUnitPropertyString returns the value of a specific property of a unit as a string.
-// No check against unit whitelist is performed.
+// No check against unit whitelist is performed and must be enforced by the caller.
 func (c *SystemdController) getUnitPropertyString(ctx context.Context, unitName string, propertyName string) (string, error) {
 
 	// Input validation
@@ -475,7 +478,7 @@ func (c *SystemdController) StartApplication(ctx context.Context, serviceName st
 	// Contrary to a simple sleep, this construct allows to return faster if the unit finishes
 	// earlier than the watch time, is a first instance, or is merged into another unit.
 	// Note that the watch time only impacts the response time to the admin service, the
-	// application start time remains constant.
+	// application start time remains as is.
 	waitTime := NO_WAIT_FOR_MERGE
 	if len(serviceUnits) > 0 {
 		// Apply waittime iff a merge candidate was found

@@ -1,5 +1,7 @@
 // Copyright 2024 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
+
+// Package localelistener provides functionality to listen for locale and timezone changes.
 package localelistener
 
 import (
@@ -25,6 +27,7 @@ func (s *LocaleServer) RegisterGrpcService(srv *grpc.Server) {
 	givc_locale.RegisterLocaleClientServer(srv, s)
 }
 
+// NewLocaleServer creates a new instance of LocaleServer.
 func NewLocaleServer() (*LocaleServer, error) {
 
 	localeController, err := NewController()
@@ -40,6 +43,7 @@ func NewLocaleServer() (*LocaleServer, error) {
 	return &localeServer, nil
 }
 
+// LocaleSet handles incoming requests to set the locale.
 func (s *LocaleServer) LocaleSet(ctx context.Context, req *givc_locale.LocaleMessage) (*givc_locale.Empty, error) {
 	log.Infof("Incoming notification of changes locale\n")
 
@@ -52,6 +56,7 @@ func (s *LocaleServer) LocaleSet(ctx context.Context, req *givc_locale.LocaleMes
 	return &givc_locale.Empty{}, nil
 }
 
+// TimezoneSet handles incoming requests to set the timezone.
 func (s *LocaleServer) TimezoneSet(ctx context.Context, req *givc_locale.TimezoneMessage) (*givc_locale.Empty, error) {
 	log.Infof("Incoming notification of set timezone\n")
 

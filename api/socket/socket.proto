@@ -1,14 +1,15 @@
-// Copyright 2024 TII (SSRC) and the Ghaf contributors
-// SPDX-License-Identifier: Apache-2.0
+// Socket Proxy Service API
 syntax = "proto3";
 option go_package = "givc/modules/api/socketproxy";
 package socketproxy;
 
+// Data package in byte format
 message BytePacket {
-    bytes Data = 1;
+    bytes Data = 1;         // Data bytes
 }
 
 service SocketStream {
+    // Initiate bi-directional socket stream
     rpc TransferData(stream BytePacket) returns (stream BytePacket) {}
 }
 

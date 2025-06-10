@@ -1,26 +1,19 @@
 // Copyright 2024 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-/*
-	SocketProxyServer is a GRPC service that proxies data between a local socket and a remote GRPC server.
-
-	It can run in two modes, server or client:
-
-		1. As a server: The server waits for a remote client to connect.
-		Once connected, it dials to a local socket and proxies data between the remote client and the local socket.
-
-		2. As a client: The client creates a socket listener and waits for a connection to the local socket.
-		Once a client (application) connects to the socket, it initiates the connection to the server.
-
-	Both client and server run a GRPC server, and the main routine 'StreamToRemote' which must be run in a different go routine
-	than the GRPC server itself.
-
-	As the socket read() function is blocking, the end of a socket connection must be forwarded to the remote, and locally
-	closed (here, by closing the socket connection) on both ends. This is done by sending an EOF message to the remote counterpart.
-
-	Both ends unwind and close both socket and GRPC connections when any socket read error occurs, EOF or otherwise.
-*/
-
+// SocketProxyServer is a GRPC service that proxies data between a local socket and a remote GRPC server.
+// It can run in two modes, server or client:
+// 1. As a server: The server waits for a remote client to connect.
+// Once connected, it dials to a local socket and proxies data between the remote client and the local socket.
+// 2. As a client: The client creates a socket listener and waits for a connection to the local socket.
+// Once a client application connects to the socket, it initiates the connection to the server.
+//
+// Both client and server run a GRPC server, and the main routine 'StreamToRemote' which must be run in a different go routine
+// than the GRPC server itself.
+//
+// As the socket read() function is blocking, the end of a socket connection must be forwarded to the remote, and locally
+// closed (here, by closing the socket connection) on both ends. This is done by sending an EOF message to the remote counterpart.
+// Both ends unwind and close both socket and GRPC connections when any socket read error occurs, EOF or otherwise.
 package socketproxy
 
 import (
@@ -60,6 +53,7 @@ func (s *SocketProxyServer) RegisterGrpcService(srv *grpc.Server) {
 	givc_socket.RegisterSocketStreamServer(srv, s)
 }
 
+// NewSocketProxyServer creates a new SocketProxyServer instance with the provided socket path and runAsServer flag.
 func NewSocketProxyServer(socket string, runAsServer bool) (*SocketProxyServer, error) {
 
 	// Create a new socket proxy controller
@@ -78,6 +72,7 @@ func (s *SocketProxyServer) Close() error {
 	return s.socketController.Close()
 }
 
+// StreamToRemote streams data between the local socket and the remote GRPC server.
 func (s *SocketProxyServer) StreamToRemote(ctx context.Context, cfg *givc_types.EndpointConfig) error {
 
 	defer s.socketController.Close()
@@ -140,6 +135,7 @@ func (s *SocketProxyServer) StreamToRemote(ctx context.Context, cfg *givc_types.
 
 }
 
+// TransferData is the GRPC method that handles the data transfer between the socket and the GRPC stream.
 func (s *SocketProxyServer) TransferData(stream givc_socket.SocketStream_TransferDataServer) error {
 
 	if !s.socketController.runAsServer {
@@ -156,6 +152,7 @@ func (s *SocketProxyServer) TransferData(stream givc_socket.SocketStream_Transfe
 	return s.StreamData(stream, conn)
 }
 
+// StreamData streams data between the socket and the GRPC stream.
 func (s *SocketProxyServer) StreamData(stream DataStream, conn net.Conn) error {
 
 	group, ctx := errgroup.WithContext(stream.Context())
