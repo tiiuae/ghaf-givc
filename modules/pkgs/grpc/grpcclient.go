@@ -1,5 +1,7 @@
 // Copyright 2024 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
+
+// The grpc package provides functionality to create and manage gRPC server and client connections.
 package grpc
 
 import (
@@ -24,11 +26,13 @@ import (
 	grpc_metadata "google.golang.org/grpc/metadata"
 )
 
-var (
+// Constants for gRPC client configuration
+const (
 	MAX_RETRY = uint(3)
 	TIMEOUT   = 150 * time.Millisecond
 )
 
+// NewClient creates a new gRPC client connection based on the provided endpoint configuration.
 func NewClient(cfg *types.EndpointConfig) (*grpc.ClientConn, error) {
 
 	// @TODO Input validation
@@ -72,6 +76,7 @@ func NewClient(cfg *types.EndpointConfig) (*grpc.ClientConn, error) {
 	return grpc.NewClient(addr, options...)
 }
 
+// withOutgoingContext is a gRPC client interceptor that adds outgoing metadata to the context.
 func withOutgoingContext(ctx context.Context, method string, req, resp interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 
 	var outmd grpc_metadata.MD
@@ -83,6 +88,7 @@ func withOutgoingContext(ctx context.Context, method string, req, resp interface
 	return invoker(ctx, method, req, resp, cc, opts...)
 }
 
+// withRetryOpts is a gRPC client interceptor that adds retry options to the gRPC call.
 func withRetryOpts() grpc.UnaryClientInterceptor {
 	retryOpts := []retry.CallOption{
 		retry.WithCodes(grpc_codes.NotFound, grpc_codes.Unavailable, grpc_codes.Aborted),
@@ -92,6 +98,7 @@ func withRetryOpts() grpc.UnaryClientInterceptor {
 	return retry.UnaryClientInterceptor(retryOpts...)
 }
 
+// vsockDialer is a custom dialer for vsock connections.
 func vsockDialer(ctx context.Context, addr string) (net.Conn, error) {
 	log.Infof("Dialing vsock: %s", addr)
 

@@ -25,6 +25,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// Constants for gRPC server configuration
 const (
 	LISTENER_WAIT_TIME = 1 * time.Second
 	LISTENER_RETRIES   = 20
@@ -41,6 +42,7 @@ type GrpcServer struct {
 	grpcServer *grpc.Server
 }
 
+// NewServer creates a new gRPC server based on the provided endpoint configuration and service registrations.
 func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistration) (*GrpcServer, error) {
 
 	// GRPC Server
@@ -83,6 +85,7 @@ func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistrati
 	return &srv, nil
 }
 
+// ListenAndServe starts the gRPC server and listens for incoming connections.
 func (s *GrpcServer) ListenAndServe(ctx context.Context, started chan struct{}) error {
 
 	var err error

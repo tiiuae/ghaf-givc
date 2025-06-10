@@ -1,5 +1,8 @@
 // Copyright 2024 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
+
+// The application package provides functionality to parse and validate application manifests and
+// runtime arguments.
 package applications
 
 import (
@@ -19,6 +22,7 @@ import (
 	"github.com/go-ozzo/ozzo-validation/v4/is"
 )
 
+// validateServiceName checks if the service name is valid according to the specified format.
 func validateServiceName(serviceName string) error {
 	return validation.Validate(
 		serviceName,
@@ -28,6 +32,7 @@ func validateServiceName(serviceName string) error {
 	)
 }
 
+// validateFilePath checks if the file path is valid and exists in the specified directories.
 func validateFilePath(filePathString string, directories []string) error {
 	err := validation.Validate(
 		filePathString,
@@ -58,6 +63,7 @@ func validateFilePath(filePathString string, directories []string) error {
 	return fmt.Errorf("failure parsing file path")
 }
 
+// validateUrl checks if the URL is valid and has a valid scheme.
 func validateUrl(urlString string) error {
 	err := validation.Validate(
 		urlString,
@@ -86,6 +92,8 @@ func validateUrl(urlString string) error {
 	return nil
 }
 
+// validateApplicationArgs checks if the application arguments are valid according to the specified types,
+// and subsequently triggers individual validation functions for each type.
 func validateApplicationArgs(args []string, allowedArgs []string, directories []string) error {
 
 	checkAllowed := func(err error, argType string, allowedArgs []string) bool {
@@ -125,6 +133,7 @@ func validateApplicationArgs(args []string, allowedArgs []string, directories []
 	return nil
 }
 
+// ParseApplicationManifests parses the JSON string of application manifests and validates their formats.
 func ParseApplicationManifests(jsonApplicationString string) ([]types.ApplicationManifest, error) {
 	var applications []types.ApplicationManifest
 
@@ -172,6 +181,8 @@ func ParseApplicationManifests(jsonApplicationString string) ([]types.Applicatio
 	return applications, nil
 }
 
+// ValidateAppUnitRequest validates the application unit request by checking the service name format,
+// and verifying the application arguments against the manifest.
 func ValidateAppUnitRequest(serviceName string, appArgs []string, applications []types.ApplicationManifest) error {
 
 	// Verify application request
