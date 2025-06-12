@@ -28,6 +28,24 @@ let
   tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
   unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
   vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
+  opaServerPort = 8181;
+  setupOpaPolicies = pkgs.writeShellScriptBin "setup-opa-policies" ''
+    set -euo pipefail
+
+    echo "Setting up OPA policies"
+
+    if [ ! -d /etc/opa ]; then
+      echo "Creating /etc/opa and copying policies"
+      mkdir -p /etc/opa
+    else
+      echo "Cleaning old /etc/opa"
+      rm -rf /etc/opa/*
+    fi
+
+    cp -r "${cfg.opa.policyPath}/"* /etc/opa/
+    chown -R root:root /etc/opa
+    chmod -R 644 /etc/opa/*
+  '';
 in
 {
   options.givc.admin = {
@@ -64,6 +82,22 @@ in
       '';
       type = tlsSubmodule;
     };
+
+    opa = {
+      enable = mkOption {
+        description = ''
+          Start open policy agent.
+        '';
+        type = types.bool;
+        default = false;
+      };
+
+      policyPath = mkOption {
+        description = "Policy path.";
+        type = types.path;
+        default = null;
+      };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -73,7 +107,22 @@ in
           !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
       }
+
+      {
+        assertion = !(cfg.opa.enable && (cfg.opa.policyPath == null));
+        message = "If OPA is enabled, url: ${cfg.opa.policies.url} then givc.admin.opa.policies.url must be set to the directory containing Rego policies.";
+      }
     ];
+
+    systemd.services.opa-server = mkIf cfg.opa.enable {
+      description = "Ghaf Policy Agent (OPA)";
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        ExecStartPre = "${setupOpaPolicies}/bin/setup-opa-policies";
+        ExecStart = "${pkgs.open-policy-agent}/bin/opa run --server --addr localhost:${toString opaServerPort} --watch /etc/opa/";
+        Restart = "always";
+      };
+    };
 
     systemd.services.givc-admin =
       let
@@ -113,6 +162,8 @@ in
             "GIVC_LOG" = "givc=debug,info";
           };
       };
-    networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) tcpAddresses);
+    networking.firewall.allowedTCPPorts = unique (
+      (map (addr: strings.toInt addr.port) tcpAddresses) ++ lib.optional cfg.opa.enable opaServerPort
+    );
   };
 }
