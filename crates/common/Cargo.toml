@@ -9,7 +9,7 @@ version = "0.0.1"
 [dependencies]
 anyhow = "1.0.98"
 async-stream = "0.3"
-prost = "0.13"
+prost = "0.14"
 serde = { version = "1.0.202", features = ["derive"] }
 strum = { version = "0.27", features = ["derive"] }
 tokio-stream = "0.1"
