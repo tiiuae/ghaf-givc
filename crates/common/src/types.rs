@@ -16,6 +16,8 @@ pub struct UnitType {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, EnumString, Display)]
+#[cfg_attr(feature = "glib", derive(glib::Enum))]
+#[cfg_attr(feature = "glib", enum_type(name = "GivcVmType"))]
 pub enum VmType {
     Host,
     AdmVM,
@@ -24,6 +26,8 @@ pub enum VmType {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, EnumString, Display)]
+#[cfg_attr(feature = "glib", derive(glib::Enum))]
+#[cfg_attr(feature = "glib", enum_type(name = "GivcServiceType"))]
 pub enum ServiceType {
     Mgr,
     Svc,
