@@ -1,5 +1,4 @@
-// Copyright 2024 TII (SSRC) and the Ghaf contributors
-// SPDX-License-Identifier: Apache-2.0
+// Admin Service API
 syntax = "proto3";
 option go_package = "givc/modules/api/admin";
 import "stats/stats.proto";
@@ -8,73 +7,74 @@ import "systemd/systemd.proto";
 package admin;
 
 message TransportConfig {
-    string Protocol = 1;
-	string Address = 2;
-	string Port = 3;
-    string Name = 4;
+    string Protocol = 1;            // Protocol identifier, one of tcp, vsock, unix
+    string Address = 2;             // IPv4 address, vsock CID, or unix socket path
+    string Port = 3;                // Port number
+    string Name = 4;                // Host name
 }
 
 message RegistryRequest {
-    string Name = 1;
-    string Parent = 2;
-    uint32 Type = 3;
-    TransportConfig Transport = 4;
-	systemd.UnitStatus State = 5;
+    string Name = 1;                // Component name for registry entry
+    string Parent = 2;              // Parent component identifier (registry name)
+    uint32 Type = 3;                // Component type
+    TransportConfig Transport = 4;  // TransportConfig
+    systemd.UnitStatus State = 5;   // Unit status of the component (systemd)
 }
 
 message RegistryResponse {
-    optional string Error = 1;
+    optional string Error = 1;      // Error message
 }
 
 message ApplicationRequest {
-    string AppName = 1;
-    optional string VmName = 2;
-    repeated string Args = 3;
+    string AppName = 1;             // Application name
+    optional string VmName = 2;     // Name of the VM hosting the application
+    repeated string Args = 3;       // Application arguments
 }
 
 message StatsRequest {
-    string VmName = 1;
+    string VmName = 1;              // VM name to query status information
 }
 
 message StartVMRequest {
-    string VmName = 1;
+    string VmName = 1;              // Name of the VM to start
 }
 
 message StartServiceRequest {
-    string ServiceName = 1;
-    string VmName = 2;
+    string ServiceName = 1;         // Name of the service to start
+    string VmName = 2;              // Name of the VM hosting service
 }
 
 message StartResponse {
-    string registryId = 1; // Registry ID for newly started app, service or vm
+    string registryId = 1;          // Registry ID for newly started app, service or vm
 }
 
 message ApplicationResponse {
-    string CmdStatus = 1;
-    string AppStatus = 2;
+    string CmdStatus = 1;           // Status of the RPC command
+    string AppStatus = 2;           // Status of the application
 }
 
 message UnitStatusRequest {
-    string VmName = 1;
-    string UnitName = 2;
+    string VmName = 1;              // Name of the VM hosting the unit
+    string UnitName = 2;            // Name of the unit
 }
 
+// Empty message
 message Empty {
 }
 
 message QueryListItem {
-    string Name = 1;
-    string Description = 2;
-    string VmStatus = 3;
-    string TrustLevel = 4;
-    string VmType = 5;
-    string ServiceType = 6;
-    optional string VmName = 7; // None for host running services
-    optional string AgentName = 8; // None for agents
+    string Name = 1;                // Name of the unit
+    string Description = 2;         // Description of the unit
+    string VmStatus = 3;            // Status of the VM hosting the unit
+    string TrustLevel = 4;          // Trust Level (future use)
+    string VmType = 5;              // Type of the VM (future use)
+    string ServiceType = 6;         // Type of the service (future use)
+    optional string VmName = 7;     // Name of the VM to query; None for host running services
+    optional string AgentName = 8;  // Name of the managing agent; None for agents
 }
 
 message QueryListResponse {
-    repeated QueryListItem List = 1;
+    repeated QueryListItem List = 1; // List of query responses
 }
 
 message WatchItem {
@@ -87,37 +87,51 @@ message WatchItem {
 }
 
 message LocaleRequest {
-    string Locale = 1;
+    string Locale = 1;              // String with locale value. Format: [X/Open Portability Guide / GNU libc]( https://www.gnu.org/software/libc/manual/html_node/Locale-Names.html).
 }
 
 message TimezoneRequest {
-    string Timezone = 1;
+    string Timezone = 1;            // String with timezone value. Format: [tz database](https://en.wikipedia.org/wiki/Tz_database) name, usually Area/City or Etc/GMT+3.
 }
 
 service AdminService {
+    // Register a remote agent or service
     rpc RegisterService(RegistryRequest) returns (RegistryResponse) {}
 
-    // Start things
+    // Start a remote application
     rpc StartApplication(ApplicationRequest) returns (StartResponse) {}
+    // Start a VM
     rpc StartVM(StartVMRequest) returns (StartResponse) {}
+    // Start a remote service
     rpc StartService(StartServiceRequest) returns (StartResponse) {}
-
-    // Manage things
+    // Pause (freeze) a remote application
     rpc PauseApplication(ApplicationRequest) returns (ApplicationResponse) {}
+    // Resume (un-freeze) a remote application
     rpc ResumeApplication(ApplicationRequest) returns (ApplicationResponse) {}
+    // Stop a remote application
     rpc StopApplication(ApplicationRequest) returns (ApplicationResponse) {}
 
-    // Misc
-    rpc GetUnitStatus(UnitStatusRequest) returns (systemd.UnitStatus) {}
+    // Set locale (broadcasted across system)
     rpc SetLocale(LocaleRequest) returns (Empty) {}
+    // Set timezone (broadcasted across system)
     rpc SetTimezone(TimezoneRequest) returns (Empty) {}
-    rpc GetStats(StatsRequest) returns (stats.StatsResponse) {}
+
+    // System poweroff command
     rpc Poweroff(Empty) returns (Empty) {}
+    // System reboot command
     rpc Reboot(Empty) returns (Empty) {}
+    // System suspend command
     rpc Suspend(Empty) returns (Empty) {}
+    // System wakeup command
     rpc Wakeup(Empty) returns (Empty) {}
 
-    // Query
+    // Get systemd unit status
+    rpc GetUnitStatus(UnitStatusRequest) returns (systemd.UnitStatus) {}
+    // Get stats information
+    rpc GetStats(StatsRequest) returns (stats.StatsResponse) {}
+
+    // Get list of monitored units
     rpc QueryList(Empty) returns (QueryListResponse) {}
+    // Get stream of monitored units
     rpc Watch(Empty) returns (stream WatchItem) {}
 }

@@ -19,6 +19,7 @@ func NewController() (*LocaleController, error) {
 	return &LocaleController{}, nil
 }
 
+// SetLocale sets the system locale.
 func (c *LocaleController) SetLocale(ctx context.Context, locale string) error {
 
 	// Input validation
@@ -46,6 +47,7 @@ func (c *LocaleController) SetLocale(ctx context.Context, locale string) error {
 	return nil
 }
 
+// SetTimezone sets the system timezone.
 func (c *LocaleController) SetTimezone(ctx context.Context, timezone string) error {
 
 	// Input validation

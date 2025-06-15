@@ -1,5 +1,11 @@
 // Copyright 2024 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
+
+// The GIVC agent is a service that allows remote management of systemd units and applications.
+//
+// The built-in gRPC server listens for commands from the GIVC admin server (or other instances) and executes
+// them on the local system. In order to configure its functionality, it reads environment variables from the
+// respective nixosModule configuration.
 package main
 
 import (

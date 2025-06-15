@@ -1,30 +1,30 @@
-// Copyright 2024 TII (SSRC) and the Ghaf contributors
-// SPDX-License-Identifier: Apache-2.0
+// Systemd Service API
 syntax = "proto3";
 option go_package = "givc/modules/api/systemd";
 package systemd;
 
+// Systemd Unit Status
 message UnitStatus {
-    string Name = 1;
-	string Description = 2;
-	string LoadState = 3;
-	string ActiveState = 4;
-    string SubState = 5;
-	string Path = 6;
-    string FreezerState = 7;
+    string Name = 1;                // Full systemd unit name
+    string Description = 2;         // A short human readable title of the unit
+    string LoadState = 3;           // LoadState contains a state value that reflects whether the configuration file of this unit has been loaded
+    string ActiveState = 4;         // ActiveState contains a state value that reflects whether the unit is currently active or not
+    string SubState = 5;            // SubState encodes more fine-grained states that are unit-type-specific
+    string Path = 6;                // Bus object path of the unit
+    string FreezerState = 7;        // Freezer sub-state, indicates whether unit is frozen
 }
 
 message UnitRequest {
-    string UnitName = 1;
+    string UnitName = 1;            // Full systemd unit name
 }
 
 message AppUnitRequest {
-    string UnitName = 1;
-    repeated string Args = 2;
+    string UnitName = 1;            // Systemd unit name of the application
+    repeated string Args = 2;       // Application arguments
 }
 
 message UnitResponse {
-    UnitStatus UnitStatus = 1;
+    UnitStatus UnitStatus = 1;      // Units systemd status
 }
 
 message UnitResourceRequest {
@@ -37,12 +37,20 @@ message UnitResourceResponse {
 }
 
 service UnitControlService {
+    // Start remote application (session service)
     rpc StartApplication(AppUnitRequest) returns (UnitResponse) {}
+    // Start systemd unit (any, if whitelisted)
     rpc StartUnit(UnitRequest) returns (UnitResponse) {}
+    // Stop systemd unit (any, if whitelisted)
     rpc StopUnit(UnitRequest) returns (UnitResponse) {}
+    // Kill systemd unit (any, if whitelisted)
     rpc KillUnit(UnitRequest) returns (UnitResponse) {}
+    // Freeze/pause systemd unit (any, if whitelisted)
     rpc FreezeUnit(UnitRequest) returns (UnitResponse) {}
+    // Unfreeze/resume systemd unit (any, if whitelisted)
     rpc UnfreezeUnit(UnitRequest) returns (UnitResponse) {}
+    // Get systemd unit status (any, if whitelisted)
     rpc GetUnitStatus(UnitRequest) returns (UnitResponse) {}
+    // Obsolete monitoring function
     rpc MonitorUnit(UnitResourceRequest) returns (stream UnitResourceResponse) {}
 }

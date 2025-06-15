@@ -1,5 +1,4 @@
-// Copyright 2024 TII (SSRC) and the Ghaf contributors
-// SPDX-License-Identifier: Apache-2.0
+// HWID Service API
 syntax = "proto3";
 option go_package = "givc/modules/api/hwid";
 package hwid;
@@ -8,9 +7,10 @@ message HwIdRequest {
 }
 
 message HwIdResponse {
-    string Identifier = 1;
+    string Identifier = 1;          // Hardware identifier
 }
 
 service HwidService {
+    // Request the hardware identifier
     rpc GetHwId(HwIdRequest) returns (HwIdResponse) {}
 }
