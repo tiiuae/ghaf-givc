@@ -11,6 +11,8 @@ use serde::Serialize;
 use strum::{Display, EnumString};
 
 #[derive(Clone, Copy, Debug, Default, Serialize, EnumString, Display)]
+#[cfg_attr(feature = "glib", derive(glib::Enum))]
+#[cfg_attr(feature = "glib", enum_type(name = "GivcVMStatus"))]
 #[repr(u8)]
 pub enum VMStatus {
     #[default]
@@ -20,6 +22,8 @@ pub enum VMStatus {
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, EnumString, Display)]
+#[cfg_attr(feature = "glib", derive(glib::Enum))]
+#[cfg_attr(feature = "glib", enum_type(name = "GivcTrustLevel"))]
 #[repr(u8)]
 pub enum TrustLevel {
     Secure = 0,
@@ -29,6 +33,8 @@ pub enum TrustLevel {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "glib", derive(glib::Boxed))]
+#[cfg_attr(feature = "glib", boxed_type(name = "GivcQueryResult"))]
 pub struct QueryResult {
     pub name: String,        //VM name
     pub description: String, //App name, some details
