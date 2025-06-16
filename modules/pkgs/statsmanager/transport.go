@@ -1,5 +1,7 @@
 // Copyright 2024 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
+
+// The statsmanager package provides functionality to manage and retrieve system statistics.
 package statsmanager
 
 import (
@@ -25,6 +27,7 @@ func (s *StatsServer) RegisterGrpcService(srv *grpc.Server) {
 	stats_api.RegisterStatsServiceServer(srv, s)
 }
 
+// NewStatsServer creates a new instance of StatsServer with the provided service whitelist and applications.
 func NewStatsServer() (*StatsServer, error) {
 
 	statsController, err := NewController()
@@ -40,6 +43,7 @@ func NewStatsServer() (*StatsServer, error) {
 	return &statsServer, nil
 }
 
+// GetStats handles incoming requests for system statistics.
 func (s *StatsServer) GetStats(ctx context.Context, req *stats_api.StatsRequest) (*stats_api.StatsResponse, error) {
 	log.Infof("Incoming request to get statistics\n")
 

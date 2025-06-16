@@ -18,70 +18,71 @@ let
     concatMapStringsSep
     optionalString
     optionalAttrs
+    literalExpression
     ;
 
   # Dbus policy submodule
   policySubmodule = types.submodule {
     options = {
       see = mkOption {
+        type = types.nullOr (types.listOf types.str);
+        default = null;
         description = ''
           SEE policy:
-            The name/ID is visible in the ListNames reply
-            The name/ID is visible in the ListActivatableNames reply
-            You can call GetNameOwner on the name
-            You can call NameHasOwner on the name
-            You see NameOwnerChanged signals on the name
-            You see NameOwnerChanged signals on the ID when the client disconnects
-            You can call the GetXXX methods on the name/ID to get e.g. the peer pid
-            You get AccessDenied rather than NameHasNoOwner when sending messages to the name/ID
+          * The name/ID is visible in the ListNames reply
+          * The name/ID is visible in the ListActivatableNames reply
+          * You can call GetNameOwner on the name
+          * You can call NameHasOwner on the name
+          * You see NameOwnerChanged signals on the name
+          * You see NameOwnerChanged signals on the ID when the client disconnects
+          * You can call the GetXXX methods on the name/ID to get e.g. the peer pid
+          * You get AccessDenied rather than NameHasNoOwner when sending messages to the name/ID
         '';
-        type = types.nullOr (types.listOf types.str);
-        default = null;
       };
       talk = mkOption {
+        type = types.nullOr (types.listOf types.str);
+        default = null;
         description = ''
           TALK policy:
-            You can send any method calls and signals to the name/ID
-            You will receive broadcast signals from the name/ID (if you have a match rule for them)
-            You can call StartServiceByName on the name
+          * You can send any method calls and signals to the name/ID
+          * You will receive broadcast signals from the name/ID (if you have a match rule for them)
+          * You can call StartServiceByName on the name
         '';
-        type = types.nullOr (types.listOf types.str);
-        default = null;
       };
       own = mkOption {
-        description = ''
-          OWN policy:
-            You are allowed to call RequestName/ReleaseName/ListQueuedOwners on the name
-        '';
         type = types.nullOr (types.listOf types.str);
         default = null;
+        description = ''
+          OWN policy:
+          * You are allowed to call RequestName/ReleaseName/ListQueuedOwners on the name
+        '';
       };
 
       call = mkOption {
+        type = types.nullOr (types.listOf types.str);
+        default = null;
         description = ''
           CALL policy:
-            You can call the specific methods
+          * You can call the specific methods
 
-            From xdg-dbus-proxy manual:
+          From xdg-dbus-proxy manual:
 
-            The RULE in these options determines what interfaces, methods and object paths are allowed. It must be of the form [METHOD][@PATH], where METHOD
-            can be either '*' or a D-Bus interface, possible with a '.*' suffix, or a fully-qualified method name, and PATH is a D-Bus object path, possible with a '/*' suffix.
+          The RULE in these options determines what interfaces, methods and object paths are allowed. It must be of the form [METHOD][@PATH], where METHOD
+          can be either '*' or a D-Bus interface, possible with a '.*' suffix, or a fully-qualified method name, and PATH is a D-Bus object path, possible with a '/*' suffix.
         '';
-        type = types.nullOr (types.listOf types.str);
-        default = null;
       };
       broadcast = mkOption {
+        type = types.nullOr (types.listOf types.str);
+        default = null;
         description = ''
-          BROADCAST policy:
-            You can receive broadcast signals from the name/ID
+          > BROADCAST policy:
+          > You can receive broadcast signals from the name/ID
 
             From xdg-dbus-proxy manual:
 
             The RULE in these options determines what interfaces, methods and object paths are allowed. It must be of the form [METHOD][@PATH], where METHOD
             can be either '*' or a D-Bus interface, possible with a '.*' suffix, or a fully-qualified method name, and PATH is a D-Bus object path, possible with a '/*' suffix.
         '';
-        type = types.nullOr (types.listOf types.str);
-        default = null;
       };
     };
   };
@@ -89,7 +90,7 @@ let
   # Dbus component submodule
   dbusSubmodule = types.submodule {
     options = {
-      enable = mkEnableOption "Enable the dbus component";
+      enable = mkEnableOption "givc dbus component";
       user = mkOption {
         description = ''
           User to run the xdg-dbus-proxy service as. This option must be set to allow a remote user to connect to the bus.
@@ -112,42 +113,98 @@ let
           or receives a broadcast signal from a name (even if filtered to some subset of paths or interfaces), that names basic policy is considered to be (at least) TALK, from then on.
         '';
         type = policySubmodule;
+        default = { };
       };
-      debug = mkEnableOption "Enable '--log' to enable monitoring to create dbus policies.";
+      debug = mkEnableOption "monitoring of the underlying xdg-dbus-proxy";
     };
   };
 
 in
 {
   options.givc.dbusproxy = {
-    enable = mkEnableOption ''
-      Enables givc-dbusproxy module. This module is a wrapper for the `xdg-dbus-proxy`, and configures systemd services for
-      the system and/or session bus.
+    enable = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Whether to enable the givc-dbusproxy module. This module is a wrapper of the `xdg-dbus-proxy`, and can be used to filter
+        specific dbus namespaces in the system or session bus, and expose them on a local socket. It can be used with the socket
+        proxy to allow remote access to the configured system functionality.
 
-      Filtering is enabled by default, and the config requires at least one policy value (see/talk/own) to be set. For more
-      details, please refer to the xdg-dbus-proxy manual (e.g., https://www.systutorials.com/docs/linux/man/1-xdg-dbus-proxy/).
+        > **Caution**
+        > The `dbusproxy` module exposes the system or session bus to a remote endpoint when used in combination with the socket
+        > proxy module. Make sure to configure and audit the policies to prevent unwanted access. If policies are incorrect or
+        > too broadly defined, this can result in severe security issues such as remote code execution.
 
-      Policy values are a list of strings, where each string is translated into the respective argument. Multiple instances
-      of the same value are allowed.
+        When the dbusproxy module is enabled, it exposes the respecive bus as a Unix Domain Socket file. If the socket proxy is
+        enabled as well, it is automatically configured to run as server.
 
-      Example:
-      ```
-      config.givc.dbusproxy.system.policy = {
-        see = [ "org.freedesktop.NetworkManager.*" "org.freedesktop.Avahi.*" ];
-        talk = [ "org.freedesktop.NetworkManager.*" ];
-      };
-      ```
-      In order to create your policies, consider using `busctl` to list the available services and their properties.
-    '';
+        > **Note**
+        > *
+        > * If enabled, either the system or session bus option must be set
+        > * At least one policy value (see/talk/own/call/broadcast) must be set
+        > * To run the session bus proxy, a non-system user with a configured UID is required
+
+        Filtering is enabled by default, and the config requires at least one policy value (see/talk/own) to be set. For more
+        details, please refer to the [xdg-dbus-proxy manual](https://www.systutorials.com/docs/linux/man/1-xdg-dbus-proxy/).
+
+        Policy values are a list of strings, where each string is translated into the respective argument. Multiple instances
+        of the same value are allowed. In order to create your policies, consider using `busctl` to list the available services
+        and their properties.
+      '';
+    };
+
     system = mkOption {
-      description = "Configuration of givc-dbusproxy for system bus.";
       type = dbusSubmodule;
       default = { };
+      defaultText = literalExpression ''
+        system = {
+          user = "root";
+          socket = "/tmp/.dbusproxy.sock";
+          policy = { };
+          debug = false;
+        };'';
+      example = literalExpression ''
+        givc.dbusproxy = {
+          enable = true;
+          system = {
+            enable = true;
+            user = "ghaf";
+            socket = "/tmp/.dbusproxy_net.sock";
+            policy = {
+              talk = [
+                "org.freedesktop.NetworkManager.*"
+                "org.freedesktop.Avahi.*"
+              ];
+              call = [
+                "org.freedesktop.UPower=org.freedesktop.UPower.EnumerateDevices"
+              ];
+            };
+          };'';
+      description = "Configuration of givc-dbusproxy for system bus.";
     };
     session = mkOption {
-      description = "Configuration of givc-dbusproxy for user session bus.";
       type = dbusSubmodule;
       default = { };
+      defaultText = literalExpression ''
+        session = {
+          user = "root";
+          socket = "/tmp/.dbusproxy.sock";
+          policy = { };
+          debug = false;
+        };'';
+      example = literalExpression ''
+        givc.dbusproxy = {
+          enable = true;
+          session = {
+            enable = true;
+            user = "ghaf";
+            socket = "/tmp/.dbusproxy_app.sock";
+            policy.talk = [
+              "org.mpris.MediaPlayer2.playerctld.*"
+            ];
+          };
+        };'';
+      description = "Configuration of givc-dbusproxy for user session bus.";
     };
   };
 

@@ -1,11 +1,12 @@
 // Copyright 2024 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
+
+// The servicemanager package provides functionality to manage systemd services and applications.
 package servicemanager
 
 import (
 	"context"
 	"fmt"
-
 	"time"
 
 	givc_systemd "givc/modules/api/systemd"
@@ -34,6 +35,7 @@ func (s *SystemdControlServer) RegisterGrpcService(srv *grpc.Server) {
 	givc_systemd.RegisterUnitControlServiceServer(srv, s)
 }
 
+// NewSystemdControlServer creates a new instance of SystemdControlServer with the provided service whitelist and applications.
 func NewSystemdControlServer(whitelist []string, applications []types.ApplicationManifest) (*SystemdControlServer, error) {
 
 	systemdController, err := NewController(whitelist, applications)
@@ -53,6 +55,7 @@ func (s *SystemdControlServer) Close() {
 	s.Controller.Close()
 }
 
+// getUnitStatus fetches the status of a systemd unit by its name.
 func (s *SystemdControlServer) getUnitStatus(ctx context.Context, name string) (*givc_systemd.UnitStatus, error) {
 
 	unitStatus, err := s.Controller.FindUnit(name)
@@ -84,6 +87,7 @@ func (s *SystemdControlServer) getUnitStatus(ctx context.Context, name string) (
 	return resp, nil
 }
 
+// GetUnitStatus handles the gRPC request to get the status of a systemd unit.
 func (s *SystemdControlServer) GetUnitStatus(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to fetch unit status: %v\n", req)
 	unitStatus, err := s.getUnitStatus(ctx, req.UnitName)
@@ -97,6 +101,7 @@ func (s *SystemdControlServer) GetUnitStatus(ctx context.Context, req *givc_syst
 	return resp, nil
 }
 
+// StartUnit handles the gRPC request to start a systemd unit.
 func (s *SystemdControlServer) StartUnit(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to (re)start %v\n", req)
 
@@ -115,6 +120,7 @@ func (s *SystemdControlServer) StartUnit(ctx context.Context, req *givc_systemd.
 	return resp, nil
 }
 
+// StopUnit handles the gRPC request to stop a systemd unit.
 func (s *SystemdControlServer) StopUnit(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to stop %v\n", req)
 
@@ -138,6 +144,7 @@ func (s *SystemdControlServer) StopUnit(ctx context.Context, req *givc_systemd.U
 	return resp, nil
 }
 
+// KillUnit handles the gRPC request to kill a systemd unit.
 func (s *SystemdControlServer) KillUnit(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to kill %v\n", req)
 
@@ -161,6 +168,7 @@ func (s *SystemdControlServer) KillUnit(ctx context.Context, req *givc_systemd.U
 	return resp, nil
 }
 
+// FreezeUnit handles the gRPC request to freeze (pause) a systemd unit.
 func (s *SystemdControlServer) FreezeUnit(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to freeze %v", req)
 
@@ -179,6 +187,7 @@ func (s *SystemdControlServer) FreezeUnit(ctx context.Context, req *givc_systemd
 	return resp, nil
 }
 
+// UnfreezeUnit handles the gRPC request to unfreeze (unpause) a systemd unit.
 func (s *SystemdControlServer) UnfreezeUnit(ctx context.Context, req *givc_systemd.UnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Incoming request to unfreeze %v\n", req)
 
@@ -197,6 +206,8 @@ func (s *SystemdControlServer) UnfreezeUnit(ctx context.Context, req *givc_syste
 	return resp, nil
 }
 
+// MonitorUnit handles the gRPC request to monitor a systemd unit's resource usage.
+// This is legacy code and will be removed.
 func (s *SystemdControlServer) MonitorUnit(req *givc_systemd.UnitResourceRequest, stream givc_systemd.UnitControlService_MonitorUnitServer) error {
 	log.Infof("Incoming resource monitor request for %v\n", req)
 
@@ -243,6 +254,7 @@ func (s *SystemdControlServer) MonitorUnit(req *givc_systemd.UnitResourceRequest
 	return nil
 }
 
+// StartApplication handles the gRPC request to start an application unit.
 func (s *SystemdControlServer) StartApplication(ctx context.Context, req *givc_systemd.AppUnitRequest) (*givc_systemd.UnitResponse, error) {
 	log.Infof("Executing application start method for: %s\n", req.UnitName)
 

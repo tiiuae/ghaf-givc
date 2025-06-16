@@ -17,6 +17,8 @@ type SocketProxyController struct {
 	listener    net.Listener
 }
 
+// NewSocketProxyController creates a new SocketProxyController instance.
+// It sets up a unix socket for communication and handles ownership and permissions.
 func NewSocketProxyController(socket string, runAsServer bool) (*SocketProxyController, error) {
 
 	var listener net.Listener
@@ -56,6 +58,7 @@ func NewSocketProxyController(socket string, runAsServer bool) (*SocketProxyCont
 	return &SocketProxyController{socket: socket, runAsServer: runAsServer, listener: listener}, nil
 }
 
+// Dial creates a new connection to the unix socket.
 func (s *SocketProxyController) Dial() (net.Conn, error) {
 
 	// Dial to the unix socket
@@ -67,6 +70,7 @@ func (s *SocketProxyController) Dial() (net.Conn, error) {
 	return conn, nil
 }
 
+// Accept waits for and returns the next connection to the listener.
 func (s *SocketProxyController) Accept() (net.Conn, error) {
 
 	// Accept new connection
@@ -78,6 +82,7 @@ func (s *SocketProxyController) Accept() (net.Conn, error) {
 	return conn, nil
 }
 
+// Close closes the socket listener.
 func (s *SocketProxyController) Close() error {
 	if s.listener != nil {
 		err := s.listener.Close()
@@ -88,6 +93,7 @@ func (s *SocketProxyController) Close() error {
 	return nil
 }
 
+// Write sends data to the socket connection.
 func (s *SocketProxyController) Write(conn net.Conn, data []byte) error {
 	n, err := conn.Write(data)
 	if err != nil {
@@ -99,6 +105,7 @@ func (s *SocketProxyController) Write(conn net.Conn, data []byte) error {
 	return nil
 }
 
+// Read reads data from the socket connection.
 func (s *SocketProxyController) Read(conn net.Conn) ([]byte, error) {
 	buf := make([]byte, 1024)
 	n, err := conn.Read(buf)

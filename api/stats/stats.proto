@@ -1,13 +1,14 @@
-// Copyright 2024 TII (SSRC) and the Ghaf contributors
-// SPDX-License-Identifier: Apache-2.0
+// Stats Service API
 syntax = "proto3";
 option go_package = "givc/modules/api/stats";
 
 package stats;
 
+// Empty stats request message
 message StatsRequest {
 }
 
+// Statistics for a singular process
 message ProcessStat {
     string Name = 1;
     float User = 2;
@@ -15,6 +16,7 @@ message ProcessStat {
     uint64 ResSetSize = 4;
 }
 
+// Cummulative process stats
 message ProcessStats {
     repeated ProcessStat CpuProcesses = 1;
     repeated ProcessStat MemProcesses = 2;
@@ -25,12 +27,14 @@ message ProcessStats {
     uint64 TotalCycles = 7;
 }
 
+// Load stats over different time frames
 message LoadStats {
     float Load1Min = 1;
     float Load5Min = 2;
     float Load15Min = 3;
 }
 
+// Memory stats info
 message MemoryStats {
     uint64 Total = 1;
     uint64 Free = 2;
@@ -38,6 +42,7 @@ message MemoryStats {
     uint64 Cached = 4;
 }
 
+// Combined stats response message
 message StatsResponse {
     MemoryStats Memory = 1;
     LoadStats Load = 2;
@@ -45,5 +50,6 @@ message StatsResponse {
 }
 
 service StatsService {
+    // Get process statistics
     rpc GetStats(StatsRequest) returns (StatsResponse) {}
 }

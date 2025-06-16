@@ -1,5 +1,4 @@
-// Copyright 2024 TII (SSRC) and the Ghaf contributors
-// SPDX-License-Identifier: Apache-2.0
+// WiFi Service API
 syntax = "proto3";
 option go_package = "givc/modules/api/wifi";
 package wifimanager;
@@ -33,10 +32,16 @@ message WifiConnectionResponse {
 }
 
 service WifiService {
+    // List wifi networks
     rpc ListNetwork(WifiNetworkRequest) returns (WifiNetworkResponse) {}
+    // Retrieve all active connections
     rpc GetActiveConnection(EmptyRequest) returns (AccessPoint) {}
+    // Connect to a wifi network
     rpc ConnectNetwork(WifiConnectionRequest) returns (WifiConnectionResponse) {}
+    // Disconnect from wifi network
     rpc DisconnectNetwork(EmptyRequest) returns (WifiConnectionResponse) {}
+    // Turn wifi on
     rpc TurnOn(EmptyRequest) returns (WifiConnectionResponse) {}
+    // Turn wifi off
     rpc TurnOff(EmptyRequest) returns (WifiConnectionResponse) {}
 }

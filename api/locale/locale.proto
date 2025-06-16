@@ -1,21 +1,23 @@
-// Copyright 2024 TII (SSRC) and the Ghaf contributors
-// SPDX-License-Identifier: Apache-2.0
+// Locale Service API
 syntax = "proto3";
 option go_package = "givc/modules/api/locale";
 package locale;
 
 message LocaleMessage {
-    string Locale = 1;
+    string Locale = 1;      // String with locale value. Format: [X/Open Portability Guide / GNU libc]( https://www.gnu.org/software/libc/manual/html_node/Locale-Names.html).
 }
 
 message TimezoneMessage {
-    string Timezone = 1;
+    string Timezone = 1;    // String with timezone value. Format: [tz database](https://en.wikipedia.org/wiki/Tz_database) name, usually Area/City or Etc/GMT+3.
 }
 
+// Empty message
 message Empty {
 }
 
 service LocaleClient {
+    // System-wide locale broadcast
     rpc LocaleSet(LocaleMessage) returns (Empty) {}
+    // System-wide timezone broadcast
     rpc TimezoneSet(TimezoneMessage) returns (Empty) {}
 }

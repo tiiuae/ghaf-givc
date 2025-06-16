@@ -22,6 +22,7 @@ let
     optionalString
     optionalAttrs
     optionals
+    literalExpression
     ;
   inherit (builtins) toJSON;
   inherit (import ./definitions.nix { inherit config lib; })
@@ -32,70 +33,154 @@ let
 in
 {
   options.givc.sysvm = {
-    enable = mkEnableOption "Enable givc-sysvm module.";
-    enableUserTlsAccess = mkEnableOption "Enable users to access TLS keys to run client.";
+    enable = mkEnableOption "givc sysvm agent module, which is responsible for managing a system VM and respective services";
+    enableUserTlsAccess = mkEnableOption ''
+      user access to TLS keys for the client to run. This will copy the keys to `/run/givc` and makes it accessible to the group
+      `users` (default for regular users in NixOS).
+    '';
 
     transport = mkOption {
-      description = ''
-        Transport configuration for the system VM.
-      '';
       type = transportSubmodule;
+      default = { };
+      example = literalExpression ''
+        transport =
+          {
+            name = "net-vm";
+            addr = "192.168.100.4";
+            protocol = "tcp";
+            port = "9000";
+          };'';
+      description = ''
+        Transport configuration of the GIVC agent of type `transportSubmodule`.
+
+        > **Caution**
+        > This parameter is used to generate and validate the TLS host name.
+      '';
     };
 
     services = mkOption {
-      description = ''
-        List of systemd services for the manager to administrate. Expects a space separated list.
-        Should be a unit file of type 'service' or 'target'.
-      '';
       type = types.listOf types.str;
       default = [
         "reboot.target"
         "poweroff.target"
       ];
+      description = ''
+        List of systemd services for the manager to administrate. Expects a space separated list.
+        Should be a unit file of type 'service' or 'target'.
+      '';
     };
 
-    debug = mkEnableOption "Enable verbose logs for debugging.";
+    debug = mkEnableOption ''
+      enable appvm GIVC agent debug logging. This increases the verbosity of the logs.
+
+      > **Caution**
+      > Enabling debug logging may expose sensitive information in the logs, especially if the appvm uses the DBUS submodule.
+    '';
 
     admin = mkOption {
-      description = "Admin server configuration.";
       type = transportSubmodule;
+      default = { };
+      defaultText = literalExpression ''
+        {
+          name = "localhost";
+          addr = "127.0.0.1";
+          protocol = "tcp";
+          port = "9000";
+        };'';
+      example = literalExpression ''
+        admin = {
+          {
+            name = "admin-vm";
+            addr = "192.168.100.3";
+            protocol = "tcp";
+            port = "9001";
+          };'';
+      description = ''Admin server transport configuration. This configuration tells the agent how to reach the admin server.'';
     };
 
     wifiManager = mkOption {
-      description = ''
-        Wifi manager to handle wifi related queries.
-      '';
       type = types.bool;
       default = false;
+      description = ''
+        Wifi manager to handle wifi related queries with a defined interface. Deprecated in favor of DBUS proxy.
+      '';
     };
 
     hwidService = mkOption {
-      description = ''
-        Hardware identifier service.
-      '';
       type = types.bool;
       default = false;
+      description = ''
+        Hardware identifier service that fetches the MAC address from a network interface.
+        > **Note**
+        > This module is can be used to generate a (somewhat) reproducible hardware id. It is
+        > currently unused in the Ghaf project for privacy reasons.
+      '';
     };
 
     hwidIface = mkOption {
-      description = ''
-        Interface for hardware identifier.
-      '';
       type = types.str;
       default = "";
+      description = ''
+        Hardware identifier to be used with `hwidService`.
+      '';
     };
 
     socketProxy = mkOption {
-      description = ''
-        Socket proxy module. If not provided, the module will not use a socket proxy.
-      '';
       type = types.nullOr (types.listOf proxySubmodule);
       default = null;
+      example = literalExpression ''
+        givc.appvm.socketProxy = [
+          {
+            # Configure the remote endpoint
+            transport = {
+              name = "gui-vm";
+              addr = "192.168.100.5;
+              port = "9013";
+              protocol = "tcp";
+            };
+            # Socket path
+            socket = "/tmp/.dbusproxy_app.sock";
+          }
+        ];
+      '';
+      description = ''
+        Optional socket proxy module. The socket proxy provides a VM-to-VM streaming mechanism with socket enpoints, and can be used
+        to remote DBUS functionality across VMs. Hereby, the side running the dbusproxy (e.g., a network VM running NetworkManager) is
+        considered the 'server', and the receiving end (e.g., the GUI VM) is considered the 'client'.
+
+        The socket proxy module must be configured on both ends with explicit transport information, and must run on a dedicated TCP port.
+        The detailed socket proxy options are described in the respective `.socketProxy.*` options.
+
+        > **Note**
+        > The socket proxy module is a possible transport mechanism for the DBUS proxy module, and must be appropriately configured on both
+        > ends if used. In this use case, the `server` option is configured automatically and does not need to be set.
+      '';
     };
 
     tls = mkOption {
-      description = "TLS configuration.";
       type = tlsSubmodule;
+      default = { };
+      defaultText = literalExpression ''
+        tls = {
+          enable = true;
+          caCertPath = "/etc/givc/ca-cert.pem";
+          certPath = /etc/givc/cert.pem";
+          keyPath = "/etc/givc/key.pem";
+        };'';
+      example = literalExpression ''
+        tls = {
+          enable = true;
+          caCertPath = "/etc/ssl/certs/ca-certificates.crt";
+          certPath = "/etc/ssl/certs/server.crt";
+          keyPath = "/etc/ssl/private/server.key";
+        };'';
+      description = ''
+        TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
+        and requires paths to certificates and key being set. To disable it use `tls.enable = false;`.
+
+        > **Caution**
+        > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
+      '';
     };
   };
 

@@ -73,6 +73,7 @@ func NewController() (*StatsController, error) {
 	return &StatsController{jiffies: 0, processes: make(map[uint64]process), totals: make([]uint64, SysGuestNice+1)}, nil
 }
 
+// GetMemoryStats retrieves memory statistics from the system.
 func (c *StatsController) GetMemoryStats(ctx context.Context) (*stats_api.MemoryStats, error) {
 
 	// Input validation
@@ -116,6 +117,7 @@ func (c *StatsController) GetMemoryStats(ctx context.Context) (*stats_api.Memory
 	}, nil
 }
 
+// GetLoadStats retrieves load statistics from the system.
 func (c *StatsController) GetLoadStats(ctx context.Context) (*stats_api.LoadStats, error) {
 
 	// Input validation
@@ -151,6 +153,7 @@ func (c *StatsController) GetLoadStats(ctx context.Context) (*stats_api.LoadStat
 	}, nil
 }
 
+// GetProcessStats retrieves process statistics from the system.
 func (c *StatsController) GetProcessStats(ctx context.Context) (*stats_api.ProcessStats, error) {
 	// Input validation
 	if ctx == nil {
