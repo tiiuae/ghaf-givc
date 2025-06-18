@@ -2,6 +2,9 @@
 package usb_hotplug
 import future.keywords.in
 
+
+lenovo = data.lenovo
+dell = data.dell.denylist
 # Rule to populate the set of allowed VMs for the input device.
 allowed_vms = vms if {
     # Ensure required input fields are present
@@ -11,16 +14,16 @@ allowed_vms = vms if {
     input.vendor_id
     input.product_id
 
-    blacklist = data.usb_hotplug_rules.blacklist
-    whitelist = data.usb_hotplug_rules.whitelist
-    class_rules = data.usb_hotplug_rules.class_rules
-    vm_device_filter = data.usb_hotplug_rules.device_filter
-    # Check if the device is blacklisted
-    not blacklisted(blacklist, input.vendor_id, input.product_id)
+    denylist = data.hotplug_rules.denylist
+    allowlist = data.hotplug_rules.allowlist
+    class_rules = data.hotplug_rules.classlist
+    #vm_device_filter = data.hotplug_rules.device_filter
+    # Check if the device is denied
+    not denied(denylist, input.vendor_id, input.product_id)
     # Check if the device is mapped to a specific VM
     device_key_0 := sprintf("%s:%s", [input.vendor_id, input.product_id])
     device_key_1 := sprintf("%s:*", [input.vendor_id])
-    wl_vms = array.concat(lookup(whitelist, device_key_0), lookup(whitelist, device_key_1))
+    wl_vms = array.concat(lookup(allowlist, device_key_0), lookup(allowlist, device_key_1))
     
     # Based on class, subclass, and protocol find list VMs which can access it 
     class_key_0 := sprintf("%s:%s:%s", [input.class, input.subclass, input.protocol])
@@ -36,32 +39,33 @@ allowed_vms = vms if {
     unique_vms_set := {element | element := arr_vms[_]}
     
     # Filter any VM if it is disabled by the VM
-    vms = filter_vms(vm_device_filter, unique_vms_set, device_key_0, device_key_1)
+    # vms = filter_vms(vm_device_filter, unique_vms_set, device_key_0, device_key_1)
+    vms = unique_vms_set
 } else = []
 
 
-lookup(whitelist, key) = vms if {
-    some vm_list in [whitelist[key]]
+lookup(allowlist, key) = vms if {
+    some vm_list in [allowlist[key]]
     vms = vm_list
 } else = []
 
-whitelisted_in_blacklist(blacklist, vendor_id, product_id) = true if {
+allowed_in_denylist(denylist, vendor_id, product_id) = true if {
     neg_vendor := sprintf("~%s", [vendor_id])
-    vendor_whitelist = lookup(blacklist, neg_vendor)
-    product_id == vendor_whitelist[_]
+    vendor_allowlist = lookup(denylist, neg_vendor)
+    product_id == vendor_allowlist[_]
 }
 
-blacklisted(blacklist, vendor_id, product_id) = true if {
-    vendor_blacklist = lookup(blacklist, vendor_id)
-    vendor_blacklist[_] == product_id
+denied(denylist, vendor_id, product_id) = true if {
+    vendor_denylist = lookup(denylist, vendor_id)
+    vendor_denylist[_] == product_id
 } else = false if {
     neg_vendor := sprintf("~%s", [vendor_id])
-    vendor_whitelist = lookup(blacklist, neg_vendor)
-    count(vendor_whitelist) == 0
+    vendor_allowlist = lookup(denylist, neg_vendor)
+    count(vendor_allowlist) == 0
 } else = false if {
     neg_vendor := sprintf("~%s", [vendor_id])
-    vendor_whitelist = lookup(blacklist, neg_vendor)
-    product_id == vendor_whitelist[_]
+    vendor_allowlist = lookup(denylist, neg_vendor)
+    product_id == vendor_allowlist[_]
 } else = true 
 
 is_vm_filtered(vm_device_filter, vm, device_key_0, device_key_1) = true if {

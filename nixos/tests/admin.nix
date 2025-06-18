@@ -147,15 +147,15 @@
                   print(hostvm.succeed("${cli} ${cliArgs} get-stats app-vm"))
 
               with subtest("USB hot plug policy"):
-                  usb_hotplug_policy = "cmd:fetch usb_hotplug_rules"
+                  usb_hotplug_policy = "cmd:fetch hotplug_rules"
                   givc_cmd = f"${cli} ${cliArgs} policy-query '{usb_hotplug_policy}'"
                   res = hostvm.succeed(givc_cmd)
                   try:
                       outer = json.loads(res)
                       inner = json.loads(outer)
                       result = inner["result"]
-                      for vm in result["vms"]:
-                          print(vm)
+                      if "classlist" in result:
+                          print(result["classlist"])
                   except json.JSONDecodeError as e:
                       print(f"Failed to parse JSON: {e}")
               with subtest("Clean run"):
