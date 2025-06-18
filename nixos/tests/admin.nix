@@ -57,6 +57,7 @@
               # Code below borrowed from $nixpkgs/nixos/tests/sway.nix
               import shlex
               import json
+              import pprint
 
               q = shlex.quote
               NODE_GROUPS = ["nodes", "floating_nodes"]
@@ -147,17 +148,17 @@
                   print(hostvm.succeed("${cli} ${cliArgs} get-stats app-vm"))
 
               with subtest("USB hot plug policy"):
-                  usb_hotplug_policy = "cmd:fetch usb_hotplug_rules"
+                  usb_hotplug_policy = "cmd:fetch hotplug_rules"
                   givc_cmd = f"${cli} ${cliArgs} policy-query '{usb_hotplug_policy}'"
                   res = hostvm.succeed(givc_cmd)
                   try:
                       outer = json.loads(res)
                       inner = json.loads(outer)
                       result = inner["result"]
-                      for vm in result["vms"]:
-                          print(vm)
+                      pprint.pprint(result)
                   except json.JSONDecodeError as e:
                       print(f"Failed to parse JSON: {e}")
+
               with subtest("Clean run"):
                   print(hostvm.succeed("${cli} ${cliArgs} start app --vm app-vm foot"))
                   time.sleep(10) # Give few seconds to application to spin up

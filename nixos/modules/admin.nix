@@ -150,7 +150,7 @@ in
 
       policyPath = mkOption {
         description = "Policy path.";
-        type = types.path;
+        type = types.nullOr types.path;
         default = null;
       };
     };
