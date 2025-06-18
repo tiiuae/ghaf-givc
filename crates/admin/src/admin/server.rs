@@ -781,8 +781,8 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<PolicyQueryRequest>,
     ) -> Result<tonic::Response<PolicyQueryResponse>, tonic::Status> {
         let inner = request.into_inner();
-        let query = inner.query.clone();
-        let path = inner.policy_path.clone();
+        let query: &str = &inner.query;
+        let path: &str = &inner.policy_path;
         let result = self
             .inner
             .send_query_to_opa_server(&query, &path)

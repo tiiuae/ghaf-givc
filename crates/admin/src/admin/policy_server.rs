@@ -22,7 +22,7 @@ impl PolicyServer {
 
     pub async fn request(&self, query: &str, policy_path: &str) -> anyhow::Result<String> {
         let opa_url = format!("{}{}", self.url, policy_path);
-        info!("Policy QUERY: {:#?}, URL: {:#?} ", query, opa_url);
+        debug!("Policy QUERY: {:?}, URL: {:?} ", query, opa_url);
 
         let body = surf::Body::from_string((&query).to_string());
 
@@ -62,10 +62,8 @@ impl PolicyServer {
     }
 
     pub async fn split_cmd_and_args<'a>(&self, cmdstr: &'a str) -> Option<(&'a str, &'a str)> {
-        let mut parts = cmdstr.trim().splitn(2, ' ');
-        let cmd = parts.next()?;
-        let args = parts.next().unwrap_or("");
-        Some((cmd, args))
+        let cmdstr = cmdstr.trim();
+        cmdstr.split_once(' ').or(Some((cmdstr, "")))
     }
 
     pub async fn handle_cmds(&self, cmdstr: &str) -> anyhow::Result<String> {
