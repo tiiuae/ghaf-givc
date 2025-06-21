@@ -94,6 +94,15 @@ message TimezoneRequest {
     string Timezone = 1;            // String with timezone value. Format: [tz database](https://en.wikipedia.org/wiki/Tz_database) name, usually Area/City or Etc/GMT+3.
 }
 
+message PolicyQueryRequest {
+    string Query = 1;
+    string PolicyPath = 2;
+}
+
+message PolicyQueryResponse {
+    string result = 1;
+}
+
 service AdminService {
     // Register a remote agent or service
     rpc RegisterService(RegistryRequest) returns (RegistryResponse) {}
@@ -134,4 +143,5 @@ service AdminService {
     rpc QueryList(Empty) returns (QueryListResponse) {}
     // Get stream of monitored units
     rpc Watch(Empty) returns (stream WatchItem) {}
+    rpc PolicyQuery(PolicyQueryRequest) returns (PolicyQueryResponse) {}
 }
