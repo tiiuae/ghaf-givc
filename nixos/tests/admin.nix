@@ -57,6 +57,7 @@
               # Code below borrowed from $nixpkgs/nixos/tests/sway.nix
               import shlex
               import json
+              import pprint
 
               q = shlex.quote
               NODE_GROUPS = ["nodes", "floating_nodes"]
@@ -154,10 +155,10 @@
                       outer = json.loads(res)
                       inner = json.loads(outer)
                       result = inner["result"]
-                      if "classlist" in result:
-                          print(result["classlist"])
+                      pprint.pprint(result)
                   except json.JSONDecodeError as e:
                       print(f"Failed to parse JSON: {e}")
+
               with subtest("Clean run"):
                   print(hostvm.succeed("${cli} ${cliArgs} start app --vm app-vm foot"))
                   time.sleep(10) # Give few seconds to application to spin up

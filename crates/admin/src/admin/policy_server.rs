@@ -1,6 +1,5 @@
-//use anyhow::{anyhow, bail, Context, Result};
-//use serde_json::json;
 use anyhow::anyhow;
+use reqwest::Client;
 use serde_json::Value;
 use tracing::info;
 use tracing::{debug, error};
@@ -24,10 +23,9 @@ impl PolicyServer {
         let opa_url = format!("{}{}", self.url, policy_path);
         debug!("Policy QUERY: {:?}, URL: {:?} ", query, opa_url);
 
-        let body = surf::Body::from_string((&query).to_string());
+        let client = Client::new();
 
-        let request = surf::post(opa_url).body(body);
-        let mut res = match request.await {
+        let res = match client.post(&opa_url).body(query.to_string()).send().await {
             Ok(response) => response,
             Err(e) => {
                 error!("Failed to send request to OPA server: {}", e);
@@ -35,13 +33,14 @@ impl PolicyServer {
             }
         };
 
-        let body_string = match res.body_string().await {
-            Ok(s) => s,
+        let body_string = match res.text().await {
+            Ok(text) => text,
             Err(e) => {
                 error!("Failed to read body string: {}", e);
                 return Ok("{}".to_string());
             }
         };
+
         Ok(body_string)
     }
 
