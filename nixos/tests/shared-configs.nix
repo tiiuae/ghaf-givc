@@ -30,6 +30,11 @@ let
 in
 {
   flake.nixosModules = {
+    tests-writable-storage = {
+      nix.enable = true;
+      virtualisation.writableStore = true;
+      virtualisation.writableStoreUseTmpfs = true;
+    };
     tests-adminvm = {
       imports = [
         self.nixosModules.admin

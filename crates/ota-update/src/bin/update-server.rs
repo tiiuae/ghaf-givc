@@ -1,3 +1,4 @@
+use anyhow::Context;
 use axum::{
     Json, Router,
     extract::State,
@@ -70,7 +71,9 @@ async fn get_update_list(path: &Path, default_name: &str) -> anyhow::Result<Vec<
     let default_target = fs::read_link(&default_link_path).await.ok();
 
     let mut updates = Vec::new();
-    let mut dir = fs::read_dir(&path).await?;
+    let mut dir = fs::read_dir(&path)
+        .await
+        .with_context(|| format!("while read_dir() on {path}", path = path.display()))?;
 
     while let Some(entry) = dir.next_entry().await? {
         let name = entry.file_name();

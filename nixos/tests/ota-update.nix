@@ -11,6 +11,7 @@ let
       {
         imports = [
           self.nixosModules.tests-hostvm
+          self.nixosModules.tests-writable-storage
         ];
         boot.loader.systemd-boot.enable = true;
         users.mutableUsers = false;
@@ -83,6 +84,7 @@ let
       {
         imports = [
           self.nixosModules.tests-updatevm
+          self.nixosModules.tests-writable-storage
           self.nixosModules.ota-update-server
         ];
         users.users.root.openssh.authorizedKeys.keys = [ snakeOilPublicKey ];
@@ -116,6 +118,7 @@ let
             };
           };
         };
+        networking.firewall.allowedTCPPorts = [ 80 ];
 
         # FIXME: move to adminvm/givc OTA update test
         systemd.services.givc-admin.environment.GIVC_MONITORING = "false";
@@ -124,75 +127,66 @@ let
   };
 in
 {
-  perSystem =
-    { pkgs, ... }:
-    {
-      vmTests.tests = {
-        ota-update = {
-          module = {
-            inherit nodes;
-            testScript =
-              { nodes, ... }:
-              let
-                hostvm = nodes.hostvm.system.build.toplevel;
-                regInfoHost = pkgs.closureInfo { rootPaths = hostvm; };
-                updatevm = nodes.updatevm.system.build.toplevel;
-                regInfoUpdateVM = pkgs.closureInfo { rootPaths = updatevm; };
-                source = "ssh-ng://root@${(builtins.head nodes.updatevm.networking.interfaces.eth1.ipv4.addresses).address}";
-              in
-              ''
-                hostvm.wait_for_unit("multi-user.target")
-                print(hostvm.succeed("nix-store --load-db <${regInfoHost}"))
-                print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
+  perSystem = _: {
+    vmTests.tests = {
+      ota-update = {
+        module = {
+          inherit nodes;
+          testScript =
+            { nodes, ... }:
+            let
+              hostvm = nodes.hostvm.system.build.toplevel;
+              updatevm = nodes.updatevm.system.build.toplevel;
+              source = "ssh-ng://root@${(builtins.head nodes.updatevm.networking.interfaces.eth1.ipv4.addresses).address}";
+            in
+            ''
+              hostvm.wait_for_unit("multi-user.target")
+              print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
 
-                updatevm.wait_for_unit("multi-user.target")
-                print(updatevm.succeed("nix-store --load-db <${regInfoUpdateVM}"))
-                print(updatevm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${updatevm}"))
+              updatevm.wait_for_unit("multi-user.target")
+              print(updatevm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${updatevm}"))
 
-                update = updatevm.succeed("find-software-update").strip()
-                print(hostvm.succeed(f"ota-update set {update} --no-check-signs --source ${source}", timeout=120))
+              update = updatevm.succeed("find-software-update").strip()
+              print(hostvm.succeed(f"ota-update set {update} --no-check-signs --source ${source}", timeout=120))
 
-                print(hostvm.succeed("nixos-rebuild list-generations --json"))
+              print(hostvm.succeed("nixos-rebuild list-generations --json"))
 
-                # Ensure, that `switch-to-configuration boot` is successfully invoked
-                hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
-              '';
-          };
+              # Ensure, that `switch-to-configuration boot` is successfully invoked
+              hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
+            '';
         };
-        ota-update-http = {
-          module = {
-            inherit nodes;
-            testScript =
-              { nodes, ... }:
-              let
-                hostvm = nodes.hostvm.system.build.toplevel;
-                regInfoHost = pkgs.closureInfo { rootPaths = hostvm; };
-                updatevm = nodes.updatevm.system.build.toplevel;
-                regInfoUpdateVM = pkgs.closureInfo { rootPaths = updatevm; };
-                source = "http://test-updates.example.com";
-              in
-              ''
-                hostvm.wait_for_unit("multi-user.target")
-                print(hostvm.succeed("nix-store --load-db <${regInfoHost}"))
-                print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
+      };
+      ota-update-http = {
+        module = {
+          inherit nodes;
+          testScript =
+            { nodes, ... }:
+            let
+              hostvm = nodes.hostvm.system.build.toplevel;
+              source = "http://test-updates.example.com";
+            in
+            ''
+              hostvm.wait_for_unit("multi-user.target")
+              print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
 
-                updatevm.wait_for_unit("multi-user.target")
-                updatevm.wait_for_unit("ota-update-server.service")
-                print(updatevm.succeed("nix-store --load-db <${regInfoUpdateVM}"))
-                print(updatevm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${updatevm}"))
-                update = updatevm.succeed("find-software-update").strip()
-                updatevm.succeed("mkdir -p /nix/var/nix/profiles/updates") # FIXME: Move it somewhere into setup phase (or even to module)
-                updatevm.succeed(f"ota-update-server register /nix/var/nix/profiles/updates ghaf-updates {update}")
-                result = hostvm.succeed("ota-update query --source ${source} --raw --current").strip()
-                assert result == update
+              updatevm.wait_for_unit("multi-user.target")
+              updatevm.wait_for_unit("ota-update-server.service")
 
-                hostvm.succeed(f"uta-update set {result} --source ${source}")
+              update = updatevm.succeed("find-software-update").strip()
+              updatevm.succeed("mkdir -p /nix/var/nix/profiles/per-user/updates") # FIXME: Move it somewhere into setup phase (or even to module)
+              updatevm.succeed(f"ota-update-server register /nix/var/nix/profiles/per-user/updates ghaf-updates {update}")
+              print(updatevm.succeed("find /nix/var/nix/profiles/per-user/updates"))
+              print(hostvm.succeed("curl -v ${source}/update/ghaf-updates"))
+              result = hostvm.succeed("ota-update query --source ${source} --raw --current").strip()
+              assert result == update
 
-                # Ensure, that `switch-to-configuration boot` is successfully invoked
-                hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
-              '';
-          };
+              hostvm.succeed(f"uta-update set {result} --source ${source}")
+
+              # Ensure, that `switch-to-configuration boot` is successfully invoked
+              hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
+            '';
         };
       };
     };
+  };
 }

@@ -36,7 +36,7 @@ in
 
     path = mkOption {
       type = types.str;
-      default = "/nix/var/nix/profiles/per-user/update";
+      default = "/nix/var/nix/profiles/per-user/updates";
       description = "Base path to profiles.";
     };
 
