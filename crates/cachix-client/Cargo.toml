@@ -24,6 +24,6 @@ clap = { version = "4", features = ["derive"], optional = true }
 cli = ["clap"]
 
 [[bin]]
-name = "cachix-cli"
+name = "cachix-client"
 path = "src/bin/cachix-client.rs"
 required-features = ["cli"]
