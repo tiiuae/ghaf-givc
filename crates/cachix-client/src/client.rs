@@ -64,4 +64,27 @@ impl CachixClient {
             s => Err(CachixError::UnexpectedStatus(s)),
         }
     }
+
+    /// Retrieve single file from store
+    /// # Errors
+    /// Fails if cachix return an error
+    pub async fn get_file_from_store(
+        &self,
+        nar_hash: &str,
+        path: &str,
+    ) -> Result<Vec<u8>, CachixError> {
+        let url = self.api_url(&format!(
+            "serve/{}/{}",
+            nar_hash,
+            path.trim_start_matches('/')
+        ));
+        let res = self
+            .auth(self.client.get(&url))
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?;
+        Ok(res.to_vec())
+    }
 }
