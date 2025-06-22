@@ -1,0 +1,67 @@
+use crate::{CachixError, PinList};
+use reqwest::{Client, StatusCode};
+use std::sync::Arc;
+
+#[derive(Clone)]
+pub struct CachixClient {
+    cache_name: String,
+    token: Option<String>,
+    client: Arc<Client>,
+}
+
+/// API implemented for <https://app.cachix.org/api/v1/>
+impl CachixClient {
+    /// Create new Cachix client 
+    #[must_use]
+    pub fn new(cache_name: String, token: Option<String>) -> Self {
+        Self {
+            cache_name,
+            token,
+            client: Arc::new(Client::new()),
+        }
+    }
+
+    fn api_url(&self, path: &str) -> String {
+        format!(
+            "https://app.cachix.org/api/v1/cache/{}/{}",
+            self.cache_name, path
+        )
+    }
+
+    fn auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(token) = &self.token {
+            req.header("Authorization", format!("Bearer {token}"))
+        } else {
+            req
+        }
+    }
+
+    /// Enumerate existing pins in cache
+    /// # Errors
+    /// Fails if cachix return an error
+    pub async fn list_pins(&self) -> Result<PinList, CachixError> {
+        let url = self.api_url("pin");
+        let res = self
+            .auth(self.client.get(&url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(res)
+    }
+
+    /// Delete pin
+    ///   (require owner permissions)
+    /// # Errors
+    /// Fails if cachix return an error
+    pub async fn delete_pin(&self, name: &str) -> Result<(), CachixError> {
+        let url = self.api_url(&format!("pin/{}", name));
+        let res = self.auth(self.client.delete(&url)).send().await?;
+        match res.status() {
+            StatusCode::NO_CONTENT => Ok(()),
+            StatusCode::UNAUTHORIZED => Err(CachixError::Unauthorized),
+            s => Err(CachixError::UnexpectedStatus(s)),
+        }
+    }
+}
