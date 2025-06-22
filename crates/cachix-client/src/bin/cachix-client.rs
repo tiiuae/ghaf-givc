@@ -1,5 +1,6 @@
 use cachix_client::CachixClient;
 use clap::Parser;
+use std::io::{self, Write};
 
 /// Simple CLI for testing Cachix API
 #[derive(Parser)]
@@ -29,6 +30,15 @@ enum Commands {
         /// Name of the pin to delete
         name: String,
     },
+
+    /// Fetch file from a pinned store path via serve
+    Serve {
+        /// Store path hash (narHash)
+        hash: String,
+
+        /// File path inside store path
+        path: String,
+    },
 }
 
 #[tokio::main]
@@ -47,6 +57,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::DeletePin { name } => {
             client.delete_pin(&name).await?;
             println!("Deleted pin: {}", name);
+        }
+        Commands::Serve { hash, path } => {
+            let data = client.get_file_from_store(&hash, &path).await?;
+            let mut stdout = io::stdout().lock();
+            stdout.write_all(&data)?;
+            stdout.flush()?;
         }
     }
 
