@@ -4,5 +4,6 @@ members = [
   "crates/common",
   "crates/admin",
   "crates/ota-update",
+  "crates/cachix-client",
 ]
 resolver = "2"
