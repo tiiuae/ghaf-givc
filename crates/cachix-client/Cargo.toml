@@ -1,0 +1,29 @@
+[package]
+name = "cachix-client"
+version = "0.1.0"
+edition = "2021"
+authors = ["Alexander Nikolaev <alexander.nikolaev@unikie.com>"]
+license = "Apache 2.0"
+publish = false
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "gzip",
+  "rustls-tls",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# Optional dependency for CLI
+clap = { version = "4", features = ["derive"], optional = true }
+
+[features]
+cli = ["clap"]
+
+[[bin]]
+name = "cachix-cli"
+path = "src/bin/cachix-client.rs"
+required-features = ["cli"]
