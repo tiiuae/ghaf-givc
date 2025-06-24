@@ -496,10 +496,9 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<givc_common::pb::StartServiceRequest>,
     ) -> std::result::Result<tonic::Response<StartResponse>, tonic::Status> {
         escalate(request, async move |req| {
-            let vm_name = format_vm_name(&req.vm_name, None);
             let registry_id = self
                 .inner
-                .start_unit_on_vm(&req.service_name, &vm_name)
+                .start_unit_on_vm(&req.service_name, &req.vm_name)
                 .await?;
             Ok(StartResponse { registry_id })
         })
