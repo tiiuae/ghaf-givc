@@ -39,6 +39,9 @@ enum Commands {
         /// File path inside store path
         path: String,
     },
+
+    #[cfg(feature = "nixos")]
+    ListSystems,
 }
 
 #[tokio::main]
@@ -50,8 +53,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::ListPins => {
             let pins = client.list_pins().await?;
-            for pin in pins.pins {
-                println!("{} -> {}", pin.name, pin.store_path);
+            for pin in pins {
+                println!("{} -> {}", pin.name, pin.last_revision.store_path.display());
             }
         }
         Commands::DeletePin { name } => {
@@ -63,6 +66,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut stdout = io::stdout().lock();
             stdout.write_all(&data)?;
             stdout.flush()?;
+        }
+
+        #[cfg(feature = "nixos")]
+        Commands::ListSystems => {
+            let systems = cachix_client::nixos::filter_valid_systems(&client).await?;
+            for (pin, spec) in systems {
+                println!(
+                    "{} -> {} ({})",
+                    pin.name,
+                    pin.last_revision.store_path.display(),
+                    spec.bootspec.label,
+                );
+            }
         }
     }
 
