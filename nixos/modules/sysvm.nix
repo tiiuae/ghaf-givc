@@ -29,6 +29,7 @@ let
     transportSubmodule
     proxySubmodule
     tlsSubmodule
+    eventSubmodule
     ;
 in
 {
@@ -157,6 +158,30 @@ in
       '';
     };
 
+    eventProxy = mkOption {
+      type = types.nullOr (types.listOf eventSubmodule);
+      default = null;
+      example = literalExpression ''
+        givc.appvm.eventProxy = [
+          {
+            # Configure the remote endpoint
+            transport = {
+              name = "gui-vm";
+              addr = "192.168.100.5;
+              port = "9014";
+              protocol = "tcp";
+            };
+            # producer of input events
+            producer = true;
+            device = "wireless controller";
+          }
+        ];
+      '';
+      description = ''
+        Optional event proxy module. The event proxy provides a VM-to-VM streaming mechanism for input devices like joystick
+      '';
+    };
+
     tls = mkOption {
       type = tlsSubmodule;
       default = { };
@@ -209,6 +234,12 @@ in
         assertion = cfg.socketProxy == null || lists.allUnique (map (p: p.socket) cfg.socketProxy);
         message = "SocketProxy: Each socket proxy instance requires a unique socket.";
       }
+      {
+        assertion =
+          cfg.eventProxy == null
+          || lists.allUnique (map (p: (strings.toInt p.transport.port)) cfg.eventProxy);
+        message = "EventProxy: Each event proxy instance requires a unique port number.";
+      }
     ];
 
     systemd.targets.givc-setup = {
@@ -257,6 +288,7 @@ in
         "SERVICES" = "${concatStringsSep " " cfg.services}";
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
+        "EVENT_PROXY" = "${optionalString (cfg.eventProxy != null) (toJSON cfg.eventProxy)}";
       };
     };
     networking.firewall.allowedTCPPorts =
@@ -265,7 +297,10 @@ in
         proxyPorts = optionals (cfg.socketProxy != null) (
           map (p: (strings.toInt p.transport.port)) cfg.socketProxy
         );
+        eventPorts = optionals (cfg.eventProxy != null) (
+          map (p: (strings.toInt p.transport.port)) cfg.eventProxy
+        );
       in
-      [ agentPort ] ++ proxyPorts;
+      [ agentPort ] ++ proxyPorts ++ eventPorts;
   };
 }

@@ -169,7 +169,7 @@ func main() {
 		TlsConfig: tlsConfig,
 	}
 
-	// Create registeration entry
+	// Create registration entry
 	agentServiceName := "givc-" + agent.Name + ".service"
 
 	// Set agent configurations
@@ -283,6 +283,9 @@ func main() {
 			}(proxyConfig)
 		}
 	}
+
+	// Create event streaming services
+	SetupEventService(tlsConfig)
 
 	// Register this instance
 	go func() {
