@@ -8,7 +8,8 @@ pkgs.buildGo124Module {
   inherit pname;
   version = "0.0.5";
   inherit src;
-  vendorHash = "sha256-pjjugbHNJR2sARAMGciKQ7ta62OppVdqfJv+ZLqTCw8=";
+  vendorHash = "sha256-2Hahjzr8QHAL6q3WPxq8ubYq7aal0xY4eAo243ed8Z4=";
+  buildInputs = [ pkgs.systemd ]; # Provides libudev and headers
   subPackages = [
     "modules/cmd/${pname}"
     "modules/pkgs/applications"
