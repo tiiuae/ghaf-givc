@@ -147,5 +147,38 @@ in
     };
   };
 
+  eventSubmodule = types.submodule {
+    options = {
+      transport = mkOption {
+        type = transportSubmodule;
+        default = { };
+        example = literalExpression ''
+          transport =
+            {
+              name = "app-vm";
+              addr = "192.168.100.123";
+              protocol = "tcp";
+              port = "9013";
+            };'';
+        description = ''
+          Transport configuration of the input proxy module of type `transportSubmodule`.
+        '';
+      };
+      producer = mkOption {
+        description = ''
+          Whether the module runs as producer or consumer
+        '';
+        type = types.bool;
+      };
+      device = mkOption {
+        default = "";
+        description = ''
+          Provide the name of the device for which Input Events streaming needs to be supported.
+        '';
+        type = types.str;
+      };
+    };
+  };
+
   inherit transportSubmodule;
 }

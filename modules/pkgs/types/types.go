@@ -46,6 +46,15 @@ type ProxyConfig struct {
 	TlsConfig *tls.Config
 }
 
+// EventConfig represents the configuration for a proxy, including transport settings,
+// whether it is a server, the socket path, and TLS configuration.
+type EventConfig struct {
+	Transport TransportConfig
+	Producer  bool `json:"producer"`
+	Device    string
+	TlsConfig *tls.Config
+}
+
 // RegistryEntry represents an entry in the registry, including its name,
 // parent, type, transport configuration, state, and whether it should be watched.
 type RegistryEntry struct {
