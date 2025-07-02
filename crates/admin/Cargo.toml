@@ -19,7 +19,7 @@ serde_json = "1.0.120"
 serde = { version = "1.0.202", features = ["derive"] }
 strum = { version = "0.27", features = ["derive"] }
 tokio-stream = "0.1"
-tokio = { version = "1.45", features = [
+tokio = { version = "1.46", features = [
   "rt-multi-thread",
   "time",
   "macros",
