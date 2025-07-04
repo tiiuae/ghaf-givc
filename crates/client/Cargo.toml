@@ -19,4 +19,3 @@ tower = "0.5"
 tracing = "0.1"
 
 givc-common = { path = "../common" }
-regex = "1.11.1"
