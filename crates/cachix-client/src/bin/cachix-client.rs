@@ -41,7 +41,10 @@ enum Commands {
     },
 
     #[cfg(feature = "nixos")]
-    ListSystems,
+    ListSystems {
+        #[arg(long, default_value = "x86_64-linux")]
+        system: String,
+    },
 }
 
 #[tokio::main]
@@ -69,8 +72,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         #[cfg(feature = "nixos")]
-        Commands::ListSystems => {
-            let systems = cachix_client::nixos::filter_valid_systems(&client).await?;
+        Commands::ListSystems { system } => {
+            let systems = cachix_client::nixos::filter_valid_systems(&client, &system).await?;
             for (pin, spec) in systems {
                 println!(
                     "{} -> {} ({})",
