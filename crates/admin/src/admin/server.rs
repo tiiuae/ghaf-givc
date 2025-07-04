@@ -45,7 +45,7 @@ pub struct AdminServiceImpl {
     registry: Registry,
     state: State, // FIXME: use sysfsm statemachine
     tls_config: Option<TlsConfig>,
-    locale: Mutex<String>,
+    locale_assigns: Mutex<Vec<pb::locale::LocaleAssignment>>,
     timezone: Mutex<String>,
 }
 
@@ -89,12 +89,19 @@ impl AdminServiceImpl {
             .ok()
             .and_then(|l| l.lines().next().map(ToOwned::to_owned))
             .unwrap_or_default();
-        let locale = std::fs::read_to_string(LOCALE_CONF)
-            .ok()
-            .and_then(|l| {
-                l.lines()
-                    .find_map(|l| l.strip_prefix("LANG="))
-                    .map(ToOwned::to_owned)
+        let locale_assigns = std::fs::read_to_string(LOCALE_CONF)
+            .map(|content| {
+                content
+                    .lines()
+                    .filter_map(|line| {
+                        let (key, value) = line.split_once('=')?;
+                        let key_enum = pb::locale::LocaleMacroKey::from_str_name(key)?;
+                        Some(pb::locale::LocaleAssignment {
+                            key: key_enum as i32,
+                            value: value.to_string(),
+                        })
+                    })
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_default();
         Self {
@@ -102,7 +109,7 @@ impl AdminServiceImpl {
             state: State::Init,
             tls_config: use_tls,
             timezone: Mutex::new(timezone),
-            locale: Mutex::new(locale),
+            locale_assigns: Mutex::new(locale_assigns),
         }
     }
 
@@ -444,13 +451,15 @@ impl pb::admin_service_server::AdminService for AdminService {
 
         if let Some(name) = notify {
             if let Ok(endpoint) = self.inner.agent_endpoint(&name) {
-                let locale = self.inner.locale.lock().await.clone();
+                let locale_assigns = self.inner.locale_assigns.lock().await.clone();
                 let timezone = self.inner.timezone.lock().await.clone();
                 tokio::spawn(async move {
                     if let Ok(conn) = endpoint.connect().await {
                         let mut client =
                             pb::locale::locale_client_client::LocaleClientClient::new(conn);
-                        let localemsg = pb::locale::LocaleMessage { locale };
+                        let localemsg = pb::locale::LocaleMessage {
+                            assignments: locale_assigns,
+                        };
                         let _ = client.locale_set(localemsg).await;
 
                         let timezonemsg = pb::locale::TimezoneMessage { timezone };
@@ -645,18 +654,38 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<LocaleRequest>,
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         escalate(request, async move |req| {
-            if !Validator::validate_locale(&req.locale) {
-                bail!("Invalid locale");
+            if req.assignments.is_empty() {
+                bail!("No locale assignments provided");
             }
-            let _ = tokio::fs::write(LOCALE_CONF, format!("LANG={}", req.locale)).await;
+            for assignment in &req.assignments {
+                if assignment.value.is_empty() {
+                    bail!("Empty locale value for {}", assignment.key);
+                } else {
+                    if !Validator::validate_locale(&assignment.value) {
+                        bail!("Invalid locale value {}", assignment.value);
+                    }
+                }
+            }
+
+            let content = req
+                .assignments
+                .iter()
+                .map(|a| {
+                    pb::locale::LocaleMacroKey::try_from(a.key)
+                        .map(|key| format!("{}={}", key.as_str_name(), a.value))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .join("\n");
+            let _ = tokio::fs::write(LOCALE_CONF, content).await;
+
             let managers = self.inner.registry.find_map(|re| {
                 (re.r#type.service == ServiceType::Mgr)
                     .then_some(())
                     .and_then(|()| self.inner.endpoint(re).ok())
             });
-            let locale = req.locale.clone();
+            let assignments = req.assignments.clone();
             tokio::spawn(async move {
-                let localemsg = pb::locale::LocaleMessage { locale };
+                let localemsg = pb::locale::LocaleMessage { assignments };
                 for ec in managers {
                     if let Ok(conn) = ec.connect().await {
                         let mut client =
@@ -665,7 +694,7 @@ impl pb::admin_service_server::AdminService for AdminService {
                     }
                 }
             });
-            *self.inner.locale.lock().await = req.locale;
+            *self.inner.locale_assigns.lock().await = req.assignments;
 
             Ok(Empty {})
         })

@@ -4,6 +4,8 @@ use givc::types::UnitType;
 use givc::utils::vsock::parse_vsock_addr;
 use givc_client::client::AdminClient;
 use givc_common::address::EndpointAddress;
+use givc_common::pb;
+use lazy_regex::regex;
 use serde::ser::Serialize;
 use std::path::PathBuf;
 use std::time;
@@ -101,7 +103,7 @@ enum Commands {
     },
 
     SetLocale {
-        locale: String,
+        locales: Vec<String>,
     },
     SetTimezone {
         timezone: String,
@@ -125,6 +127,61 @@ enum Commands {
 
 fn unit_type_parse(s: &str) -> anyhow::Result<UnitType> {
     s.parse::<u32>()?.try_into()
+}
+
+fn parse_locales(locale_assigns: Vec<String>) -> anyhow::Result<Vec<pb::locale::LocaleAssignment>> {
+    let validator =
+        regex!(r"^(?:C|POSIX|[a-z]{2}(?:_[A-Z]{2})?(?:@[a-zA-Z0-9]+)?)(?:\.[-a-zA-Z0-9]+)?$");
+
+    let Some(first) = locale_assigns.first() else {
+        anyhow::bail!("No locale assignments provided");
+    };
+
+    if validator.is_match(first) {
+        return Ok(vec![pb::locale::LocaleAssignment {
+            key: pb::locale::LocaleMacroKey::Lang as i32,
+            // Item existence validated earlier, `.unwrap()` is safe
+            value: locale_assigns.into_iter().next().unwrap(),
+        }]);
+    }
+
+    let mut parsed_assigns = Vec::new();
+    let mut has_lang = false;
+
+    for assign in &locale_assigns {
+        let Some((key, value)) = assign.split_once('=') else {
+            anyhow::bail!("Invalid locale assignment format: '{assign}'");
+        };
+        let Some(key_enum) = pb::locale::LocaleMacroKey::from_str_name(key) else {
+            anyhow::bail!("Unknown locale key: '{key}'");
+        };
+
+        // Validate value for each key
+        if !validator.is_match(value) {
+            anyhow::bail!("Invalid locale value in '{assign}'");
+        }
+
+        if key_enum == pb::locale::LocaleMacroKey::LcAll {
+            // LC_ALL overrides all other locale settings, so we can ignore other keys
+            return Ok(vec![pb::locale::LocaleAssignment {
+                key: pb::locale::LocaleMacroKey::LcAll as i32,
+                value: value.to_string(),
+            }]);
+        }
+        if key_enum == pb::locale::LocaleMacroKey::Lang {
+            has_lang = true;
+        }
+        parsed_assigns.push(pb::locale::LocaleAssignment {
+            key: key_enum.into(),
+            value: value.to_string(),
+        });
+    }
+
+    if !has_lang {
+        anyhow::bail!("At least one of LANG or LC_ALL assignment is required");
+    }
+
+    Ok(parsed_assigns)
 }
 
 #[derive(Debug, Subcommand)]
@@ -239,8 +296,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             print!("{reply:?}");
         }
 
-        Commands::SetLocale { locale } => {
-            admin.set_locale(locale).await?;
+        Commands::SetLocale { locales } => {
+            admin.set_locales(parse_locales(locales)?).await?;
         }
 
         Commands::SetTimezone { timezone } => {

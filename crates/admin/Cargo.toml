@@ -48,3 +48,4 @@ x509-parser = "0.17"
 # GIVC subparts
 givc-common = { path = "../common" }
 givc-client = { path = "../client" }
+lazy-regex = "3.4.1"

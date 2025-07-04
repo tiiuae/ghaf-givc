@@ -3,8 +3,31 @@ syntax = "proto3";
 option go_package = "givc/modules/api/locale";
 package locale;
 
+// Locale macros as defined in [locale(7)](https://man7.org/linux/man-pages/man7/locale.7.html)
+enum LocaleMacroKey {
+    LANG = 0;
+    LC_ADDRESS = 1;
+    LC_COLLATE = 2;
+    LC_CTYPE = 3;
+    LC_IDENTIFICATION = 4;
+    LC_MONETARY = 5;
+    LC_MESSAGES = 6;
+    LC_MEASUREMENT = 7;
+    LC_NAME = 8;
+    LC_NUMERIC = 9;
+    LC_PAPER = 10;
+    LC_TELEPHONE = 11;
+    LC_TIME = 12;
+    LC_ALL = 13;
+}
+
+message LocaleAssignment {
+    LocaleMacroKey key = 1;   // e.g., LC_TIME, LC_NUMERIC
+    string value = 2;         // e.g., en_US.UTF-8
+}
+
 message LocaleMessage {
-    string Locale = 1;      // String with locale value. Format: [X/Open Portability Guide / GNU libc]( https://www.gnu.org/software/libc/manual/html_node/Locale-Names.html).
+    repeated LocaleAssignment assignments = 1; // List of locale assignments
 }
 
 message TimezoneMessage {
