@@ -51,7 +51,8 @@ impl CachixClient {
     /// # Errors
     /// Fails if cachix return an error
     pub async fn list_pins(&self) -> Result<PinList, CachixError> {
-        let res = self.get(&["pin"])
+        let res = self
+            .get(&["pin"])
             .send()
             .await?
             .error_for_status()?
@@ -81,7 +82,8 @@ impl CachixClient {
         nar_hash: &str,
         path: &str,
     ) -> Result<Vec<u8>, CachixError> {
-        let res = self.get(&["serve", nar_hash, path.trim_start_matches('/')])
+        let res = self
+            .get(&["serve", nar_hash, path.trim_start_matches('/')])
             .send()
             .await?
             .error_for_status()?

@@ -6,6 +6,7 @@ use bootspec;
 /// Returns a list of (Pin, BootSpec).
 pub async fn filter_valid_systems(
     client: &CachixClient,
+    system: &str,
 ) -> Result<Vec<(Pin, bootspec::v1::GenerationV1)>, CachixError> {
     let pins = client.list_pins().await?;
     let mut result = Vec::new();
@@ -28,7 +29,9 @@ pub async fn filter_valid_systems(
         };
 
         if let Ok(spec) = serde_json::from_slice::<bootspec::v1::GenerationV1>(&boot_json_bytes) {
-            if spec.bootspec.toplevel.0 == pin.last_revision.store_path {
+            if spec.bootspec.toplevel.0 == pin.last_revision.store_path
+                && spec.bootspec.system == system
+            {
                 result.push((pin, spec))
             }
         };
