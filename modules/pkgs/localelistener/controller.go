@@ -5,9 +5,11 @@ package localelistener
 import (
 	"context"
 	"fmt"
-	givc_util "givc/modules/pkgs/utility"
 	"os/exec"
 	"regexp"
+
+	givc_locale "givc/modules/api/locale"
+	givc_util "givc/modules/pkgs/utility"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -20,27 +22,38 @@ func NewController() (*LocaleController, error) {
 }
 
 // SetLocale sets the system locale.
-func (c *LocaleController) SetLocale(ctx context.Context, locale string) error {
-
+func (c *LocaleController) SetLocale(ctx context.Context, assignments []*givc_locale.LocaleAssignment) error {
 	// Input validation
 	if ctx == nil {
 		return fmt.Errorf("context cannot be nil")
 	}
-	re := regexp.MustCompile(`^(?:C|POSIX|[a-z]{2}(?:_[A-Z]{2})?(?:@[a-zA-Z0-9]+)?)(?:\.[-a-zA-Z0-9]+)?$`)
-	if !re.MatchString(locale) {
-		return fmt.Errorf("invalid locale")
+	if len(assignments) == 0 {
+		return fmt.Errorf("no locale assignments provided")
 	}
 
-	if err := exec.Command("localectl", "set-locale", locale).Run(); err != nil {
-		log.Warningf("Failed to set locale: %s", err)
+	localeArgs := []string{}
+	for _, a := range assignments {
+		localeArgs = append(localeArgs, fmt.Sprintf("%s=%s", a.Key.String(), a.Value))
 	}
+
+	localectlArgs := append([]string{"set-locale"}, localeArgs...)
+
+	if err := exec.Command("localectl", localectlArgs...).Run(); err != nil {
+		log.Errorf("Failed to set locale.\nCommand: localectl\nArgs: %#v\nError: %v", localectlArgs, err)
+		return err
+	}
+
 	if givc_util.IsRoot() {
-		if err := exec.Command("systemctl", "set-environment", "LANG="+locale).Run(); err != nil {
-			log.Warningf("Failed to set environment: %s", err)
+		systemctlArgs := append([]string{"set-environment"}, localeArgs...)
+
+		if err := exec.Command("systemctl", systemctlArgs...).Run(); err != nil {
+			log.Warningf("Failed to set environment. Command: systemctl\nArgs: %#v\nError: %v", systemctlArgs, err)
 		}
 	} else {
-		if err := exec.Command("systemctl", "--user", "set-environment", "LANG="+locale).Run(); err != nil {
-			log.Warningf("Failed to set environment: %s", err)
+		systemctlArgs := append([]string{"--user", "set-environment"}, localeArgs...)
+
+		if err := exec.Command("systemctl", systemctlArgs...).Run(); err != nil {
+			log.Warningf("Failed to set environment. Command: systemctl\nArgs: %#v\nError: %v", systemctlArgs, err)
 		}
 	}
 

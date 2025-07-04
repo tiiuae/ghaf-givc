@@ -2,6 +2,7 @@
 syntax = "proto3";
 option go_package = "givc/modules/api/admin";
 import "stats/stats.proto";
+import "locale/locale.proto";
 import "systemd/systemd.proto";
 
 package admin;
@@ -87,7 +88,7 @@ message WatchItem {
 }
 
 message LocaleRequest {
-    string Locale = 1;              // String with locale value. Format: [X/Open Portability Guide / GNU libc]( https://www.gnu.org/software/libc/manual/html_node/Locale-Names.html).
+    repeated locale.LocaleAssignment assignments = 1; // List of locale assignments
 }
 
 message TimezoneRequest {

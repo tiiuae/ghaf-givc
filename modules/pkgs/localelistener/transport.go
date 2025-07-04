@@ -47,7 +47,7 @@ func NewLocaleServer() (*LocaleServer, error) {
 func (s *LocaleServer) LocaleSet(ctx context.Context, req *givc_locale.LocaleMessage) (*givc_locale.Empty, error) {
 	log.Infof("Incoming notification of changes locale\n")
 
-	err := s.Controller.SetLocale(context.Background(), req.Locale)
+	err := s.Controller.SetLocale(context.Background(), req.Assignments)
 	if err != nil {
 		log.Infof("[SetLocale] Error setting locale: %v\n", err)
 		return nil, fmt.Errorf("cannot set locale")

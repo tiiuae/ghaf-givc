@@ -309,9 +309,27 @@ impl AdminClient {
     /// # Errors
     /// Fails if error happens during RPC
     pub async fn set_locale(&self, locale: String) -> anyhow::Result<()> {
+        self.set_locales(vec![pb::locale::LocaleAssignment {
+            key: pb::locale::LocaleMacroKey::Lang as i32,
+            value: locale,
+        }])
+        .await
+    }
+
+    /// Set locales via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
+    pub async fn set_locales(
+        &self,
+        locales: impl IntoIterator<Item = pb::locale::LocaleAssignment>,
+    ) -> anyhow::Result<()> {
+        let request = pb::admin::LocaleRequest {
+            assignments: locales.into_iter().collect(),
+        };
+
         self.connect_to()
             .await?
-            .set_locale(pb::admin::LocaleRequest { locale })
+            .set_locale(request)
             .await
             .rewrap_err()?;
         Ok(())
