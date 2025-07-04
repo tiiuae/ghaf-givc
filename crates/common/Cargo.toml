@@ -8,18 +8,12 @@ version = "0.0.1"
 
 [dependencies]
 anyhow = "1.0.98"
-async-stream = "0.3"
 glib = { version = "*", optional = true, features = [] }
 prost = "0.13"
-serde = { version = "1.0.202", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 strum = { version = "0.27", features = ["derive"] }
-tokio-stream = "0.1"
-tokio = { version = "1.46", features = ["rt-multi-thread", "time", "macros"] }
 tokio-vsock = "*"
-tonic-types = "0.13"
 tonic = { version = "0.13", features = ["tls-ring"] }
-tracing = "0.1"
-tracing-subscriber = "0.3"
 
 [build-dependencies]
 tonic-build = { version = "0.13", features = ["prost"] }

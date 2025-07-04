@@ -8,16 +8,11 @@ version = "0.0.1"
 
 [dependencies]
 anyhow = "1.0.98"
-async-channel = "2.3.1"
 async-stream = "0.3"
-axum = "*"
 clap = { version = "4.5.40", features = ["derive", "env"] }
-console = "0.15"
-prost = "0.13"
 regex = "1.11"
 serde_json = "1.0.120"
 serde = { version = "1.0.202", features = ["derive"] }
-strum = { version = "0.27", features = ["derive"] }
 tokio-stream = "0.1"
 tokio = { version = "1.46", features = [
   "rt-multi-thread",
@@ -34,15 +29,9 @@ tokio-vsock = "0.7"
 tonic-reflection = "0.13"
 tonic-types = "0.13"
 tonic = { version = "0.13", features = ["tls-ring"] }
-tower = "0.5"
 tracing = "0.1"
 tracing-journald = "0.3"
-tracing-subscriber = { version = "0.3", features = [
-  "env-filter",
-  "tracing-log",
-  "time",
-  "local-time",
-] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 x509-parser = "0.17"
 
 # GIVC subparts
