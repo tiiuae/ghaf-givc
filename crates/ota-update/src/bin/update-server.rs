@@ -143,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
             path,
             profile,
             closure,
-        } => profile::set(&path, &profile, &closure)?,
+        } => profile::set(&path, &profile, &closure).await?,
     }
     Ok(())
 }

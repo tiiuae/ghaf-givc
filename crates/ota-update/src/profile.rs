@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::path::Path;
-use std::process::Command;
+use tokio::process::Command;
 
 use anyhow::Context;
 
@@ -10,7 +10,7 @@ use anyhow::Context;
 /// # Errors
 /// Fails if subsequent exec of `nix-env` fails
 // FIXME: eventually rewrite this code to pure rust, without calling external tool
-pub fn set(path: &Path, profile: &OsStr, closure: &Path) -> anyhow::Result<()> {
+pub async fn set(path: &Path, profile: &OsStr, closure: &Path) -> anyhow::Result<()> {
     let full_path = path.join(profile);
     let nix_env = Command::new("nix-env")
         .arg("-p")
@@ -18,6 +18,7 @@ pub fn set(path: &Path, profile: &OsStr, closure: &Path) -> anyhow::Result<()> {
         .arg("--set")
         .arg(closure)
         .status()
+        .await
         .context("Fail to execute nix-env")?;
     if !nix_env.success() {
         anyhow::bail!("nix-env failed")

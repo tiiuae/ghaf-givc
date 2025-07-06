@@ -1,12 +1,12 @@
 use std::ffi::OsStr;
 use std::fs;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+use tokio::process::Command;
 
 use anyhow::Context;
 use clap::{ArgAction, Parser, Subcommand};
-use ota_update::cli::{QueryUpdates, query_updates};
+use ota_update::cli::{query_updates, QueryUpdates};
 use ota_update::profile;
 use regex::Regex;
 use serde_json::Value;
@@ -43,19 +43,18 @@ enum Commands {
     Query(QueryUpdates),
 }
 
-fn get_generations() -> anyhow::Result<()> {
-    let mut nixos_rebuild = Command::new("nixos-rebuild")
+async fn get_generations() -> anyhow::Result<()> {
+    let nixos_rebuild = Command::new("nixos-rebuild")
         .arg("list-generations")
         .arg("--json")
         .stdout(Stdio::piped())
         .spawn()?;
     // Ensure we can read from stdout
-    let stdout = nixos_rebuild
-        .stdout
-        .take()
+    let child = nixos_rebuild
+        .wait_with_output()
+        .await
         .expect("Failed to capture stdout");
-    let reader = BufReader::new(stdout);
-    let mut gens: Vec<Value> = serde_json::from_reader(reader)?;
+    let mut gens: Vec<Value> = serde_json::from_slice(&child.stdout)?;
     for map in gens.iter_mut().filter_map(Value::as_object_mut) {
         if let Some(generation) = map.get("generation").and_then(Value::as_i64) {
             let path = format!("/nix/var/nix/profiles/system-{generation}-link");
@@ -80,7 +79,7 @@ fn is_valid_nix_path(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyhow::Result<()> {
+async fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyhow::Result<()> {
     is_valid_nix_path(path)?;
 
     let mut nix = Command::new("nix");
@@ -93,7 +92,7 @@ fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyhow::Re
     if no_check_signs {
         nix.arg("--no-check-sigs");
     }
-    let nix = nix.status().context("Failed to execute nix copy")?;
+    let nix = nix.status().await.context("Failed to execute nix copy")?;
     if !nix.success() {
         anyhow::bail!("nix copy failed");
     }
@@ -102,31 +101,30 @@ fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyhow::Re
         Path::new("/nix/var/nix/profiles/"),
         OsStr::new("system"),
         path,
-    )?;
+    ).await?;
 
     let boot_path = path.join("bin/switch-to-configuration");
     Command::new(&boot_path)
         .arg("boot")
         .status()
+        .await
         .with_context(|| format!("Fail to execute {}", boot_path.display()))?;
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Get => get_generations()?,
+        Commands::Get => get_generations().await?,
         Commands::Set {
             path,
             source,
             no_check_signs,
-        } => set_generation(&path, &source, no_check_signs)?,
+        } => set_generation(&path, &source, no_check_signs).await?,
         Commands::Query(query) => {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
-            rt.block_on(query_updates(query))?;
+            query_updates(query).await?;
         }
     }
     Ok(())
