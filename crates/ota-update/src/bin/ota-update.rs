@@ -5,8 +5,9 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 use anyhow::Context;
+use cachix_client::{CachixClient, nixos::filter_valid_systems};
 use clap::{ArgAction, Parser, Subcommand};
-use ota_update::cli::{query_updates, QueryUpdates};
+use ota_update::cli::{QueryUpdates, query_updates};
 use ota_update::profile;
 use regex::Regex;
 use serde_json::Value;
@@ -41,6 +42,16 @@ enum Commands {
 
     /// Query updates list
     Query(QueryUpdates),
+
+    Cachix {
+        pin_name: String,
+
+        #[arg(long, env = "CACHIX_TOKEN")]
+        token: Option<String>,
+
+        #[arg(long, default_value = "ghaf-untrusted")]
+        cache: String,
+    },
 }
 
 async fn get_generations() -> anyhow::Result<()> {
@@ -112,6 +123,35 @@ async fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyh
     Ok(())
 }
 
+async fn read_system_boot_json() -> anyhow::Result<String> {
+    let contents = tokio::fs::read_to_string("/run/current-system/boot.json").await?;
+    let boot_json = serde_json::from_str::<bootspec::v1::GenerationV1>(&contents)?;
+    Ok(boot_json.bootspec.system)
+}
+
+async fn perform_cachix_update(
+    pin_name: &str,
+    token: Option<String>,
+    cache: String,
+) -> anyhow::Result<()> {
+    let url = format!("https://{cache}.cachix.org");
+    let system = read_system_boot_json().await?;
+    let client = CachixClient::new(cache, token);
+    let candidate = filter_valid_systems(&client, &system)
+        .await?
+        .into_iter()
+        .find_map(|(pin, _)| {
+            if pin.name == pin_name {
+                Some(pin.last_revision.store_path)
+            } else {
+                None
+            }
+        })
+        .context("no valid systems")?;
+    set_generation(&candidate, &url, true).await?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -126,6 +166,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Query(query) => {
             query_updates(query).await?;
         }
+        Commands::Cachix {
+            pin_name,
+            token,
+            cache,
+        } => perform_cachix_update(&pin_name, token, cache).await?,
     }
     Ok(())
 }
