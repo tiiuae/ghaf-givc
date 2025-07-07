@@ -10,6 +10,7 @@ version = "0.0.1"
 anyhow = "1.0.86"
 axum = "*"
 clap = { version = "4.5.41", features = ["derive", "env"] }
+bootspec = "*"
 regex = "*"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
@@ -26,4 +27,11 @@ tokio = { version = "1.46", features = [
   "process",
 ] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = [
+  "env-filter",
+  "tracing-log",
+  "time",
+  "local-time",
+] }
+
+cachix-client = { path = "../cachix-client", features = ["nixos"] }
