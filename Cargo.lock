@@ -1365,6 +1365,8 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "axum",
+ "bootspec",
+ "cachix-client",
  "clap",
  "regex",
  "reqwest",
