@@ -4,6 +4,7 @@ use crate::pb;
 use anyhow::anyhow;
 use std::convert::TryFrom;
 
+use crate::utils::naming::parse_vm_name;
 use givc_common::query::{QueryResult, TrustLevel, VMStatus};
 use givc_common::types::{EndpointEntry, ServiceType, UnitStatus, UnitType, VmType};
 
@@ -41,10 +42,7 @@ impl RegistryEntry {
     #[must_use]
     pub(crate) fn vm_name(&self) -> Option<&str> {
         match (self.r#type.service, &self.placement) {
-            (ServiceType::VM, _) => self
-                .name
-                .strip_prefix("microvm@")
-                .and_then(|name| name.strip_suffix(".service")),
+            (ServiceType::VM, _) => parse_vm_name(&self.name),
             (_, Placement::Endpoint { vm, .. } | Placement::Managed { vm, .. }) => Some(vm),
             (_, Placement::Host) => None,
         }

@@ -10,6 +10,11 @@ pub fn format_vm_name(name: &str, vm: Option<&str>) -> String {
 }
 
 #[must_use]
+pub fn parse_vm_name(name: &str) -> Option<&str> {
+    name.strip_prefix("microvm@")?.strip_suffix(".service")
+}
+
+#[must_use]
 pub fn format_service_name(name: &str, vm: Option<&str>) -> String {
     if let Some(vm_name) = vm {
         format!("givc-{vm_name}.service")
