@@ -45,7 +45,7 @@ impl RegistryEntry {
                 .name
                 .strip_prefix("microvm@")
                 .and_then(|name| name.strip_suffix(".service")),
-            (_, Placement::Endpoint { ref vm, .. } | Placement::Managed { ref vm, .. }) => Some(vm),
+            (_, Placement::Endpoint { vm, .. } | Placement::Managed { vm, .. }) => Some(vm),
             (_, Placement::Host) => None,
         }
     }

@@ -1,6 +1,6 @@
 [package]
 authors = ["Alexander Nikolaev <alexander.nikolaev@unikie.com>"]
-edition = "2021"
+edition = "2024"
 license = "Apache 2.0"
 name = "givc-client"
 publish = false
