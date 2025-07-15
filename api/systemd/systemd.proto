@@ -7,9 +7,9 @@ package systemd;
 message UnitStatus {
     string Name = 1;                // Full systemd unit name
     string Description = 2;         // A short human readable title of the unit
-    string LoadState = 3;           // LoadState contains a state value that reflects whether the configuration file of this unit has been loaded
-    string ActiveState = 4;         // ActiveState contains a state value that reflects whether the unit is currently active or not
-    string SubState = 5;            // SubState encodes more fine-grained states that are unit-type-specific
+    string LoadState = 3;           // `LoadState` contains a state value that reflects whether the configuration file of this unit has been loaded
+    string ActiveState = 4;         // `ActiveState` contains a state value that reflects whether the unit is currently active or not
+    string SubState = 5;            // `SubState` encodes more fine-grained states that are unit-type-specific
     string Path = 6;                // Bus object path of the unit
     string FreezerState = 7;        // Freezer sub-state, indicates whether unit is frozen
 }

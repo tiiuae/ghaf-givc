@@ -22,8 +22,8 @@ enum LocaleMacroKey {
 }
 
 message LocaleAssignment {
-    LocaleMacroKey key = 1;   // e.g., LC_TIME, LC_NUMERIC
-    string value = 2;         // e.g., en_US.UTF-8
+    LocaleMacroKey key = 1;   // e.g., `LC_TIME`, `LC_NUMERIC`
+    string value = 2;         // e.g., `en_US.UTF-8`
 }
 
 message LocaleMessage {

@@ -18,7 +18,7 @@ message RegistryRequest {
     string Name = 1;                // Component name for registry entry
     string Parent = 2;              // Parent component identifier (registry name)
     uint32 Type = 3;                // Component type
-    TransportConfig Transport = 4;  // TransportConfig
+    TransportConfig Transport = 4;  // `TransportConfig`
     systemd.UnitStatus State = 5;   // Unit status of the component (systemd)
 }
 
