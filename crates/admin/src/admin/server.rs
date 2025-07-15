@@ -678,7 +678,7 @@ impl pb::admin_service_server::AdminService for AdminService {
                 .join("\n");
             let _ = tokio::fs::write(LOCALE_CONF, content).await;
 
-            let managers = self.inner.registry.find_map(|re| {
+            let managers = self.inner.registry.filter_map(|re| {
                 (re.r#type.service == ServiceType::Mgr)
                     .then_some(())
                     .and_then(|()| self.inner.endpoint(re).ok())
@@ -710,7 +710,7 @@ impl pb::admin_service_server::AdminService for AdminService {
                 bail!("Invalid timezone");
             }
             let _ = tokio::fs::write(TIMEZONE_CONF, &req.timezone).await;
-            let managers = self.inner.registry.find_map(|re| {
+            let managers = self.inner.registry.filter_map(|re| {
                 (re.r#type.service == ServiceType::Mgr)
                     .then_some(())
                     .and_then(|()| self.inner.endpoint(re).ok())
@@ -747,8 +747,6 @@ impl pb::admin_service_server::AdminService for AdminService {
                     (re.r#type.service == ServiceType::Mgr && re.name == vm_name)
                         .then(|| self.inner.endpoint(re))
                 })
-                .into_iter()
-                .next()
                 .with_context(|| format!("VM {vm_name} not found"))??;
             Ok(vm
                 .connect()

@@ -100,7 +100,15 @@ impl Registry {
         Ok(list)
     }
 
-    pub(crate) fn find_map<T, F: FnMut(&RegistryEntry) -> Option<T>>(&self, filter: F) -> Vec<T> {
+    pub(crate) fn find_map<T, F: FnMut(&RegistryEntry) -> Option<T>>(
+        &self,
+        filter: F,
+    ) -> Option<T> {
+        let state = self.map.lock().unwrap();
+        state.values().find_map(filter)
+    }
+
+    pub(crate) fn filter_map<T, F: FnMut(&RegistryEntry) -> Option<T>>(&self, filter: F) -> Vec<T> {
         let state = self.map.lock().unwrap();
         state.values().filter_map(filter).collect()
     }
