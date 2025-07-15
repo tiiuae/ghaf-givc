@@ -1,12 +1,13 @@
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
 
-use super::entry::RegistryEntry;
-use crate::types::{UnitStatus, UnitType};
-use anyhow::{anyhow, bail};
+use anyhow::{Context, anyhow, bail};
 use givc_common::query::{Event, QueryResult};
 use tokio::sync::broadcast;
 use tracing::{debug, error, info};
+
+use super::entry::RegistryEntry;
+use crate::types::{UnitStatus, UnitType};
 
 #[derive(Clone, Debug)]
 pub struct Registry {
@@ -83,7 +84,7 @@ impl Registry {
         state
             .get(name)
             .cloned()
-            .ok_or_else(|| anyhow!("Service {name} not registered"))
+            .with_context(|| format!("Service {name} not registered"))
     }
 
     pub(crate) fn find_names(&self, name: &str) -> anyhow::Result<Vec<String>> {
@@ -149,7 +150,7 @@ impl Registry {
                 e.status = status;
                 self.send_event(Event::UnitStatusChanged(e.clone().into()));
             })
-            .ok_or_else(|| anyhow!("Can't update state for {name}, is not registered"))
+            .with_context(|| format!("Can't update state for {name}, is not registered"))
     }
 
     // FIXME: Should we dump full contents here for `query`/`query_list` high-level API

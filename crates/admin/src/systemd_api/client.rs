@@ -1,4 +1,5 @@
 use crate::pb;
+use anyhow::Context;
 use givc_client::endpoint::EndpointConfig;
 use givc_client::error::StatusWrapExt;
 use pb::systemd::UnitResponse;
@@ -29,7 +30,7 @@ impl SystemDClient {
         let status = response
             .into_inner()
             .unit_status
-            .ok_or_else(|| anyhow::anyhow!("missing unit_status field"))?;
+            .context("missing unit_status field")?;
         let us = crate::types::UnitStatus {
             name: status.name,
             description: status.description,

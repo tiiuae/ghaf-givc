@@ -73,10 +73,7 @@ impl IntoResponse for Error {
     }
 }
 
-async fn get_update_list(
-    path: &Path,
-    default_name: &str,
-) -> Result<Vec<UpdateInfo>, anyhow::Error> {
+async fn get_update_list(path: &Path, default_name: &str) -> anyhow::Result<Vec<UpdateInfo>> {
     let default_link_path = path.join(default_name);
     let default_target = fs::read_link(&default_link_path).await.ok();
 

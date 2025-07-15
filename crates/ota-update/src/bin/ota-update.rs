@@ -66,7 +66,7 @@ fn get_generations() -> anyhow::Result<()> {
 fn is_valid_nix_path(path: &Path) -> anyhow::Result<()> {
     let path = path
         .to_str()
-        .ok_or_else(|| anyhow::anyhow!("unable to convert `{}` to UTF-8", path.display()))?;
+        .with_context(|| format!("unable to convert `{}` to UTF-8", path.display()))?;
     // nix hashes don't contain [eotu]
     let pattern = r"^/nix/store/[a-df-np-sv-z0-9]{32}-nixos-system-[^/]+$";
     let re = Regex::new(pattern).expect("Invalid regex");

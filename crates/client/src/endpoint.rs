@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, anyhow};
+use anyhow::Context;
 use hyper_util::rt::TokioIo;
 use tokio::net::UnixStream;
 use tokio_vsock::{VsockAddr, VsockStream};
@@ -41,10 +41,7 @@ impl TlsConfig {
         let client_cert = std::fs::read(&self.cert_file_path)?;
         let client_key = std::fs::read(&self.key_file_path)?;
         let client_identity = Identity::from_pem(client_cert, client_key);
-        let tls_name = self
-            .tls_name
-            .as_deref()
-            .ok_or_else(|| anyhow!("Missing TLS name"))?;
+        let tls_name = self.tls_name.as_deref().context("Missing TLS name")?;
         info!("Using TLS name: {tls_name}");
         Ok(ClientTlsConfig::new()
             .ca_certificate(ca)

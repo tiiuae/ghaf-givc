@@ -1,7 +1,7 @@
 // This module contain literal translations of types from internal/pkgs/types/types.go
 // Some of them would be rewritten, replaced, or even removed
 use crate::pb;
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use std::convert::TryFrom;
 
 use crate::utils::naming::parse_vm_name;
@@ -101,11 +101,11 @@ impl TryFrom<pb::RegistryRequest> for RegistryEntry {
         let ty = UnitType::try_from(req.r#type)?;
         let status = req
             .state
-            .ok_or(anyhow!("status missing"))
+            .context("status missing")
             .and_then(UnitStatus::try_from)?;
         let endpoint = req
             .transport
-            .ok_or(anyhow!("endpoint missing"))
+            .context("endpoint missing")
             .and_then(EndpointEntry::try_from)?;
         let watch = (ty.service == ServiceType::Mgr) || (ty.vm == VmType::AppVM);
         // FIXME: We currently ignore `req.parent`, what we should do if we got both parent and endpoint

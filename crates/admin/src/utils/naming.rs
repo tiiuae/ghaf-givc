@@ -1,4 +1,4 @@
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, bail};
 
 #[must_use]
 pub fn format_vm_name(name: &str, vm: Option<&str>) -> String {
@@ -28,7 +28,7 @@ pub fn format_service_name(name: &str, vm: Option<&str>) -> String {
 pub fn parse_service_name(name: &str) -> anyhow::Result<&str> {
     name.strip_suffix("-vm.service")
         .and_then(|name| name.strip_prefix("givc-"))
-        .ok_or_else(|| anyhow!("Doesn't know how to parse VM name: {name}"))
+        .with_context(|| format!("Doesn't know how to parse VM name: {name}"))
 }
 
 /// From `agent` code, ported for future

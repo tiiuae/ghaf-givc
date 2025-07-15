@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::Parser;
 use givc::admin;
 use givc::endpoint::TlsConfig;
@@ -38,7 +39,7 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     givc::trace_init()?;
 
     let cli = Cli::parse();
@@ -48,9 +49,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let tls = if cli.use_tls {
         let tls = TlsConfig {
-            ca_cert_file_path: cli.ca_cert.ok_or(String::from("required"))?,
-            cert_file_path: cli.host_cert.ok_or(String::from("required"))?,
-            key_file_path: cli.host_key.ok_or(String::from("required"))?,
+            ca_cert_file_path: cli.ca_cert.context("required")?,
+            cert_file_path: cli.host_cert.context("required")?,
+            key_file_path: cli.host_key.context("required")?,
             tls_name: None,
         };
         let tls_config = tls.server_config()?;
