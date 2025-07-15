@@ -423,17 +423,14 @@ impl pb::admin_service_server::AdminService for AdminService {
         info!("Registering service {:?}", req);
         let entry = RegistryEntry::try_from(req)
             .map_err(|e| Status::new(Code::InvalidArgument, format!("{e}")))?;
-        let mut notify = None;
-
-        if matches!(
+        let notify = matches!(
             entry.r#type,
             UnitType {
                 service: ServiceType::Mgr,
                 ..
             }
-        ) {
-            notify = Some(entry.name.clone());
-        }
+        )
+        .then(|| entry.name.clone());
 
         let mut need_update = None;
         if !entry.status.is_valid() {
@@ -657,13 +654,12 @@ impl pb::admin_service_server::AdminService for AdminService {
             if req.assignments.is_empty() {
                 bail!("No locale assignments provided");
             }
-            for assignment in &req.assignments {
-                if assignment.value.is_empty() {
-                    bail!("Empty locale value for {}", assignment.key);
-                } else {
-                    if !Validator::validate_locale(&assignment.value) {
-                        bail!("Invalid locale value {}", assignment.value);
-                    }
+            for pb::locale::LocaleAssignment { value, key } in &req.assignments {
+                if value.is_empty() {
+                    bail!("Empty locale value for {key}");
+                }
+                if !Validator::validate_locale(value) {
+                    bail!("Invalid locale value {value}");
                 }
             }
 
