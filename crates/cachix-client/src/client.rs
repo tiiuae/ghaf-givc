@@ -1,4 +1,4 @@
-use crate::{CachixError, PinList};
+use crate::{CacheInfo, CachixError, PinList};
 use reqwest::{Client, StatusCode};
 use std::sync::Arc;
 
@@ -45,6 +45,20 @@ impl CachixClient {
     fn delete(&self, path: &[&str]) -> reqwest::RequestBuilder {
         let url = self.api_url(path);
         self.auth(self.client.delete(url))
+    }
+
+    /// Info about cache
+    /// # Errors
+    /// Fails if cachix return an error
+    pub async fn cache_info(&self) -> Result<CacheInfo, CachixError> {
+        let res = self
+            .get(&[])
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(res)
     }
 
     /// Enumerate existing pins in cache

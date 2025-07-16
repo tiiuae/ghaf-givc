@@ -19,3 +19,14 @@ pub struct Pin {
 }
 
 pub type PinList = Vec<Pin>;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheInfo {
+    pub name: String,
+    pub uri: String,
+    pub public_signing_keys: Vec<String>,
+    pub permission: String,
+    pub preferred_compression_method: String,
+    pub github_username: String,
+}

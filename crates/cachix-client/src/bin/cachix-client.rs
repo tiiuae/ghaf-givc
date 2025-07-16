@@ -22,6 +22,9 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Commands {
+    /// Info about the cache
+    Info,
+
     /// List all pins in the cache
     ListPins,
 
@@ -54,6 +57,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = CachixClient::new(cli.cache, cli.token);
 
     match cli.command {
+        Commands::Info => {
+            let info = client.cache_info().await?;
+            println!("{info:?}")
+        }
         Commands::ListPins => {
             let pins = client.list_pins().await?;
             for pin in pins {
