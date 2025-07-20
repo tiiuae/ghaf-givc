@@ -45,6 +45,11 @@ in
       default = [ ];
       description = "List of allowed profile names to serve.";
     };
+
+    publicKey = mkOption {
+      type = types.str;
+      description = "Public key matching configured nix-serve";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -62,6 +67,7 @@ in
             ${ota-update-server}/bin/ota-update-server serve \
               --port ${toString cfg.port} \
               --path ${cfg.path} \
+              --pub-key ${cfg.publicKey} \
               --allowed-profiles ${concatStringsSep "," cfg.allowedProfiles}
           '';
           Restart = "on-failure";

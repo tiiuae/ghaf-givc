@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::ffi::OsString;
 use std::path::PathBuf;
 
 // Fields here should match with output of `nixos-rebuild list-generation --json`
@@ -7,7 +6,8 @@ use std::path::PathBuf;
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
-    pub name: OsString,
+    pub name: String,
     pub store_path: PathBuf,
     pub current: bool,
+    pub pub_key: String,
 }

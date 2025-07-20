@@ -112,7 +112,8 @@ async fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyh
         Path::new("/nix/var/nix/profiles/"),
         OsStr::new("system"),
         path,
-    ).await?;
+    )
+    .await?;
 
     let boot_path = path.join("bin/switch-to-configuration");
     Command::new(&boot_path)
