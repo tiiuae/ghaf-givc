@@ -19,7 +19,7 @@ let
   cfg = config.services.ota-update-server;
 in
 {
-  options = {   
+  options.services.ota-update-server = {
     enable = mkEnableOption "Nix profile update listing service";
 
     package = mkOption {
@@ -71,9 +71,13 @@ in
           PrivateTmp = true;
           NoNewPrivileges = true;
         };
+        environment = {
+          RUST_LOG = "debug";
+        };
+
       };
-    };
     environment.systemPackages = [
       cfg.package
     ];
+  };
 }
