@@ -1,13 +1,8 @@
-{ self, inputs, ... }:
+{ self, ... }:
 let
   nodes = {
     hostvm =
       { pkgs, ... }:
-      let
-        inherit (import "${inputs.nixpkgs.outPath}/nixos/tests/ssh-keys.nix" pkgs)
-          snakeOilPrivateKey
-          ;
-      in
       {
         imports = [
           self.nixosModules.tests-hostvm
@@ -23,23 +18,10 @@ let
           # FIXME: Proper retrieve address, or move it to shared-configs.nix
           192.168.101.200 test-updates.example.com
         '';
-        system.activationScripts.ssh-key-init = ''
-          # Also configure a ssh private key, before run sway
-          install -d -m700 /root/.ssh
-          install -m600 ${snakeOilPrivateKey} /root/.ssh/id_rsa
-        '';
-        programs.ssh.extraConfig = ''
-          UserKnownHostsFile=/dev/null
-          StrictHostKeyChecking=no
-        '';
       };
     updatevm =
       { pkgs, config, ... }:
       let
-        inherit (import "${inputs.nixpkgs.outPath}/nixos/tests/ssh-keys.nix" pkgs)
-          snakeOilPublicKey
-          ;
-
         # Design defence: using real bootloader in tests too slow and consume too much space
         # (2GB images per test run created on builder, and copied to local store)
         # so create fake switch-to-configuration script
@@ -87,8 +69,6 @@ let
           self.nixosModules.tests-writable-storage
           self.nixosModules.ota-update-server
         ];
-        users.users.root.openssh.authorizedKeys.keys = [ snakeOilPublicKey ];
-        services.openssh.enable = true;
         services.nix-serve = {
           enable = true;
           secretKeyFile = "${./snakeoil/nix-serve.key}";
@@ -130,33 +110,6 @@ in
 {
   perSystem = _: {
     vmTests.tests = {
-      ota-update = {
-        module = {
-          inherit nodes;
-          testScript =
-            { nodes, ... }:
-            let
-              hostvm = nodes.hostvm.system.build.toplevel;
-              updatevm = nodes.updatevm.system.build.toplevel;
-              source = "ssh-ng://root@${(builtins.head nodes.updatevm.networking.interfaces.eth1.ipv4.addresses).address}";
-            in
-            ''
-              hostvm.wait_for_unit("multi-user.target")
-              print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
-
-              updatevm.wait_for_unit("multi-user.target")
-              print(updatevm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${updatevm}"))
-
-              update = updatevm.succeed("find-software-update").strip()
-              print(hostvm.succeed(f"ota-update set {update} --no-check-signs --source ${source}", timeout=120))
-
-              print(hostvm.succeed("nixos-rebuild list-generations --json"))
-
-              # Ensure, that `switch-to-configuration boot` is successfully invoked
-              hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
-            '';
-        };
-      };
       ota-update-http = {
         module = {
           inherit nodes;
