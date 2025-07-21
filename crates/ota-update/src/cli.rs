@@ -1,4 +1,4 @@
-use crate::query::query_avaliable_updates;
+use crate::query::query_available_updates;
 use crate::types::UpdateInfo;
 use clap::Parser;
 use serde_json;
@@ -13,12 +13,15 @@ pub struct QueryUpdates {
 
     #[arg(long)]
     current: bool,
+
+    #[arg(long, default_value = "ghaf-updates")]
+    pin_name: String,
 }
 
 /// # Errors
 /// Fails if fetch/parse raise failure
 pub async fn query_updates(query: QueryUpdates) -> anyhow::Result<()> {
-    let updates = query_avaliable_updates(&query.source).await?;
+    let updates = query_available_updates(&query.source, &query.pin_name).await?;
     let iter = updates
         .into_iter()
         .filter(|each| query.current || each.current);
