@@ -76,6 +76,7 @@ let
         services.ota-update-server = {
           enable = true;
           allowedProfiles = [ "ghaf-updates" ];
+          publicKey = "test-updates.example.com:/muLakHVUJWxVRPIacpLJatGimj6S3OocBkwOan1VVc=%";
         };
         services.nginx = {
           enable = true;
