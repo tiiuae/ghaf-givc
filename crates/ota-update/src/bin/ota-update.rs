@@ -9,6 +9,7 @@ use cachix_client::{CachixClient, nixos::filter_valid_systems};
 use clap::{ArgAction, Parser, Subcommand};
 use ota_update::cli::{QueryUpdates, query_updates};
 use ota_update::profile;
+use ota_update::query::query_available_updates;
 use regex::Regex;
 use serde_json::Value;
 
@@ -29,8 +30,8 @@ enum Commands {
     Get,
 
     /// Set the configuration value
-    Set {
-        path: PathBuf,
+    Local {
+        path: Option<PathBuf>,
 
         /// Source of configuration value
         #[arg(long, default_value = "https://prod-cache.vedenemo.dev")]
@@ -38,6 +39,9 @@ enum Commands {
 
         #[arg(long, action = ArgAction::SetTrue, required = false, default_value_t = false)]
         no_check_signs: bool,
+
+        #[arg(long, default_value = "ghaf-updates")]
+        pin_name: String,
     },
 
     /// Query updates list
@@ -153,17 +157,37 @@ async fn perform_cachix_update(
     Ok(())
 }
 
+async fn perform_local_update(
+    maybe_path: Option<PathBuf>,
+    source: String,
+    pin_name: String,
+    no_check_signs: bool,
+) -> anyhow::Result<()> {
+    let updates = query_available_updates(&source, &pin_name).await?;
+    let candidate = updates
+        .into_iter()
+        .find_map(|update| match &maybe_path {
+            Some(path) if path == &update.store_path => Some(update),
+            None if update.current => Some(update),
+            _ => None,
+        })
+        .context("No valid candidate found")?;
+    set_generation(&candidate.store_path, &source, no_check_signs).await?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Get => get_generations().await?,
-        Commands::Set {
+        Commands::Local {
             path,
             source,
             no_check_signs,
-        } => set_generation(&path, &source, no_check_signs).await?,
+            pin_name,
+        } => perform_local_update(path, source, pin_name, no_check_signs).await?,
         Commands::Query(query) => {
             query_updates(query).await?;
         }
