@@ -94,22 +94,36 @@ fn is_valid_nix_path(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyhow::Result<()> {
+async fn set_generation(
+    path: &Path,
+    sources: Vec<String>,
+    pub_keys: Vec<String>,
+    no_check_signs: bool,
+) -> anyhow::Result<()> {
     is_valid_nix_path(path)?;
 
     let mut nix = Command::new("nix");
     nix.arg("--extra-experimental-features")
         .arg("nix-command")
-        .arg("copy")
-        .arg("--from")
-        .arg(source)
+        .arg("build")
         .arg(path);
+    for source in sources {
+        nix.arg("--extra-substituters");
+        nix.arg(source);
+    }
+    for pub_key in pub_keys {
+        nix.arg("--extra-trusted-public-keys");
+        nix.arg(pub_key);
+    }
     if no_check_signs {
         nix.arg("--no-check-sigs");
     }
-    let nix = nix.status().await.context("Failed to execute nix copy")?;
+    let nix = nix
+        .status()
+        .await
+        .context("Failed to execute 'nix build'")?;
     if !nix.success() {
-        anyhow::bail!("nix copy failed");
+        anyhow::bail!("nix build failed");
     }
 
     profile::set(
@@ -139,7 +153,6 @@ async fn perform_cachix_update(
     token: Option<String>,
     cache: String,
 ) -> anyhow::Result<()> {
-    let url = format!("https://{cache}.cachix.org");
     let system = read_system_boot_json().await?;
     let client = CachixClient::new(cache, token);
     let candidate = filter_valid_systems(&client, &system)
@@ -153,7 +166,8 @@ async fn perform_cachix_update(
             }
         })
         .context("no valid systems")?;
-    set_generation(&candidate, &url, true).await?;
+    let info = client.cache_info().await?;
+    set_generation(&candidate, vec![info.uri], info.public_signing_keys, false).await?;
     Ok(())
 }
 
@@ -172,7 +186,13 @@ async fn perform_local_update(
             _ => None,
         })
         .context("No valid candidate found")?;
-    set_generation(&candidate.store_path, &source, no_check_signs).await?;
+    set_generation(
+        &candidate.store_path,
+        vec![source],
+        vec![candidate.pub_key],
+        no_check_signs,
+    )
+    .await?;
     Ok(())
 }
 
