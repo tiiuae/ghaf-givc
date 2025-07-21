@@ -134,7 +134,7 @@ in
               result = hostvm.succeed("ota-update query --source ${source} --raw --current").strip()
               assert result == update
 
-              hostvm.succeed(f"uta-update set {result} --source ${source}")
+              hostvm.succeed(f"ota-update local {result} --source ${source}")
 
               # Ensure, that `switch-to-configuration boot` is successfully invoked
               hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
