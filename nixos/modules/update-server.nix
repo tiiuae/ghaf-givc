@@ -15,18 +15,11 @@ let
     types
     concatStringsSep
     ;
-  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}.givc-admin) update_server;
   cfg = config.services.ota-update-server;
 in
 {
   options.services.ota-update-server = {
     enable = mkEnableOption "Nix profile update listing service";
-
-    package = mkOption {
-      type = types.nullOr types.package;
-      description = "Package providing the `update-server` binary.";
-      default = self.packages.${pkgs.system}.ota-update-server;
-    };
 
     port = mkOption {
       type = types.port;
@@ -49,15 +42,17 @@ in
     publicKey = mkOption {
       type = types.str;
       description = "Public key matching configured nix-serve";
+      default = "BOGUS"; # No default breaks docs generation
     };
   };
 
-  config = mkIf cfg.enable {
-    systemd.services.ota-update-server =
-      let
-        ota-update-server = if cfg.package != null then cfg.package else update_server;
-      in
-      {
+  config =
+    let
+      ota-update-server = self.packages.${pkgs.stdenv.hostPlatform.system}.givc-admin.update_server;
+    in
+    mkIf cfg.enable {
+
+      systemd.services.ota-update-server = {
         description = "NixOS Update Profile Listing Service";
         after = [ "network.target" ];
         wantedBy = [ "multi-user.target" ];
@@ -82,8 +77,8 @@ in
         };
 
       };
-    environment.systemPackages = [
-      cfg.package
-    ];
-  };
+      environment.systemPackages = [
+        ota-update-server
+      ];
+    };
 }
