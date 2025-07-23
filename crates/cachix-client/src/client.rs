@@ -1,3 +1,4 @@
+use crate::config::CachixClientConfig;
 use crate::{CacheInfo, CachixError, PinList};
 use reqwest::{Client, StatusCode};
 use std::sync::Arc;
@@ -7,23 +8,26 @@ pub struct CachixClient {
     cache_name: String,
     token: Option<String>,
     client: Arc<Client>,
+    base_url: String,
 }
 
 /// API implemented for <https://app.cachix.org/api/v1/>
 impl CachixClient {
     /// Create new Cachix client
     #[must_use]
-    pub fn new(cache_name: String, token: Option<String>) -> Self {
+    pub fn new(config: CachixClientConfig) -> Self {
         Self {
-            cache_name,
-            token,
+            cache_name: config.cache_name,
+            token: config.auth_token,
+            base_url: config.hostname,
             client: Arc::new(Client::new()),
         }
     }
 
     fn api_url(&self, path: &[&str]) -> String {
         format!(
-            "https://app.cachix.org/api/v1/cache/{}/{}",
+            "{}/api/v1/cache/{}/{}",
+            self.base_url,
             self.cache_name,
             path.join("/")
         )

@@ -1,4 +1,5 @@
 pub mod client;
+pub mod config;
 pub mod error;
 pub mod types;
 
@@ -6,5 +7,6 @@ pub mod types;
 pub mod nixos;
 
 pub use client::CachixClient;
+pub use config::CachixClientConfig;
 pub use error::CachixError;
 pub use types::*;
