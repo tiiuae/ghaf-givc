@@ -96,8 +96,8 @@ fn is_valid_nix_path(path: &Path) -> anyhow::Result<()> {
 
 async fn set_generation(
     path: &Path,
-    sources: Vec<String>,
-    pub_keys: Vec<String>,
+    sources: &[String],
+    pub_keys: &[String],
     no_check_signs: bool,
 ) -> anyhow::Result<()> {
     is_valid_nix_path(path)?;
@@ -158,16 +158,10 @@ async fn perform_cachix_update(
     let candidate = filter_valid_systems(&client, &system)
         .await?
         .into_iter()
-        .find_map(|(pin, _)| {
-            if pin.name == pin_name {
-                Some(pin.last_revision.store_path)
-            } else {
-                None
-            }
-        })
+        .find_map(|(pin, _)| (pin.name == pin_name).then_some(pin.last_revision.store_path))
         .context("no valid systems")?;
     let info = client.cache_info().await?;
-    set_generation(&candidate, vec![info.uri], info.public_signing_keys, false).await?;
+    set_generation(&candidate, &[info.uri], &info.public_signing_keys, false).await?;
     Ok(())
 }
 
@@ -180,16 +174,15 @@ async fn perform_local_update(
     let updates = query_available_updates(&source, &pin_name).await?;
     let candidate = updates
         .into_iter()
-        .find_map(|update| match &maybe_path {
-            Some(path) if path == &update.store_path => Some(update),
-            None if update.current => Some(update),
-            _ => None,
+        .find(|update| match &maybe_path {
+            Some(path) => path == &update.store_path,
+            None => update.current,
         })
         .context("No valid candidate found")?;
     set_generation(
         &candidate.store_path,
-        vec![source],
-        vec![candidate.pub_key],
+        &[source],
+        &[candidate.pub_key],
         no_check_signs,
     )
     .await?;

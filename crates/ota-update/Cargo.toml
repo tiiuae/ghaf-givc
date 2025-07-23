@@ -9,8 +9,8 @@ version = "0.0.1"
 [dependencies]
 anyhow = "1.0.86"
 axum = "*"
-clap = { version = "4.5.41", features = ["derive", "env"] }
 bootspec = "*"
+clap = { version = "4.5.41", features = ["derive", "env"] }
 regex = "*"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
