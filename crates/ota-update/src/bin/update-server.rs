@@ -16,7 +16,7 @@ use std::{
 };
 use tokio::fs;
 use tokio::net::TcpListener;
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -88,12 +88,15 @@ async fn get_update_list(
         .with_context(|| format!("while read_dir() on {path}", path = path.display()))?;
 
     while let Some(entry) = dir.next_entry().await? {
-        let name = entry.file_name();
         debug!("Processing {entry:?}");
 
+        let name = entry
+            .file_name()
+            .into_string()
+            .ok()
+            .context("Decode UTF-8 string")?;
         if name
-            .to_str()
-            .and_then(|f| f.strip_prefix(default_name))
+            .strip_prefix(default_name)
             .is_none_or(|f| !f.ends_with("-link"))
         {
             continue;
@@ -106,17 +109,10 @@ async fn get_update_list(
             _ => continue,
         };
 
-        let current = match &default_target {
-            Some(def) => def.as_os_str() == name,
-            None => false,
-        };
+        let current = default_target.as_deref() == Some(name.as_ref());
 
         updates.push(UpdateInfo {
-            name: name
-                .to_os_string()
-                .to_str()
-                .context("Decode UTF-8 string")?
-                .to_owned(),
+            name,
             store_path,
             current,
             pub_key: pub_key.to_owned(),
@@ -130,7 +126,7 @@ async fn update_handler(
     axum::extract::Path(profile): axum::extract::Path<String>,
     State(serve): State<Arc<Serve>>,
 ) -> Result<Json<Vec<UpdateInfo>>, Error> {
-    info!("update handler");
+    trace!("update handler");
     if !serve.allowed_profiles.contains(&profile) {
         info!("Requested profile {profile} not in list of allowed profiles");
         return Ok(Json(vec![])); // or return an error status
