@@ -5,7 +5,7 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 use anyhow::Context;
-use cachix_client::{CachixClient, nixos::filter_valid_systems};
+use cachix_client::{CachixClientConfig, nixos::filter_valid_systems};
 use clap::{ArgAction, Parser, Subcommand};
 use ota_update::cli::{QueryUpdates, query_updates};
 use ota_update::profile;
@@ -55,6 +55,9 @@ enum Commands {
 
         #[arg(long, default_value = "ghaf-untrusted")]
         cache: String,
+
+        #[arg(long)]
+        cachix_host: Option<String>,
     },
 }
 
@@ -151,10 +154,18 @@ async fn read_system_boot_json() -> anyhow::Result<String> {
 async fn perform_cachix_update(
     pin_name: &str,
     token: Option<String>,
+    host: Option<String>,
     cache: String,
 ) -> anyhow::Result<()> {
     let system = read_system_boot_json().await?;
-    let client = CachixClient::new(cache, token);
+    let mut client_config = CachixClientConfig::new(cache);
+    if let Some(token) = token {
+        client_config = client_config.set_auth_token(token)
+    }
+    if let Some(host) = host {
+        client_config = client_config.set_hostname(host)
+    }
+    let client = client_config.build();
     let candidate = filter_valid_systems(&client, &system)
         .await?
         .into_iter()
@@ -207,8 +218,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Cachix {
             pin_name,
             token,
+            cachix_host,
             cache,
-        } => perform_cachix_update(&pin_name, token, cache).await?,
+        } => perform_cachix_update(&pin_name, token, cachix_host, cache).await?,
     }
     Ok(())
 }
