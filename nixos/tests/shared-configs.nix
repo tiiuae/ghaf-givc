@@ -53,6 +53,10 @@ in
         inherit (adminConfig) name;
         inherit (adminConfig) addresses;
         tls.enable = tls;
+        opa = {
+          enable = true;
+          policyPath = ./test_policy/policies;
+        };
       };
     };
     tests-hostvm = {
