@@ -2,7 +2,7 @@
 let
   nodes = {
     hostvm =
-      { pkgs, ... }:
+      { ... }:
       {
         imports = [
           self.nixosModules.tests-hostvm
@@ -10,10 +10,6 @@ let
         ];
         boot.loader.systemd-boot.enable = true;
         users.mutableUsers = false;
-        environment.systemPackages = [
-          pkgs.nixos-rebuild
-          self.packages.${pkgs.stdenv.hostPlatform.system}.ota-update
-        ];
         networking.extraHosts = ''
           # FIXME: Proper retrieve address, or move it to shared-configs.nix
           192.168.101.200 test-updates.example.com
