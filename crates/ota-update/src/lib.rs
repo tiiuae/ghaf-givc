@@ -1,3 +1,4 @@
+pub mod bootctl;
 pub mod cli;
 pub mod profile;
 pub mod query;
