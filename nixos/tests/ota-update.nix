@@ -130,7 +130,9 @@ in
               result = hostvm.succeed("ota-update query --source ${source} --raw --current").strip()
               assert result == update
 
-              hostvm.succeed(f"ota-update local {result} --source ${source}")
+              # NOTE: Change to readoly directory before ota-upadte invocation, it trigger a bug if directory non-writeable
+              #       Keep this quirk in place, to ensure that bug is workarounded
+              hostvm.succeed(f"cd /var/empty && ota-update local {result} --source ${source}")
 
               # Ensure, that `switch-to-configuration boot` is successfully invoked
               hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
