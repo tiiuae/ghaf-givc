@@ -12,6 +12,7 @@ use ota_update::profile;
 use ota_update::query::query_available_updates;
 use regex::Regex;
 use serde_json::Value;
+use tracing::info;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -105,11 +106,17 @@ async fn set_generation(
 ) -> anyhow::Result<()> {
     is_valid_nix_path(path)?;
 
+    const GCROOT: &str = "/nix/var/nix/gcroots/auto/ota-update";
+
     let mut nix = Command::new("nix");
     nix.arg("--extra-experimental-features")
         .arg("nix-command")
         .arg("build")
-        .arg(path);
+        .arg(path)
+        // Protect downloading derivation from GC if it run concurrently.
+        // Also workaround bug -- `nix build` attempt symlink ./result in current directory, which could be non-writeable
+        .arg("--out-link")
+        .arg(GCROOT);
     for source in sources {
         nix.arg("--extra-substituters");
         nix.arg(source);
@@ -135,6 +142,10 @@ async fn set_generation(
         path,
     )
     .await?;
+
+    if let Err(e) = tokio::fs::remove_file(GCROOT).await {
+        info!("Fail to unlink {GCROOT}: {e}");
+    };
 
     let boot_path = path.join("bin/switch-to-configuration");
     Command::new(&boot_path)
