@@ -1,4 +1,4 @@
-use cachix_client::CachixClient;
+use cachix_client::CachixClientConfig;
 use clap::Parser;
 use std::io::{self, Write};
 
@@ -14,6 +14,10 @@ struct Cli {
     /// Auth token (or use CACHIX_AUTH_TOKEN env var)
     #[arg(env = "CACHIX_AUTH_TOKEN", long)]
     token: Option<String>,
+
+    /// Host to connect
+    #[arg(long)]
+    host: Option<String>,
 
     /// Command to run
     #[command(subcommand)]
@@ -54,7 +58,14 @@ enum Commands {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    let client = CachixClient::new(cli.cache, cli.token);
+    let mut client_config = CachixClientConfig::new(cli.cache);
+    if let Some(token) = cli.token {
+        client_config = client_config.set_auth_token(token)
+    }
+    if let Some(host) = cli.host {
+        client_config = client_config.set_hostname(host)
+    }
+    let client = client_config.build();
 
     match cli.command {
         Commands::Info => {

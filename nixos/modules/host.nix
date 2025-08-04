@@ -205,5 +205,9 @@ in
         port = lib.strings.toInt cfg.transport.port;
       in
       [ port ];
+    environment.systemPackages = [
+      self.packages.${pkgs.system}.ota-update
+      pkgs.nixos-rebuild # Need for ota-update
+    ];
   };
 }

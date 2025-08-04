@@ -50,7 +50,9 @@ let
         # Avoid issue with source filtering, put symlink back into source tree
         ln -sf ../../api $sourceRoot/crates/common/api
       '';
-      postInstall = ''
+
+      # Not `postInstall`, because it conflict with crane's hooks
+      preFixup = ''
         mkdir -p $cli/bin $agent/bin $update_server/bin $ota/bin
         mv $out/bin/givc-cli $cli/bin/givc-cli
         mv $out/bin/givc-agent $agent/bin/givc-agent

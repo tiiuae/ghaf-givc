@@ -6,6 +6,7 @@ use givc_client::client::AdminClient;
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
 use lazy_regex::regex;
+use ota_update::cli::{QueryUpdates, query_updates};
 use serde::ser::Serialize;
 use std::path::PathBuf;
 use std::time;
@@ -119,6 +120,7 @@ enum Commands {
         #[arg(long)]
         limit: Option<u32>,
     },
+    QueryUpdates(QueryUpdates),
     Test {
         #[command(subcommand)]
         test: Test,
@@ -324,6 +326,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 dump(watch.channel.recv().await?, as_json)?;
             }
         }
+
+        Commands::QueryUpdates(query) => query_updates(query).await?,
     }
 
     Ok(())
