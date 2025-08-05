@@ -4,6 +4,26 @@ use tokio::process::Command;
 
 use anyhow::Context;
 
+pub fn format_profile_link(profile: &str, generation: i32) -> String {
+    format!("{profile}-{generation}-link")
+}
+
+/// Parse profile links like `system-35-link` retrieving generation number
+/// # Errors
+/// Fails if link didn't match given prefix or invalid
+pub fn parse_profile_link(profile: &str, link: &str) -> anyhow::Result<i32> {
+    let gen_no = link
+        .strip_prefix(profile)
+        .with_context(|| format!("'{link}' doesn't start with '{profile}'"))?
+        .strip_prefix("-")
+        .context("missing dash")?
+        .strip_suffix("-link")
+        .context("missing '-link' suffix")?
+        .parse()
+        .context("Unable to parse generation number")?;
+    Ok(gen_no)
+}
+
 /// This function contain isolated call of `nix-env` binary, exclusively to manage
 /// symlinks in /nix/var/nix/profiles
 ///
@@ -24,4 +44,38 @@ pub async fn set(path: &Path, profile: &OsStr, closure: &Path) -> anyhow::Result
         anyhow::bail!("nix-env failed")
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_profile_link() -> anyhow::Result<()> {
+        let system = format_profile_link("system", 42);
+        assert_eq!(parse_profile_link("system", &system)?, 42);
+
+        let bad = parse_profile_link("just", "just-a-link");
+        let err = bad.unwrap_err();
+        assert_eq!(
+            format!("{}", err.root_cause()),
+            "invalid digit found in string"
+        );
+
+        let bad = parse_profile_link("system", "just-a-link");
+        let err = bad.unwrap_err();
+        assert_eq!(
+            format!("{}", err.root_cause()),
+            "'just-a-link' doesn't start with 'system'"
+        );
+
+        let bad = parse_profile_link("system", "system-42-just");
+        let err = bad.unwrap_err();
+        assert_eq!(format!("{}", err.root_cause()), "missing '-link' suffix");
+
+        let bad = parse_profile_link("system", "system42-just");
+        let err = bad.unwrap_err();
+        assert_eq!(format!("{}", err.root_cause()), "missing dash");
+        Ok(())
+    }
 }
