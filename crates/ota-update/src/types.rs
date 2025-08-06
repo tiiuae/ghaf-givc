@@ -11,3 +11,9 @@ pub struct UpdateInfo {
     pub current: bool,
     pub pub_key: String,
 }
+
+pub struct ProfileElement {
+    pub num: i32,
+    pub store_path: PathBuf,
+    pub current: bool,
+}
