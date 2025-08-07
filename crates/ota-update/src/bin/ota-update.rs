@@ -63,25 +63,10 @@ enum Commands {
 }
 
 async fn get_generations() -> anyhow::Result<()> {
-    let nixos_rebuild = Command::new("nixos-rebuild")
-        .arg("list-generations")
-        .arg("--json")
-        .stdout(Stdio::piped())
-        .spawn()?;
-    // Ensure we can read from stdout
-    let child = nixos_rebuild
-        .wait_with_output()
+    let gens = profile::read_generations()
         .await
-        .expect("Failed to capture stdout");
-    let mut gens: Vec<Value> = serde_json::from_slice(&child.stdout)?;
-    for map in gens.iter_mut().filter_map(Value::as_object_mut) {
-        if let Some(generation) = map.get("generation").and_then(Value::as_i64) {
-            let path = format!("/nix/var/nix/profiles/system-{generation}-link");
-            let link = fs::read_link(&path)?.to_string_lossy().to_string();
-            map.insert("storePath".to_string(), Value::String(link));
-        }
-    }
-    println!("{}", serde_json::to_string(&gens)?);
+        .context("While read list of generations")?;
+    println!("{}", serde_json::to_string_pretty(&gens)?);
     Ok(())
 }
 

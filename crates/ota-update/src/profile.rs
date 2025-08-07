@@ -1,4 +1,5 @@
-use crate::types::ProfileElement;
+use crate::bootctl::{find_init, get_bootctl_info};
+use crate::types::{GenerationDetails, ProfileElement};
 use anyhow::Context;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -96,6 +97,52 @@ pub async fn read_profile_links(
         });
     }
     Ok((default_gen_no, generations))
+}
+
+pub async fn read_generations() -> anyhow::Result<Vec<GenerationDetails>> {
+    let booted_system = read_symlink(&Path::new("/run/booted-system")).await?;
+    let current_system = read_symlink(&Path::new("/run/current-system")).await?;
+    let bootctl = get_bootctl_info().await?;
+    let (default_num, system_profiles) =
+        read_profile_links(&Path::new("/nix/var/nix/profiles"), "system").await?;
+
+    let mut generations = Vec::new();
+
+    for profile in system_profiles {
+        let bootspec_path = profile.store_path.clone().join("boot.json");
+        let bootspec_json = fs::read_to_string(&bootspec_path).await.with_context(|| {
+            format!(
+                "while reading bootspec {path}",
+                path = bootspec_path.display()
+            )
+        })?;
+        let bootspec: bootspec::v1::GenerationV1 =
+            serde_json::from_str(&bootspec_json).context("while parsing bootspec.json")?;
+
+        let bootctl = bootctl
+            .iter()
+            .find(|bootctl| find_init(&bootctl).as_ref() == Some(&bootspec.bootspec.init))
+            .map(ToOwned::to_owned);
+        let bootable = bootctl.as_ref().is_some_and(|bootctl| bootctl.is_default);
+        let current = profile.store_path == current_system;
+        let booted = profile.store_path == booted_system;
+
+        generations.push(GenerationDetails {
+            generation: profile.num,
+            name: bootspec.bootspec.label.clone(),
+            store_path: profile.store_path,
+            nixos_version: "bogus".into(),
+            kernel_version: "1.2.3".into(),
+            current,
+            booted,
+            default: profile.current,
+            bootable,
+            bootspec,
+            bootctl,
+        });
+    }
+
+    Ok(generations)
 }
 
 /// This function contain isolated call of `nix-env` binary, exclusively to manage
