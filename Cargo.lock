@@ -1377,6 +1377,7 @@ dependencies = [
  "bootspec",
  "cachix-client",
  "clap",
+ "once_cell",
  "regex",
  "reqwest",
  "serde",
