@@ -1,7 +1,7 @@
 use crate::types::ProfileElement;
 use anyhow::Context;
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::process::Command;
 use tracing::{debug, trace};
@@ -26,6 +26,14 @@ pub fn parse_profile_link(profile: &str, link: &str) -> anyhow::Result<i32> {
     Ok(gen_no)
 }
 
+async fn read_symlink(path: impl AsRef<Path>) -> anyhow::Result<PathBuf> {
+    let symlink = fs::read_link(path)
+        .await
+        .ok()
+        .with_context(|| "While read symlink {path}")?;
+    Ok(symlink)
+}
+
 pub async fn read_profile_links(
     path: &Path,
     profile: &str,
@@ -35,10 +43,7 @@ pub async fn read_profile_links(
         path = path.display()
     );
     let default_link_path = path.join(profile);
-    let default_target = fs::read_link(&default_link_path)
-        .await
-        .ok()
-        .context("reading symlink")?;
+    let default_target = read_symlink(&default_link_path).await?;
     let default_target_str = default_target
         .as_os_str()
         .to_os_string()
