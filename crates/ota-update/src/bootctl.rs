@@ -1,5 +1,6 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
 
@@ -49,7 +50,20 @@ pub async fn get_bootctl_info() -> anyhow::Result<BootctlInfo> {
         .context("bootctl crashed/killed by signal")?
     {
         0 => {
-            let info = serde_json::from_slice(&output.stdout).context("Parsing bootctl output")?;
+            // Design defence:
+            // we have our struct matching only NixOS boot records, so filter out all with sort_key != "nixos" before deserializing
+            // otherwise entries from memtest, dual boot, whatever else break deserializing.
+            let info: Vec<serde_json::Value> =
+                serde_json::from_slice(&output.stdout).context("Parsing bootctl output")?;
+            let info = info
+                .into_iter()
+                .filter(|item| {
+                    item.get("sortKey")
+                        .is_some_and(|val| val.as_str() == Some("nixos"))
+                })
+                .collect();
+            let info =
+                serde_json::from_value(info).context("While decoding bootctl json output")?;
             Ok(info)
         }
         code => {
@@ -62,9 +76,10 @@ pub async fn get_bootctl_info() -> anyhow::Result<BootctlInfo> {
     }
 }
 
-pub fn find_init(boot_info: &BootctlItem) -> Option<&str> {
+pub fn find_init(boot_info: &BootctlItem) -> Option<&Path> {
     boot_info
         .cmdline
         .split_whitespace()
         .find_map(|init| init.strip_prefix("init="))
+        .map(Path::new)
 }
