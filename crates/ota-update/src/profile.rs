@@ -1,5 +1,5 @@
 use crate::bootctl::{find_init, get_bootctl_info};
-use crate::nixos::read_nixos_version;
+use crate::nixos::{read_kernel_version, read_nixos_version};
 use crate::types::{GenerationDetails, ProfileElement};
 use anyhow::Context;
 use std::ffi::OsStr;
@@ -122,6 +122,9 @@ pub async fn read_generations() -> anyhow::Result<Vec<GenerationDetails>> {
         let version = read_nixos_version(&bootspec.bootspec.toplevel.0)
             .await
             .context("while read nixos version")?;
+        let kernel_version = read_kernel_version(&bootspec.bootspec.kernel)
+            .await
+            .context("while read kernel version")?;
 
         let bootctl = bootctl
             .iter()
@@ -136,7 +139,7 @@ pub async fn read_generations() -> anyhow::Result<Vec<GenerationDetails>> {
             name: bootspec.bootspec.label.clone(),
             store_path: profile.store_path,
             nixos_version: version.nixos_version,
-            kernel_version: "1.2.3".into(),
+            kernel_version,
             current,
             booted,
             default: profile.current,
