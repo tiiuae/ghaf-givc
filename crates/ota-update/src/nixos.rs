@@ -14,8 +14,13 @@ pub(crate) struct NixosVersion {
     pub configuration_revision: Option<String>,
 }
 
-static JSON_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"(?s)cat <<EOF\s*(\{.*?\})\s*EOF"#).expect("Invalid regex"));
+static JSON_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)cat <<EOF\s*(\{.*?\})\s*EOF").expect("Invalid HEREDOC regex")
+});
+
+static KERNEL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\d+\.\d+\.\d+(-[\w.+]+)?$").expect("Invalid kernel version regex")
+});
 
 /// Design defence:
 /// Direct reading version json much faster than invoking `nixos-version --json`,
@@ -46,4 +51,31 @@ pub(crate) async fn read_nixos_version(path: &Path) -> anyhow::Result<NixosVersi
             path = path.display()
         )
     }
+}
+
+/// Design defence:
+/// Looks a bit kludgy, but both `nixos-rebuild` and `nixos-rebuild-ng` do the same:
+/// take first filename from $toplevel/kernel-modules/lib/modules
+/// Questions:
+///   * Should inability to read/parse be hard fail or soft-fail
+///     (subsequently make `nixos_version` field optional)
+pub(crate) async fn read_kernel_version(toplevel: &Path) -> anyhow::Result<String> {
+    let mod_dir = toplevel 
+        .join("kernel-modules/lib/modules");
+
+    let mut dir = fs::read_dir(&mod_dir)
+        .await
+        .with_context(|| format!("while read_dir() on {path}", path = mod_dir.display()))?;
+
+    while let Some(entry) = dir.next_entry().await? {
+        if let Ok(name) = entry
+            .file_name()
+            .into_string() {
+            if KERNEL_RE.is_match(&name) {
+                return Ok(name);
+            }
+        }
+    }
+
+    anyhow::bail!("Unable to find kernel version")
 }
