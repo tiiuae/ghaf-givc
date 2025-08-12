@@ -8,7 +8,6 @@
   ...
 }:
 let
-  cfg = config.givc.update-server;
   inherit (lib)
     mkOption
     mkEnableOption
@@ -16,17 +15,11 @@ let
     types
     concatStringsSep
     ;
-  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}.givc-admin) update_server;
+  cfg = config.services.ota-update-server;
 in
 {
-  options.givc.update-server = {
+  options.services.ota-update-server = {
     enable = mkEnableOption "Nix profile update listing service";
-
-    package = mkOption {
-      type = types.nullOr types.package;
-      description = "Package providing the `update-server` binary.";
-      default = null;
-    };
 
     port = mkOption {
       type = types.port;
@@ -36,7 +29,7 @@ in
 
     path = mkOption {
       type = types.str;
-      default = "/nix/var/nix/profiles/per-user/update";
+      default = "/nix/var/nix/profiles/per-user/updates";
       description = "Base path to profiles.";
     };
 
@@ -45,14 +38,21 @@ in
       default = [ ];
       description = "List of allowed profile names to serve.";
     };
+
+    publicKey = mkOption {
+      type = types.str;
+      description = "Public key matching configured nix-serve";
+      default = "BOGUS"; # No default breaks docs generation
+    };
   };
 
-  config = mkIf cfg.enable {
-    systemd.services.update-server =
-      let
-        ota-update-server = if cfg.package != null then cfg.package else update_server;
-      in
-      {
+  config =
+    let
+      ota-update-server = self.packages.${pkgs.stdenv.hostPlatform.system}.givc-admin.update_server;
+    in
+    mkIf cfg.enable {
+
+      systemd.services.ota-update-server = {
         description = "NixOS Update Profile Listing Service";
         after = [ "network.target" ];
         wantedBy = [ "multi-user.target" ];
@@ -62,6 +62,7 @@ in
             ${ota-update-server}/bin/ota-update-server serve \
               --port ${toString cfg.port} \
               --path ${cfg.path} \
+              --pub-key ${cfg.publicKey} \
               --allowed-profiles ${concatStringsSep "," cfg.allowedProfiles}
           '';
           Restart = "on-failure";
@@ -71,6 +72,13 @@ in
           PrivateTmp = true;
           NoNewPrivileges = true;
         };
+        environment = {
+          RUST_LOG = "debug";
+        };
+
       };
-  };
+      environment.systemPackages = [
+        ota-update-server
+      ];
+    };
 }

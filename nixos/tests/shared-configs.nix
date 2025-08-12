@@ -13,6 +13,7 @@ let
     adminvm = "192.168.101.10";
     appvm = "192.168.101.5";
     guivm = "192.168.101.3";
+    updatevm = "192.168.101.200";
   };
   adminConfig = {
     name = "admin-vm";
@@ -29,6 +30,11 @@ let
 in
 {
   flake.nixosModules = {
+    tests-writable-storage = {
+      nix.enable = true;
+      virtualisation.writableStore = true;
+      virtualisation.writableStoreUseTmpfs = true;
+    };
     tests-adminvm = {
       imports = [
         self.nixosModules.admin
@@ -254,5 +260,13 @@ in
           ];
         };
       };
+    tests-updatevm = {
+      networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
+        {
+          address = addrs.updatevm;
+          prefixLength = 24;
+        }
+      ];
+    };
   };
 }

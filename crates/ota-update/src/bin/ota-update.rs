@@ -1,14 +1,18 @@
 use std::ffi::OsStr;
 use std::fs;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+use tokio::process::Command;
 
 use anyhow::Context;
+use cachix_client::{CachixClientConfig, nixos::filter_valid_systems};
 use clap::{ArgAction, Parser, Subcommand};
+use ota_update::cli::{QueryUpdates, query_updates};
 use ota_update::profile;
+use ota_update::query::query_available_updates;
 use regex::Regex;
 use serde_json::Value;
+use tracing::info;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -27,8 +31,8 @@ enum Commands {
     Get,
 
     /// Set the configuration value
-    Set {
-        path: PathBuf,
+    Local {
+        path: Option<PathBuf>,
 
         /// Source of configuration value
         #[arg(long, default_value = "https://prod-cache.vedenemo.dev")]
@@ -36,22 +40,40 @@ enum Commands {
 
         #[arg(long, action = ArgAction::SetTrue, required = false, default_value_t = false)]
         no_check_signs: bool,
+
+        #[arg(long, default_value = "ghaf-updates")]
+        pin_name: String,
+    },
+
+    /// Query updates list
+    Query(QueryUpdates),
+
+    Cachix {
+        pin_name: String,
+
+        #[arg(long, env = "CACHIX_TOKEN")]
+        token: Option<String>,
+
+        #[arg(long, default_value = "ghaf-untrusted")]
+        cache: String,
+
+        #[arg(long)]
+        cachix_host: Option<String>,
     },
 }
 
-fn get_generations() -> anyhow::Result<()> {
-    let mut nixos_rebuild = Command::new("nixos-rebuild")
+async fn get_generations() -> anyhow::Result<()> {
+    let nixos_rebuild = Command::new("nixos-rebuild")
         .arg("list-generations")
         .arg("--json")
         .stdout(Stdio::piped())
         .spawn()?;
     // Ensure we can read from stdout
-    let stdout = nixos_rebuild
-        .stdout
-        .take()
+    let child = nixos_rebuild
+        .wait_with_output()
+        .await
         .expect("Failed to capture stdout");
-    let reader = BufReader::new(stdout);
-    let mut gens: Vec<Value> = serde_json::from_reader(reader)?;
+    let mut gens: Vec<Value> = serde_json::from_slice(&child.stdout)?;
     for map in gens.iter_mut().filter_map(Value::as_object_mut) {
         if let Some(generation) = map.get("generation").and_then(Value::as_i64) {
             let path = format!("/nix/var/nix/profiles/system-{generation}-link");
@@ -76,48 +98,140 @@ fn is_valid_nix_path(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn set_generation(path: &Path, source: &str, no_check_signs: bool) -> anyhow::Result<()> {
+async fn set_generation(
+    path: &Path,
+    sources: &[String],
+    pub_keys: &[String],
+    no_check_signs: bool,
+) -> anyhow::Result<()> {
     is_valid_nix_path(path)?;
+
+    const GCROOT: &str = "/nix/var/nix/gcroots/auto/ota-update";
 
     let mut nix = Command::new("nix");
     nix.arg("--extra-experimental-features")
         .arg("nix-command")
-        .arg("copy")
-        .arg("--from")
-        .arg(source)
-        .arg(path);
+        .arg("build")
+        .arg(path)
+        // Protect downloading derivation from GC if it run concurrently.
+        // Also workaround bug -- `nix build` attempt symlink ./result in current directory, which could be non-writeable
+        .arg("--out-link")
+        .arg(GCROOT);
+    for source in sources {
+        nix.arg("--extra-substituters");
+        nix.arg(source);
+    }
+    for pub_key in pub_keys {
+        nix.arg("--extra-trusted-public-keys");
+        nix.arg(pub_key);
+    }
     if no_check_signs {
         nix.arg("--no-check-sigs");
     }
-    let nix = nix.status().context("Failed to execute nix copy")?;
+    let nix = nix
+        .status()
+        .await
+        .context("Failed to execute 'nix build'")?;
     if !nix.success() {
-        anyhow::bail!("nix copy failed");
+        anyhow::bail!("nix build failed");
     }
 
     profile::set(
         Path::new("/nix/var/nix/profiles/"),
         OsStr::new("system"),
         path,
-    )?;
+    )
+    .await?;
+
+    if let Err(e) = tokio::fs::remove_file(GCROOT).await {
+        info!("Fail to unlink {GCROOT}: {e}");
+    };
 
     let boot_path = path.join("bin/switch-to-configuration");
     Command::new(&boot_path)
         .arg("boot")
         .status()
+        .await
         .with_context(|| format!("Fail to execute {}", boot_path.display()))?;
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn read_system_boot_json() -> anyhow::Result<String> {
+    let contents = tokio::fs::read_to_string("/run/current-system/boot.json").await?;
+    let boot_json = serde_json::from_str::<bootspec::v1::GenerationV1>(&contents)?;
+    Ok(boot_json.bootspec.system)
+}
+
+async fn perform_cachix_update(
+    pin_name: &str,
+    token: Option<String>,
+    host: Option<String>,
+    cache: String,
+) -> anyhow::Result<()> {
+    let system = read_system_boot_json().await?;
+    let mut client_config = CachixClientConfig::new(cache);
+    if let Some(token) = token {
+        client_config = client_config.set_auth_token(token)
+    }
+    if let Some(host) = host {
+        client_config = client_config.set_hostname(host)
+    }
+    let client = client_config.build();
+    let candidate = filter_valid_systems(&client, &system)
+        .await?
+        .into_iter()
+        .find_map(|(pin, _)| (pin.name == pin_name).then_some(pin.last_revision.store_path))
+        .context("no valid systems")?;
+    let info = client.cache_info().await?;
+    set_generation(&candidate, &[info.uri], &info.public_signing_keys, false).await?;
+    Ok(())
+}
+
+async fn perform_local_update(
+    maybe_path: Option<PathBuf>,
+    source: String,
+    pin_name: String,
+    no_check_signs: bool,
+) -> anyhow::Result<()> {
+    let updates = query_available_updates(&source, &pin_name).await?;
+    let candidate = updates
+        .into_iter()
+        .find(|update| match &maybe_path {
+            Some(path) => path == &update.store_path,
+            None => update.current,
+        })
+        .context("No valid candidate found")?;
+    set_generation(
+        &candidate.store_path,
+        &[source],
+        &[candidate.pub_key],
+        no_check_signs,
+    )
+    .await?;
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Get => get_generations()?,
-        Commands::Set {
+        Commands::Get => get_generations().await?,
+        Commands::Local {
             path,
             source,
             no_check_signs,
-        } => set_generation(&path, &source, no_check_signs)?,
+            pin_name,
+        } => perform_local_update(path, source, pin_name, no_check_signs).await?,
+        Commands::Query(query) => {
+            query_updates(query).await?;
+        }
+        Commands::Cachix {
+            pin_name,
+            token,
+            cachix_host,
+            cache,
+        } => perform_cachix_update(&pin_name, token, cachix_host, cache).await?,
     }
     Ok(())
 }

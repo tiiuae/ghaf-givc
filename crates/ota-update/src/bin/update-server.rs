@@ -1,3 +1,4 @@
+use anyhow::Context;
 use axum::{
     Json, Router,
     extract::State,
@@ -6,8 +7,7 @@ use axum::{
     routing::get,
 };
 use clap::{Parser, Subcommand};
-use ota_update::profile;
-use serde::Serialize;
+use ota_update::{profile, types::UpdateInfo};
 use std::{
     ffi::OsString,
     net::SocketAddr,
@@ -16,6 +16,7 @@ use std::{
 };
 use tokio::fs;
 use tokio::net::TcpListener;
+use tracing::{debug, info, trace};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -48,13 +49,9 @@ struct Serve {
     /// Port to listen on
     #[arg(long, default_value_t = 3000)]
     port: u16,
-}
 
-#[derive(Serialize)]
-struct UpdateInfo {
-    name: OsString,
-    target: PathBuf,
-    current: bool,
+    #[arg(long)]
+    pub_key: String,
 }
 
 // Make our own error that wraps `anyhow::Error`.
@@ -73,19 +70,33 @@ impl IntoResponse for Error {
     }
 }
 
-async fn get_update_list(path: &Path, default_name: &str) -> anyhow::Result<Vec<UpdateInfo>> {
+async fn get_update_list(
+    path: &Path,
+    default_name: &str,
+    pub_key: &str,
+) -> Result<Vec<UpdateInfo>, anyhow::Error> {
+    info!(
+        "Query updates for {path}, default {default_name}",
+        path = path.display()
+    );
     let default_link_path = path.join(default_name);
     let default_target = fs::read_link(&default_link_path).await.ok();
 
     let mut updates = Vec::new();
-    let mut dir = fs::read_dir(&path).await?;
+    let mut dir = fs::read_dir(&path)
+        .await
+        .with_context(|| format!("while read_dir() on {path}", path = path.display()))?;
 
     while let Some(entry) = dir.next_entry().await? {
-        let name = entry.file_name();
+        debug!("Processing {entry:?}");
 
+        let name = entry
+            .file_name()
+            .into_string()
+            .ok()
+            .context("Decode UTF-8 string")?;
         if name
-            .to_str()
-            .and_then(|f| f.strip_suffix(default_name))
+            .strip_prefix(default_name)
             .is_none_or(|f| !f.ends_with("-link"))
         {
             continue;
@@ -93,20 +104,18 @@ async fn get_update_list(path: &Path, default_name: &str) -> anyhow::Result<Vec<
 
         let full_path = entry.path();
 
-        let target = match fs::read_link(&full_path).await {
+        let store_path = match fs::read_link(&full_path).await {
             Ok(t) if t.is_absolute() && t.exists() => t,
             _ => continue,
         };
 
-        let current = match &default_target {
-            Some(def) => def.as_os_str() == name,
-            None => false,
-        };
+        let current = default_target.as_deref() == Some(name.as_ref());
 
         updates.push(UpdateInfo {
             name,
-            target,
+            store_path,
             current,
+            pub_key: pub_key.to_owned(),
         });
     }
 
@@ -117,16 +126,20 @@ async fn update_handler(
     axum::extract::Path(profile): axum::extract::Path<String>,
     State(serve): State<Arc<Serve>>,
 ) -> Result<Json<Vec<UpdateInfo>>, Error> {
+    trace!("update handler");
     if !serve.allowed_profiles.contains(&profile) {
+        info!("Requested profile {profile} not in list of allowed profiles");
         return Ok(Json(vec![])); // or return an error status
     }
-    let links = get_update_list(&serve.path, &profile).await?;
+    let links = get_update_list(&serve.path, &profile, &serve.pub_key).await?;
     Ok(Json(links))
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
     let args = Args::parse();
 
     match args.command {
@@ -135,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
             let state = Arc::new(serve);
 
             let app = Router::new()
-                .route("/update/:profile", get(update_handler))
+                .route("/update/{profile}", get(update_handler))
                 .with_state(state);
 
             let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -148,7 +161,7 @@ async fn main() -> anyhow::Result<()> {
             path,
             profile,
             closure,
-        } => profile::set(&path, &profile, &closure)?,
+        } => profile::set(&path, &profile, &closure).await?,
     }
     Ok(())
 }

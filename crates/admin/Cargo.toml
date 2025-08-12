@@ -33,8 +33,9 @@ tracing = "0.1"
 tracing-journald = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 x509-parser = "0.17"
+lazy-regex = "3.4.1"
 
 # GIVC subparts
 givc-common = { path = "../common" }
 givc-client = { path = "../client" }
-lazy-regex = "3.4.1"
+ota-update = { path = "../ota-update" }
