@@ -1,0 +1,59 @@
+syntax = "proto3";
+option go_package = "./exec";
+package exec;
+
+// Define the request to execute a subprocess command
+message StartCommand {
+  string Command = 1;             // The shell command to execute
+  repeated string Arguments = 2;  // Arguments for the command
+  optional string WorkingDirectory = 3;   // (Optional) Directory to execute the command in
+  map<string, string> EnvVars = 4; // (Optional) Environment variables
+  optional bytes Stdin = 5; // Initial stdin sequence, if omitted -- standard input would be bound to /dev/null
+                            // Additional input could be supplied via `CommandRequest.Command.Stdin`
+                            // If all input planned to supplied this way, `StartCommand.Stdin` should be set as empty byte string
+  optional string Role = 6; // Role is actually a user name or security token
+}
+
+message CommandIO {
+    bytes Payload = 1;
+}
+
+message SignalCommand {
+    int32 Signal = 1;
+}
+
+message StartedEvent {
+    int32 Pid = 1;
+}
+
+message FinishedEvent {
+    int32 ReturnCode = 1;
+}
+
+message CommandRequest {
+    oneof Command {
+        StartCommand Start = 1;
+        CommandIO Stdin = 2;
+        SignalCommand Signal = 3;
+    }
+}
+
+message CommandRelayRequest {
+    string Agent = 1;
+    CommandRequest Command = 2;
+}
+
+message CommandResponse {
+    oneof Event {
+        CommandIO Stdout = 1;
+        CommandIO Stderr = 2;
+        StartedEvent Started = 3;
+        FinishedEvent Finished = 4;
+    }
+}
+
+// Define the service to execute and manage subprocess commands
+service Exec {
+  // Execute a command and wait for it to complete, provided relayed IO streams
+  rpc RunCommand(stream CommandRequest) returns (stream CommandResponse);
+}
