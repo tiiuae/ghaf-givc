@@ -13,7 +13,7 @@ hyper-util = "0.1"
 tokio-stream = "0.1"
 tokio = { version = "1.46", features = ["rt-multi-thread", "time", "macros"] }
 tokio-vsock = "*"
-tonic-types = "0.13"
+tonic-types = "0.14"
 tonic = { version = "0.13", features = ["tls-ring"] }
 tower = "0.5"
 tracing = "0.1"
