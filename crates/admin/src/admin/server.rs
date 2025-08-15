@@ -23,7 +23,7 @@ use crate::admin::registry::Registry;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
 use crate::utils::naming::{format_service_name, format_vm_name};
-use crate::utils::tonic::escalate;
+use crate::utils::tonic::{Stream, escalate};
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::QueryResult;
 
