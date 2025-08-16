@@ -104,41 +104,96 @@ let
   };
 in
 {
-  perSystem = _: {
-    vmTests.tests = {
-      ota-update-http = {
-        module = {
-          inherit nodes;
-          testScript =
-            { nodes, ... }:
-            let
-              hostvm = nodes.hostvm.system.build.toplevel;
-              source = "http://test-updates.example.com";
-            in
-            ''
-              hostvm.wait_for_unit("multi-user.target")
-              print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
+  perSystem =
+    { pkgs, self', ... }:
+    {
+      vmTests.tests = {
+        ota-update-http = {
+          module = {
+            inherit nodes;
+            testScript =
+              { nodes, ... }:
+              let
+                hostvm = nodes.hostvm.system.build.toplevel;
+                source = "http://test-updates.example.com";
+              in
+              ''
+                hostvm.wait_for_unit("multi-user.target")
+                print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
 
-              updatevm.wait_for_unit("multi-user.target")
-              updatevm.wait_for_unit("ota-update-server.service")
+                updatevm.wait_for_unit("multi-user.target")
+                updatevm.wait_for_unit("ota-update-server.service")
 
-              update = updatevm.succeed("find-software-update").strip()
-              updatevm.succeed("mkdir -p /nix/var/nix/profiles/per-user/updates") # FIXME: Move it somewhere into setup phase (or even to module)
-              updatevm.succeed(f"ota-update-server register /nix/var/nix/profiles/per-user/updates ghaf-updates {update}")
-              print(updatevm.succeed("find /nix/var/nix/profiles/per-user/updates"))
-              print(hostvm.succeed("curl -v ${source}/update/ghaf-updates"))
-              result = hostvm.succeed("ota-update query --source ${source} --raw --current").strip()
-              assert result == update
+                update = updatevm.succeed("find-software-update").strip()
+                updatevm.succeed("mkdir -p /nix/var/nix/profiles/per-user/updates") # FIXME: Move it somewhere into setup phase (or even to module)
+                updatevm.succeed(f"ota-update-server register /nix/var/nix/profiles/per-user/updates ghaf-updates {update}")
+                print(updatevm.succeed("find /nix/var/nix/profiles/per-user/updates"))
+                print(hostvm.succeed("curl -v ${source}/update/ghaf-updates"))
+                result = hostvm.succeed("ota-update query --source ${source} --raw --current").strip()
+                assert result == update
 
-              # NOTE: Change to readoly directory before ota-upadte invocation, it trigger a bug if directory non-writeable
-              #       Keep this quirk in place, to ensure that bug is workarounded
-              hostvm.succeed(f"cd /var/empty && ota-update local {result} --source ${source}")
+                # NOTE: Change to readoly directory before ota-upadte invocation, it trigger a bug if directory non-writeable
+                #       Keep this quirk in place, to ensure that bug is workarounded
+                hostvm.succeed(f"cd /var/empty && ota-update local {result} --source ${source} --pin-name ghaf-dev")
 
-              # Ensure, that `switch-to-configuration boot` is successfully invoked
-              hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
-            '';
+                # Ensure, that `switch-to-configuration boot` is successfully invoked
+                hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
+              '';
+          };
+        };
+        ota-update-givc = {
+          module = {
+            inherit nodes;
+            testScript =
+              { nodes, ... }:
+              let
+                hostvm = nodes.hostvm.system.build.toplevel;
+                regInfoHost = pkgs.closureInfo { rootPaths = hostvm; };
+                adminvm = nodes.adminvm.system.build.toplevel;
+                regInfoAdmin = pkgs.closureInfo { rootPaths = adminvm; };
+                source = "ssh-ng://root@${(builtins.head nodes.adminvm.networking.interfaces.eth1.ipv4.addresses).address}";
+                admin = builtins.head nodes.adminvm.givc.admin.addresses;
+                expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
+                tls = nodes.adminvm.givc.admin.tls.enable;
+                cli = "${self'.packages.givc-admin.cli}/bin/givc-cli";
+                cliArgs =
+                  "--name ${admin.name} --addr ${admin.addr} --port ${admin.port} "
+                  + "${
+                    if tls then
+                      "--cacert /etc/givc/ca-cert.pem --cert /etc/givc/cert.pem --key /etc/givc/key.pem"
+                    else
+                      "--notls"
+                  }";
+              in
+              ''
+                hostvm.wait_for_unit("multi-user.target")
+                print(hostvm.succeed("nix-store --load-db <${regInfoHost}"))
+                print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
+
+                adminvm.wait_for_unit("multi-user.target")
+                print(adminvm.succeed("nix-store --load-db <${regInfoAdmin}"))
+                print(adminvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${adminvm}"))
+
+                import time
+                with subtest("setup services"):
+                    hostvm.wait_for_unit("givc-ghaf-host.service")
+                    adminvm.wait_for_unit("givc-admin.service")
+                    adminvm.wait_for_unit("multi-user.target")
+                    hostvm.wait_for_unit("multi-user.target")
+                    time.sleep(1)
+                    # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
+                    print(hostvm.succeed("${cli} ${cliArgs} test ensure --retry 60 --type 0 ${expected}"))
+
+                update = adminvm.succeed("find-software-update").strip()
+                with subtest("OTA"):
+                    print(hostvm.succeed("${cli} ${cliArgs} list-generations"))
+                    print(hostvm.succeed(f"${cli} ${cliArgs} set-generation {update} --source ${source} --no-check-signs"))
+                    # Ensure, that `switch-to-configuration boot` is successfully invoked
+                    hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
+                    print(hostvm.succeed("${cli} ${cliArgs} list-generations"))
+              '';
+          };
         };
       };
     };
-  };
 }

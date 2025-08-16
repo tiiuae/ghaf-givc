@@ -1,4 +1,4 @@
-use tokio::io::{AsyncReadExt, stdin};
+use std::future::Future;
 use tonic::Request;
 use tonic::transport::Channel;
 use tracing::{info, warn};
@@ -27,7 +27,10 @@ impl ExecClient {
     }
 
     /// Starts a subprocess on the server with the given command and arguments
-    pub async fn start_command<SO, SE>(
+    /// # Errors
+    /// Raise error if program unable to execute, or on gRPC IO errors
+    #[allow(clippy::too_many_arguments)]
+    pub async fn start_command<SO, SE, SOA, SEA>(
         &mut self,
         command: String,
         arguments: Vec<String>,
@@ -39,8 +42,10 @@ impl ExecClient {
         mut stderr_fn: SE,
     ) -> anyhow::Result<i32>
     where
-        SO: FnMut(Vec<u8>) -> (),
-        SE: FnMut(Vec<u8>) -> (),
+        SO: FnMut(Vec<u8>) -> SOA,
+        SE: FnMut(Vec<u8>) -> SEA,
+        SOA: Future<Output = ()>,
+        SEA: Future<Output = ()>,
     {
         let start_command = StartCommand {
             command,
@@ -75,11 +80,11 @@ impl ExecClient {
             match response.event {
                 Some(Event::Stdout(CommandIO { payload })) => {
                     info!("Event::Stdout {} bytes", payload.len());
-                    stdout_fn(payload)
+                    stdout_fn(payload).await;
                 }
                 Some(Event::Stderr(CommandIO { payload })) => {
                     info!("Event::Stderr {} bytes", payload.len());
-                    stderr_fn(payload)
+                    stderr_fn(payload).await;
                 }
                 Some(Event::Started(started)) => {
                     info!("Process started with PID: {}", started.pid);
@@ -122,10 +127,12 @@ impl ExecClient {
                 stdin,
                 role,
                 |payload| {
-                    stdout_buffer.extend(payload);
+                    stdout_buffer.extend(&payload);
+                    std::future::ready(())
                 },
                 |payload| {
-                    stderr_buffer.extend(payload);
+                    stderr_buffer.extend(&payload);
+                    std::future::ready(())
                 },
             )
             .await?;
