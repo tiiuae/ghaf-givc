@@ -3,10 +3,11 @@ use async_channel::Receiver;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
-use tracing::debug;
+use tracing::{debug, info};
 
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
+use givc_common::pb::Generation;
 pub use givc_common::pb::stats::StatsResponse;
 pub use givc_common::query::{Event, QueryResult};
 use givc_common::types::{EndpointEntry, TransportConfig, UnitStatus, UnitType};
@@ -420,5 +421,49 @@ impl AdminClient {
             _quit: quittx,
         };
         Ok(result)
+    }
+
+    /// List installed generations (updates)
+    /// # Errors
+    /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
+    pub async fn list_generations(&self) -> anyhow::Result<Vec<Generation>> {
+        let response = self
+            .connect_to()
+            .await?
+            .list_generations(pb::admin::Empty {})
+            .await
+            .rewrap_err()?;
+        let gens = response.into_inner();
+        Ok(gens.list)
+    }
+
+    pub async fn set_generation(
+        &self,
+        path: String,
+        source: String,
+        no_check_signs: bool,
+    ) -> anyhow::Result<()> {
+        let req = pb::admin::SetGenerationRequest {
+            path,
+            source,
+            no_check_signs,
+        };
+        let response = self
+            .connect_to()
+            .await?
+            .set_generation(req)
+            .await
+            .rewrap_err()?;
+        let mut stream = response.into_inner();
+        // FIXME: is any better way do drain stream? .collect() didn't work for me
+        while let Some(Ok(next)) = stream.next().await {
+            if let Some(out) = next.output {
+                info!("set_generation: {out}");
+            }
+            if next.finished {
+                break;
+            }
+        }
+        Ok(())
     }
 }

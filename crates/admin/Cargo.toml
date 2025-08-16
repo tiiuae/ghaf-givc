@@ -8,6 +8,8 @@ version = "0.0.1"
 
 [dependencies]
 anyhow = "1.0.98"
+async-channel = "2.3.1"
+async-fn-stream = "*"
 async-stream = "0.3"
 clap = { version = "4.5.41", features = ["derive", "env"] }
 regex = "1.11"

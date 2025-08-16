@@ -26,9 +26,10 @@ pub fn parse_profile_link(profile: &str, link: &str) -> anyhow::Result<i32> {
 
 /// Thin wrapper, which extend error message with symlink name, which failed to read
 async fn read_symlink(path: impl AsRef<Path>) -> anyhow::Result<PathBuf> {
+    let path = path.as_ref();
     let symlink = fs::read_link(path)
         .await
-        .with_context(|| "While read symlink {path}")?;
+        .with_context(|| format!("While read symlink {path}", path = path.display()))?;
     Ok(symlink)
 }
 

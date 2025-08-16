@@ -186,7 +186,9 @@ in
       };
       path = [
         ota-update
+        pkgs.nix
         pkgs.nixos-rebuild
+        pkgs.openssh
       ];
       environment = {
         "AGENT" = "${toJSON cfg.transport}";
