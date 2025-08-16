@@ -29,6 +29,9 @@ struct Cli {
     #[arg(long, env = "HOST_KEY")]
     host_key: Option<PathBuf>,
 
+    #[arg(long, env = "GIVC_MONITORING", default_value_t = true)]
+    monitoring: bool,
+
     #[arg(
         long,
         env = "SERVICES",
@@ -66,8 +69,8 @@ async fn main() -> anyhow::Result<()> {
         .build_v1()
         .unwrap();
 
-    let admin_service_svc =
-        admin::server::AdminServiceServer::new(admin::server::AdminService::new(tls));
+    let admin_service = admin::server::AdminService::new(tls, cli.monitoring);
+    let admin_service_svc = admin::server::AdminServiceServer::new(admin_service);
 
     let sys_opts = tokio_listener::SystemOptions::default();
     let user_opts = tokio_listener::UserOptions::default();

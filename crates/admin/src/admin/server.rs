@@ -2,9 +2,10 @@
 
 use super::entry::{Placement, RegistryEntry};
 use crate::pb::{
-    self, ApplicationRequest, ApplicationResponse, Empty, LocaleRequest, QueryListResponse,
-    RegistryRequest, RegistryResponse, StartResponse, StartVmRequest, TimezoneRequest,
-    UnitStatusRequest, WatchItem,
+    self, ApplicationRequest, ApplicationResponse, Empty, ListGenerationsResponse, LocaleRequest,
+    QueryListResponse, RegistryRequest, RegistryResponse, SetGenerationRequest,
+    SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest, UnitStatusRequest,
+    WatchItem,
 };
 use anyhow::{Context, anyhow, bail};
 use async_stream::try_stream;
@@ -72,13 +73,19 @@ impl Validator {
 
 impl AdminService {
     #[must_use]
-    pub fn new(use_tls: Option<TlsConfig>) -> Self {
+    pub fn new(use_tls: Option<TlsConfig>, monitoring: bool) -> Self {
         let inner = Arc::new(AdminServiceImpl::new(use_tls));
         let clone = inner.clone();
-        tokio::task::spawn(async move {
-            clone.monitor().await;
-        });
+        if monitoring {
+            tokio::task::spawn(async move {
+                clone.monitor().await;
+            });
+        }
         Self { inner }
+    }
+
+    pub(crate) fn inner(&self) -> Arc<AdminServiceImpl> {
+        self.inner.clone()
     }
 }
 
@@ -408,9 +415,6 @@ fn app_success() -> anyhow::Result<ApplicationResponse> {
     };
     Ok(res)
 }
-
-type Stream<T> =
-    Pin<Box<dyn tokio_stream::Stream<Item = std::result::Result<T, Status>> + Send + 'static>>;
 
 #[tonic::async_trait]
 impl pb::admin_service_server::AdminService for AdminService {
@@ -779,6 +783,34 @@ impl pb::admin_service_server::AdminService for AdminService {
                  }
             };
             Ok(Box::pin(stream) as Self::WatchStream)
+        })
+        .await
+    }
+
+    // OTA
+    async fn list_generations(
+        &self,
+        request: tonic::Request<givc_common::pb::Empty>,
+    ) -> Result<tonic::Response<ListGenerationsResponse>, tonic::Status> {
+        escalate(request, |_| async {
+            let endpoint = self.inner.host_endpoint()?;
+            let ota = super::OTA::OTA::connect(endpoint).await?;
+            let list = ota.list().await?;
+            Ok(ListGenerationsResponse { list })
+        })
+        .await
+    }
+
+    type SetGenerationStream = Stream<SetGenerationResponse>;
+    async fn set_generation(
+        &self,
+        request: tonic::Request<SetGenerationRequest>,
+    ) -> Result<tonic::Response<Self::SetGenerationStream>, tonic::Status> {
+        escalate(request, |req| async move {
+            let endpoint = self.inner.host_endpoint()?;
+            let ota = super::OTA::OTA::connect(endpoint).await?;
+            let stream = ota.set(req.path, req.source, req.no_check_signs).await?;
+            Ok(Box::pin(stream) as Self::SetGenerationStream)
         })
         .await
     }

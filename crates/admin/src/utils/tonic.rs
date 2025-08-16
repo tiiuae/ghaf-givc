@@ -1,7 +1,12 @@
 use anyhow;
+use std::future::Future;
+use std::pin::Pin;
 use tonic::{Code, Response, Status};
 use tonic_types::{ErrorDetails, StatusExt};
 use tracing::error;
+
+pub(crate) type Stream<T> =
+    Pin<Box<dyn tokio_stream::Stream<Item = Result<T, Status>> + Send + 'static>>;
 
 pub(crate) fn wrap_error(any_err: anyhow::Error) -> tonic::Status {
     // Convert root cause and stack to strings
