@@ -14,6 +14,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	pb "givc/modules/api/exec"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type process struct {
@@ -26,6 +28,11 @@ type process struct {
 type ExecServer struct {
 	pb.UnimplementedExecServer
 	processes sync.Map
+}
+
+var allowedCommands = map[string]bool{
+	"ota-update": true,
+	"uptime":     true, // For testing
 }
 
 func (s *ExecServer) Name() string {
@@ -230,6 +237,13 @@ func streamOutput(reader io.ReadCloser, stream pb.Exec_RunCommandServer, wg *syn
 			log.Errorf("failed to stream: %v", err)
 		}
 	}
+}
+
+func (s *ExecServer) validateCommand(cmd string) error {
+	if _, ok := allowedCommands[cmd]; !ok {
+		return status.Errorf(codes.PermissionDenied, "access denied: command %q is not allowed", cmd)
+	}
+	return nil
 }
 
 func flattenEnv(env map[string]string) []string {
