@@ -7,3 +7,4 @@ internal/pkgs/dbusproxy
 certs
 result
 target
+.pre-commit-config.yaml

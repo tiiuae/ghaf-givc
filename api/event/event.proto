@@ -1,0 +1,27 @@
+// Copyright 2025 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+option go_package = "givc/modules/api/eventproxy";
+package eventproxy;
+
+message DeviceInfo {
+  uint32 deviceId = 1;
+  uint32 vendorId = 2;
+  string name = 3;
+}
+
+message InputEvent {
+  int64 timestamp = 1; // nanoseconds
+  uint32 type = 2;
+  uint32 code = 3;
+  int32 value = 4;
+}
+
+message Ack {
+  string status = 1;
+}
+
+service EventService {
+  rpc RegisterDevice(DeviceInfo) returns (Ack) {};
+  rpc StreamEvents (stream InputEvent) returns (Ack) {};
+}
