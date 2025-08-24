@@ -6,7 +6,7 @@ use givc_client::client::AdminClient;
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
 use lazy_regex::regex;
-use ota_update::cli::{QueryUpdates, query_updates};
+use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
 use serde::ser::Serialize;
 use std::path::PathBuf;
 use std::time;
@@ -67,6 +67,13 @@ enum StartSub {
 }
 
 #[derive(Debug, Subcommand)]
+enum UpdateSub {
+    Query(QueryUpdates),
+    List,
+    Cachix(CachixOptions),
+}
+
+#[derive(Debug, Subcommand)]
 enum Commands {
     Start {
         #[command(subcommand)]
@@ -120,15 +127,9 @@ enum Commands {
         #[arg(long)]
         limit: Option<u32>,
     },
-    QueryUpdates(QueryUpdates),
-    ListGenerations {},
-    SetGeneration {
-        #[arg()]
-        path: String,
-        #[arg(long)]
-        source: Option<String>,
-        #[arg(long, required = false, default_value_t = false)]
-        no_check_signs: bool,
+    Update {
+        #[command(subcommand)]
+        update: UpdateSub,
     },
     Test {
         #[command(subcommand)]
@@ -236,6 +237,29 @@ async fn test_subcommands(test: Test, admin: AdminClient) -> anyhow::Result<()> 
     anyhow::bail!("test failed '{service}' not registered");
 }
 
+impl UpdateSub {
+    async fn handle(self, admin: AdminClient) -> anyhow::Result<()> {
+        match self {
+            UpdateSub::Query(query) => query_updates(query).await?,
+            UpdateSub::List => {
+                let response = admin.list_generations().await?;
+                println!("{response:?}");
+            }
+            UpdateSub::Cachix(CachixOptions {
+                pin_name,
+                cachix_host,
+                cache,
+                token,
+            }) => {
+                admin
+                    .set_generation_cachix(pin_name, cachix_host, cache, token)
+                    .await?;
+            }
+        };
+        Ok(())
+    }
+}
+
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     givc::trace_init()?;
@@ -336,26 +360,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::QueryUpdates(query) => query_updates(query).await?,
-        Commands::ListGenerations {} => {
-            let response = admin.list_generations().await?;
-            println!("{:?}", response)
-        }
-
-        Commands::SetGeneration {
-            path,
-            source,
-            no_check_signs,
-        } => {
-            admin
-                .set_generation(
-                    path,
-                    source.unwrap_or("https://prod-cache.vedenemo.dev".into()),
-                    no_check_signs,
-                )
-                .await?
-        }
-    };
+        Commands::Update { update } => update.handle(admin).await?,
+    }
 
     Ok(())
 }

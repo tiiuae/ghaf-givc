@@ -18,6 +18,20 @@ pub struct QueryUpdates {
     pin_name: String,
 }
 
+#[derive(Parser, Clone, Debug)]
+pub struct CachixOptions {
+    pub pin_name: String,
+
+    #[arg(long, env = "CACHIX_TOKEN")]
+    pub token: Option<String>,
+
+    #[arg(long, default_value = "ghaf-dev")]
+    pub cache: String,
+
+    #[arg(long)]
+    pub cachix_host: Option<String>,
+}
+
 /// # Errors
 /// Fails if fetch/parse raise failure
 pub async fn query_updates(query: QueryUpdates) -> anyhow::Result<()> {
