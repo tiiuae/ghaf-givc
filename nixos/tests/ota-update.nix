@@ -1,6 +1,14 @@
 { self, ... }:
 let
   nodes = {
+    adminvm =
+      { ... }:
+      {
+        imports = [
+          self.nixosModules.tests-adminvm
+        ];
+        systemd.services.givc-admin.environment.GIVC_MONITORING = "false";
+      };
     hostvm =
       { ... }:
       {
@@ -184,7 +192,7 @@ in
                     # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
                     print(hostvm.succeed("${cli} ${cliArgs} test ensure --retry 60 --type 0 ${expected}"))
 
-                update = adminvm.succeed("find-software-update").strip()
+                update = updatevm.succeed("find-software-update").strip()
                 with subtest("OTA"):
                     print(hostvm.succeed("${cli} ${cliArgs} list-generations"))
                     print(hostvm.succeed(f"${cli} ${cliArgs} set-generation {update} --source ${source} --no-check-signs"))
