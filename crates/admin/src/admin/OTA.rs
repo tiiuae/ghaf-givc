@@ -16,8 +16,8 @@ pub(crate) struct OTA {
 }
 
 impl OTA {
-    pub async fn connect(endpoint: EndpointConfig) -> anyhow::Result<Self> {
-        Ok(Self { endpoint })
+    pub(crate) fn new(endpoint: EndpointConfig) -> Self {
+        Self { endpoint }
     }
 
     pub async fn list(&self) -> anyhow::Result<Vec<Generation>> {
@@ -41,16 +41,24 @@ impl OTA {
     }
 
     // FIXME: Update going silently, it should report
-    pub async fn set(
+    pub async fn install_via_cachix(
         &self,
-        path: String,
-        source: String,
-        no_check_signs: bool,
+        cachix_request: crate::pb::admin::Cachix,
     ) -> anyhow::Result<Stream<SetGenerationResponse>> {
         let mut exec = ExecClient::connect(self.endpoint.clone()).await?;
-        let mut args = vec!["set".to_owned(), path, "--source".to_owned(), source];
-        if no_check_signs {
-            args.push("--no-check-signs".to_owned())
+        let mut args = vec![
+            "cachix".to_owned(),
+            cachix_request.pin,
+            "--cache".to_owned(),
+            cachix_request.cache,
+        ];
+        if let Some(token) = cachix_request.token {
+            args.push("--token".to_owned());
+            args.push(token);
+        }
+        if let Some(cachix_host) = cachix_request.cachix_host {
+            args.push("--cachix-host".to_owned());
+            args.push(cachix_host);
         }
         let stream = async_fn_stream::try_fn_stream(async move |emitter| {
             debug!("Invoke ota-update: {args:?}");

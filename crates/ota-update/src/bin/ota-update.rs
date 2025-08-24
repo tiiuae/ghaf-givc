@@ -5,7 +5,7 @@ use tokio::process::Command;
 use anyhow::Context;
 use cachix_client::{CachixClientConfig, nixos::filter_valid_systems};
 use clap::{ArgAction, Parser, Subcommand};
-use ota_update::cli::{QueryUpdates, query_updates};
+use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
 use ota_update::profile;
 use ota_update::query::query_available_updates;
 use regex::Regex;
@@ -45,18 +45,7 @@ enum Commands {
     /// Query updates list
     Query(QueryUpdates),
 
-    Cachix {
-        pin_name: String,
-
-        #[arg(long, env = "CACHIX_TOKEN")]
-        token: Option<String>,
-
-        #[arg(long, default_value = "ghaf-untrusted")]
-        cache: String,
-
-        #[arg(long)]
-        cachix_host: Option<String>,
-    },
+    Cachix(CachixOptions),
 }
 
 async fn get_generations() -> anyhow::Result<()> {
@@ -208,12 +197,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Query(query) => {
             query_updates(query).await?;
         }
-        Commands::Cachix {
+        Commands::Cachix(CachixOptions {
             pin_name,
             token,
             cachix_host,
             cache,
-        } => perform_cachix_update(&pin_name, token, cachix_host, cache).await?,
+        }) => perform_cachix_update(&pin_name, token, cachix_host, cache).await?,
     }
     Ok(())
 }

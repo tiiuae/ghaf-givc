@@ -789,7 +789,7 @@ impl pb::admin_service_server::AdminService for AdminService {
     ) -> Result<tonic::Response<ListGenerationsResponse>, tonic::Status> {
         escalate(request, async |_| {
             let endpoint = self.inner.host_endpoint()?;
-            let ota = super::OTA::OTA::connect(endpoint).await?;
+            let ota = super::OTA::OTA::new(endpoint);
             let list = ota.list().await?;
             Ok(ListGenerationsResponse { list })
         })
@@ -803,9 +803,14 @@ impl pb::admin_service_server::AdminService for AdminService {
     ) -> Result<tonic::Response<Self::SetGenerationStream>, tonic::Status> {
         escalate(request, async move |req| {
             let endpoint = self.inner.host_endpoint()?;
-            let ota = super::OTA::OTA::connect(endpoint).await?;
-            let stream = ota.set(req.path, req.source, req.no_check_signs).await?;
-            Ok(Box::pin(stream) as Self::SetGenerationStream)
+            let ota = super::OTA::OTA::new(endpoint);
+            match req.update {
+                Some(pb::set_generation_request::Update::Cachix(cachix_request)) => {
+                    let stream = ota.install_via_cachix(cachix_request).await?;
+                    Ok(Box::pin(stream) as Self::SetGenerationStream)
+                }
+                _ => anyhow::bail!("unimplemented update method"),
+            }
         })
         .await
     }

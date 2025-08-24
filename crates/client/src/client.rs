@@ -437,16 +437,24 @@ impl AdminClient {
         Ok(gens.list)
     }
 
-    pub async fn set_generation(
+    /// Install choosed pinned release from cachix.
+    /// # Errors
+    /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
+    pub async fn set_generation_cachix(
         &self,
-        path: String,
-        source: String,
-        no_check_signs: bool,
+        pin: String,
+        server: Option<String>,
+        cache: String,
+        token: Option<String>,
     ) -> anyhow::Result<()> {
+        let cachix = pb::admin::Cachix {
+            pin,
+            cachix_host: server,
+            cache,
+            token,
+        };
         let req = pb::admin::SetGenerationRequest {
-            path,
-            source,
-            no_check_signs,
+            update: Some(pb::set_generation_request::Update::Cachix(cachix)),
         };
         let response = self
             .connect_to()

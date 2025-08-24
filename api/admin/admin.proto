@@ -111,9 +111,16 @@ message ListGenerationsResponse {
 }
 
 message SetGenerationRequest {
-    string Path = 1;
-    string Source = 2;
-    bool NoCheckSigns = 3;
+    oneof Update {
+        Cachix Cachix = 1;
+    }
+}
+
+message Cachix {
+    string Pin = 1;
+    optional string CachixHost = 2; // API url for cachix
+    string Cache = 3;
+    optional string Token = 4;
 }
 
 message SetGenerationResponse {
