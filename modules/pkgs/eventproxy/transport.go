@@ -15,7 +15,7 @@ import (
 	givc_types "givc/modules/pkgs/types"
 
 	evdev "github.com/holoplot/go-evdev"
-	"github.com/vunnyso/virtual-device/gamepad"
+	"github.com/jbdemonte/virtual-device/gamepad"
 	"google.golang.org/grpc"
 
 	log "github.com/sirupsen/logrus"
