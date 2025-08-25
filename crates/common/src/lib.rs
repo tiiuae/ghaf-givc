@@ -12,7 +12,11 @@ pub mod pb {
     #![allow(clippy::must_use_candidate)]
     #![allow(clippy::similar_names)]
     pub mod admin {
+        use serde::{Deserialize, Serialize};
         tonic::include_proto!("admin");
+    }
+    pub mod exec {
+        tonic::include_proto!("exec");
     }
     pub mod locale {
         tonic::include_proto!("locale");
