@@ -13,8 +13,8 @@ import (
 	givc_types "givc/modules/pkgs/types"
 
 	evdev "github.com/holoplot/go-evdev"
+	"github.com/jbdemonte/virtual-device/gamepad"
 	"github.com/jochenvg/go-udev"
-	"github.com/vunnyso/virtual-device/gamepad"
 
 	log "github.com/sirupsen/logrus"
 )
