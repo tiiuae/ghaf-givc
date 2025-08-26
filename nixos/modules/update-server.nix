@@ -44,6 +44,15 @@ in
       description = "Public key matching configured nix-serve";
       default = "BOGUS"; # No default breaks docs generation
     };
+
+    cachix = mkOption {
+      type = types.str;
+      description = ''
+        Domain for cache, which served via simulated cahcix API.
+        All caches redirect to same domain.
+        (for testing purposes)
+      '';
+    };
   };
 
   config =
@@ -62,6 +71,7 @@ in
             ${ota-update-server}/bin/ota-update-server serve \
               --port ${toString cfg.port} \
               --path ${cfg.path} \
+              --cachix ${cfg.cachix} \
               --pub-key ${cfg.publicKey} \
               --allowed-profiles ${concatStringsSep "," cfg.allowedProfiles}
           '';
