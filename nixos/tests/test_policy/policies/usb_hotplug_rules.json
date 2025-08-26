@@ -1,0 +1,23 @@
+{
+  "hotplug_rules": {
+    "denylist": {
+      "0xbadb": ["0xdada"],
+      "~0xbabb": ["0xcaca"]
+    },
+
+    "allowlist": {
+      "0x0b95:0x1790": ["net-vm"]
+    },
+
+    "classlist": {
+      "0x01:*:*": ["audio-vm"],
+      "0x03:*:0x01": ["gui-vm"],
+      "0x03:*:0x02": ["gui-vm"],
+      "0x08:0x06:*": ["gui-vm"],
+      "0x0b:*:*": ["gui-vm"],
+      "0x11:*:*": ["gui-vm"],
+      "0x02:06:*": ["net-vm"],
+      "0x0e:*:*": ["chrome-vm"]
+    }
+  }
+}
