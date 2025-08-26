@@ -69,13 +69,11 @@ pub async fn get_bootctl_info() -> anyhow::Result<BootctlInfo> {
                 serde_json::from_value(info).context("While decoding bootctl json output")?;
             Ok(info)
         }
-        code => {
-            // Special case: if bootctl fails with mentioning `--esp-path` in error output, then we are in testing VM without EFI, handle it and return empty list
-            if err.contains("--esp-path") {
-                return Ok(Vec::new());
-            }
-            anyhow::bail!("bootctl failed with exit code {code}, and stderr output: {err}")
-        }
+        // Special case: if bootctl fails with mentioning `--esp-path` in error output, then we are in testing VM without EFI, handle it and return empty list
+        _ if err.contains("--esp-path") => Ok(Vec::new()),
+        code => Err(anyhow::anyhow!(
+            "bootctl failed with exit code {code}, and stderr output: {err}"
+        )),
     }
 }
 
