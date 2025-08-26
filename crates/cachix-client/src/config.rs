@@ -11,6 +11,7 @@ pub struct CachixClientConfig {
 }
 
 impl CachixClientConfig {
+    #[must_use]
     pub fn new(cache_name: String) -> CachixClientConfig {
         CachixClientConfig {
             cache_name,
@@ -20,10 +21,12 @@ impl CachixClientConfig {
         }
     }
 
+    #[must_use]
     pub fn set_hostname(self, hostname: String) -> CachixClientConfig {
         Self { hostname, ..self }
     }
 
+    #[must_use]
     pub fn set_auth_token(self, token: String) -> CachixClientConfig {
         Self {
             auth_token: Some(token),
@@ -31,6 +34,7 @@ impl CachixClientConfig {
         }
     }
 
+    #[must_use]
     pub fn build(self) -> CachixClient {
         CachixClient::new(self)
     }

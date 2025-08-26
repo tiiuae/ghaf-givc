@@ -14,9 +14,8 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::fs;
 use tokio::net::TcpListener;
-use tracing::{debug, info, trace};
+use tracing::{info, trace};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -79,47 +78,25 @@ async fn get_update_list(
         "Query updates for {path}, default {default_name}",
         path = path.display()
     );
-    let default_link_path = path.join(default_name);
-    let default_target = fs::read_link(&default_link_path).await.ok();
 
-    let mut updates = Vec::new();
-    let mut dir = fs::read_dir(&path)
+    let (_, profiles) = profile::read_profile_links(path, default_name)
         .await
-        .with_context(|| format!("while read_dir() on {path}", path = path.display()))?;
+        .with_context(|| {
+            format!(
+                "While reading profile {path} with {default_name}",
+                path = path.display()
+            )
+        })?;
 
-    while let Some(entry) = dir.next_entry().await? {
-        debug!("Processing {entry:?}");
-
-        let name = entry
-            .file_name()
-            .into_string()
-            .ok()
-            .context("Decode UTF-8 string")?;
-        if name
-            .strip_prefix(default_name)
-            .is_none_or(|f| !f.ends_with("-link"))
-        {
-            continue;
-        }
-
-        let full_path = entry.path();
-
-        let store_path = match fs::read_link(&full_path).await {
-            Ok(t) if t.is_absolute() && t.exists() => t,
-            _ => continue,
-        };
-
-        let current = default_target.as_deref() == Some(name.as_ref());
-
-        updates.push(UpdateInfo {
-            name,
-            store_path,
-            current,
+    Ok(profiles
+        .into_iter()
+        .map(|profile| UpdateInfo {
+            name: format!("Update #{num}", num = profile.num),
+            store_path: profile.store_path,
+            current: profile.current,
             pub_key: pub_key.to_owned(),
-        });
-    }
-
-    Ok(updates)
+        })
+        .collect())
 }
 
 async fn update_handler(

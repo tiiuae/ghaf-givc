@@ -14,6 +14,7 @@ pub mod pb {
     pub mod admin {
         tonic::include_proto!("admin");
     }
+    #[allow(clippy::doc_markdown)]
     pub mod locale {
         tonic::include_proto!("locale");
     }

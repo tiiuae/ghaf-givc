@@ -1,9 +1,11 @@
 use crate::{CachixClient, CachixError, Pin};
 use bootspec;
 
-/// Filters pins that contain a valid NixOS boot specification (`boot.json`).
+/// Filters pins that contain a valid `NixOS` boot specification (`boot.json`).
 ///
-/// Returns a list of (Pin, BootSpec).
+/// Returns a list of (Pin, `bootspec::v1::GenerationV1`).
+/// # Errors
+/// Returns `Err` if network interactions with cachix failed, or bootspec file unparsable
 pub async fn filter_valid_systems(
     client: &CachixClient,
     system: &str,
@@ -32,9 +34,9 @@ pub async fn filter_valid_systems(
             if spec.bootspec.toplevel.0 == pin.last_revision.store_path
                 && spec.bootspec.system == system
             {
-                result.push((pin, spec))
+                result.push((pin, spec));
             }
-        };
+        }
     }
 
     Ok(result)
