@@ -15,7 +15,7 @@ import (
 	givc_types "givc/modules/pkgs/types"
 
 	evdev "github.com/holoplot/go-evdev"
-	"github.com/vunnyso/virtual-device/gamepad"
+	"github.com/jbdemonte/virtual-device/gamepad"
 	"google.golang.org/grpc"
 
 	log "github.com/sirupsen/logrus"
@@ -81,7 +81,8 @@ func (s *EventProxyServer) RegisterDevice(ctx context.Context, info *givc_event.
 	}
 
 	if strings.Contains(strings.ToLower(info.Name), "wireless controller") {
-		device := gamepad.NewXBox360()
+		// Creates Xbox One virtual device
+		device := gamepad.NewXBoxOneS()
 
 		err := device.Register()
 		if err != nil {
