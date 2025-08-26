@@ -81,7 +81,8 @@ func (s *EventProxyServer) RegisterDevice(ctx context.Context, info *givc_event.
 	}
 
 	if strings.Contains(strings.ToLower(info.Name), "wireless controller") {
-		device := gamepad.NewXBox360()
+		// Creates Xbox One virtual device
+		device := gamepad.NewXBoxOneS()
 
 		err := device.Register()
 		if err != nil {
