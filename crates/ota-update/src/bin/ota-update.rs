@@ -1,7 +1,5 @@
 use std::ffi::OsStr;
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use tokio::process::Command;
 
 use anyhow::Context;
@@ -11,7 +9,6 @@ use ota_update::cli::{QueryUpdates, query_updates};
 use ota_update::profile;
 use ota_update::query::query_available_updates;
 use regex::Regex;
-use serde_json::Value;
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -89,9 +86,9 @@ async fn set_generation(
     pub_keys: &[String],
     no_check_signs: bool,
 ) -> anyhow::Result<()> {
-    is_valid_nix_path(path)?;
-
     const GCROOT: &str = "/nix/var/nix/gcroots/auto/ota-update";
+
+    is_valid_nix_path(path)?;
 
     let mut nix = Command::new("nix");
     nix.arg("--extra-experimental-features")
@@ -130,7 +127,7 @@ async fn set_generation(
 
     if let Err(e) = tokio::fs::remove_file(GCROOT).await {
         info!("Fail to unlink {GCROOT}: {e}");
-    };
+    }
 
     let boot_path = path.join("bin/switch-to-configuration");
     Command::new(&boot_path)
@@ -156,10 +153,10 @@ async fn perform_cachix_update(
     let system = read_system_boot_json().await?;
     let mut client_config = CachixClientConfig::new(cache);
     if let Some(token) = token {
-        client_config = client_config.set_auth_token(token)
+        client_config = client_config.set_auth_token(token);
     }
     if let Some(host) = host {
-        client_config = client_config.set_hostname(host)
+        client_config = client_config.set_hostname(host);
     }
     let client = client_config.build();
     let candidate = filter_valid_systems(&client, &system)

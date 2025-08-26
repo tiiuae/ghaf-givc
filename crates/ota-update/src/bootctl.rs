@@ -29,6 +29,9 @@ pub struct BootctlItem {
 
 type BootctlInfo = Vec<BootctlItem>;
 
+/// Invoke `bootctl` from systemd, and parse it's output
+/// # Errors
+/// Return `Err` if bootctl failed to exec, or output fail to parse
 pub async fn get_bootctl_info() -> anyhow::Result<BootctlInfo> {
     let bootctl = Command::new("bootctl")
         .arg("list")
@@ -68,7 +71,7 @@ pub async fn get_bootctl_info() -> anyhow::Result<BootctlInfo> {
         }
         code => {
             // Special case: if bootctl fails with mentioning `--esp-path` in error output, then we are in testing VM without EFI, handle it and return empty list
-            if err.contains(&"--esp-path") {
+            if err.contains("--esp-path") {
                 return Ok(Vec::new());
             }
             anyhow::bail!("bootctl failed with exit code {code}, and stderr output: {err}")

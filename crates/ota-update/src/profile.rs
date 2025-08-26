@@ -8,6 +8,7 @@ use tokio::fs;
 use tokio::process::Command;
 use tracing::{debug, trace};
 
+#[must_use]
 pub fn format_profile_link(profile: &str, generation: i32) -> String {
     format!("{profile}-{generation}-link")
 }
@@ -16,8 +17,7 @@ pub fn format_profile_link(profile: &str, generation: i32) -> String {
 /// # Errors
 /// Fails if link didn't match given prefix or invalid
 pub fn parse_profile_link(profile: &str, link: &str) -> anyhow::Result<i32> {
-    link
-        .strip_prefix(profile)
+    link.strip_prefix(profile)
         .and_then(|p| p.strip_prefix("-"))
         .and_then(|p| p.strip_suffix("-link"))
         .and_then(|p| p.parse().ok())
@@ -181,23 +181,29 @@ mod tests {
         let err = bad.unwrap_err();
         assert_eq!(
             format!("{}", err.root_cause()),
-            "Unable to parse generation" 
+            "Unable to parse generation"
         );
 
         let bad = parse_profile_link("system", "just-a-link");
         let err = bad.unwrap_err();
         assert_eq!(
             format!("{}", err.root_cause()),
-            "Unable to parse generation" 
+            "Unable to parse generation"
         );
 
         let bad = parse_profile_link("system", "system-42-just");
         let err = bad.unwrap_err();
-        assert_eq!(format!("{}", err.root_cause()), "Unable to parse generation");
+        assert_eq!(
+            format!("{}", err.root_cause()),
+            "Unable to parse generation"
+        );
 
         let bad = parse_profile_link("system", "system42-just");
         let err = bad.unwrap_err();
-        assert_eq!(format!("{}", err.root_cause()), "Unable to parse generation");
+        assert_eq!(
+            format!("{}", err.root_cause()),
+            "Unable to parse generation"
+        );
         Ok(())
     }
 }
