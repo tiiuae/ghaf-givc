@@ -5,7 +5,7 @@ go 1.24
 toolchain go1.24.1
 
 require (
-	github.com/coreos/go-systemd/v22 v22.5.0
+	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
