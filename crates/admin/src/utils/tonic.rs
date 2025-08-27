@@ -52,12 +52,5 @@ pub async fn escalate<T, R>(
     fun: impl AsyncFnOnce(T) -> anyhow::Result<R>,
 ) -> Result<tonic::Response<R>, tonic::Status> {
     let result = fun(req.into_inner()).await;
-    match result {
-        Ok(res) => Ok(Response::new(res)),
-        Err(any_err) => {
-            error!("error handling GRPC request: {any_err}");
-            let status = wrap_error(any_err);
-            Err(status)
-        }
-    }
+    result.map(Response::new).wrap_error()
 }
