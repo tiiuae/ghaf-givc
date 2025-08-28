@@ -209,32 +209,34 @@ enum Test {
     },
 }
 
-async fn test_subcommands(test: Test, admin: AdminClient) -> anyhow::Result<()> {
-    let Test::Ensure {
-        service,
-        retry,
-        r#type,
-        vm,
-    } = test;
+impl Test {
+    async fn handle(self, admin: AdminClient) -> anyhow::Result<()> {
+        let Test::Ensure {
+            service,
+            retry,
+            r#type,
+            vm,
+        } = self;
 
-    let mut ival = interval(time::Duration::from_secs(1));
-    for _ in 0..retry {
-        ival.tick().await;
-        if let Some(r) = admin
-            .query_list()
-            .await?
-            .into_iter()
-            .find(|r| r.name == service)
-        {
-            if r#type.is_some_and(|t| t.vm != r.vm_type || t.service != r.service_type) {
-                anyhow::bail!("test failed '{service}' registered but of wrong type");
-            } else if vm.is_some() && vm != r.vm_name {
-                anyhow::bail!("test failed '{service}' registered but on wrong VM");
+        let mut ival = interval(time::Duration::from_secs(1));
+        for _ in 0..retry {
+            ival.tick().await;
+            if let Some(r) = admin
+                .query_list()
+                .await?
+                .into_iter()
+                .find(|r| r.name == service)
+            {
+                if r#type.is_some_and(|t| t.vm != r.vm_type || t.service != r.service_type) {
+                    anyhow::bail!("test failed '{service}' registered but of wrong type");
+                } else if vm.is_some() && vm != r.vm_name {
+                    anyhow::bail!("test failed '{service}' registered but on wrong VM");
+                }
+                return Ok(());
             }
-            return Ok(());
         }
+        anyhow::bail!("test failed '{service}' not registered");
     }
-    anyhow::bail!("test failed '{service}' not registered");
 }
 
 impl UpdateSub {
@@ -255,7 +257,7 @@ impl UpdateSub {
                     .set_generation_cachix(pin_name, cachix_host, cache, token)
                     .await?;
             }
-        };
+        }
         Ok(())
     }
 }
@@ -290,7 +292,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     };
 
     match cli.command {
-        Commands::Test { test } => test_subcommands(test, admin).await?,
+        Commands::Test { test } => test.handle(admin).await?,
         Commands::Start { start } => {
             let response = match start {
                 StartSub::App { app, vm, args } => admin.start_app(app, vm, args).await?,
