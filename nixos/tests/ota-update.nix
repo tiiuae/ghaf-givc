@@ -45,6 +45,9 @@ let
         # nixos-version inaccessible via pkgs.* so fake it
         nixos-version = pkgs.writeShellScriptBin "nixos-version" ''
           echo "Fake version"
+          cat <<EOF
+          {"nixosVersion": "UPDATE"}
+          EOF
         '';
 
         # Combine everything to a derivation mimicing full system
@@ -53,6 +56,11 @@ let
           paths = [ software-update-switch ];
           postBuild = ''
             ln -s "${config.system.build.kernel}/${config.system.boot.loader.kernelFile}" $out/kernel
+            ln -s ${config.system.modulesTree} $out/kernel-modules
+
+            # Write a bootspec
+            ${config.boot.bootspec.writer}
+
             ln -s ${nixos-version} $out/sw
             mkdir -p $out/specialisation
 
@@ -79,8 +87,9 @@ let
         };
         services.ota-update-server = {
           enable = true;
-          allowedProfiles = [ "ghaf-updates" ];
+          allowedProfiles = [ "ghaf-dev" ];
           publicKey = "test-updates.example.com:/muLakHVUJWxVRPIacpLJatGimj6S3OocBkwOan1VVc=%";
+          cachix = "http://test-updates.example.com";
         };
         services.nginx = {
           enable = true;
@@ -95,6 +104,9 @@ let
             default = true;
             locations = {
               "/update" = {
+                proxyPass = "http://127.0.0.1:${toString config.services.ota-update-server.port}";
+              };
+              "/api" = {
                 proxyPass = "http://127.0.0.1:${toString config.services.ota-update-server.port}";
               };
               "/" = {
@@ -113,7 +125,7 @@ let
 in
 {
   perSystem =
-    { pkgs, self', ... }:
+    { self', ... }:
     {
       vmTests.tests = {
         ota-update-http = {
@@ -134,15 +146,45 @@ in
 
                 update = updatevm.succeed("find-software-update").strip()
                 updatevm.succeed("mkdir -p /nix/var/nix/profiles/per-user/updates") # FIXME: Move it somewhere into setup phase (or even to module)
-                updatevm.succeed(f"ota-update-server register /nix/var/nix/profiles/per-user/updates ghaf-updates {update}")
+                updatevm.succeed(f"ota-update-server register /nix/var/nix/profiles/per-user/updates ghaf-dev {update}")
                 print(updatevm.succeed("find /nix/var/nix/profiles/per-user/updates"))
-                print(hostvm.succeed("curl -v ${source}/update/ghaf-updates"))
-                result = hostvm.succeed("ota-update query --source ${source} --raw --current").strip()
+                print(hostvm.succeed("curl -v ${source}/update/ghaf-dev"))
+                result = hostvm.succeed("ota-update query --source ${source} --pin-name ghaf-dev --raw --current").strip()
                 assert result == update
 
-                # NOTE: Change to readoly directory before ota-upadte invocation, it trigger a bug if directory non-writeable
+                # NOTE: Change to readonly directory before ota-upadte invocation, it trigger a bug if directory non-writeable
                 #       Keep this quirk in place, to ensure that bug is workarounded
                 hostvm.succeed(f"cd /var/empty && ota-update local {result} --source ${source} --pin-name ghaf-dev")
+
+                # Ensure, that `switch-to-configuration boot` is successfully invoked
+                hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
+              '';
+          };
+        };
+        ## Note: tested by cachix simulator
+        ota-update-cachix = {
+          module = {
+            inherit nodes;
+            testScript =
+              { nodes, ... }:
+              let
+                hostvm = nodes.hostvm.system.build.toplevel;
+              in
+              ''
+                hostvm.wait_for_unit("multi-user.target")
+                print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
+
+                updatevm.wait_for_unit("multi-user.target")
+                updatevm.wait_for_unit("ota-update-server.service")
+
+                update = updatevm.succeed("find-software-update").strip()
+                updatevm.succeed("mkdir -p /nix/var/nix/profiles/per-user/updates") # FIXME: Move it somewhere into setup phase (or even to module)
+                updatevm.succeed(f"ota-update-server register /nix/var/nix/profiles/per-user/updates ghaf-dev {update}")
+
+                print(hostvm.succeed("ota-update get"))
+                # NOTE: Change to readonly directory before ota-upadte invocation, it trigger a bug if directory non-writeable
+                #       Keep this quirk in place, to ensure that bug is workarounded
+                hostvm.succeed("cd /var/empty && ota-update cachix --cachix-host http://test-updates.example.com ghaf-dev || (sleep 10 && exit 1)")
 
                 # Ensure, that `switch-to-configuration boot` is successfully invoked
                 hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
@@ -156,10 +198,6 @@ in
               { nodes, ... }:
               let
                 hostvm = nodes.hostvm.system.build.toplevel;
-                regInfoHost = pkgs.closureInfo { rootPaths = hostvm; };
-                adminvm = nodes.adminvm.system.build.toplevel;
-                regInfoAdmin = pkgs.closureInfo { rootPaths = adminvm; };
-                source = "ssh-ng://root@${(builtins.head nodes.adminvm.networking.interfaces.eth1.ipv4.addresses).address}";
                 admin = builtins.head nodes.adminvm.givc.admin.addresses;
                 expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
                 tls = nodes.adminvm.givc.admin.tls.enable;
@@ -175,12 +213,15 @@ in
               in
               ''
                 hostvm.wait_for_unit("multi-user.target")
-                print(hostvm.succeed("nix-store --load-db <${regInfoHost}"))
+                # Create default system profile symlink
                 print(hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}"))
+                updatevm.wait_for_unit("multi-user.target")
+                updatevm.wait_for_unit("ota-update-server.service")
+                update = updatevm.succeed("find-software-update").strip()
+                updatevm.succeed("mkdir -p /nix/var/nix/profiles/per-user/updates") # FIXME: Move it somewhere into setup phase (or even to module)
+                updatevm.succeed(f"ota-update-server register /nix/var/nix/profiles/per-user/updates ghaf-dev {update}")
 
                 adminvm.wait_for_unit("multi-user.target")
-                print(adminvm.succeed("nix-store --load-db <${regInfoAdmin}"))
-                print(adminvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${adminvm}"))
 
                 import time
                 with subtest("setup services"):
@@ -194,11 +235,11 @@ in
 
                 update = updatevm.succeed("find-software-update").strip()
                 with subtest("OTA"):
-                    print(hostvm.succeed("${cli} ${cliArgs} list-generations"))
-                    print(hostvm.succeed(f"${cli} ${cliArgs} set-generation {update} --source ${source} --no-check-signs"))
+                    print(hostvm.succeed("${cli} ${cliArgs} update list"))
+                    print(hostvm.succeed("${cli} ${cliArgs} update cachix --cachix-host http://test-updates.example.com ghaf-dev || (sleep 10 && exit 1)"))
                     # Ensure, that `switch-to-configuration boot` is successfully invoked
                     hostvm.wait_for_file("/tmp/switch-to-configuration-boot")
-                    print(hostvm.succeed("${cli} ${cliArgs} list-generations"))
+                    print(hostvm.succeed("${cli} ${cliArgs} update list"))
               '';
           };
         };
