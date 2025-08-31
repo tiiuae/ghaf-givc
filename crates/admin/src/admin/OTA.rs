@@ -7,6 +7,7 @@ use crate::pb::SetGenerationResponse;
 use crate::utils::tonic::{Stream, wrap_error};
 use givc_client::exec::ExecClient;
 use givc_common::pb::Generation;
+use ota_update::types::GenerationDetails;
 
 type SetGenerationStream = Stream<SetGenerationResponse>;
 
@@ -36,8 +37,28 @@ impl OTA {
             bail!("Exec error: {}", String::from_utf8_lossy(&stderr))
         }
         debug!("stdout: {}", String::from_utf8_lossy(&stdout));
-        let gens: Vec<Generation> = serde_json::from_slice(&stdout)?;
-        Ok(gens)
+        let gens: Vec<GenerationDetails> = serde_json::from_slice(&stdout)?;
+        gens.into_iter()
+            .map(|g| {
+                Ok(Generation {
+                    current: g.current,
+                    generation: g.generation,
+                    store_path: g
+                        .store_path
+                        .into_os_string()
+                        .into_string()
+                        .ok()
+                        .context("Decode UTF-8")?,
+                    configuration_revision: g
+                        .configuration_revision
+                        .unwrap_or_else(|| "unknown".into()),
+                    nixos_version: g.nixos_version,
+                    kernel_version: g.kernel_version,
+                    specialisations: Vec::new(),
+                    date: "bogus".into(),
+                })
+            })
+            .collect()
     }
 
     // FIXME: Update going silently, it should report
