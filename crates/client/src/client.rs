@@ -14,6 +14,7 @@ use givc_common::types::{EndpointEntry, TransportConfig, UnitStatus, UnitType};
 
 use crate::endpoint::{EndpointConfig, TlsConfig};
 use crate::error::StatusWrapExt;
+use crate::stream::drain_stream_with_callback;
 
 type Client = pb::admin_service_client::AdminServiceClient<Channel>;
 
@@ -462,16 +463,14 @@ impl AdminClient {
             .set_generation(req)
             .await
             .rewrap_err()?;
-        let mut stream = response.into_inner();
-        // FIXME: is any better way do drain stream? .collect() didn't work for me
-        while let Some(Ok(next)) = stream.next().await {
+        let stream = response.into_inner();
+        drain_stream_with_callback(stream, async move |next| {
             if let Some(out) = next.output {
                 info!("set_generation: {out}");
             }
-            if next.finished {
-                break;
-            }
-        }
+            Ok(())
+        })
+        .await?;
         Ok(())
     }
 }

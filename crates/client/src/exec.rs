@@ -1,9 +1,11 @@
+use anyhow::Context;
 use std::future::Future;
 use tonic::Request;
 use tonic::transport::Channel;
 use tracing::{info, warn};
 
 use crate::endpoint::EndpointConfig;
+use crate::stream::check_trailers;
 use givc_common::pb::exec::command_request::Command;
 use givc_common::pb::exec::command_response::Event;
 use givc_common::pb::exec::{CommandIo, CommandRequest, StartCommand};
@@ -99,6 +101,10 @@ impl ExecClient {
                 }
             }
         }
+
+        check_trailers(response)
+            .await
+            .context("While check trailers in exec.rs")?;
 
         Ok(return_code)
     }
