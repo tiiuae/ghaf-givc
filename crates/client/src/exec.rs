@@ -2,7 +2,7 @@ use anyhow::Context;
 use std::future::Future;
 use tonic::Request;
 use tonic::transport::Channel;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use crate::endpoint::EndpointConfig;
 use crate::stream::check_trailers;
@@ -75,24 +75,32 @@ impl ExecClient {
 
         let mut return_code = -1;
 
-        info!("Subprocess started. Waiting for output...");
+        debug!("Subprocess started. Waiting for output...");
 
         // Process the server's responses
         while let Some(response) = response.message().await? {
             match response.event {
                 Some(Event::Stdout(CommandIO { payload })) => {
-                    info!("Event::Stdout {} bytes", payload.len());
+                    debug!(
+                        "Event::Stdout {} bytes: {out}",
+                        payload.len(),
+                        out = String::from_utf8_lossy(&payload)
+                    );
                     stdout_fn(payload).await;
                 }
                 Some(Event::Stderr(CommandIO { payload })) => {
-                    info!("Event::Stderr {} bytes", payload.len());
+                    debug!(
+                        "Event::Stderr {} bytes: {out}",
+                        payload.len(),
+                        out = String::from_utf8_lossy(&payload)
+                    );
                     stderr_fn(payload).await;
                 }
                 Some(Event::Started(started)) => {
-                    info!("Process started with PID: {}", started.pid);
+                    debug!("Process started with PID: {}", started.pid);
                 }
                 Some(Event::Finished(finished)) => {
-                    info!("Process finished with exit code: {}", finished.return_code);
+                    debug!("Process finished with exit code: {}", finished.return_code);
                     return_code = finished.return_code;
                     break;
                 }
