@@ -1,4 +1,4 @@
-use anyhow::bail;
+use anyhow::{Context, bail};
 use tonic::Status;
 use tracing::debug;
 
@@ -91,11 +91,6 @@ impl OTA {
                 )
                 .await
                 .map_err(|e| Status::unknown(e.to_string()))?;
-            if rc > 0 {
-                return Err(wrap_error(anyhow::anyhow!(
-                    "Execution of failed, RC code is {rc}"
-                )));
-            }
             emitter
                 .emit(SetGenerationResponse {
                     finished: true,
@@ -103,6 +98,11 @@ impl OTA {
                     error: None,
                 })
                 .await;
+            if rc > 0 {
+                return Err(wrap_error(anyhow::anyhow!(
+                    "Execution of ota-update failed, RC code is {rc}"
+                )));
+            }
             Ok(())
         });
         Ok(Box::pin(stream) as SetGenerationStream)

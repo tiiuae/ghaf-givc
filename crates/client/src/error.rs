@@ -2,7 +2,7 @@ use anyhow::Error;
 use tonic::Status;
 use tonic_types::StatusExt;
 
-fn rewrap_error(status: &Status) -> Error {
+pub(crate) fn rewrap_error(status: &Status) -> Error {
     let mut err = Error::msg(status.message().to_owned());
     let details = status.get_error_details();
     if let Some(debug_info) = details.debug_info() {
