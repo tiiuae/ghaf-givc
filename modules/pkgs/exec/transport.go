@@ -90,41 +90,49 @@ func (s *ExecServer) RunCommand(stream pb.Exec_RunCommandServer) error {
 }
 
 func handleInput(stream pb.Exec_RunCommandServer, proc *process) {
-	for {
-		req, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			break
-		}
+	ctx := stream.Context()
 
-		switch v := req.Command.(type) {
-		case *pb.CommandRequest_Start:
-			fmt.Errorf("process already started")
-			break
-		case *pb.CommandRequest_Stdin:
-			if proc == nil {
-				fmt.Errorf("process not started")
-				break
-			}
-			_, err = proc.stdin.Write(v.Stdin.Payload)
-			if err != nil {
-				fmt.Errorf("error: %v", err)
-				break
-			}
-		case *pb.CommandRequest_Signal:
-			if proc == nil {
-				fmt.Errorf("process not started")
-				break
-			}
-			err = proc.cmd.Process.Signal(syscall.Signal(v.Signal.Signal))
-			if err != nil {
-				fmt.Errorf("error: %v", err)
-				break
-			}
+	for {
+		select {
+		case <-ctx.Done():
+			// RPC context canceled (client disconnected or deadline exceeded)
+			return
 		default:
-			fmt.Errorf("unknown command request")
+			req, err := stream.Recv()
+			if err == io.EOF {
+				// Client closed the input stream (stdin closed)
+				return
+			}
+			if err != nil {
+				log.Warnf("handleInput: recv error: %v", err)
+				return
+			}
+
+			switch v := req.Command.(type) {
+			case *pb.CommandRequest_Start:
+				log.Warnf("handleInput: unexpected Start after process already started")
+				return
+			case *pb.CommandRequest_Stdin:
+				if proc == nil {
+					log.Warnf("handleInput: stdin received but process not started")
+					return
+				}
+				if _, err := proc.stdin.Write(v.Stdin.Payload); err != nil {
+					log.Warnf("handleInput: write to stdin failed: %v", err)
+					return
+				}
+			case *pb.CommandRequest_Signal:
+				if proc == nil {
+					log.Warnf("handleInput: signal received but process not started")
+					return
+				}
+				if err := proc.cmd.Process.Signal(syscall.Signal(v.Signal.Signal)); err != nil {
+					log.Warnf("handleInput: sending signal failed: %v", err)
+					return
+				}
+			default:
+				log.Warnf("handleInput: unknown command request")
+			}
 		}
 	}
 }
