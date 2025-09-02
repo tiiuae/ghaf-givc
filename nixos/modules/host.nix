@@ -74,6 +74,19 @@ in
       '';
     };
 
+    adminVms = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      example = literalExpression ''
+        services = [
+          "microvm@admin-vm.service"
+        ];'';
+      description = ''
+        List of admin VM services for the host to administrate, which is joined with the generic "services" option.
+        Expects a space separated list. Should be a unit file of type 'service'.
+      '';
+    };
+
     systemVms = mkOption {
       type = types.listOf types.str;
       default = [ ];
@@ -196,6 +209,7 @@ in
         "TYPE" = "0";
         "SUBTYPE" = "1";
         "SERVICES" = "${concatStringsSep " " cfg.services}";
+        "ADMVMS" = "${concatStringsSep " " cfg.adminVms}";
         "SYSVMS" = "${concatStringsSep " " cfg.systemVms}";
         "APPVMS" = "${concatStringsSep " " cfg.appVms}";
         "ADMIN_SERVER" = "${toJSON cfg.admin}";

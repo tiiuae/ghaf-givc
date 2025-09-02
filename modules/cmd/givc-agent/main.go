@@ -85,6 +85,14 @@ func main() {
 		}
 	}
 
+	admVmsString := os.Getenv("ADMVMS")
+	if admVmsString != "" {
+		admVms := strings.FieldsSeq(admVmsString)
+		for service := range admVms {
+			services[service] = givc_types.UNIT_TYPE_ADMVM
+		}
+	}
+
 	sysVmsString := os.Getenv("SYSVMS")
 	if sysVmsString != "" {
 		sysVms := strings.Split(sysVmsString, " ")
