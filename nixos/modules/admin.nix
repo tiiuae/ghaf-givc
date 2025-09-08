@@ -151,23 +151,22 @@ in
           Restart = "always";
           RestartSec = 1;
         };
-        environment =
-          {
-            "NAME" = "${cfg.name}";
-            "TYPE" = "4";
-            "SUBTYPE" = "5";
-            "TLS" = "${trivial.boolToString cfg.tls.enable}";
-            "SERVICES" = "${concatStringsSep " " cfg.services}";
-          }
-          // attrsets.optionalAttrs cfg.tls.enable {
-            "CA_CERT" = "${cfg.tls.caCertPath}";
-            "HOST_CERT" = "${cfg.tls.certPath}";
-            "HOST_KEY" = "${cfg.tls.keyPath}";
-          }
-          // attrsets.optionalAttrs cfg.debug {
-            "RUST_BACKTRACE" = "1";
-            "GIVC_LOG" = "givc=debug,info";
-          };
+        environment = {
+          "NAME" = "${cfg.name}";
+          "TYPE" = "4";
+          "SUBTYPE" = "5";
+          "TLS" = "${trivial.boolToString cfg.tls.enable}";
+          "SERVICES" = "${concatStringsSep " " cfg.services}";
+        }
+        // attrsets.optionalAttrs cfg.tls.enable {
+          "CA_CERT" = "${cfg.tls.caCertPath}";
+          "HOST_CERT" = "${cfg.tls.certPath}";
+          "HOST_KEY" = "${cfg.tls.keyPath}";
+        }
+        // attrsets.optionalAttrs cfg.debug {
+          "RUST_BACKTRACE" = "1";
+          "GIVC_LOG" = "givc=debug,info";
+        };
       };
     networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) tcpAddresses);
   };

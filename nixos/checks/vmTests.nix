@@ -121,18 +121,17 @@ in
       };
 
       config = {
-        checks = mapAttrs' (name: test: nameValuePair "vmTests-${test.name}" test.check) (
+        checks = mapAttrs' (_name: test: nameValuePair "vmTests-${test.name}" test.check) (
           lib.filterAttrs (_: v: lib.elem system v.systems && !v.impure) cfg.tests
         );
 
-        apps =
-          {
-            run-vm-tests.program = lib.getExe cfg.runVmTestScript;
-          }
-          // mapAttrs' (
-            name: test:
-            nameValuePair "vmTests-${test.name}" { program = "${test.check.driver}/bin/nixos-test-driver"; }
-          ) (lib.filterAttrs (_: v: lib.elem system v.systems) cfg.tests);
+        apps = {
+          run-vm-tests.program = lib.getExe cfg.runVmTestScript;
+        }
+        // mapAttrs' (
+          _name: test:
+          nameValuePair "vmTests-${test.name}" { program = "${test.check.driver}/bin/nixos-test-driver"; }
+        ) (lib.filterAttrs (_: v: lib.elem system v.systems) cfg.tests);
 
         devshells.default.commands = [
           {
