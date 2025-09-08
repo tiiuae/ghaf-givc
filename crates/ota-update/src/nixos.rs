@@ -67,10 +67,10 @@ pub(crate) async fn read_kernel_version(toplevel: &Path) -> anyhow::Result<Strin
         .with_context(|| format!("while read_dir() on {path}", path = mod_dir.display()))?;
 
     while let Some(entry) = dir.next_entry().await? {
-        if let Ok(name) = entry.file_name().into_string() {
-            if KERNEL_RE.is_match(&name) {
-                return Ok(name);
-            }
+        if let Ok(name) = entry.file_name().into_string()
+            && KERNEL_RE.is_match(&name)
+        {
+            return Ok(name);
         }
     }
 

@@ -445,24 +445,24 @@ impl pb::admin_service_server::AdminService for AdminService {
 
         let res = RegistryResponse { error: None };
 
-        if let Some(name) = notify {
-            if let Ok(endpoint) = self.inner.agent_endpoint(&name) {
-                let locale_assigns = self.inner.locale_assigns.lock().await.clone();
-                let timezone = self.inner.timezone.lock().await.clone();
-                tokio::spawn(async move {
-                    if let Ok(conn) = endpoint.connect().await {
-                        let mut client =
-                            pb::locale::locale_client_client::LocaleClientClient::new(conn);
-                        let localemsg = pb::locale::LocaleMessage {
-                            assignments: locale_assigns,
-                        };
-                        let _ = client.locale_set(localemsg).await;
+        if let Some(name) = notify
+            && let Ok(endpoint) = self.inner.agent_endpoint(&name)
+        {
+            let locale_assigns = self.inner.locale_assigns.lock().await.clone();
+            let timezone = self.inner.timezone.lock().await.clone();
+            tokio::spawn(async move {
+                if let Ok(conn) = endpoint.connect().await {
+                    let mut client =
+                        pb::locale::locale_client_client::LocaleClientClient::new(conn);
+                    let localemsg = pb::locale::LocaleMessage {
+                        assignments: locale_assigns,
+                    };
+                    let _ = client.locale_set(localemsg).await;
 
-                        let timezonemsg = pb::locale::TimezoneMessage { timezone };
-                        let _ = client.timezone_set(timezonemsg).await;
-                    }
-                });
-            }
+                    let timezonemsg = pb::locale::TimezoneMessage { timezone };
+                    let _ = client.timezone_set(timezonemsg).await;
+                }
+            });
         }
         info!("Responding with {res:?}");
         Ok(Response::new(res))
