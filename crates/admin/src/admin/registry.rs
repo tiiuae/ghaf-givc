@@ -8,6 +8,7 @@ use tracing::{debug, error, info};
 
 use super::entry::RegistryEntry;
 use crate::types::{UnitStatus, UnitType};
+use crate::utils::naming::parse_vm_name;
 
 #[derive(Clone, Debug)]
 pub struct Registry {
@@ -48,12 +49,15 @@ impl Registry {
 
     pub(crate) fn deregister(&self, name: &str) -> anyhow::Result<()> {
         let mut state = self.map.lock().unwrap();
+        let vm_name = parse_vm_name(name);
         match state.remove(name) {
             Some(entry) => {
                 let cascade: Vec<String> = state
                     .values()
                     .filter_map(|re| {
-                        if re.agent_name() == Some(name) || re.vm_name() == Some(name) {
+                        if re.agent_name() == Some(name)
+                            || re.vm_name().zip(vm_name).is_some_and(|(a, b)| a == b)
+                        {
                             Some(re.name.clone())
                         } else {
                             None
