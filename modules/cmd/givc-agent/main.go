@@ -77,27 +77,21 @@ func main() {
 
 	// Configure system services/units/vms to be administrated by this agent
 	services := make(map[string]uint32)
-	servicesString := os.Getenv("SERVICES")
-	if servicesString != "" {
-		servs := strings.Split(servicesString, " ")
-		for _, service := range servs {
-			services[service] = agentSubType
-		}
-	}
 
-	sysVmsString := os.Getenv("SYSVMS")
-	if sysVmsString != "" {
-		sysVms := strings.Split(sysVmsString, " ")
-		for _, service := range sysVms {
-			services[service] = givc_types.UNIT_TYPE_SYSVM
-		}
-	}
-
-	appVmsString := os.Getenv("APPVMS")
-	if appVmsString != "" {
-		appVms := strings.Split(appVmsString, " ")
-		for _, service := range appVms {
-			services[service] = givc_types.UNIT_TYPE_APPVM
+	for _, serviceType := range []struct {
+		envVar   string
+		unitType uint32
+	}{
+		{"SERVICES", agentSubType},
+		{"ADMVMS", givc_types.UNIT_TYPE_ADMVM},
+		{"SYSVMS", givc_types.UNIT_TYPE_SYSVM},
+		{"APPVMS", givc_types.UNIT_TYPE_APPVM},
+	} {
+		servicesString := os.Getenv(serviceType.envVar)
+		if servicesString != "" {
+			for service := range strings.FieldsSeq(servicesString) {
+				services[service] = serviceType.unitType
+			}
 		}
 	}
 
