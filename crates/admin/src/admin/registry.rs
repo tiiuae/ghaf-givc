@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, anyhow, bail};
 use givc_common::query::{Event, QueryResult};
 use tokio::sync::broadcast;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use super::entry::RegistryEntry;
 use crate::types::{UnitStatus, UnitType};
@@ -52,25 +52,11 @@ impl Registry {
         let vm_name = parse_vm_name(name);
         match state.remove(name) {
             Some(entry) => {
-                let cascade: Vec<String> = state
-                    .values()
-                    .filter_map(|re| {
-                        if re.agent_name() == Some(name)
-                            || re.vm_name().zip(vm_name).is_some_and(|(a, b)| a == b)
-                        {
-                            Some(re.name.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                for each in cascade {
-                    if let Some(entry) = state.remove(&each) {
-                        info!("Cascade deregistering {entry:#?}");
-                        self.send_event(Event::UnitShutdown(entry.into()));
-                    } else {
-                        error!("Problems due cascade deregistering {each} (via {name})");
-                    }
+                for (_, entry) in state.extract_if(|_, re| {
+                    re.agent_name() == Some(name)
+                        || re.vm_name().zip(vm_name).is_some_and(|(a, b)| a == b)
+                }) {
+                    self.send_event(Event::UnitShutdown(entry.into()));
                 }
                 info!("Deregistering {:#?}", entry);
                 self.send_event(Event::UnitShutdown(entry.into()));
