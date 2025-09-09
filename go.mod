@@ -1,6 +1,6 @@
 module givc
 
-go 1.24
+go 1.24.0
 
 toolchain go1.24.1
 
@@ -17,7 +17,7 @@ require (
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/sirupsen/logrus v1.9.3
 	golang.org/x/net v0.43.0
-	golang.org/x/sync v0.16.0
+	golang.org/x/sync v0.17.0
 	google.golang.org/grpc v1.75.0
 	google.golang.org/protobuf v1.36.7
 )
