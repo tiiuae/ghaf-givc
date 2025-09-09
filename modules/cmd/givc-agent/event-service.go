@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"os"
+	"strings"
 
 	givc_eventproxy "givc/modules/pkgs/eventproxy"
 	givc_grpc "givc/modules/pkgs/grpc"
@@ -78,10 +79,11 @@ func SetupEventService(tlsConfig *tls.Config) {
 				}
 
 				err = eventProxyServer.StreamEventsToRemote(context.Background(), eventClient, eventConfig.Device)
-				for err != nil {
-					log.Errorf("event: client stream exited: %v", err)
+				for err != nil && strings.Contains(err.Error(), "device disconnected") {
+					log.Errorf("event: retrying to stream events %v", err)
 					err = eventProxyServer.StreamEventsToRemote(context.Background(), eventClient, eventConfig.Device)
 				}
+				log.Errorf("event: client stream exited: %v", err)
 			}(eventConfig)
 		}
 	}
