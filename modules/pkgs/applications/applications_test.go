@@ -52,12 +52,19 @@ func Test_validateUrl(t *testing.T) {
 		// Valid URLs
 		{"valid url", args{urlString: "http://example.com"}, false},
 		{"valid url", args{urlString: "https://example.com"}, false},
+		{"valid url", args{urlString: "element://example.com"}, false},
+		{"valid url", args{urlString: "io.element.desktop:/something/"}, false},
+		{"valid url", args{urlString: "io.element.desktop:/example#123"}, false},
 		{"valid url", args{urlString: "https://example.com/something."}, false},
 		{"valid url", args{urlString: "https://example.com?q=2#first"}, false},
 		{"valid url", args{urlString: "https://localhost:8080/"}, false},
 
 		// Invalid URLs
 		{"invalid protocol", args{urlString: "file:///etc/passwd"}, true},
+		{"invalid protocol", args{urlString: "elements://example.com"}, true},
+		{"invalid protocol", args{urlString: "tcp://example.com"}, true},
+		{"invalid protocol", args{urlString: "http://http://example.com"}, true},
+
 		{"inject shell cmd", args{urlString: "https://example.com$(touch IWASHERE)"}, true},
 		{"inject shell cmd", args{urlString: "https://example.com`touch IWASHERE`"}, true},
 		{"inject shell cmd", args{urlString: "https://example.com/ $(touch IWASHERE)"}, true},

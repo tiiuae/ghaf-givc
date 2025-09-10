@@ -22,6 +22,13 @@ import (
 	"github.com/go-ozzo/ozzo-validation/v4/is"
 )
 
+var (
+	UrlExtraSchemes = []string{
+		"element",
+		"io.element.desktop",
+	}
+)
+
 // validateServiceName checks if the service name is valid according to the specified format.
 func validateServiceName(serviceName string) error {
 	return validation.Validate(
@@ -65,8 +72,20 @@ func validateFilePath(filePathString string, directories []string) error {
 
 // validateUrl checks if the URL is valid and has a valid scheme.
 func validateUrl(urlString string) error {
+
+	// Replace additional URL schemes with 'http' to
+	// allow passing URL validation via govalidator
+	validationUrl := urlString
+	for _, prefix := range UrlExtraSchemes {
+		if after, found := strings.CutPrefix(validationUrl, prefix+":"); found {
+			validationUrl = "http://" + strings.TrimLeft(after, "/")
+			break
+		}
+	}
+
+	// Basic URL validation
 	err := validation.Validate(
-		urlString,
+		validationUrl,
 		validation.Required,
 		is.URL,
 	)
@@ -75,14 +94,14 @@ func validateUrl(urlString string) error {
 		return fmt.Errorf("failure in parsing URL")
 	}
 
-	// Disallow some more shenanigans
+	// Additional URL checks
 	reqUrl, err := url.Parse(urlString)
 	if err != nil {
 		log.Warnf("Invalid URL in args: %s", urlString)
 		return fmt.Errorf("failure in parsing URL")
 	}
-	if reqUrl.Scheme != "https" && reqUrl.Scheme != "http" {
-		log.Warnf("Non-HTTP(S) scheme in URL: %s", reqUrl.Scheme)
+	if validationUrl == urlString && (reqUrl.Scheme != "http" && reqUrl.Scheme != "https") {
+		log.Warnf("Non-allowed scheme in URL: %s", reqUrl.Scheme)
 		return fmt.Errorf("failure in parsing URL")
 	}
 	if reqUrl.User != nil {
