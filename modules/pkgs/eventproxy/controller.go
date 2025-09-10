@@ -3,31 +3,35 @@
 package eventproxy
 
 import (
-	"context"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	givc_event "givc/modules/api/event"
 	givc_types "givc/modules/pkgs/types"
 
+	"github.com/fsnotify/fsnotify"
 	evdev "github.com/holoplot/go-evdev"
 	"github.com/jbdemonte/virtual-device/gamepad"
-	"github.com/jochenvg/go-udev"
+	"github.com/jbdemonte/virtual-device/mouse"
 
 	log "github.com/sirupsen/logrus"
 )
 
 type EventProxyController struct {
 	transportConfig givc_types.TransportConfig
-	gameDevice      gamepad.VirtualGamepad
+	virtualGamepad  gamepad.VirtualGamepad
+	virtualMouse    mouse.VirtualMouse
 }
 
 // NewEventProxyController creates a new EventProxyController instance.
 // It sets up a tcp connection for communication.
 func NewEventProxyController(transportConfig givc_types.TransportConfig) (*EventProxyController, error) {
-	return &EventProxyController{transportConfig: transportConfig, gameDevice: nil}, nil
+	return &EventProxyController{transportConfig: transportConfig}, nil
 }
 
 func (s *EventProxyController) WaitForConsumer() (net.Conn, error) {
@@ -48,7 +52,7 @@ func (s *EventProxyController) WaitForConsumer() (net.Conn, error) {
 	return nil, err
 }
 
-func (s *EventProxyController) ExtractDeviceInfo(dev *evdev.InputDevice) (*givc_event.DeviceInfo, error) {
+func extractDeviceInfo(dev *evdev.InputDevice) (*givc_event.DeviceInfo, error) {
 
 	inputID, err := dev.InputID()
 	if err != nil {
@@ -68,88 +72,109 @@ func (s *EventProxyController) ExtractDeviceInfo(dev *evdev.InputDevice) (*givc_
 	return deviceInfo, nil
 }
 
-func ExtractEvent(deviceName string) string {
-	var event string
+func (s *EventProxyController) OpenAndExtract(handler string) (*evdev.InputDevice, *givc_event.DeviceInfo, error) {
+	dev, err := evdev.Open(handler)
+	if err != nil {
+		log.Errorf("event: failed to open input device: %v", err)
+		return nil, nil, err
+	}
 
+	deviceInfo, err := extractDeviceInfo(dev)
+	if err != nil {
+		dev.Close() // clean up on failure
+		log.Errorf("event: failed to extract device info: %v", err)
+		return nil, nil, err
+	}
+
+	return dev, deviceInfo, nil
+}
+
+func checkDevice(targetDevice string, event string) bool {
 	devicePaths, err := evdev.ListDevicePaths()
 	if err == nil {
 		for _, dev := range devicePaths {
-			// Check for the deviceName provided
-			if strings.Contains(strings.ToLower(dev.Name), deviceName) {
-				event = dev.Path // Located in /dev/input/eventX
-				log.Infof("event: device %s attached!", dev.Name)
+			// Ignore VMMouse directly
+			if strings.Contains(strings.ToLower(dev.Name), "vmmouse") {
+				log.Debugf("event: ignoring device: %s", dev.Name)
+				continue
+			}
+			if strings.Contains(strings.ToLower(dev.Name), strings.ToLower(targetDevice)) && dev.Path == event {
+				log.Infof("event: device attached: %s", dev.Name)
+				return true
 			}
 		}
 	}
-	return event
+	return false
 }
 
-func (s *EventProxyController) MonitorInputDevice(deviceName string) (string, error) {
+func (s *EventProxyController) MonitorInputDevices(targetDevice string, onAdd func(string)) (string, error) {
+	log.Infof("event: Monitoring started for device: %s", targetDevice)
+	// Create a channel to signal when the target device is found
+	done := make(chan struct{})
 
-	// Create a context with cancellation
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+	var once sync.Once
+	var handler string
 
-	// Add filters to monitor
-	userDevices := udev.Udev{}
-	monitor := userDevices.NewMonitorFromNetlink("udev")
-	if err := monitor.FilterAddMatchSubsystemDevtype("input", "event"); err != nil {
-		return "", err
-	}
-
-	// Start monitor goroutine and get receive channel
-	channel, _, err := monitor.DeviceChan(ctx)
+	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("event: failed to create watcher %w", err)
+	}
+	defer watcher.Close()
+
+	inputDir := "/dev/input"
+	if err := watcher.Add(inputDir); err != nil {
+		return "", fmt.Errorf("event: failed to watch %s: %w", inputDir, err)
 	}
 
-	// Channel to communicate the found event
-	eventChan := make(chan string, 1)
+	// Check existing devices at start
+	filepath.Walk(inputDir, func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && info.Mode()&os.ModeCharDevice != 0 && strings.HasPrefix(filepath.Base(path), "event") {
+			if checkDevice(targetDevice, path) {
+				handler = path
+				once.Do(func() { close(done) }) // Signal that the target device is found
+				return nil
+			}
+			onAdd(path)
+		}
+		return nil
+	})
 
-	// Goroutine to monitor devices
 	go func() {
-		defer close(eventChan)
-
 		for {
 			select {
-			case <-ctx.Done():
-				return // exit goroutine if canceled
-			case device, ok := <-channel:
+			case event, ok := <-watcher.Events:
 				if !ok {
-					return // channel closed
+					return
 				}
-				if device.Action() == "add" && strings.Contains(device.Sysname(), "event") {
-					if event := ExtractEvent(deviceName); event != "" {
-						eventChan <- event
+				if event.Op&fsnotify.Create == fsnotify.Create && strings.HasPrefix(filepath.Base(event.Name), "event") {
+					if checkDevice(targetDevice, event.Name) {
+						handler = event.Name
+						once.Do(func() { close(done) }) // Signal that the target device is found
 						return
 					}
+					onAdd(event.Name)
 				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Errorf("event: watch error %v", err)
 			}
 		}
 	}()
-	go func() {
-		time.Sleep(2 * time.Second)
-		if event := ExtractEvent(deviceName); event != "" {
-			select {
-			case eventChan <- event:
-			default:
-			}
-		}
-	}()
-
-	// Wait for event or context timeout
-	select {
-	case event := <-eventChan:
-		return event, nil
-	case <-ctx.Done():
-		return "", fmt.Errorf("device monitoring timed out")
-	}
+	<-done // Wait until the target device is found or an error occurs
+	return handler, nil
 }
 
 // Closes the socket listener.
 func (s *EventProxyController) Close() error {
-	if s.gameDevice != nil {
-		err := s.gameDevice.Unregister()
+	if s.virtualGamepad != nil {
+		err := s.virtualGamepad.Unregister()
+		if err != nil {
+			return err
+		}
+	} else if s.virtualMouse != nil {
+		err := s.virtualMouse.Unregister()
 		if err != nil {
 			return err
 		}

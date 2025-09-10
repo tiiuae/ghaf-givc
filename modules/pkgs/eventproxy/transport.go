@@ -16,6 +16,7 @@ import (
 
 	evdev "github.com/holoplot/go-evdev"
 	"github.com/jbdemonte/virtual-device/gamepad"
+	"github.com/jbdemonte/virtual-device/mouse"
 	"google.golang.org/grpc"
 
 	log "github.com/sirupsen/logrus"
@@ -42,9 +43,13 @@ func (s *EventProxyServer) StreamEvents(stream givc_event.EventService_StreamEve
 			return err
 		}
 
-		log.Infof("event: received InputEvent: type=%v code=%v value=%v", event.Type, event.Code, event.Value)
+		log.Debugf("event: received InputEvent: type=%v code=%v value=%v", event.Type, event.Code, event.Value)
 
-		s.eventController.gameDevice.Send(uint16(event.Type), uint16(event.Code), event.Value)
+		if s.eventController.virtualGamepad != nil {
+			s.eventController.virtualGamepad.Send(uint16(event.Type), uint16(event.Code), event.Value)
+		} else if s.eventController.virtualMouse != nil {
+			s.eventController.virtualMouse.Send(uint16(event.Type), uint16(event.Code), event.Value)
+		}
 	}
 }
 
@@ -75,30 +80,40 @@ func NewEventProxyServer(transport givc_types.TransportConfig) (*EventProxyServe
 }
 
 func (s *EventProxyServer) RegisterDevice(ctx context.Context, info *givc_event.DeviceInfo) (*givc_event.Ack, error) {
-
 	if info == nil {
-		return nil, errors.New("event: device info cannot be nil")
+		return nil, errors.New("device info cannot be nil")
 	}
 
-	if strings.Contains(strings.ToLower(info.Name), "wireless controller") {
-		// Creates Xbox One virtual device
-		device := gamepad.NewXBoxOneS()
+	deviceName := strings.ToLower(info.Name)
 
-		err := device.Register()
-		if err != nil {
-			log.Errorf("event: failed to register gamepad device: %v", err)
+	switch {
+	case strings.Contains(deviceName, "wireless controller"):
+		device := gamepad.NewXBoxOneS()
+		if err := device.Register(); err != nil {
+			log.Errorf("event: failed to register gamepad device %s: %v", deviceName, err)
 			return nil, err
 		}
-		log.Infof("event: registered device %s with VendorID:0x%x DeviceID:0x%x", info.Name, info.VendorId, info.DeviceId)
-		s.eventController.gameDevice = device
-		return &givc_event.Ack{Status: "OK"}, nil
-	} else {
-		return nil, errors.New("event: unsupported device")
+		s.eventController.virtualGamepad = device
+
+	case strings.Contains(deviceName, "mouse"):
+		device := mouse.NewGenericMouse()
+		if err := device.Register(); err != nil {
+			log.Errorf("event: failed to register mouse device %s: %v", info.Name, err)
+			return nil, err
+		}
+		s.eventController.virtualMouse = device
+
+	default:
+		return nil, errors.New("unsupported device")
 	}
 
+	log.Infof("event: registered device %s with VendorID:0x%x DeviceID:0x%x",
+		deviceName, info.VendorId, info.DeviceId,
+	)
+	return &givc_event.Ack{Status: "OK"}, nil
 }
 
-func (s *EventProxyServer) StreamEventsToRemote(ctx context.Context, cfg *givc_types.EndpointConfig, device string) error {
+func (s *EventProxyServer) StreamEventsToRemote(ctx context.Context, cfg *givc_types.EndpointConfig, targetDevice string) error {
 
 	defer s.eventController.Close()
 
@@ -117,20 +132,27 @@ func (s *EventProxyServer) StreamEventsToRemote(ctx context.Context, cfg *givc_t
 	}
 
 	// Monitor for Input device provided by the user
-	handler, err := s.eventController.MonitorInputDevice(device)
+	handler, err := s.eventController.MonitorInputDevices(targetDevice, func(device string) {})
 	if err != nil || handler == "" {
 		log.Errorf("event: failed to monitor channel %v", err)
 		return err
 	}
-	dev, err := evdev.Open(handler)
+
+	dev, deviceInfo, err := s.eventController.OpenAndExtract(handler)
 	if err != nil {
-		log.Errorf("event: failed to open input device: %v", err)
+		return err
 	}
 	defer dev.Close()
 
-	deviceInfo, err := s.eventController.ExtractDeviceInfo(dev)
+	// Wait until consumer is connected
+	_, err = s.eventController.WaitForConsumer()
 	if err != nil {
-		log.Errorf("event: failed to extract device info: %v", err)
+		return err
+	}
+	_, err = eventStreamClient.RegisterDevice(ctx, deviceInfo)
+	if err != nil {
+		log.Errorf("event: failed to register device: %v", err)
+		return err
 	}
 
 	for {
@@ -141,59 +163,58 @@ func (s *EventProxyServer) StreamEventsToRemote(ctx context.Context, cfg *givc_t
 
 		default:
 
-			s.eventController.WaitForConsumer()
-			if err != nil {
-				return err
-			}
-
-			ack, err := eventStreamClient.RegisterDevice(ctx, deviceInfo)
-			if ack.Status != "OK" && err != nil {
-				log.Errorf("event: failed to register device: %v", err)
-			}
-
 			stream, err := eventStreamClient.StreamEvents(ctx)
+
 			for err != nil {
 				time.Sleep(1 * time.Second)
 				stream, err = eventStreamClient.StreamEvents(ctx)
 			}
 
-			if err == nil {
-				for {
-					events, err := dev.ReadSlice(16)
-					if err != nil {
-						if strings.Contains(err.Error(), "no such device") {
-							return errors.New("event: device not available, possibly device is disconnected")
-						}
-						time.Sleep(10 * time.Millisecond)
-						continue
-					}
-
-					for _, event := range events {
-
-						ts := time.Unix(event.Time.Sec, int64(event.Time.Usec)*1000).UnixNano()
-
-						// Stream Input Events received to remote
-						msg := &givc_event.InputEvent{
-							Timestamp: ts,
-							Type:      uint32(event.Type),
-							Code:      uint32(event.Code),
-							Value:     event.Value,
-						}
-
-						log.Infof("event: sending InputEvent: type=%v code=%v value=%v", event.Type, event.Code, event.Value)
-						if err := stream.Send(msg); err != nil {
-							log.Errorf("event: failed to send InputEvent: %v", err)
-						}
-					}
-				}
+			// Stream events from device
+			if err := s.StreamDeviceEvents(ctx, dev, stream); err != nil {
+				return err
 			}
 
 			// Close stream connection
 			if stream != nil {
-				err := stream.CloseSend()
-				if err != nil {
-					log.Warnf("event: Error closing stream: %v", err)
+				if err := stream.CloseSend(); err != nil {
+					log.Warnf("event: error closing stream: %v", err)
 				}
+			}
+		}
+	}
+}
+
+// streamDeviceEvents reads events from the device and sends them over the stream
+func (s *EventProxyServer) StreamDeviceEvents(ctx context.Context, dev *evdev.InputDevice, stream givc_event.EventService_StreamEventsClient) error {
+	for {
+		select {
+		case <-ctx.Done():
+
+			return nil
+		default:
+			events, err := dev.ReadSlice(16)
+			if err != nil {
+				if strings.Contains(err.Error(), "no such device") {
+					return errors.New("device disconnected")
+				}
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+
+			for _, event := range events {
+				msg := &givc_event.InputEvent{
+					Timestamp: time.Unix(event.Time.Sec, int64(event.Time.Usec)*1000).UnixNano(),
+					Type:      uint32(event.Type),
+					Code:      uint32(event.Code),
+					Value:     event.Value,
+				}
+
+				if err := stream.Send(msg); err != nil {
+					log.Errorf("event: failed to send InputEvent: %v", err)
+					return err
+				}
+				log.Debugf("event: sent InputEvent type=%v code=%v value=%v", event.Type, event.Code, event.Value)
 			}
 		}
 	}
