@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	givc_event "givc/modules/api/event"
@@ -16,6 +17,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	evdev "github.com/holoplot/go-evdev"
 	"github.com/jbdemonte/virtual-device/gamepad"
+	"github.com/jbdemonte/virtual-device/mouse"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -23,6 +25,7 @@ import (
 type EventProxyController struct {
 	transportConfig givc_types.TransportConfig
 	virtualGamepad  gamepad.VirtualGamepad
+	virtualMouse    mouse.VirtualMouse
 }
 
 // NewEventProxyController creates a new EventProxyController instance.
@@ -49,7 +52,7 @@ func (s *EventProxyController) WaitForConsumer() (net.Conn, error) {
 	return nil, err
 }
 
-func (s *EventProxyController) ExtractDeviceInfo(dev *evdev.InputDevice) (*givc_event.DeviceInfo, error) {
+func extractDeviceInfo(dev *evdev.InputDevice) (*givc_event.DeviceInfo, error) {
 
 	inputID, err := dev.InputID()
 	if err != nil {
@@ -69,12 +72,33 @@ func (s *EventProxyController) ExtractDeviceInfo(dev *evdev.InputDevice) (*givc_
 	return deviceInfo, nil
 }
 
-func checkDevice(deviceName string, event string) bool {
+func (s *EventProxyController) OpenAndExtract(handler string) (*evdev.InputDevice, *givc_event.DeviceInfo, error) {
+	dev, err := evdev.Open(handler)
+	if err != nil {
+		log.Errorf("event: failed to open input device: %v", err)
+		return nil, nil, err
+	}
 
+	deviceInfo, err := extractDeviceInfo(dev)
+	if err != nil {
+		dev.Close() // clean up on failure
+		log.Errorf("event: failed to extract device info: %v", err)
+		return nil, nil, err
+	}
+
+	return dev, deviceInfo, nil
+}
+
+func checkDevice(targetDevice string, event string) bool {
 	devicePaths, err := evdev.ListDevicePaths()
 	if err == nil {
 		for _, dev := range devicePaths {
-			if strings.Contains(strings.ToLower(dev.Name), strings.ToLower(deviceName)) && dev.Path == event {
+			// Ignore VMMouse directly
+			if strings.Contains(strings.ToLower(dev.Name), "vmmouse") {
+				log.Debugf("event: ignoring device: %s", dev.Name)
+				continue
+			}
+			if strings.Contains(strings.ToLower(dev.Name), strings.ToLower(targetDevice)) && dev.Path == event {
 				log.Infof("event: device attached: %s", dev.Name)
 				return true
 			}
@@ -88,7 +112,9 @@ func (s *EventProxyController) MonitorInputDevices(targetDevice string, onAdd fu
 	// Create a channel to signal when the target device is found
 	done := make(chan struct{})
 
+	var once sync.Once
 	var handler string
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return "", fmt.Errorf("event: failed to create watcher %w", err)
@@ -105,7 +131,7 @@ func (s *EventProxyController) MonitorInputDevices(targetDevice string, onAdd fu
 		if err == nil && !info.IsDir() && info.Mode()&os.ModeCharDevice != 0 && strings.HasPrefix(filepath.Base(path), "event") {
 			if checkDevice(targetDevice, path) {
 				handler = path
-				close(done) // Signal that the target device is found
+				once.Do(func() { close(done) }) // Signal that the target device is found
 				return nil
 			}
 			onAdd(path)
@@ -123,7 +149,7 @@ func (s *EventProxyController) MonitorInputDevices(targetDevice string, onAdd fu
 				if event.Op&fsnotify.Create == fsnotify.Create && strings.HasPrefix(filepath.Base(event.Name), "event") {
 					if checkDevice(targetDevice, event.Name) {
 						handler = event.Name
-						close(done) // Signal that the target device is found
+						once.Do(func() { close(done) }) // Signal that the target device is found
 						return
 					}
 					onAdd(event.Name)
@@ -144,6 +170,11 @@ func (s *EventProxyController) MonitorInputDevices(targetDevice string, onAdd fu
 func (s *EventProxyController) Close() error {
 	if s.virtualGamepad != nil {
 		err := s.virtualGamepad.Unregister()
+		if err != nil {
+			return err
+		}
+	} else if s.virtualMouse != nil {
+		err := s.virtualMouse.Unregister()
 		if err != nil {
 			return err
 		}

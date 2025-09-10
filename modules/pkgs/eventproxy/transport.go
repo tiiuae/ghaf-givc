@@ -16,6 +16,7 @@ import (
 
 	evdev "github.com/holoplot/go-evdev"
 	"github.com/jbdemonte/virtual-device/gamepad"
+	"github.com/jbdemonte/virtual-device/mouse"
 	"google.golang.org/grpc"
 
 	log "github.com/sirupsen/logrus"
@@ -42,9 +43,13 @@ func (s *EventProxyServer) StreamEvents(stream givc_event.EventService_StreamEve
 			return err
 		}
 
-		log.Infof("event: received InputEvent: type=%v code=%v value=%v", event.Type, event.Code, event.Value)
+		log.Debugf("event: received InputEvent: type=%v code=%v value=%v", event.Type, event.Code, event.Value)
 
-		s.eventController.virtualGamepad.Send(uint16(event.Type), uint16(event.Code), event.Value)
+		if s.eventController.virtualGamepad != nil {
+			s.eventController.virtualGamepad.Send(uint16(event.Type), uint16(event.Code), event.Value)
+		} else if s.eventController.virtualMouse != nil {
+			s.eventController.virtualMouse.Send(uint16(event.Type), uint16(event.Code), event.Value)
+		}
 	}
 }
 
@@ -75,26 +80,37 @@ func NewEventProxyServer(transport givc_types.TransportConfig) (*EventProxyServe
 }
 
 func (s *EventProxyServer) RegisterDevice(ctx context.Context, info *givc_event.DeviceInfo) (*givc_event.Ack, error) {
-
 	if info == nil {
-		return nil, errors.New("event: device info cannot be nil")
+		return nil, errors.New("device info cannot be nil")
 	}
-	if strings.Contains(strings.ToLower(info.Name), "wireless controller") {
-		// Creates Xbox One virtual device
-		device := gamepad.NewXBoxOneS()
 
-		err := device.Register()
-		if err != nil {
-			log.Errorf("event: failed to register gamepad device: %v", err)
+	deviceName := strings.ToLower(info.Name)
+
+	switch {
+	case strings.Contains(deviceName, "wireless controller"):
+		device := gamepad.NewXBoxOneS()
+		if err := device.Register(); err != nil {
+			log.Errorf("event: failed to register gamepad device %s: %v", deviceName, err)
 			return nil, err
 		}
-		log.Infof("event: registered device %s with VendorID:0x%x DeviceID:0x%x", info.Name, info.VendorId, info.DeviceId)
 		s.eventController.virtualGamepad = device
-		return &givc_event.Ack{Status: "OK"}, nil
-	} else {
-		return nil, errors.New("event: unsupported device")
+
+	case strings.Contains(deviceName, "mouse"):
+		device := mouse.NewGenericMouse()
+		if err := device.Register(); err != nil {
+			log.Errorf("event: failed to register mouse device %s: %v", info.Name, err)
+			return nil, err
+		}
+		s.eventController.virtualMouse = device
+
+	default:
+		return nil, errors.New("unsupported device")
 	}
 
+	log.Infof("event: registered device %s with VendorID:0x%x DeviceID:0x%x",
+		deviceName, info.VendorId, info.DeviceId,
+	)
+	return &givc_event.Ack{Status: "OK"}, nil
 }
 
 func (s *EventProxyServer) StreamEventsToRemote(ctx context.Context, cfg *givc_types.EndpointConfig, targetDevice string) error {
@@ -122,19 +138,11 @@ func (s *EventProxyServer) StreamEventsToRemote(ctx context.Context, cfg *givc_t
 		return err
 	}
 
-	dev, err := evdev.Open(handler)
+	dev, deviceInfo, err := s.eventController.OpenAndExtract(handler)
 	if err != nil {
-		log.Errorf("event: failed to open input device: %v", err)
 		return err
 	}
 	defer dev.Close()
-
-	// Extract VendorId, DeviceId and Name from device
-	deviceInfo, err := s.eventController.ExtractDeviceInfo(dev)
-	if err != nil {
-		log.Errorf("event: failed to extract device info: %v", err)
-		return err
-	}
 
 	// Wait until consumer is connected
 	_, err = s.eventController.WaitForConsumer()
@@ -188,7 +196,7 @@ func (s *EventProxyServer) StreamDeviceEvents(ctx context.Context, dev *evdev.In
 			events, err := dev.ReadSlice(16)
 			if err != nil {
 				if strings.Contains(err.Error(), "no such device") {
-					return errors.New("event: device disconnected")
+					return errors.New("device disconnected")
 				}
 				time.Sleep(10 * time.Millisecond)
 				continue
@@ -206,7 +214,7 @@ func (s *EventProxyServer) StreamDeviceEvents(ctx context.Context, dev *evdev.In
 					log.Errorf("event: failed to send InputEvent: %v", err)
 					return err
 				}
-				log.Infof("event: sent InputEvent type=%v code=%v value=%v", event.Type, event.Code, event.Value)
+				log.Debugf("event: sent InputEvent type=%v code=%v value=%v", event.Type, event.Code, event.Value)
 			}
 		}
 	}
