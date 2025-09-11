@@ -43,7 +43,8 @@ impl RegistryEntry {
     pub(crate) fn vm_name(&self) -> Option<&str> {
         match (self.r#type.service, &self.placement) {
             (ServiceType::VM, _) => parse_vm_name(&self.name),
-            (_, Placement::Endpoint { vm, .. } | Placement::Managed { vm, .. }) => Some(vm),
+            (_, Placement::Endpoint { vm, .. }) => Some(vm),
+            (_, Placement::Managed { vm, .. }) => parse_vm_name(vm),
             (_, Placement::Host) => None,
         }
     }

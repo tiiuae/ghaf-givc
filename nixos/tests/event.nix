@@ -24,7 +24,6 @@ let
       }
     ];
   };
-  admin = lib.head adminConfig.addresses;
 in
 {
   perSystem = _: {
