@@ -25,12 +25,12 @@ tokio = { version = "1.46", features = [
 tokio-listener = { version = "0.5.1", features = [
   "multi-listener",
   "vsock",
-  "tonic013",
+  "tonic014",
 ] }
 tokio-vsock = "0.7"
-tonic-reflection = "0.13"
-tonic-types = "0.13"
-tonic = { version = "0.13", features = ["tls-ring"] }
+tonic-reflection = "0.14"
+tonic-types = "0.14"
+tonic = { version = "0.14", features = ["tls-ring"] }
 tracing = "0.1"
 tracing-journald = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
