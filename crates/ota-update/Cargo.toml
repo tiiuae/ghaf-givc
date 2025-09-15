@@ -7,7 +7,7 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.99"
 axum = "*"
 bootspec = "*"
 clap = { version = "4.5.47", features = ["derive", "env"] }
