@@ -1,34 +1,33 @@
 use anyhow::{Context, bail};
 
-#[must_use]
-pub fn format_vm_name(name: &str, vm: Option<&str>) -> String {
-    if let Some(vm_name) = vm {
-        format!("microvm@{vm_name}.service")
-    } else {
-        format!("microvm@{name}-vm.service")
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum VmName<'a> {
+    Vm(&'a str),
+    App(&'a str),
+}
+
+impl std::fmt::Display for VmName<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            Self::Vm(vm) => write!(f, "{vm}"),
+            Self::App(app) => write!(f, "{app}-vm"),
+        }
+    }
+}
+
+impl VmName<'_> {
+    pub fn agent_service(&self) -> String {
+        format!("givc-{self}.service")
+    }
+
+    pub fn vm_service(&self) -> String {
+        format!("microvm@{self}.service")
     }
 }
 
 #[must_use]
 pub fn parse_vm_name(name: &str) -> Option<&str> {
     name.strip_prefix("microvm@")?.strip_suffix(".service")
-}
-
-#[must_use]
-pub fn format_service_name(name: &str, vm: Option<&str>) -> String {
-    if let Some(vm_name) = vm {
-        format!("givc-{vm_name}.service")
-    } else {
-        format!("givc-{name}-vm.service")
-    }
-}
-
-/// # Errors
-/// Return `Err()` if parsing fails
-pub fn parse_service_name(name: &str) -> anyhow::Result<&str> {
-    name.strip_suffix("-vm.service")
-        .and_then(|name| name.strip_prefix("givc-"))
-        .with_context(|| format!("Doesn't know how to parse VM name: {name}"))
 }
 
 /// From `agent` code, ported for future
@@ -49,20 +48,6 @@ pub fn parse_application_name(name: &str) -> anyhow::Result<(&str, i32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_service_name() -> anyhow::Result<()> {
-        let good = parse_service_name("givc-good-vm.service")?;
-        assert_eq!(good, "good");
-
-        let bad = parse_service_name("just-a.service");
-        let err = bad.unwrap_err();
-        assert_eq!(
-            format!("{}", err.root_cause()),
-            "Doesn't know how to parse VM name: just-a.service"
-        );
-        Ok(())
-    }
 
     #[test]
     fn test_parse_application_name() -> anyhow::Result<()> {

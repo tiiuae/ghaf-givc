@@ -2,7 +2,7 @@ use clap::Parser;
 use givc::endpoint::TlsConfig;
 use givc::systemd_api::server::SystemdService;
 use givc::types::{EndpointEntry, UnitStatus};
-use givc::utils::naming::format_service_name;
+use givc::utils::naming::VmName;
 use givc_client::AdminClient;
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::new(cli.addr.parse()?, cli.port);
 
     // FIXME: Totally wrong,
-    let agent_service_name = format_service_name(&cli.name, None);
+    let agent_service_name = VmName::App(&cli.name).agent_service();
 
     let mut builder = Server::builder();
 
