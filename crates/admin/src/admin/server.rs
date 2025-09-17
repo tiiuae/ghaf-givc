@@ -486,9 +486,9 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<StartVmRequest>,
     ) -> std::result::Result<tonic::Response<StartResponse>, tonic::Status> {
         escalate(request, async move |req| {
-            let vm_name = format_vm_name(&req.vm_name, None);
+            let vm_name = format_vm_name("", Some(&req.vm_name));
             self.inner.start_vm(&vm_name).await?;
-            let service_name = format_service_name(&req.vm_name, None);
+            let service_name = format_service_name("", Some(&req.vm_name));
             Ok(StartResponse {
                 registry_id: service_name,
             })
