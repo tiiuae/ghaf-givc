@@ -22,7 +22,7 @@ pub use pb::admin_service_server::AdminServiceServer;
 use crate::admin::registry::Registry;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
-use crate::utils::naming::{format_service_name, format_vm_name};
+use crate::utils::naming::VmName;
 use crate::utils::tonic::{Stream, escalate};
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::QueryResult;
@@ -180,7 +180,7 @@ impl AdminServiceImpl {
         unit: &str,
         vmname: &str,
     ) -> anyhow::Result<String> {
-        let vmservice = format_service_name(vmname, None);
+        let vmservice = VmName::Vm(vmname).agent_service();
 
         /* Return error if the vm is not registered */
         let endpoint = self
@@ -357,9 +357,13 @@ impl AdminServiceImpl {
             info!("not all required system-vms are registered");
         }
         let name = req.app_name;
-        let vm = req.vm_name.as_deref();
-        let vm_name = format_vm_name(&name, vm);
-        let systemd_agent_name = format_service_name(&name, vm);
+        let vm = req
+            .vm_name
+            .as_deref()
+            .map(VmName::Vm)
+            .unwrap_or(VmName::App(&name));
+        let vm_name = vm.vm_service();
+        let systemd_agent_name = vm.agent_service();
 
         info!("Starting app {name} on {vm_name} via {systemd_agent_name}");
 
@@ -486,11 +490,10 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<StartVmRequest>,
     ) -> std::result::Result<tonic::Response<StartResponse>, tonic::Status> {
         escalate(request, async move |req| {
-            let vm_name = format_vm_name("", Some(&req.vm_name));
-            self.inner.start_vm(&vm_name).await?;
-            let service_name = format_service_name("", Some(&req.vm_name));
+            let vm_name = VmName::Vm(&req.vm_name);
+            self.inner.start_vm(&vm_name.vm_service()).await?;
             Ok(StartResponse {
-                registry_id: service_name,
+                registry_id: vm_name.agent_service(),
             })
         })
         .await
@@ -636,12 +639,13 @@ impl pb::admin_service_server::AdminService for AdminService {
         &self,
         request: tonic::Request<UnitStatusRequest>,
     ) -> Result<tonic::Response<pb::systemd::UnitStatus>, tonic::Status> {
-        escalate(request, async move |req| {
-            let unit_name = req.unit_name;
-            let vm_name = format_service_name("", Some(&req.vm_name));
-            let status = self.inner.get_unit_status(vm_name, unit_name).await?;
-            Ok(status)
-        })
+        escalate(
+            request,
+            async move |UnitStatusRequest { unit_name, vm_name }| {
+                let vm_name = VmName::Vm(&vm_name).agent_service();
+                self.inner.get_unit_status(vm_name, unit_name).await
+            },
+        )
         .await
     }
 
@@ -734,7 +738,7 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<pb::StatsRequest>,
     ) -> tonic::Result<tonic::Response<pb::stats::StatsResponse>> {
         escalate(request, async move |req| {
-            let vm_name = format_service_name("", Some(&req.vm_name));
+            let vm_name = VmName::Vm(&req.vm_name).agent_service();
             let vm = self
                 .inner
                 .registry
