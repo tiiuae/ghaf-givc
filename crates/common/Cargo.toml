@@ -7,7 +7,7 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
-anyhow = "1.0.98"
+anyhow = "1.0.100"
 glib = { version = "*", optional = true, features = [] }
 prost = "0.14"
 serde = { version = "1.0.219", features = ["derive"] }
