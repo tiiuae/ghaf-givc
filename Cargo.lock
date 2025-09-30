@@ -291,9 +291,9 @@ checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
 name = "bootspec"
-version = "1.0.1"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5249951fe968ba5009e0839fceb7f3cfedc85fbf5e983fd30ad36bbcbe94e257"
+checksum = "0d067ca77a913e8b283a69fea766da4f9348bf26d030d6312cc4897b733edd01"
 dependencies = [
  "serde",
  "serde_json",
