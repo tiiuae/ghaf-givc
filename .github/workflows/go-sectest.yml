@@ -28,7 +28,7 @@ jobs:
       - name: Install libudev-dev (for go-udev)
         run: sudo apt-get update && sudo apt-get install -y libudev-dev
       - name: Run Gosec Security Scanner
-        uses: securego/gosec@c9453023c4e81ebdb6dde29e22d9cd5e2285fb16 # master
+        uses: securego/gosec@15d5c61e866bc2e2e8389376a31f1e5e09bde7d8 # master
         with:
           args: '-exclude=G302,G204 -no-fail ./modules/...'
       - name: Run Go Tests
