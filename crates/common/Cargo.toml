@@ -10,7 +10,7 @@ version = "0.0.1"
 anyhow = "1.0.100"
 glib = { version = "*", optional = true, features = [] }
 prost = "0.14"
-serde = { version = "1.0.219", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"] }
 strum = { version = "0.27", features = ["derive"] }
 tokio-vsock = "*"
 tonic = { version = "0.14", features = ["tls-ring"] }
