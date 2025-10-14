@@ -148,9 +148,9 @@ dependencies = [
 
 [[package]]
 name = "async-fn-stream"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed32de479678e0c4fea3e910c3b082ce52179d6fd6dcc07bc202faf7829812e2"
+checksum = "d4ba0c4baf81a0d8ab31618ffa3ae29ceeb970a6d0d82f76130753462e39d0ea"
 dependencies = [
  "futures-util",
  "pin-project-lite",
