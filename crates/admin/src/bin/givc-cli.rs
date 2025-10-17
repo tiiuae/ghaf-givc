@@ -17,30 +17,27 @@ use tracing::info;
 #[command(name = "givc-cli")]
 #[command(about = "A givc CLI application", long_about = None)]
 struct Cli {
-    #[arg(long, env = "ADDR", default_missing_value = "127.0.0.1")]
+    #[arg(long, env = "GIVC_ADDR", default_missing_value = "127.0.0.1")]
     addr: String,
-    #[arg(long, env = "PORT", default_missing_value = "9000", value_parser = clap::value_parser!(u16).range(1..))]
+    #[arg(long, env = "GIVC_PORT", default_missing_value = "9000", value_parser = clap::value_parser!(u16).range(1..))]
     port: u16,
 
-    #[arg(long, env = "HOST_KEY")]
-    host_key: Option<PathBuf>,
-
-    #[arg(long, env = "NAME", default_missing_value = "admin.ghaf")]
+    #[arg(long, env = "GIVC_NAME", default_missing_value = "admin.ghaf")]
     name: String, // for TLS service name
 
     #[arg(long)]
     vsock: Option<String>,
 
-    #[arg(long, env = "CA_CERT")]
+    #[arg(long, env = "GIVC_CA_CERT")]
     cacert: Option<PathBuf>,
 
-    #[arg(long, env = "HOST_CERT")]
+    #[arg(long, env = "GIVC_HOST_CERT")]
     cert: Option<PathBuf>,
 
-    #[arg(long, env = "HOST_KEY")]
+    #[arg(long, env = "GIVC_HOST_KEY")]
     key: Option<PathBuf>,
 
-    #[arg(long, default_value_t = false)]
+    #[arg(long, env = "GIVC_NO_TLS", default_value_t = false)]
     notls: bool,
 
     #[command(subcommand)]
