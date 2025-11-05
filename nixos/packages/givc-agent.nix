@@ -23,6 +23,6 @@ pkgs.buildGo124Module {
     "-linkmode=external"
   ];
   NIX_CFLAGS_COMPILE = pkgs.lib.optionalString (
-    pkgs.system == "x86_64-linux"
+    pkgs.stdenv.hostPlatform.system == "x86_64-linux"
   ) "-fstack-protector-all -fcf-protection=full -fstack-clash-protection";
 }
