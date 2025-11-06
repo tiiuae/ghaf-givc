@@ -35,7 +35,7 @@ tracing = "0.1"
 tracing-journald = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 x509-parser = "0.18"
-lazy-regex = "3.4.1"
+lazy-regex = "3.4.2"
 
 # GIVC subparts
 givc-common = { path = "../common" }
