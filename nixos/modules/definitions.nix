@@ -50,12 +50,12 @@ in
       name = mkOption {
         description = "Name of the application.";
         type = types.str;
-        default = "app";
+        example = "app";
       };
       command = mkOption {
         description = "Command to run the application.";
         type = types.str;
-        default = "/run/current-system/sw/bin/app";
+        example = "/run/current-system/sw/bin/app";
       };
       args = mkOption {
         description = ''
@@ -65,7 +65,13 @@ in
           - 'file': File path provided to the application as string
           If the file argument is used, a list of allowed directories must be provided.
         '';
-        type = types.listOf types.str;
+        type = types.listOf (
+          types.enum [
+            "url"
+            "flag"
+            "file"
+          ]
+        );
         default = [ ];
       };
       directories = mkOption {

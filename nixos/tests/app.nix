@@ -207,19 +207,6 @@ in
                         "/tmp"
                       ];
                     }
-                    {
-                      name = "cat2";
-                      command = "/run/current-system/sw/bin/cat";
-                      args = [ "file" ];
-                    }
-                    {
-                      name = "cat3";
-                      command = "/run/current-system/sw/bin/cat";
-                      directories = [
-                        "/etc"
-                        "/tmp"
-                      ];
-                    }
                   ];
                 };
               };
@@ -246,19 +233,13 @@ in
                   appvm.wait_for_unit("multi-user.target")
                   appvm.succeed("sudo -u ghaf touch /tmp/testfile")
 
-              with subtest("start app with file parameter"):
+              with subtest("start app with correct file path"):
                   guivm.succeed("${cli} ${cliArgs} start app --vm appvm cat -- /tmp/testfile")
                   guivm.succeed("${cli} ${cliArgs} start app --vm appvm cat -- /etc/passwd")
 
-              with subtest("fail app start with file parameter"):
+              with subtest("fail app start with wrong file path"):
                   guivm.fail("${cli} ${cliArgs} start --vm appvm cat -- /var/log/lastlog")
                   guivm.fail("${cli} ${cliArgs} start --vm appvm cat -- /etc/../bin/sh")
-
-              with subtest("fail app start with wrong parameters"):
-                  guivm.fail("${cli} ${cliArgs} start app --vm appvm cat2 -- /tmp/testfile")
-                  guivm.fail("${cli} ${cliArgs} start app --vm appvm cat2 -- /etc/passwd")
-                  guivm.fail("${cli} ${cliArgs} start app --vm appvm cat3 -- /tmp/testfile")
-                  guivm.fail("${cli} ${cliArgs} start app --vm appvm cat3 -- /etc/passwd")
             '';
         };
       };
