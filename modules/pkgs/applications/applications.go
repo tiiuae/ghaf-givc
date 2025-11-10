@@ -1,4 +1,4 @@
-// Copyright 2024 TII (SSRC) and the Ghaf contributors
+// Copyright 2024-2025 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // The application package provides functionality to parse and validate application manifests and
