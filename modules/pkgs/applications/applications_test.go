@@ -3,6 +3,7 @@
 package applications
 
 import (
+	"encoding/json"
 	"givc/modules/pkgs/types"
 	"os"
 	"reflect"
@@ -146,7 +147,7 @@ func Test_validateFilePath(t *testing.T) {
 	}
 }
 
-func TestParseApplicationManifests(t *testing.T) {
+func TestValidateApplicationManifests(t *testing.T) {
 	type args struct {
 		jsonApplicationString string
 	}
@@ -263,21 +264,21 @@ func TestParseApplicationManifests(t *testing.T) {
 		// Error cases
 		{
 			"single application with wrong arg",
-			args{`[{"Name":"test-app","Command":"chromium", "Args":["argument"]}]`},
+			args{`[{"Name":"test-app","Command":"chromium","Args":["argument"]}]`},
 			nil,
 			true,
 		},
 		{
 			"single application two args one wrong",
-			args{`[{"Name":"test-app","Command":"chromium", "Args":["url", "argument"]}]`},
+			args{`[{"Name":"test-app","Command":"chromium","Args":["url", "argument"]}]`},
 			nil,
 			true,
 		},
 		{
 			"two applications, with wrong args",
 			args{`[
-				{"Name":"test-app","Command":"chromium", "Args":["url", "argument"]"},
-				{"Name":"test-app2","Command":"firefox", "Args":["url", "argument"]"},
+				{"Name":"test-app","Command":"chromium","Args":["url", "argument"]},
+				{"Name":"test-app2","Command":"firefox","Args":["url", "argument"]}
 			]`},
 			nil,
 			true,
@@ -292,18 +293,18 @@ func TestParseApplicationManifests(t *testing.T) {
 			true,
 		},
 		{
-			"one applications, missing directories but file flag",
+			"one application, missing directories but file flag",
 			args{`[
-				{"Name":"test-app","Command":"chromium", Args:["file"]},
+				{"Name":"test-app","Command":"chromium","Args":["file"]}
 			]`},
 			nil,
 			true,
 		},
 		{
-			"two applications, one without file args",
+			"two applications, one without file arg but with directories",
 			args{`[
 				{"Name":"test-app","Command":"chromium","Args":["flag","url"],"Directories":["/tmp"]},
-				{"Name":"test-app2","Command":"firefox","Args":["file"],"Directories":["/tmp"]},
+				{"Name":"test-app2","Command":"firefox","Args":["file"],"Directories":["/tmp"]}
 			]`},
 			nil,
 			true,
@@ -311,13 +312,20 @@ func TestParseApplicationManifests(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseApplicationManifests(tt.args.jsonApplicationString)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ParseApplicationManifests() error = %v, wantErr %v", err, tt.wantErr)
+			var applications []types.ApplicationManifest
+			err := json.Unmarshal([]byte(tt.args.jsonApplicationString), &applications)
+			if err != nil {
+				t.Errorf("Failed to parse JSON: %v", err)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ParseApplicationManifests() = %v, want %v", got, tt.want)
+
+			err = ValidateApplicationManifests(applications)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateApplicationManifests() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err == nil && !reflect.DeepEqual(applications, tt.want) {
+				t.Errorf("Applications = %v, want %v", applications, tt.want)
 			}
 		})
 	}
