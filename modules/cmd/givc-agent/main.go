@@ -29,7 +29,6 @@ import (
 	givc_localelistener "givc/modules/pkgs/localelistener"
 	givc_serviceclient "givc/modules/pkgs/serviceclient"
 	givc_servicemanager "givc/modules/pkgs/servicemanager"
-	givc_socketproxy "givc/modules/pkgs/socketproxy"
 	givc_statsmanager "givc/modules/pkgs/statsmanager"
 	givc_types "givc/modules/pkgs/types"
 	givc_util "givc/modules/pkgs/utility"
@@ -140,15 +139,6 @@ func main() {
 		hwidEnabled = true
 	}
 
-	var proxyConfigs []givc_types.ProxyConfig
-	jsonDbusproxyString, socketProxyOption := os.LookupEnv("SOCKET_PROXY")
-	if socketProxyOption && jsonDbusproxyString != "" {
-		err = json.Unmarshal([]byte(jsonDbusproxyString), &proxyConfigs)
-		if err != nil {
-			log.Fatalf("error unmarshalling JSON string: %v", err)
-		}
-	}
-
 	// Configure TLS
 	var tlsConfigJson givc_types.TlsConfigJson
 	jsonTlsConfigString, tlsConfigOption := os.LookupEnv("TLS_CONFIG")
@@ -234,66 +224,8 @@ func main() {
 	}
 	grpcServices = append(grpcServices, statsServer)
 
-	// Create socket proxy server (optional)
-	for _, proxyConfig := range proxyConfigs {
-
-		// Create socket proxy server for dbus
-		socketProxyServer, err := givc_socketproxy.NewSocketProxyServer(proxyConfig.Socket, proxyConfig.Server)
-		if err != nil {
-			log.Errorf("Cannot create socket proxy server: %v", err)
-		}
-
-		// Run proxy client
-		if !proxyConfig.Server {
-			log.Infof("Configuring socket proxy client: %v", proxyConfig)
-
-			go func(proxyConfig givc_types.ProxyConfig) {
-
-				// Configure client endpoint
-				socketClient := &givc_types.EndpointConfig{
-					Transport: proxyConfig.Transport,
-					TlsConfig: tlsConfig,
-				}
-
-				err = socketProxyServer.StreamToRemote(context.Background(), socketClient)
-				if err != nil {
-					log.Errorf("Socket client stream exited: %v", err)
-				}
-
-			}(proxyConfig)
-		}
-
-		// Run proxy server
-		if proxyConfig.Server {
-			log.Infof("Configuring socket proxy server: %v", proxyConfig)
-
-			go func(proxyConfig givc_types.ProxyConfig) {
-
-				// Socket proxy server config
-				cfgProxyServer := &givc_types.EndpointConfig{
-					Transport: givc_types.TransportConfig{
-						Name:     cfgAgent.Transport.Name,
-						Address:  cfgAgent.Transport.Address,
-						Port:     proxyConfig.Transport.Port,
-						Protocol: proxyConfig.Transport.Protocol,
-					},
-					TlsConfig: tlsConfig,
-				}
-
-				var grpcProxyService []givc_types.GrpcServiceRegistration
-				grpcProxyService = append(grpcProxyService, socketProxyServer)
-				grpcServer, err := givc_grpc.NewServer(cfgProxyServer, grpcProxyService)
-				if err != nil {
-					log.Errorf("Cannot create grpc proxy server config: %v", err)
-				}
-				err = grpcServer.ListenAndServe(context.Background(), make(chan struct{}))
-				if err != nil {
-					log.Errorf("Grpc socket proxy server failed: %v", err)
-				}
-
-			}(proxyConfig)
-		}
-	}
+	// Create socket proxy services
+	SetupSocketProxyService(tlsConfig, agent)
 
 	// Create event streaming services
 	SetupEventService(tlsConfig)
