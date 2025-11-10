@@ -160,6 +160,11 @@ in
         > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
       '';
     };
+
+    enableExecModule = mkEnableOption ''
+      execution module for (arbitrary) commands on the host via the GIVC agent. Please be aware that this
+      introduces significant security implications as currently, no protection measures are implemented.
+    '';
   };
 
   config = mkIf cfg.enable {
@@ -213,6 +218,7 @@ in
         "APPVMS" = "${concatStringsSep " " cfg.appVms}";
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
+        "EXEC" = "${trivial.boolToString cfg.enableExecModule}";
       };
     };
     networking.firewall.allowedTCPPorts =
