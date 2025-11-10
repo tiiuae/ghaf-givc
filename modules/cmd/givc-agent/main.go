@@ -124,6 +124,12 @@ func main() {
 		wifiEnabled = true
 	}
 
+	withExecServer := false
+	execService, execOption := os.LookupEnv("EXEC")
+	if execOption && (execService != "false") {
+		withExecServer = true
+	}
+
 	hwidEnabled := false
 	hwidService, hwidOption := os.LookupEnv("HWID")
 	hwidIface, hwidIfOption := os.LookupEnv("HWID_IFACE")
@@ -187,11 +193,14 @@ func main() {
 	grpcServices = append(grpcServices, systemdControlServer)
 
 	// Create `exec` control server
-	execServer, err := givc_exec.NewExecServer()
-	if err != nil {
-		log.Fatalf("Cannot create exec server: %v", err)
+	if withExecServer {
+		execServer, err := givc_exec.NewExecServer()
+		if err != nil {
+			log.Fatalf("Cannot create exec server: %v", err)
+		}
+		log.Warnf("Enabling exec server - this allows remote execution of arbitrary commands!")
+		grpcServices = append(grpcServices, execServer)
 	}
-	grpcServices = append(grpcServices, execServer)
 
 	// Create locale listener server
 	localeClientServer, err := givc_localelistener.NewLocaleServer()
