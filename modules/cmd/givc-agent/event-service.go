@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	givc_config "givc/modules/pkgs/config"
 	givc_eventproxy "givc/modules/pkgs/eventproxy"
 	givc_grpc "givc/modules/pkgs/grpc"
 	givc_types "givc/modules/pkgs/types"
@@ -18,7 +19,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *AgentConfig) {
+func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_config.AgentConfig) {
 
 	for _, eventConfig := range config.EventConfigs {
 

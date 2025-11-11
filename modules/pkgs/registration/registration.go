@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Service registration functionality for the GIVC agent.
-package main
+package registration
 
 import (
 	"context"
