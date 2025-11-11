@@ -20,8 +20,10 @@ import (
 	"sync"
 	"syscall"
 
+	givc_config "givc/modules/pkgs/config"
 	givc_grpc "givc/modules/pkgs/grpc"
 	givc_localelistener "givc/modules/pkgs/localelistener"
+	givc_registration "givc/modules/pkgs/registration"
 	givc_servicemanager "givc/modules/pkgs/servicemanager"
 	givc_statsmanager "givc/modules/pkgs/statsmanager"
 	givc_types "givc/modules/pkgs/types"
@@ -30,7 +32,7 @@ import (
 )
 
 // createEndpointConfigs creates the admin and agent endpoint configurations
-func createEndpointConfigs(config *AgentConfig) (*givc_types.EndpointConfig, *givc_types.EndpointConfig, string) {
+func createEndpointConfigs(config *givc_config.AgentConfig) (*givc_types.EndpointConfig, *givc_types.EndpointConfig, string) {
 	// Set admin server config
 	cfgAdminServer := &givc_types.EndpointConfig{
 		Transport: config.Admin,
@@ -51,7 +53,7 @@ func createEndpointConfigs(config *AgentConfig) (*givc_types.EndpointConfig, *gi
 }
 
 // setupGRPCServices creates and configures all required and optional GRPC services
-func setupGRPCServices(cfgAgent *givc_types.EndpointConfig, config *AgentConfig) ([]givc_types.GrpcServiceRegistration, *givc_servicemanager.SystemdControlServer, error) {
+func setupGRPCServices(cfgAgent *givc_types.EndpointConfig, config *givc_config.AgentConfig) ([]givc_types.GrpcServiceRegistration, *givc_servicemanager.SystemdControlServer, error) {
 	var grpcServices []givc_types.GrpcServiceRegistration
 
 	// Systemd control server
@@ -82,15 +84,15 @@ func setupGRPCServices(cfgAgent *givc_types.EndpointConfig, config *AgentConfig)
 }
 
 // startExternalServices starts separate grpc servers
-func startExternalServices(ctx context.Context, wg *sync.WaitGroup, config *AgentConfig) {
+func startExternalServices(ctx context.Context, wg *sync.WaitGroup, config *givc_config.AgentConfig) {
 	StartSocketProxyService(ctx, wg, config)
 	StartEventService(ctx, wg, config)
 }
 
 // startRegistration configures and starts the registration worker
-func startRegistration(ctx context.Context, wg *sync.WaitGroup, registrationConfig RegistrationConfig, serverStarted chan struct{}) error {
+func startRegistration(ctx context.Context, wg *sync.WaitGroup, registrationConfig givc_registration.RegistrationConfig, serverStarted chan struct{}) error {
 
-	registry := NewServiceRegistry(registrationConfig)
+	registry := givc_registration.NewServiceRegistry(registrationConfig)
 	if registry == nil {
 		return fmt.Errorf("failed to create service registry")
 	}
@@ -136,7 +138,7 @@ func main() {
 	}()
 
 	// Parse configuration
-	config, err := ParseConfig()
+	config, err := givc_config.ParseConfig()
 	if err != nil {
 		log.Errorf("Failed to parse configuration: %v", err)
 		return
@@ -163,7 +165,7 @@ func main() {
 
 	// Start agent registration
 	serverStarted := make(chan struct{})
-	registrationConfig := RegistrationConfig{
+	registrationConfig := givc_registration.RegistrationConfig{
 		SystemdServer:    systemdControlServer,
 		AdminConfig:      cfgAdminServer,
 		AgentConfig:      cfgAgent,

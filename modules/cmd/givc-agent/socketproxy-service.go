@@ -10,6 +10,7 @@ import (
 	"context"
 	"sync"
 
+	givc_config "givc/modules/pkgs/config"
 	givc_grpc "givc/modules/pkgs/grpc"
 	givc_socketproxy "givc/modules/pkgs/socketproxy"
 	givc_types "givc/modules/pkgs/types"
@@ -17,7 +18,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func StartSocketProxyService(ctx context.Context, wg *sync.WaitGroup, agentConfig *AgentConfig) {
+func StartSocketProxyService(ctx context.Context, wg *sync.WaitGroup, agentConfig *givc_config.AgentConfig) {
 
 	for _, proxyConfig := range agentConfig.ProxyConfigs {
 

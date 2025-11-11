@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Configuration parsing and validation for the GIVC agent.
-package main
+package config
 
 import (
 	"crypto/tls"

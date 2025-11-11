@@ -1,7 +1,7 @@
 // Copyright 2024-2025 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-package main
+package config
 
 import (
 	"os"
