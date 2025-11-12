@@ -10,54 +10,33 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"sync"
 	"syscall"
 
 	givc_config "givc/modules/pkgs/config"
+	givc_exec "givc/modules/pkgs/exec"
 	givc_grpc "givc/modules/pkgs/grpc"
+	givc_hwidmanager "givc/modules/pkgs/hwidmanager"
 	givc_localelistener "givc/modules/pkgs/localelistener"
 	givc_registration "givc/modules/pkgs/registration"
 	givc_servicemanager "givc/modules/pkgs/servicemanager"
 	givc_statsmanager "givc/modules/pkgs/statsmanager"
 	givc_types "givc/modules/pkgs/types"
+	givc_wifimanager "givc/modules/pkgs/wifimanager"
 
 	log "github.com/sirupsen/logrus"
 )
 
-// createEndpointConfigs creates the admin and agent endpoint configurations
-func createEndpointConfigs(config *givc_config.AgentConfig) (*givc_types.EndpointConfig, *givc_types.EndpointConfig, string) {
-	// Set admin server config
-	cfgAdminServer := &givc_types.EndpointConfig{
-		Transport: config.Admin,
-		TlsConfig: config.TlsConfig,
-	}
-
-	// Create endpoint config
-	agentServiceName := "givc-" + config.Agent.Name + ".service"
-	cfgAgent := &givc_types.EndpointConfig{
-		Transport: config.Agent,
-		TlsConfig: config.TlsConfig,
-		Services:  append([]string{agentServiceName}, slices.Collect(maps.Keys(config.Units))...),
-	}
-
-	log.Infof("Allowed systemd units: %v", cfgAgent.Services)
-
-	return cfgAdminServer, cfgAgent, agentServiceName
-}
-
 // setupGRPCServices creates and configures all required and optional GRPC services
-func setupGRPCServices(cfgAgent *givc_types.EndpointConfig, config *givc_config.AgentConfig) ([]givc_types.GrpcServiceRegistration, *givc_servicemanager.SystemdControlServer, error) {
+func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *givc_config.AgentConfig) ([]givc_types.GrpcServiceRegistration, *givc_servicemanager.SystemdControlServer, error) {
 	var grpcServices []givc_types.GrpcServiceRegistration
 
 	// Systemd control server
-	systemdControlServer, err := givc_servicemanager.NewSystemdControlServer(cfgAgent.Services, config.Applications)
+	systemdControlServer, err := givc_servicemanager.NewSystemdControlServer(agentEndpointConfig.Services, config.Capabilities.Applications)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -77,28 +56,38 @@ func setupGRPCServices(cfgAgent *givc_types.EndpointConfig, config *givc_config.
 	}
 	grpcServices = append(grpcServices, statsServer)
 
-	// OPTIONAL GRPC services
-	grpcServices = append(grpcServices, config.OptionalServices...)
+	// Optional capability services - instantiate based on config flags
+	if config.Capabilities.Optional.ExecEnabled {
+		execServer, err := givc_exec.NewExecServer()
+		if err != nil {
+			log.Errorf("Cannot create exec server: %v", err)
+		} else {
+			log.Warnf("Exec capability enabled - allows remote command execution!")
+			grpcServices = append(grpcServices, execServer)
+		}
+	}
+
+	if config.Capabilities.Optional.WifiEnabled {
+		wifiServer, err := givc_wifimanager.NewWifiControlServer()
+		if err != nil {
+			log.Errorf("Cannot create wifi server: %v", err)
+		} else {
+			log.Infof("WiFi management capability enabled")
+			grpcServices = append(grpcServices, wifiServer)
+		}
+	}
+
+	if config.Capabilities.Optional.HwidEnabled {
+		hwidServer, err := givc_hwidmanager.NewHwIdServer(config.Capabilities.Optional.HwidInterface)
+		if err != nil {
+			log.Errorf("Cannot create hwid server: %v", err)
+		} else {
+			log.Infof("Hardware ID capability enabled")
+			grpcServices = append(grpcServices, hwidServer)
+		}
+	}
 
 	return grpcServices, systemdControlServer, nil
-}
-
-// startExternalServices starts separate grpc servers
-func startExternalServices(ctx context.Context, wg *sync.WaitGroup, config *givc_config.AgentConfig) {
-	StartSocketProxyService(ctx, wg, config)
-	StartEventService(ctx, wg, config)
-}
-
-// startRegistration configures and starts the registration worker
-func startRegistration(ctx context.Context, wg *sync.WaitGroup, registrationConfig givc_registration.RegistrationConfig, serverStarted chan struct{}) error {
-
-	registry := givc_registration.NewServiceRegistry(registrationConfig)
-	if registry == nil {
-		return fmt.Errorf("failed to create service registry")
-	}
-	registry.StartRegistrationWorker(ctx, wg, serverStarted)
-
-	return nil
 }
 
 // Main function of the GIVC agent.
@@ -145,15 +134,16 @@ func main() {
 	}
 
 	// Setup log level
-	if !config.Debug {
+	if !config.Runtime.Debug {
 		log.SetLevel(log.WarnLevel)
 	}
 
-	// Setup endpoint configurations
-	cfgAdminServer, cfgAgent, agentServiceName := createEndpointConfigs(config)
+	// Endpoint configurations are already created during parsing
+	agentEndpointConfig := config.Network.AgentEndpoint
+	log.Infof("Allowed systemd units: %v", agentEndpointConfig.Services)
 
 	// Setup GRPC services
-	grpcServices, systemdControlServer, err := setupGRPCServices(cfgAgent, config)
+	grpcServices, systemdControlServer, err := setupGRPCServices(agentEndpointConfig, config)
 	if err != nil {
 		log.Errorf("Cannot create GRPC services: %v", err)
 		return
@@ -161,23 +151,24 @@ func main() {
 	defer systemdControlServer.Close()
 
 	// Start external services
-	startExternalServices(ctx, &wg, config)
+	StartSocketService(ctx, &wg, config)
+	StartEventService(ctx, &wg, config)
 
 	// Start agent registration
 	serverStarted := make(chan struct{})
 	registrationConfig := givc_registration.RegistrationConfig{
-		SystemdServer:    systemdControlServer,
-		AdminConfig:      cfgAdminServer,
-		AgentConfig:      cfgAgent,
-		AgentServiceName: agentServiceName,
-		AgentType:        config.AgentType,
-		AgentParent:      config.AgentParent,
-		Services:         config.Units,
+		SystemdServer: systemdControlServer,
+		AgentConfig:   config,
 	}
-	startRegistration(ctx, &wg, registrationConfig, serverStarted)
+	registry := givc_registration.NewServiceRegistry(registrationConfig)
+	if registry == nil {
+		log.Errorf("failed to create service registry")
+		return
+	}
+	registry.StartRegistrationWorker(ctx, &wg, serverStarted)
 
 	// Start main grpc server
-	grpcServer, err := givc_grpc.NewServer(cfgAgent, grpcServices)
+	grpcServer, err := givc_grpc.NewServer(agentEndpointConfig, grpcServices)
 	if err != nil {
 		log.Errorf("Cannot create grpc server config: %v", err)
 		return

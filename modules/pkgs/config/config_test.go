@@ -112,7 +112,7 @@ func TestParseAgentType(t *testing.T) {
 	}
 }
 
-func TestParseEventConfigs(t *testing.T) {
+func TestParseBridgeConfig_Events(t *testing.T) {
 	tests := []struct {
 		name        string
 		envValue    string
@@ -155,25 +155,26 @@ func TestParseEventConfigs(t *testing.T) {
 				os.Unsetenv("EVENT_PROXY")
 			}
 
-			configs, err := parseEventConfigs()
+			var bridge BridgeConfig
+			err := parseBridgeConfig(&bridge)
 
 			if tt.expectError {
 				if err == nil {
-					t.Errorf("parseEventConfigs() expected error but got none")
+					t.Errorf("parseBridgeConfig() expected error but got none")
 				}
 			} else {
 				if err != nil {
-					t.Errorf("parseEventConfigs() unexpected error = %v", err)
+					t.Errorf("parseBridgeConfig() unexpected error = %v", err)
 				}
-				if len(configs) != tt.expectCount {
-					t.Errorf("parseEventConfigs() expected %d configs, got %d", tt.expectCount, len(configs))
+				if len(bridge.Events) != tt.expectCount {
+					t.Errorf("parseBridgeConfig() expected %d event configs, got %d", tt.expectCount, len(bridge.Events))
 				}
 			}
 		})
 	}
 }
 
-func TestParseProxyConfigs(t *testing.T) {
+func TestParseBridgeConfig_Sockets(t *testing.T) {
 	tests := []struct {
 		name        string
 		envValue    string
@@ -216,18 +217,172 @@ func TestParseProxyConfigs(t *testing.T) {
 				os.Unsetenv("SOCKET_PROXY")
 			}
 
-			configs, err := parseProxyConfigs()
+			var bridge BridgeConfig
+			err := parseBridgeConfig(&bridge)
 
 			if tt.expectError {
 				if err == nil {
-					t.Errorf("parseProxyConfigs() expected error but got none")
+					t.Errorf("parseBridgeConfig() expected error but got none")
 				}
 			} else {
 				if err != nil {
-					t.Errorf("parseProxyConfigs() unexpected error = %v", err)
+					t.Errorf("parseBridgeConfig() unexpected error = %v", err)
 				}
-				if len(configs) != tt.expectCount {
-					t.Errorf("parseProxyConfigs() expected %d configs, got %d", tt.expectCount, len(configs))
+				if len(bridge.Sockets) != tt.expectCount {
+					t.Errorf("parseBridgeConfig() expected %d socket configs, got %d", tt.expectCount, len(bridge.Sockets))
+				}
+			}
+		})
+	}
+}
+
+func TestParseIdentityConfig(t *testing.T) {
+	tests := []struct {
+		name            string
+		agentJSON       string
+		typeValue       string
+		subTypeValue    string
+		parentValue     string
+		expectError     bool
+		expectedName    string
+		expectedType    uint32
+		expectedSubType uint32
+		expectedParent  string
+	}{
+		{
+			name:            "valid identity config",
+			agentJSON:       `{"name":"test-agent","addr":"127.0.0.1","port":"9000","protocol":"tcp"}`,
+			typeValue:       "1",
+			subTypeValue:    "2",
+			parentValue:     "parent-agent",
+			expectError:     false,
+			expectedName:    "test-agent",
+			expectedType:    1,
+			expectedSubType: 2,
+			expectedParent:  "parent-agent",
+		},
+		{
+			name:         "missing agent transport",
+			agentJSON:    "",
+			typeValue:    "1",
+			subTypeValue: "2",
+			parentValue:  "",
+			expectError:  true,
+		},
+		{
+			name:         "invalid agent type",
+			agentJSON:    `{"name":"test-agent","addr":"127.0.0.1","port":"9000","protocol":"tcp"}`,
+			typeValue:    "999",
+			subTypeValue: "2",
+			parentValue:  "",
+			expectError:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup environment
+			if tt.agentJSON != "" {
+				os.Setenv("AGENT", tt.agentJSON)
+				defer os.Unsetenv("AGENT")
+			}
+			if tt.typeValue != "" {
+				os.Setenv("TYPE", tt.typeValue)
+				defer os.Unsetenv("TYPE")
+			}
+			if tt.subTypeValue != "" {
+				os.Setenv("SUBTYPE", tt.subTypeValue)
+				defer os.Unsetenv("SUBTYPE")
+			}
+			if tt.parentValue != "" {
+				os.Setenv("PARENT", tt.parentValue)
+				defer os.Unsetenv("PARENT")
+			} else {
+				os.Unsetenv("PARENT")
+			}
+
+			var identity IdentityConfig
+			err := parseIdentityConfig(&identity)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("parseIdentityConfig() expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("parseIdentityConfig() unexpected error = %v", err)
+				}
+				if identity.Name != tt.expectedName {
+					t.Errorf("parseIdentityConfig() name = %v, want %v", identity.Name, tt.expectedName)
+				}
+				if identity.Type != tt.expectedType {
+					t.Errorf("parseIdentityConfig() type = %v, want %v", identity.Type, tt.expectedType)
+				}
+				if identity.SubType != tt.expectedSubType {
+					t.Errorf("parseIdentityConfig() subtype = %v, want %v", identity.SubType, tt.expectedSubType)
+				}
+				if identity.Parent != tt.expectedParent {
+					t.Errorf("parseIdentityConfig() parent = %v, want %v", identity.Parent, tt.expectedParent)
+				}
+			}
+		})
+	}
+}
+
+func TestParseConfig_Integration(t *testing.T) {
+	tests := []struct {
+		name         string
+		setupEnv     map[string]string
+		expectError  bool
+		expectedName string
+		expectedType uint32
+	}{
+		{
+			name: "complete valid config",
+			setupEnv: map[string]string{
+				"AGENT":        `{"name":"test-agent","addr":"127.0.0.1","port":"9000","protocol":"tcp"}`,
+				"TYPE":         "1",
+				"SUBTYPE":      "2",
+				"PARENT":       "parent-agent",
+				"ADMIN_SERVER": `{"name":"admin-server","addr":"127.0.0.1","port":"8000","protocol":"tcp"}`,
+				"DEBUG":        "true",
+			},
+			expectError:  false,
+			expectedName: "test-agent",
+			expectedType: 1,
+		},
+		{
+			name: "missing required fields",
+			setupEnv: map[string]string{
+				"TYPE": "1",
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup environment
+			for key, value := range tt.setupEnv {
+				os.Setenv(key, value)
+				defer os.Unsetenv(key)
+			}
+
+			config, err := ParseConfig()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("ParseConfig() expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("ParseConfig() unexpected error = %v", err)
+				}
+				if config.Identity.Name != tt.expectedName {
+					t.Errorf("ParseConfig() name = %v, want %v", config.Identity.Name, tt.expectedName)
+				}
+				if config.Identity.Type != tt.expectedType {
+					t.Errorf("ParseConfig() type = %v, want %v", config.Identity.Type, tt.expectedType)
 				}
 			}
 		})

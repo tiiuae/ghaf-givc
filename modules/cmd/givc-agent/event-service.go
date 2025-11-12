@@ -21,7 +21,7 @@ import (
 
 func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_config.AgentConfig) {
 
-	for _, eventConfig := range config.EventConfigs {
+	for _, eventConfig := range config.Network.Bridge.Events {
 
 		eventProxyServer, err := givc_eventproxy.NewEventProxyServer(eventConfig.Transport)
 		if err != nil {
@@ -52,7 +52,7 @@ func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_con
 						Port:     eventConfig.Transport.Port,
 						Protocol: eventConfig.Transport.Protocol,
 					},
-					TlsConfig: config.TlsConfig,
+					TlsConfig: config.Network.TlsConfig,
 				}
 
 				var grpcProxyService []givc_types.GrpcServiceRegistration
@@ -85,7 +85,7 @@ func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_con
 				// Configure client endpoint
 				eventClient := &givc_types.EndpointConfig{
 					Transport: eventConfig.Transport,
-					TlsConfig: config.TlsConfig,
+					TlsConfig: config.Network.TlsConfig,
 				}
 
 				err = eventProxyServer.StreamEventsToRemote(ctx, eventClient, eventConfig.Device)
