@@ -13,22 +13,17 @@ import (
 
 	givc_admin "givc/modules/api/admin"
 	givc_systemd "givc/modules/api/systemd"
+	givc_config "givc/modules/pkgs/config"
 	givc_serviceclient "givc/modules/pkgs/serviceclient"
 	givc_servicemanager "givc/modules/pkgs/servicemanager"
-	givc_types "givc/modules/pkgs/types"
 
 	log "github.com/sirupsen/logrus"
 )
 
 // RegistrationConfig holds the configuration needed for service registration
 type RegistrationConfig struct {
-	SystemdServer    *givc_servicemanager.SystemdControlServer
-	AdminConfig      *givc_types.EndpointConfig
-	AgentConfig      *givc_types.EndpointConfig
-	AgentServiceName string
-	AgentType        uint32
-	AgentParent      string
-	Services         map[string]uint32
+	SystemdServer *givc_servicemanager.SystemdControlServer
+	AgentConfig   *givc_config.AgentConfig
 }
 
 // Registry defines the interface for service registration operations
@@ -90,26 +85,27 @@ func (r *ServiceRegistry) RegisterAgent(ctx context.Context) error {
 		return fmt.Errorf("systemd server not configured")
 	}
 
-	if r.config.AgentServiceName == "" {
+	agentServiceName := r.config.AgentConfig.Identity.ServiceName
+	if agentServiceName == "" {
 		return fmt.Errorf("agent service name not configured")
 	}
 
 	unitStatus, err := r.config.SystemdServer.GetUnitStatus(ctx, &givc_systemd.UnitRequest{
-		UnitName: r.config.AgentServiceName,
+		UnitName: agentServiceName,
 	})
 	if err != nil {
 		return err
 	}
 
 	agentEntryRequest := &givc_admin.RegistryRequest{
-		Name:   r.config.AgentServiceName,
-		Type:   r.config.AgentType,
-		Parent: r.config.AgentParent,
+		Name:   agentServiceName,
+		Type:   r.config.AgentConfig.Identity.Type,
+		Parent: r.config.AgentConfig.Identity.Parent,
 		Transport: &givc_admin.TransportConfig{
-			Protocol: r.config.AgentConfig.Transport.Protocol,
-			Address:  r.config.AgentConfig.Transport.Address,
-			Port:     r.config.AgentConfig.Transport.Port,
-			Name:     r.config.AgentConfig.Transport.Name,
+			Protocol: r.config.AgentConfig.Network.AgentEndpoint.Transport.Protocol,
+			Address:  r.config.AgentConfig.Network.AgentEndpoint.Transport.Address,
+			Port:     r.config.AgentConfig.Network.AgentEndpoint.Transport.Port,
+			Name:     r.config.AgentConfig.Network.AgentEndpoint.Transport.Name,
 		},
 		State: unitStatus.UnitStatus,
 	}
@@ -120,8 +116,8 @@ func (r *ServiceRegistry) RegisterAgent(ctx context.Context) error {
 
 // RegisterServices registers all configured services with the admin server
 func (r *ServiceRegistry) RegisterServices(ctx context.Context) error {
-	for service, subType := range r.config.Services {
-		if !strings.Contains(service, ".service") {
+	for service, subType := range r.config.AgentConfig.Capabilities.Units {
+		if !strings.HasSuffix(service, ".service") {
 			continue
 		}
 
@@ -158,19 +154,19 @@ func (r *ServiceRegistry) registerSingleService(ctx context.Context, service str
 
 	serviceEntryRequest := &givc_admin.RegistryRequest{
 		Name:   service,
-		Parent: r.config.AgentServiceName,
+		Parent: r.config.AgentConfig.Identity.ServiceName,
 		Type:   uint32(subType),
 		Transport: &givc_admin.TransportConfig{
-			Name:     r.config.AgentConfig.Transport.Name,
-			Protocol: r.config.AgentConfig.Transport.Protocol,
-			Address:  r.config.AgentConfig.Transport.Address,
-			Port:     r.config.AgentConfig.Transport.Port,
+			Name:     r.config.AgentConfig.Network.AgentEndpoint.Transport.Name,
+			Protocol: r.config.AgentConfig.Network.AgentEndpoint.Transport.Protocol,
+			Address:  r.config.AgentConfig.Network.AgentEndpoint.Transport.Address,
+			Port:     r.config.AgentConfig.Network.AgentEndpoint.Transport.Port,
 		},
 		State: unitStatus.UnitStatus,
 	}
 
 	log.Infof("Trying to register service: %s", service)
-	_, err = givc_serviceclient.RegisterRemoteService(r.config.AdminConfig, serviceEntryRequest)
+	_, err = givc_serviceclient.RegisterRemoteService(r.config.AgentConfig.Network.AdminEndpoint, serviceEntryRequest)
 	if err != nil {
 		log.Warnf("Error registering service %s: %s", service, err)
 		return err
@@ -188,7 +184,7 @@ func (r *ServiceRegistry) registerWithRetry(ctx context.Context, request *givc_a
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			_, err := givc_serviceclient.RegisterRemoteService(r.config.AdminConfig, request)
+			_, err := givc_serviceclient.RegisterRemoteService(r.config.AgentConfig.Network.AdminEndpoint, request)
 			if err == nil {
 				log.Infof("Successfully registered %s: %s", entityType, request.Name)
 				return nil

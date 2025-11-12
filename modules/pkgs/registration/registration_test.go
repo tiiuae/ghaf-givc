@@ -8,14 +8,34 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	givc_config "givc/modules/pkgs/config"
+	givc_types "givc/modules/pkgs/types"
 )
+
+// Helper function to create a test AgentConfig with minimal NetworkConfig
+func createTestAgentConfig(serviceName string, units map[string]uint32) *givc_config.AgentConfig {
+	return &givc_config.AgentConfig{
+		Identity: givc_config.IdentityConfig{
+			Name:        "test-agent",
+			ServiceName: serviceName,
+			Type:        1,
+			Parent:      "test-parent",
+		},
+		Network: givc_config.NetworkConfig{
+			AdminEndpoint: &givc_types.EndpointConfig{},
+			AgentEndpoint: &givc_types.EndpointConfig{},
+		},
+		Capabilities: givc_config.CapabilitiesConfig{
+			Units: units,
+		},
+	}
+}
 
 func TestNewServiceRegistry(t *testing.T) {
 	config := RegistrationConfig{
-		AgentServiceName: "test-agent.service",
-		AgentType:        1,
-		AgentParent:      "test-parent",
-		Services:         make(map[string]uint32),
+		SystemdServer: nil,
+		AgentConfig:   createTestAgentConfig("givc-test-agent.service", make(map[string]uint32)),
 	}
 
 	registry := NewServiceRegistry(config)
@@ -29,23 +49,21 @@ func TestNewServiceRegistry(t *testing.T) {
 		t.Fatal("NewServiceRegistry did not return *ServiceRegistry")
 	}
 
-	if serviceRegistry.config.AgentServiceName != config.AgentServiceName {
-		t.Errorf("Expected AgentServiceName %s, got %s",
-			config.AgentServiceName, serviceRegistry.config.AgentServiceName)
+	if serviceRegistry.config.AgentConfig.Identity.ServiceName != config.AgentConfig.Identity.ServiceName {
+		t.Errorf("Expected ServiceName %s, got %s",
+			config.AgentConfig.Identity.ServiceName, serviceRegistry.config.AgentConfig.Identity.ServiceName)
 	}
 
-	if serviceRegistry.config.AgentType != config.AgentType {
+	if serviceRegistry.config.AgentConfig.Identity.Type != config.AgentConfig.Identity.Type {
 		t.Errorf("Expected AgentType %d, got %d",
-			config.AgentType, serviceRegistry.config.AgentType)
+			config.AgentConfig.Identity.Type, serviceRegistry.config.AgentConfig.Identity.Type)
 	}
 }
 
 func TestServiceRegistry_StartRegistrationWorker_CancelledBeforeStart(t *testing.T) {
 	config := RegistrationConfig{
-		AgentServiceName: "test-agent.service",
-		AgentType:        1,
-		AgentParent:      "test-parent",
-		Services:         make(map[string]uint32),
+		SystemdServer: nil,
+		AgentConfig:   createTestAgentConfig("givc-test-agent.service", make(map[string]uint32)),
 	}
 
 	registry := NewServiceRegistry(config)
@@ -76,11 +94,8 @@ func TestServiceRegistry_StartRegistrationWorker_CancelledBeforeStart(t *testing
 
 func TestServiceRegistry_StartRegistrationWorker_ServerStartSignal(t *testing.T) {
 	config := RegistrationConfig{
-		AgentServiceName: "test-agent.service",
-		AgentType:        1,
-		AgentParent:      "test-parent",
-		Services:         make(map[string]uint32),
-		SystemdServer:    nil, // This will cause RegisterAgent to fail, which is expected
+		SystemdServer: nil, // This will cause RegisterAgent to fail, which is expected
+		AgentConfig:   createTestAgentConfig("givc-test-agent.service", make(map[string]uint32)),
 	}
 
 	registry := NewServiceRegistry(config)
@@ -119,10 +134,8 @@ func TestServiceRegistry_StartRegistrationWorker_ServerStartSignal(t *testing.T)
 
 func TestServiceRegistry_StartRegistrationWorker_ContextTimeout(t *testing.T) {
 	config := RegistrationConfig{
-		AgentServiceName: "test-agent.service",
-		AgentType:        1,
-		AgentParent:      "test-parent",
-		Services:         make(map[string]uint32),
+		SystemdServer: nil,
+		AgentConfig:   createTestAgentConfig("givc-test-agent.service", make(map[string]uint32)),
 	}
 
 	registry := NewServiceRegistry(config)
@@ -160,30 +173,24 @@ func TestRegistrationConfig_Validation(t *testing.T) {
 		{
 			name: "valid config",
 			config: RegistrationConfig{
-				AgentServiceName: "test-agent.service",
-				AgentType:        1,
-				AgentParent:      "test-parent",
-				Services:         map[string]uint32{"service1.service": 1},
+				SystemdServer: nil,
+				AgentConfig:   createTestAgentConfig("givc-test-agent.service", map[string]uint32{"service1.service": 1}),
 			},
 			expectedValid: true,
 		},
 		{
 			name: "empty agent service name",
 			config: RegistrationConfig{
-				AgentServiceName: "",
-				AgentType:        1,
-				AgentParent:      "test-parent",
-				Services:         map[string]uint32{"service1.service": 1},
+				SystemdServer: nil,
+				AgentConfig:   createTestAgentConfig("", map[string]uint32{"service1.service": 1}),
 			},
 			expectedValid: false,
 		},
 		{
 			name: "nil services map",
 			config: RegistrationConfig{
-				AgentServiceName: "test-agent.service",
-				AgentType:        1,
-				AgentParent:      "test-parent",
-				Services:         nil,
+				SystemdServer: nil,
+				AgentConfig:   createTestAgentConfig("givc-test-agent.service", nil),
 			},
 			expectedValid: true, // nil map is valid, just empty
 		},
@@ -200,9 +207,9 @@ func TestRegistrationConfig_Validation(t *testing.T) {
 
 			// Validate config fields are set correctly
 			serviceRegistry := registry.(*ServiceRegistry)
-			if serviceRegistry.config.AgentServiceName != tt.config.AgentServiceName {
-				t.Errorf("Expected AgentServiceName %s, got %s",
-					tt.config.AgentServiceName, serviceRegistry.config.AgentServiceName)
+			if serviceRegistry.config.AgentConfig.Identity.ServiceName != tt.config.AgentConfig.Identity.ServiceName {
+				t.Errorf("Expected ServiceName %s, got %s",
+					tt.config.AgentConfig.Identity.ServiceName, serviceRegistry.config.AgentConfig.Identity.ServiceName)
 			}
 		})
 	}
@@ -210,10 +217,8 @@ func TestRegistrationConfig_Validation(t *testing.T) {
 
 func TestServiceRegistry_Interface_Compliance(t *testing.T) {
 	config := RegistrationConfig{
-		AgentServiceName: "test-agent.service",
-		AgentType:        1,
-		AgentParent:      "test-parent",
-		Services:         make(map[string]uint32),
+		SystemdServer: nil,
+		AgentConfig:   createTestAgentConfig("givc-test-agent.service", make(map[string]uint32)),
 	}
 
 	// Verify that ServiceRegistry implements the Registry interface
@@ -224,10 +229,8 @@ func TestServiceRegistry_Interface_Compliance(t *testing.T) {
 
 func TestServiceRegistry_RegisterServices_EmptyServices(t *testing.T) {
 	config := RegistrationConfig{
-		AgentServiceName: "test-agent.service",
-		AgentType:        1,
-		AgentParent:      "test-parent",
-		Services:         make(map[string]uint32), // Empty services
+		SystemdServer: nil,
+		AgentConfig:   createTestAgentConfig("givc-test-agent.service", make(map[string]uint32)), // Empty services
 	}
 
 	registry := NewServiceRegistry(config)
@@ -253,13 +256,11 @@ func TestServiceRegistry_RegisterServices_EmptyServices(t *testing.T) {
 
 func TestServiceRegistry_RegisterServices_ContextCancellation(t *testing.T) {
 	config := RegistrationConfig{
-		AgentServiceName: "test-agent.service",
-		AgentType:        1,
-		AgentParent:      "test-parent",
-		Services: map[string]uint32{
+		SystemdServer: nil,
+		AgentConfig: createTestAgentConfig("givc-test-agent.service", map[string]uint32{
 			"service1.service": 1,
 			"service2.service": 2,
-		},
+		}),
 	}
 
 	registry := NewServiceRegistry(config)

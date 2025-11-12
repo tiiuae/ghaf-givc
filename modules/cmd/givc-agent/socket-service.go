@@ -18,9 +18,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func StartSocketProxyService(ctx context.Context, wg *sync.WaitGroup, agentConfig *givc_config.AgentConfig) {
+func StartSocketService(ctx context.Context, wg *sync.WaitGroup, agentConfig *givc_config.AgentConfig) {
 
-	for _, proxyConfig := range agentConfig.ProxyConfigs {
+	for _, proxyConfig := range agentConfig.Network.Bridge.Sockets {
 
 		// Create socket proxy server
 		socketProxyServer, err := givc_socketproxy.NewSocketProxyServer(proxyConfig.Socket, proxyConfig.Server)
@@ -47,7 +47,7 @@ func StartSocketProxyService(ctx context.Context, wg *sync.WaitGroup, agentConfi
 				// Configure client endpoint
 				socketClient := &givc_types.EndpointConfig{
 					Transport: proxyConfig.Transport,
-					TlsConfig: agentConfig.TlsConfig,
+					TlsConfig: agentConfig.Network.TlsConfig,
 				}
 
 				err = socketProxyServer.StreamToRemote(ctx, socketClient)
@@ -77,12 +77,12 @@ func StartSocketProxyService(ctx context.Context, wg *sync.WaitGroup, agentConfi
 				// Socket proxy server config
 				cfgProxyServer := &givc_types.EndpointConfig{
 					Transport: givc_types.TransportConfig{
-						Name:     agentConfig.Agent.Name,
-						Address:  agentConfig.Agent.Address,
+						Name:     agentConfig.Network.AgentEndpoint.Transport.Name,
+						Address:  agentConfig.Network.AgentEndpoint.Transport.Address,
 						Port:     proxyConfig.Transport.Port,
 						Protocol: proxyConfig.Transport.Protocol,
 					},
-					TlsConfig: agentConfig.TlsConfig,
+					TlsConfig: agentConfig.Network.TlsConfig,
 				}
 
 				var grpcProxyService []givc_types.GrpcServiceRegistration
