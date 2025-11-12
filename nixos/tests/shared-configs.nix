@@ -59,6 +59,16 @@ in
         inherit (adminConfig) name;
         inherit (adminConfig) addresses;
         tls.enable = tls;
+        open-policy-agent = {
+          enable = true;
+          policy = {
+            url = "http://github.com/gngram/policy-store/archive/refs/heads";
+            resource = "main.tar.gz";
+            sha256 = "sha256-dGfa/2/pfCsTd8Al6KFQdAz4d/roF+BBAuhbmbQs5JQ=";
+            roots = [ "policy-store-main" ];
+            updater.enable = false;
+          };
+        };
       };
     };
     tests-hostvm = {

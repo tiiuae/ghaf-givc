@@ -33,10 +33,6 @@ let
   vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
   opaServerPort = 8181;
   policyName = "ghaf-policy";
-  policy_bundle = pkgs.fetchurl {
-    url = "${opacfg.policy.url}/${opacfg.policy.resource}";
-    hash = "${opacfg.policy.sha256}";
-  };
 in
 {
   options.givc.admin = {
@@ -133,37 +129,32 @@ in
       enable = mkEnableOption "Start open policy agent service.";
       policy = {
         url = lib.mkOption {
-          type = lib.types.str;
+          type = lib.types.nullOr lib.types.str;
           example = "https://github.com/gngram/policy-store/archive/refs/heads";
           description = "Base URL for fetching the OPA policy archive.";
+          default = null;
         };
 
         resource = lib.mkOption {
-          type = lib.types.str;
-          default = "main";
+          type = lib.types.nullOr lib.types.str;
           description = "Archive resource path (e.g., main.tar.gz) appended to the base URL.";
+          default = null;
         };
 
         sha256 = lib.mkOption {
           type = lib.types.str;
           description = "sha256 of the resource archive.";
+          default = "";
+        };
+
+        roots = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [ ];
+          description = "List of root paths OPA should activate from the bundle.";
         };
 
         updater = {
           enable = mkEnableOption "Download latest policy from the provided policy store";
-          url = lib.mkOption {
-            type = lib.types.str;
-            example = "https://github.com/gngram/policy-store/archive/refs/heads";
-            description = "Base URL for fetching the OPA policy archive. Defaults to policy.url";
-            default = opacfg.policy.url;
-          };
-
-          resource = lib.mkOption {
-            type = lib.types.str;
-            description = "Archive resource path (e.g., main) appended to the base URL.";
-            default = opacfg.policy.resource;
-          };
-
           minDelay = lib.mkOption {
             type = lib.types.int;
             default = 10;
@@ -176,17 +167,12 @@ in
             description = "Maximum polling delay (seconds). Must be >= minDelay.";
           };
 
-          roots = lib.mkOption {
-            type = lib.types.listOf lib.types.str;
-            default = [ "policy-store-main" ];
-            description = "List of root paths OPA should activate from the bundle.";
-          };
-
           token = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
             default = null;
             description = "Access token for policy repository.";
           };
+
         };
       };
     };
@@ -202,17 +188,17 @@ in
 
       {
         assertion = !(opacfg.enable && updatercfg.enable && updatercfg.minDelay <= 0);
-        message = "admin.givc.open-policy-agent.policy.liveUpdate.minDelay must be > 0.";
+        message = "admin.givc.open-policy-agent.policy.updater.minDelay must be > 0.";
       }
 
       {
         assertion = !(opacfg.enable && updatercfg.enable && updatercfg.minDelay >= updatercfg.maxDelay);
-        message = "admin.givc.open-policy-agent.policy.liveUpdate.maxDelay must be > minDelay.";
+        message = "admin.givc.open-policy-agent.policy.updater.maxDelay must be > minDelay.";
       }
 
       {
-        assertion = !(opacfg.enable && updatercfg.enable && updatercfg.roots == [ ]);
-        message = "admin.givc.open-policy-agent.policy.liveUpdate.roots must not be empty.";
+        assertion = !(opacfg.enable && opacfg.policy.roots == [ ]);
+        message = "admin.givc.open-policy-agent.policy.roots must not be empty.";
       }
     ];
 
@@ -227,7 +213,10 @@ in
           };
 
       "open-policy-agent/bundle.tar.gz" = mkIf opacfg.enable {
-        source = policy_bundle;
+        source = pkgs.fetchurl {
+          url = "${opacfg.policy.url}/${opacfg.policy.resource}";
+          hash = "${opacfg.policy.sha256}";
+        };
       };
 
       "open-policy-agent/config.yaml" = mkIf (opacfg.enable && updatercfg.enable) {
@@ -235,7 +224,7 @@ in
           persistence_directory: "/run/open-policy-agent"
           services:
             - name: ${policyName}
-              url: ${updatercfg.url}
+              url: ${opacfg.policy.url}
               credentials:
                 bearer:
                   token_path: "/etc/open-policy-agent/access-token"
@@ -243,8 +232,8 @@ in
           bundles:
             ${policyName}:
               service: ${policyName}
-              resource: ${updatercfg.resource}
-              roots: [${lib.concatMapStringsSep " " (r: "\"${r}\"") updatercfg.roots}]
+              resource: ${opacfg.policy.resource}
+              roots: [${lib.concatMapStringsSep " " (r: "\"${r}\"") opacfg.policy.roots}]
               persist: true
               polling:
                 min_delay_seconds: ${toString updatercfg.minDelay}

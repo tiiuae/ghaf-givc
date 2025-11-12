@@ -57,6 +57,7 @@
               # Code below borrowed from $nixpkgs/nixos/tests/sway.nix
               import shlex
               import json
+              import pprint
 
               q = shlex.quote
               NODE_GROUPS = ["nodes", "floating_nodes"]
@@ -145,6 +146,18 @@
 
               with subtest("get stats"):
                   print(hostvm.succeed("${cli} ${cliArgs} get-stats app-vm"))
+
+              with subtest("open-policy-agent"):
+                  test_policy = "cmd:fetch policy-store-main/data/common"
+                  givc_cmd = f"${cli} ${cliArgs} policy-query '{test_policy}'"
+                  res = hostvm.succeed(givc_cmd)
+                  try:
+                      outer = json.loads(res)
+                      inner = json.loads(outer)
+                      result = inner["result"]
+                      pprint.pprint(result)
+                  except json.JSONDecodeError as e:
+                      print(f"Failed to parse JSON: {e}")
 
               with subtest("Clean run"):
                   print(hostvm.succeed("${cli} ${cliArgs} start app --vm app-vm foot"))
