@@ -388,3 +388,149 @@ func TestParseConfig_Integration(t *testing.T) {
 		})
 	}
 }
+
+func TestParseOptionalCapabilities(t *testing.T) {
+	tests := []struct {
+		name                string
+		setupEnv            map[string]string
+		expectedExecEnabled bool
+		expectedWifiEnabled bool
+		expectedHwidEnabled bool
+		expectedHwidIface   string
+	}{
+		{
+			name:                "all capabilities enabled",
+			setupEnv:            map[string]string{"EXEC": "true", "WIFI": "true", "HWID": "true", "HWID_IFACE": "eth0"},
+			expectedExecEnabled: true,
+			expectedWifiEnabled: true,
+			expectedHwidEnabled: true,
+			expectedHwidIface:   "eth0",
+		},
+		{
+			name:                "all capabilities disabled with false",
+			setupEnv:            map[string]string{"EXEC": "false", "WIFI": "false", "HWID": "false"},
+			expectedExecEnabled: false,
+			expectedWifiEnabled: false,
+			expectedHwidEnabled: false,
+			expectedHwidIface:   "",
+		},
+		{
+			name:                "capabilities enabled with non-false values",
+			setupEnv:            map[string]string{"EXEC": "yes", "WIFI": "enabled", "HWID": "on"},
+			expectedExecEnabled: true,
+			expectedWifiEnabled: true,
+			expectedHwidEnabled: true,
+			expectedHwidIface:   "",
+		},
+		{
+			name:                "no capabilities set",
+			setupEnv:            map[string]string{},
+			expectedExecEnabled: false,
+			expectedWifiEnabled: false,
+			expectedHwidEnabled: false,
+			expectedHwidIface:   "",
+		},
+		{
+			name:                "hwid enabled but no interface set",
+			setupEnv:            map[string]string{"HWID": "true"},
+			expectedExecEnabled: false,
+			expectedWifiEnabled: false,
+			expectedHwidEnabled: true,
+			expectedHwidIface:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clean up environment first
+			envVars := []string{"EXEC", "WIFI", "HWID", "HWID_IFACE"}
+			for _, env := range envVars {
+				os.Unsetenv(env)
+			}
+
+			// Setup test environment
+			for key, value := range tt.setupEnv {
+				os.Setenv(key, value)
+				defer os.Unsetenv(key)
+			}
+
+			var optional OptionalCapabilities
+			parseOptionalCapabilities(&optional)
+
+			if optional.ExecEnabled != tt.expectedExecEnabled {
+				t.Errorf("ExecEnabled = %v, want %v", optional.ExecEnabled, tt.expectedExecEnabled)
+			}
+			if optional.WifiEnabled != tt.expectedWifiEnabled {
+				t.Errorf("WifiEnabled = %v, want %v", optional.WifiEnabled, tt.expectedWifiEnabled)
+			}
+			if optional.HwidEnabled != tt.expectedHwidEnabled {
+				t.Errorf("HwidEnabled = %v, want %v", optional.HwidEnabled, tt.expectedHwidEnabled)
+			}
+			if optional.HwidInterface != tt.expectedHwidIface {
+				t.Errorf("HwidInterface = %v, want %v", optional.HwidInterface, tt.expectedHwidIface)
+			}
+		})
+	}
+}
+
+func TestParseTLSConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		tlsJSON     string
+		expectError bool
+		expectNil   bool
+	}{
+		{
+			name:        "TLS disabled",
+			tlsJSON:     `{"enable":false}`,
+			expectError: false,
+			expectNil:   true,
+		},
+		{
+			name:        "no TLS config",
+			tlsJSON:     "",
+			expectError: false,
+			expectNil:   true,
+		},
+		{
+			name:        "invalid TLS JSON",
+			tlsJSON:     `{"enable":true,"caCertPath"}`,
+			expectError: true,
+			expectNil:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup environment
+			if tt.tlsJSON != "" {
+				os.Setenv("TLS_CONFIG", tt.tlsJSON)
+				defer os.Unsetenv("TLS_CONFIG")
+			} else {
+				os.Unsetenv("TLS_CONFIG")
+			}
+
+			tlsConfig, err := parseTLSConfig()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("parseTLSConfig() expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("parseTLSConfig() unexpected error = %v", err)
+				}
+			}
+
+			if tt.expectNil {
+				if tlsConfig != nil {
+					t.Errorf("parseTLSConfig() expected nil but got %v", tlsConfig)
+				}
+			} else {
+				if tlsConfig == nil {
+					t.Errorf("parseTLSConfig() expected non-nil but got nil")
+				}
+			}
+		})
+	}
+}

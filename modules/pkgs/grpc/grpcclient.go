@@ -40,7 +40,10 @@ func NewClient(cfg *types.EndpointConfig) (*grpc.ClientConn, error) {
 	options := []grpc.DialOption{}
 
 	// Create client tls config
-	tlsConfig := givc_util.TlsClientConfigFromTlsConfig(cfg.TlsConfig, cfg.Transport.Name)
+	tlsConfig, err := givc_util.TlsClientConfigFromTlsConfig(cfg.TlsConfig, cfg.Transport.Name)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create TLS client config: %v", err)
+	}
 
 	// Setup TLS credentials
 	var tlsCredentials grpc.DialOption

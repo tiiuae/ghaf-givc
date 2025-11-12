@@ -5,6 +5,7 @@ package utility
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -19,21 +20,25 @@ var (
 	}
 )
 
-func TlsServerConfig(cacertFilePath string, certFilePath string, keyFilePath string, mutual bool) *tls.Config {
+func TlsServerConfig(cacertFilePath string, certFilePath string, keyFilePath string, mutual bool) (*tls.Config, error) {
 
 	// Load TLS certificates and key
 	serverTLSCert, err := tls.LoadX509KeyPair(filepath.Clean(certFilePath), filepath.Clean(keyFilePath))
 	if err != nil {
-		log.Fatalf("[TlsServerConfig] Error loading server certificate and key file: %v", err)
+		log.Errorf("[TlsServerConfig] Error loading server certificate and key file: %v", err)
+		return nil, err
 	}
 	certPool := x509.NewCertPool()
 	caCertPEM, err := os.ReadFile(filepath.Clean(cacertFilePath))
 	if err != nil {
-		log.Fatalf("[TlsServerConfig] Error loading CA certificate: %v", err)
+		log.Errorf("[TlsServerConfig] Error loading CA certificate: %v", err)
+		return nil, err
 	}
+
 	ok := certPool.AppendCertsFromPEM(caCertPEM)
 	if !ok {
-		log.Fatalf("[TlsServerConfig] Invalid CA certificate.")
+		log.Errorf("[TlsServerConfig] Invalid CA certificate.")
+		return nil, fmt.Errorf("invalid CA certificate")
 	}
 
 	var clientAuth tls.ClientAuthType
@@ -53,24 +58,27 @@ func TlsServerConfig(cacertFilePath string, certFilePath string, keyFilePath str
 		CipherSuites: CIPHER_SUITES,
 	}
 
-	return tlsConfig
+	return tlsConfig, nil
 }
 
-func TlsClientConfig(cacertFilePath string, certFilePath string, keyFilePath string, serverName string) *tls.Config {
+func TlsClientConfig(cacertFilePath string, certFilePath string, keyFilePath string, serverName string) (*tls.Config, error) {
 
 	// Load TLS certificates and key
 	clientTLSCert, err := tls.LoadX509KeyPair(certFilePath, keyFilePath)
 	if err != nil {
-		log.Fatalf("[TlsClientConfig] Error loading client certificate and key file: %v", err)
+		log.Errorf("[TlsClientConfig] Error loading client certificate and key file: %v", err)
+		return nil, err
 	}
 	certPool := x509.NewCertPool()
 	caCertPEM, err := os.ReadFile(filepath.Clean(cacertFilePath))
 	if err != nil {
-		log.Fatalf("[TlsClientConfig] Error loading CA certificate: %v", err)
+		log.Errorf("[TlsClientConfig] Error loading CA certificate: %v", err)
+		return nil, err
 	}
 	ok := certPool.AppendCertsFromPEM(caCertPEM)
 	if !ok {
-		log.Fatalf("[TlsClientConfig] Invalid CA certificate.")
+		log.Errorf("[TlsClientConfig] Invalid CA certificate.")
+		return nil, fmt.Errorf("invalid CA certificate")
 	}
 
 	// Set TLS configuration
@@ -82,14 +90,14 @@ func TlsClientConfig(cacertFilePath string, certFilePath string, keyFilePath str
 		CipherSuites: CIPHER_SUITES,
 	}
 
-	return tlsConfig
+	return tlsConfig, nil
 }
 
-func TlsClientConfigFromTlsConfig(tlsConfig *tls.Config, serverName string) *tls.Config {
+func TlsClientConfigFromTlsConfig(tlsConfig *tls.Config, serverName string) (*tls.Config, error) {
 
 	// Return nil if no TLS config is set
 	if tlsConfig == nil {
-		return nil
+		return nil, fmt.Errorf("no TLS config provided")
 	}
 
 	// Set TLS configuration
@@ -101,5 +109,5 @@ func TlsClientConfigFromTlsConfig(tlsConfig *tls.Config, serverName string) *tls
 		CipherSuites: CIPHER_SUITES,
 	}
 
-	return newTlsConfig
+	return newTlsConfig, nil
 }

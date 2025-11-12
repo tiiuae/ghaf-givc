@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	givc_admin "givc/modules/api/admin"
 	givc_config "givc/modules/pkgs/config"
+	givc_servicemanager "givc/modules/pkgs/servicemanager"
 	givc_types "givc/modules/pkgs/types"
 )
 
@@ -283,5 +285,136 @@ func TestServiceRegistry_RegisterServices_ContextCancellation(t *testing.T) {
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("RegisterServices did not handle context cancellation within timeout")
+	}
+}
+
+func TestServiceRegistry_RegisterAgent_NilSystemdServer(t *testing.T) {
+	config := RegistrationConfig{
+		SystemdServer: nil,
+		AgentConfig:   createTestAgentConfig("givc-test-agent.service", make(map[string]uint32)),
+	}
+
+	registry := NewServiceRegistry(config)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	err := registry.RegisterAgent(ctx)
+	if err == nil {
+		t.Fatal("Expected error for nil systemd server, got nil")
+	}
+
+	expectedError := "systemd server not configured"
+	if err.Error() != expectedError {
+		t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
+	}
+}
+
+func TestServiceRegistry_RegisterAgent_EmptyServiceName(t *testing.T) {
+	// Create a mock systemd server (non-nil) to bypass the first check
+	// but still test the empty service name validation
+	mockSystemdServer := &givc_servicemanager.SystemdControlServer{} // This will be non-nil but won't be called
+
+	config := RegistrationConfig{
+		SystemdServer: mockSystemdServer,
+		AgentConfig:   createTestAgentConfig("", make(map[string]uint32)), // Empty service name
+	}
+
+	registry := NewServiceRegistry(config)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	err := registry.RegisterAgent(ctx)
+	if err == nil {
+		t.Fatal("Expected error for empty service name, got nil")
+	}
+
+	expectedError := "agent service name not configured"
+	if err.Error() != expectedError {
+		t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
+	}
+}
+
+func TestServiceRegistry_registerSingleService_NilSystemdServer(t *testing.T) {
+	config := RegistrationConfig{
+		SystemdServer: nil,
+		AgentConfig:   createTestAgentConfig("givc-test-agent.service", make(map[string]uint32)),
+	}
+
+	registry := NewServiceRegistry(config).(*ServiceRegistry)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	err := registry.registerSingleService(ctx, "test.service", 1)
+	if err == nil {
+		t.Fatal("Expected error for nil systemd server, got nil")
+	}
+
+	expectedError := "systemd server not configured"
+	if err.Error() != expectedError {
+		t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
+	}
+}
+
+func TestServiceRegistry_RegisterServices_NonServiceUnits(t *testing.T) {
+	// Test that non-service units (without .service suffix) are skipped
+	config := RegistrationConfig{
+		SystemdServer: nil,
+		AgentConfig: createTestAgentConfig("givc-test-agent.service", map[string]uint32{
+			"test.timer":    1, // Should be skipped
+			"test.socket":   2, // Should be skipped
+			"test.service":  3, // Should be processed
+			"another.mount": 4, // Should be skipped
+		}),
+	}
+
+	registry := NewServiceRegistry(config)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// This should complete without attempting to register non-service units
+	// Only test.service will be attempted (and fail due to nil SystemdServer)
+	err := registry.RegisterServices(ctx)
+	if err != nil {
+		t.Errorf("RegisterServices should not error when skipping non-service units, got: %v", err)
+	}
+}
+
+func TestServiceRegistry_registerWithRetry_ContextCancellation(t *testing.T) {
+	config := RegistrationConfig{
+		SystemdServer: nil,
+		AgentConfig:   createTestAgentConfig("givc-test-agent.service", make(map[string]uint32)),
+	}
+
+	registry := NewServiceRegistry(config).(*ServiceRegistry)
+
+	// Create a context that will be cancelled
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create a test request
+	request := &givc_admin.RegistryRequest{
+		Name: "test-agent",
+		Type: 1,
+	}
+
+	// Start the registerWithRetry in a goroutine and cancel quickly
+	done := make(chan error, 1)
+	go func() {
+		done <- registry.registerWithRetry(ctx, request, "test")
+	}()
+
+	// Cancel the context immediately
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != context.Canceled {
+			t.Errorf("Expected context.Canceled, got %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("registerWithRetry did not handle context cancellation within timeout")
 	}
 }
