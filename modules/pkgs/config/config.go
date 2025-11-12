@@ -153,7 +153,11 @@ func parseTLSConfig() (*tls.Config, error) {
 	}
 
 	if tlsConfigJson.Enable {
-		return givc_util.TlsServerConfig(tlsConfigJson.CaCertPath, tlsConfigJson.CertPath, tlsConfigJson.KeyPath, true), nil
+		tlsConfig, err := givc_util.TlsServerConfig(tlsConfigJson.CaCertPath, tlsConfigJson.CertPath, tlsConfigJson.KeyPath, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS config: %w", err)
+		}
+		return tlsConfig, nil
 	}
 
 	return nil, nil

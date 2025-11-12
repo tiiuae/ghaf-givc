@@ -149,10 +149,10 @@ func TestParseBridgeConfig_Events(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up environment
 			if tt.envValue != "" {
-				os.Setenv("EVENT_PROXY", tt.envValue)
-				defer os.Unsetenv("EVENT_PROXY")
+				os.Setenv(EnvEventProxy, tt.envValue)
+				defer os.Unsetenv(EnvEventProxy)
 			} else {
-				os.Unsetenv("EVENT_PROXY")
+				os.Unsetenv(EnvEventProxy)
 			}
 
 			var bridge BridgeConfig
@@ -211,10 +211,10 @@ func TestParseBridgeConfig_Sockets(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up environment
 			if tt.envValue != "" {
-				os.Setenv("SOCKET_PROXY", tt.envValue)
-				defer os.Unsetenv("SOCKET_PROXY")
+				os.Setenv(EnvSocketProxy, tt.envValue)
+				defer os.Unsetenv(EnvSocketProxy)
 			} else {
-				os.Unsetenv("SOCKET_PROXY")
+				os.Unsetenv(EnvSocketProxy)
 			}
 
 			var bridge BridgeConfig
@@ -283,22 +283,22 @@ func TestParseIdentityConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup environment
 			if tt.agentJSON != "" {
-				os.Setenv("AGENT", tt.agentJSON)
-				defer os.Unsetenv("AGENT")
+				os.Setenv(EnvAgent, tt.agentJSON)
+				defer os.Unsetenv(EnvAgent)
 			}
 			if tt.typeValue != "" {
-				os.Setenv("TYPE", tt.typeValue)
-				defer os.Unsetenv("TYPE")
+				os.Setenv(EnvType, tt.typeValue)
+				defer os.Unsetenv(EnvType)
 			}
 			if tt.subTypeValue != "" {
-				os.Setenv("SUBTYPE", tt.subTypeValue)
-				defer os.Unsetenv("SUBTYPE")
+				os.Setenv(EnvSubtype, tt.subTypeValue)
+				defer os.Unsetenv(EnvSubtype)
 			}
 			if tt.parentValue != "" {
-				os.Setenv("PARENT", tt.parentValue)
-				defer os.Unsetenv("PARENT")
+				os.Setenv(EnvParent, tt.parentValue)
+				defer os.Unsetenv(EnvParent)
 			} else {
-				os.Unsetenv("PARENT")
+				os.Unsetenv(EnvParent)
 			}
 
 			var identity IdentityConfig
@@ -340,12 +340,12 @@ func TestParseConfig_Integration(t *testing.T) {
 		{
 			name: "complete valid config",
 			setupEnv: map[string]string{
-				"AGENT":        `{"name":"test-agent","addr":"127.0.0.1","port":"9000","protocol":"tcp"}`,
-				"TYPE":         "1",
-				"SUBTYPE":      "2",
-				"PARENT":       "parent-agent",
-				"ADMIN_SERVER": `{"name":"admin-server","addr":"127.0.0.1","port":"8000","protocol":"tcp"}`,
-				"DEBUG":        "true",
+				EnvAgent:       `{"name":"test-agent","addr":"127.0.0.1","port":"9000","protocol":"tcp"}`,
+				EnvType:        "1",
+				EnvSubtype:     "2",
+				EnvParent:      "parent-agent",
+				EnvAdminServer: `{"name":"admin-server","addr":"127.0.0.1","port":"8000","protocol":"tcp"}`,
+				EnvDebug:       "true",
 			},
 			expectError:  false,
 			expectedName: "test-agent",
@@ -354,7 +354,7 @@ func TestParseConfig_Integration(t *testing.T) {
 		{
 			name: "missing required fields",
 			setupEnv: map[string]string{
-				"TYPE": "1",
+				EnvType: "1",
 			},
 			expectError: true,
 		},
@@ -383,6 +383,152 @@ func TestParseConfig_Integration(t *testing.T) {
 				}
 				if config.Identity.Type != tt.expectedType {
 					t.Errorf("ParseConfig() type = %v, want %v", config.Identity.Type, tt.expectedType)
+				}
+			}
+		})
+	}
+}
+
+func TestParseOptionalCapabilities(t *testing.T) {
+	tests := []struct {
+		name                string
+		setupEnv            map[string]string
+		expectedExecEnabled bool
+		expectedWifiEnabled bool
+		expectedHwidEnabled bool
+		expectedHwidIface   string
+	}{
+		{
+			name:                "all capabilities enabled",
+			setupEnv:            map[string]string{EnvExec: "true", EnvWifi: "true", EnvHwid: "true", EnvHwidIface: "eth0"},
+			expectedExecEnabled: true,
+			expectedWifiEnabled: true,
+			expectedHwidEnabled: true,
+			expectedHwidIface:   "eth0",
+		},
+		{
+			name:                "all capabilities disabled with false",
+			setupEnv:            map[string]string{EnvExec: "false", EnvWifi: "false", EnvHwid: "false"},
+			expectedExecEnabled: false,
+			expectedWifiEnabled: false,
+			expectedHwidEnabled: false,
+			expectedHwidIface:   "",
+		},
+		{
+			name:                "capabilities enabled with non-false values",
+			setupEnv:            map[string]string{EnvExec: "yes", EnvWifi: "enabled", EnvHwid: "on"},
+			expectedExecEnabled: true,
+			expectedWifiEnabled: true,
+			expectedHwidEnabled: true,
+			expectedHwidIface:   "",
+		},
+		{
+			name:                "no capabilities set",
+			setupEnv:            map[string]string{},
+			expectedExecEnabled: false,
+			expectedWifiEnabled: false,
+			expectedHwidEnabled: false,
+			expectedHwidIface:   "",
+		},
+		{
+			name:                "hwid enabled but no interface set",
+			setupEnv:            map[string]string{EnvHwid: "true"},
+			expectedExecEnabled: false,
+			expectedWifiEnabled: false,
+			expectedHwidEnabled: true,
+			expectedHwidIface:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clean up environment first
+			envVars := []string{EnvExec, EnvWifi, EnvHwid, EnvHwidIface}
+			for _, env := range envVars {
+				os.Unsetenv(env)
+			}
+
+			// Setup test environment
+			for key, value := range tt.setupEnv {
+				os.Setenv(key, value)
+				defer os.Unsetenv(key)
+			}
+
+			var optional OptionalCapabilities
+			parseOptionalCapabilities(&optional)
+
+			if optional.ExecEnabled != tt.expectedExecEnabled {
+				t.Errorf("ExecEnabled = %v, want %v", optional.ExecEnabled, tt.expectedExecEnabled)
+			}
+			if optional.WifiEnabled != tt.expectedWifiEnabled {
+				t.Errorf("WifiEnabled = %v, want %v", optional.WifiEnabled, tt.expectedWifiEnabled)
+			}
+			if optional.HwidEnabled != tt.expectedHwidEnabled {
+				t.Errorf("HwidEnabled = %v, want %v", optional.HwidEnabled, tt.expectedHwidEnabled)
+			}
+			if optional.HwidInterface != tt.expectedHwidIface {
+				t.Errorf("HwidInterface = %v, want %v", optional.HwidInterface, tt.expectedHwidIface)
+			}
+		})
+	}
+}
+
+func TestParseTLSConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		tlsJSON     string
+		expectError bool
+		expectNil   bool
+	}{
+		{
+			name:        "TLS disabled",
+			tlsJSON:     `{"enable":false}`,
+			expectError: false,
+			expectNil:   true,
+		},
+		{
+			name:        "no TLS config",
+			tlsJSON:     "",
+			expectError: false,
+			expectNil:   true,
+		},
+		{
+			name:        "invalid TLS JSON",
+			tlsJSON:     `{"enable":true,"caCertPath"}`,
+			expectError: true,
+			expectNil:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup environment
+			if tt.tlsJSON != "" {
+				os.Setenv(EnvTlsConfig, tt.tlsJSON)
+				defer os.Unsetenv(EnvTlsConfig)
+			} else {
+				os.Unsetenv(EnvTlsConfig)
+			}
+
+			tlsConfig, err := parseTLSConfig()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("parseTLSConfig() expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("parseTLSConfig() unexpected error = %v", err)
+				}
+			}
+
+			if tt.expectNil {
+				if tlsConfig != nil {
+					t.Errorf("parseTLSConfig() expected nil but got %v", tlsConfig)
+				}
+			} else {
+				if tlsConfig == nil {
+					t.Errorf("parseTLSConfig() expected non-nil but got nil")
 				}
 			}
 		})
