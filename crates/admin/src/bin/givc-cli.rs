@@ -132,6 +132,11 @@ enum Commands {
         #[command(subcommand)]
         test: Test,
     },
+    PolicyQuery {
+        query: String,
+        #[arg(default_value = "")]
+        policy_path: String,
+    },
 }
 
 fn unit_type_parse(s: &str) -> anyhow::Result<UnitType> {
@@ -360,6 +365,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::Update { update } => update.handle(admin).await?,
+
+        Commands::PolicyQuery { query, policy_path } => {
+            let response = admin.policy_query(query, policy_path).await?;
+            println!("{:#?}", response.result)
+        }
     }
 
     Ok(())
