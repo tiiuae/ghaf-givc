@@ -74,6 +74,12 @@
             package = "golangci-lint";
             category = "linters";
           }
+          {
+            help = "Update copyright years in project files. Usage: update-copyright [-y YEAR]";
+            name = "update-copyright";
+            command = "./scripts/update-copyright.sh $@";
+            category = "tools";
+          }
         ];
       };
       pre-commit.settings = {
