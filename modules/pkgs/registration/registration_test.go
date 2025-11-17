@@ -352,7 +352,7 @@ func TestServiceRegistry_registerSingleService_NilSystemdServer(t *testing.T) {
 		t.Fatal("Expected error for nil systemd server, got nil")
 	}
 
-	expectedError := "systemd server not configured"
+	expectedError := "cannot register service test.service: systemd server not configured"
 	if err.Error() != expectedError {
 		t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
 	}

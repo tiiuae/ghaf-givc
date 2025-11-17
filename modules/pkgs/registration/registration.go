@@ -141,7 +141,7 @@ func (r *ServiceRegistry) RegisterServices(ctx context.Context) error {
 // registerSingleService registers a single service with the admin server
 func (r *ServiceRegistry) registerSingleService(ctx context.Context, service string, subType uint32) error {
 	if r.config.SystemdServer == nil {
-		return fmt.Errorf("systemd server not configured")
+		return fmt.Errorf("cannot register service %s: systemd server not configured", service)
 	}
 
 	unitStatus, err := r.config.SystemdServer.GetUnitStatus(ctx, &givc_systemd.UnitRequest{
