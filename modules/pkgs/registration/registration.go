@@ -1,4 +1,4 @@
-// Copyright 2024-2025 TII (SSRC) and the Ghaf contributors
+// SPDX-FileCopyrightText: 2024-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Service registration functionality for the GIVC agent.
