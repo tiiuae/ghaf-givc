@@ -1,4 +1,4 @@
-# Copyright 2024 TII (SSRC) and the Ghaf contributors
+# SPDX-FileCopyrightText: 2024-2026 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
 { self }:
 {
@@ -62,8 +62,8 @@ in
     '';
 
     applications = mkOption {
-      type = types.listOf applicationSubmodule;
-      default = [ { } ];
+      type = types.nullOr (types.listOf applicationSubmodule);
+      default = null;
       example = literalExpression ''
         applications = [
           {
@@ -78,6 +78,7 @@ in
         ];'';
       description = ''
         List of applications to be supported by the `appvm` module. Interface and options are detailed under `givc.appvm.applications.*.<option>`.
+        Defaults to null, which disables the application functionality.
       '';
     };
 
@@ -283,7 +284,7 @@ in
         "TYPE" = "12";
         "SUBTYPE" = "13";
         "PARENT" = "microvm@${cfg.transport.name}.service";
-        "APPLICATIONS" = "${toJSON cfg.applications}";
+        "APPLICATIONS" = "${optionalString (cfg.applications != null) (toJSON cfg.applications)}";
         "SOCKET_PROXY" = "${optionalString (cfg.socketProxy != null) (toJSON cfg.socketProxy)}";
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";

@@ -1,4 +1,4 @@
-// Copyright 2024 TII (SSRC) and the Ghaf contributors
+// SPDX-FileCopyrightText: 2024-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // The GIVC agent is a service that allows remote management of systemd units and applications.
@@ -10,351 +10,172 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
-	"encoding/json"
-	"maps"
 	"os"
+	"os/signal"
 	"path/filepath"
-	"slices"
-	"strconv"
-	"strings"
-	"time"
+	"runtime"
+	"sync"
+	"syscall"
 
-	givc_admin "givc/modules/api/admin"
-	givc_systemd "givc/modules/api/systemd"
-	givc_app "givc/modules/pkgs/applications"
+	givc_config "givc/modules/pkgs/config"
 	givc_exec "givc/modules/pkgs/exec"
 	givc_grpc "givc/modules/pkgs/grpc"
 	givc_hwidmanager "givc/modules/pkgs/hwidmanager"
 	givc_localelistener "givc/modules/pkgs/localelistener"
-	givc_serviceclient "givc/modules/pkgs/serviceclient"
+	givc_registration "givc/modules/pkgs/registration"
 	givc_servicemanager "givc/modules/pkgs/servicemanager"
-	givc_socketproxy "givc/modules/pkgs/socketproxy"
 	givc_statsmanager "givc/modules/pkgs/statsmanager"
 	givc_types "givc/modules/pkgs/types"
-	givc_util "givc/modules/pkgs/utility"
 	givc_wifimanager "givc/modules/pkgs/wifimanager"
 
 	log "github.com/sirupsen/logrus"
 )
 
-func main() {
-
-	var err error
-	serverStarted := make(chan struct{})
-
-	log.Infof("Running %s", filepath.Base(os.Args[0]))
-
-	// Parse fundamental parameters
-	var agent givc_types.TransportConfig
-	jsonTransportConfigString, transportConfigPresent := os.LookupEnv("AGENT")
-	if jsonTransportConfigString != "" && transportConfigPresent {
-		err := json.Unmarshal([]byte(jsonTransportConfigString), &agent)
-		if err != nil {
-			log.Fatalf("Error parsing application manifests: %s", err)
-		}
-	} else {
-		log.Fatalf("No 'AGENT' environment variable present.")
-	}
-
-	debug := os.Getenv("DEBUG")
-	if debug != "true" {
-		log.SetLevel(log.WarnLevel)
-	}
-
-	parentName := os.Getenv("PARENT")
-
-	parsedType, err := strconv.ParseUint(os.Getenv("TYPE"), 10, 32)
-	if err != nil || parsedType > 14 {
-		log.Fatalf("No or wrong 'TYPE' environment variable present.")
-	}
-	agentType := uint32(parsedType)
-	parsedType, err = strconv.ParseUint(os.Getenv("SUBTYPE"), 10, 32)
-	if err != nil || parsedType > 14 {
-		log.Fatalf("No or wrong 'SUBTYPE' environment variable present.")
-	}
-	agentSubType := uint32(parsedType)
-
-	// Configure system services/units/vms to be administrated by this agent
-	services := make(map[string]uint32)
-
-	for _, serviceType := range []struct {
-		envVar   string
-		unitType uint32
-	}{
-		{"SERVICES", agentSubType},
-		{"ADMVMS", givc_types.UNIT_TYPE_ADMVM},
-		{"SYSVMS", givc_types.UNIT_TYPE_SYSVM},
-		{"APPVMS", givc_types.UNIT_TYPE_APPVM},
-	} {
-		servicesString := os.Getenv(serviceType.envVar)
-		if servicesString != "" {
-			for service := range strings.FieldsSeq(servicesString) {
-				services[service] = serviceType.unitType
-			}
-		}
-	}
-
-	// Configure applications to be administrated by this agent
-	var applications []givc_types.ApplicationManifest
-	jsonApplicationString, appPresent := os.LookupEnv("APPLICATIONS")
-	if appPresent && jsonApplicationString != "" {
-		applications, err = givc_app.ParseApplicationManifests(jsonApplicationString)
-		if err != nil {
-			log.Fatalf("Error parsing application manifests: %s", err)
-		}
-	}
-
-	// Set admin server parameters
-	var admin givc_types.TransportConfig
-	jsonAdminServerString, adminPresent := os.LookupEnv("ADMIN_SERVER")
-	if jsonAdminServerString != "" && adminPresent {
-		err := json.Unmarshal([]byte(jsonAdminServerString), &admin)
-		if err != nil {
-			log.Fatalf("Error parsing admin server transport values: %s", err)
-		}
-	} else {
-		log.Fatalf("No 'ADMIN_SERVER' environment variable present.")
-	}
-
-	// Configure optional services
-	wifiEnabled := false
-	wifiService, wifiOption := os.LookupEnv("WIFI")
-	if wifiOption && (wifiService != "false") {
-		wifiEnabled = true
-	}
-
-	hwidEnabled := false
-	hwidService, hwidOption := os.LookupEnv("HWID")
-	hwidIface, hwidIfOption := os.LookupEnv("HWID_IFACE")
-	if hwidOption && (hwidService != "false") {
-		if !hwidIfOption {
-			hwidIface = ""
-		}
-		hwidEnabled = true
-	}
-
-	var proxyConfigs []givc_types.ProxyConfig
-	jsonDbusproxyString, socketProxyOption := os.LookupEnv("SOCKET_PROXY")
-	if socketProxyOption && jsonDbusproxyString != "" {
-		err = json.Unmarshal([]byte(jsonDbusproxyString), &proxyConfigs)
-		if err != nil {
-			log.Fatalf("error unmarshalling JSON string: %v", err)
-		}
-	}
-
-	// Configure TLS
-	var tlsConfigJson givc_types.TlsConfigJson
-	jsonTlsConfigString, tlsConfigOption := os.LookupEnv("TLS_CONFIG")
-	if tlsConfigOption && jsonTlsConfigString != "" {
-		err = json.Unmarshal([]byte(jsonTlsConfigString), &tlsConfigJson)
-		if err != nil {
-			log.Fatalf("error unmarshalling JSON string: %v", err)
-		}
-	}
-
-	var tlsConfig *tls.Config
-	if tlsConfigJson.Enable {
-		tlsConfig = givc_util.TlsServerConfig(tlsConfigJson.CaCertPath, tlsConfigJson.CertPath, tlsConfigJson.KeyPath, true)
-	}
-
-	// Set admin server configurations
-	cfgAdminServer := &givc_types.EndpointConfig{
-		Transport: admin,
-		TlsConfig: tlsConfig,
-	}
-
-	// Create registration entry
-	agentServiceName := "givc-" + agent.Name + ".service"
-
-	// Set agent configurations
-	cfgAgent := &givc_types.EndpointConfig{
-		Transport: agent,
-		TlsConfig: tlsConfig,
-		Services:  append([]string{agentServiceName}, slices.Collect(maps.Keys(services))...),
-	}
-
-	log.Infof("Allowed systemd units: %v\n", cfgAgent.Services)
-
-	// Create and register gRPC services
+// setupGRPCServices creates and configures all required and optional GRPC services
+func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *givc_config.AgentConfig) ([]givc_types.GrpcServiceRegistration, *givc_servicemanager.SystemdControlServer, error) {
 	var grpcServices []givc_types.GrpcServiceRegistration
 
-	// Create systemd control server
-	systemdControlServer, err := givc_servicemanager.NewSystemdControlServer(cfgAgent.Services, applications)
+	// Systemd control server
+	systemdControlServer, err := givc_servicemanager.NewSystemdControlServer(agentEndpointConfig.Services, config.Capabilities.Applications)
 	if err != nil {
-		log.Fatalf("Cannot create systemd control server: %v", err)
+		return nil, nil, err
 	}
 	grpcServices = append(grpcServices, systemdControlServer)
 
-	// Create `exec` control server
-	execServer, err := givc_exec.NewExecServer()
-	if err != nil {
-		log.Fatalf("Cannot create exec server: %v", err)
-	}
-	grpcServices = append(grpcServices, execServer)
-
-	// Create locale listener server
+	// Locale listener server
 	localeClientServer, err := givc_localelistener.NewLocaleServer()
 	if err != nil {
-		log.Fatalf("Cannot create locale listener server: %v", err)
+		return nil, nil, err
 	}
 	grpcServices = append(grpcServices, localeClientServer)
 
-	// Create wifi control server (optional)
-	if wifiEnabled {
-		// Create wifi control server
-		wifiControlServer, err := givc_wifimanager.NewWifiControlServer()
-		if err != nil {
-			log.Fatalf("Cannot create wifi control server: %v", err)
-		}
-		grpcServices = append(grpcServices, wifiControlServer)
-	}
-
-	// Create hwid server (optional)
-	if hwidEnabled {
-		hwidServer, err := givc_hwidmanager.NewHwIdServer(hwidIface)
-		if err != nil {
-			log.Fatalf("Cannot create hwid server: %v", err)
-		}
-		grpcServices = append(grpcServices, hwidServer)
-	}
-
+	// Statistics server
 	statsServer, err := givc_statsmanager.NewStatsServer()
 	if err != nil {
-		log.Fatalf("Cannot create statistics server: %v", err)
+		return nil, nil, err
 	}
 	grpcServices = append(grpcServices, statsServer)
 
-	// Create socket proxy server (optional)
-	for _, proxyConfig := range proxyConfigs {
-
-		// Create socket proxy server for dbus
-		socketProxyServer, err := givc_socketproxy.NewSocketProxyServer(proxyConfig.Socket, proxyConfig.Server)
+	// Optional capability services - instantiate based on config flags
+	if config.Capabilities.Optional.ExecEnabled {
+		execServer, err := givc_exec.NewExecServer()
 		if err != nil {
-			log.Errorf("Cannot create socket proxy server: %v", err)
-		}
-
-		// Run proxy client
-		if !proxyConfig.Server {
-			log.Infof("Configuring socket proxy client: %v", proxyConfig)
-
-			go func(proxyConfig givc_types.ProxyConfig) {
-
-				// Configure client endpoint
-				socketClient := &givc_types.EndpointConfig{
-					Transport: proxyConfig.Transport,
-					TlsConfig: tlsConfig,
-				}
-
-				err = socketProxyServer.StreamToRemote(context.Background(), socketClient)
-				if err != nil {
-					log.Errorf("Socket client stream exited: %v", err)
-				}
-
-			}(proxyConfig)
-		}
-
-		// Run proxy server
-		if proxyConfig.Server {
-			log.Infof("Configuring socket proxy server: %v", proxyConfig)
-
-			go func(proxyConfig givc_types.ProxyConfig) {
-
-				// Socket proxy server config
-				cfgProxyServer := &givc_types.EndpointConfig{
-					Transport: givc_types.TransportConfig{
-						Name:     cfgAgent.Transport.Name,
-						Address:  cfgAgent.Transport.Address,
-						Port:     proxyConfig.Transport.Port,
-						Protocol: proxyConfig.Transport.Protocol,
-					},
-					TlsConfig: tlsConfig,
-				}
-
-				var grpcProxyService []givc_types.GrpcServiceRegistration
-				grpcProxyService = append(grpcProxyService, socketProxyServer)
-				grpcServer, err := givc_grpc.NewServer(cfgProxyServer, grpcProxyService)
-				if err != nil {
-					log.Errorf("Cannot create grpc proxy server config: %v", err)
-				}
-				err = grpcServer.ListenAndServe(context.Background(), make(chan struct{}))
-				if err != nil {
-					log.Errorf("Grpc socket proxy server failed: %v", err)
-				}
-
-			}(proxyConfig)
+			log.Errorf("Cannot create exec server: %v", err)
+		} else {
+			log.Warnf("Exec capability enabled - allows remote command execution!")
+			grpcServices = append(grpcServices, execServer)
 		}
 	}
 
-	// Create event streaming services
-	SetupEventService(tlsConfig)
-
-	// Register this instance
-	go func() {
-		// Wait for server to start
-		<-serverStarted
-
-		unitStatus, err := systemdControlServer.GetUnitStatus(context.Background(), &givc_systemd.UnitRequest{UnitName: agentServiceName})
+	if config.Capabilities.Optional.WifiEnabled {
+		wifiServer, err := givc_wifimanager.NewWifiControlServer()
 		if err != nil {
-			log.Fatalf("Error getting unit status: %s", err)
+			log.Errorf("Cannot create wifi server: %v", err)
+		} else {
+			log.Infof("WiFi management capability enabled")
+			grpcServices = append(grpcServices, wifiServer)
 		}
+	}
 
-		agentEntryRequest := &givc_admin.RegistryRequest{
-			Name:   agentServiceName,
-			Type:   uint32(agentType),
-			Parent: parentName,
-			Transport: &givc_admin.TransportConfig{
-				Protocol: cfgAgent.Transport.Protocol,
-				Address:  cfgAgent.Transport.Address,
-				Port:     cfgAgent.Transport.Port,
-				Name:     cfgAgent.Transport.Name,
-			},
-			State: unitStatus.UnitStatus,
+	if config.Capabilities.Optional.HwidEnabled {
+		hwidServer, err := givc_hwidmanager.NewHwIdServer(config.Capabilities.Optional.HwidInterface)
+		if err != nil {
+			log.Errorf("Cannot create hwid server: %v", err)
+		} else {
+			log.Infof("Hardware ID capability enabled")
+			grpcServices = append(grpcServices, hwidServer)
 		}
+	}
 
-		// Register agent with admin server
-		_, err = givc_serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
-		for err != nil {
-			log.Warnf("Error register agent: %s", err)
-			time.Sleep(1 * time.Second)
-			_, err = givc_serviceclient.RegisterRemoteService(cfgAdminServer, agentEntryRequest)
-		}
+	return grpcServices, systemdControlServer, nil
+}
 
-		// Register services with admin server
-		for service, subType := range services {
-			if strings.Contains(service, ".service") {
-				unitStatus, err := systemdControlServer.GetUnitStatus(context.Background(), &givc_systemd.UnitRequest{UnitName: service})
-				if err != nil {
-					log.Warnf("Error getting unit status: %s", err)
-				}
-				serviceEntryRequest := &givc_admin.RegistryRequest{
-					Name:   service,
-					Parent: agentServiceName,
-					Type:   uint32(subType),
-					Transport: &givc_admin.TransportConfig{
-						Name:     cfgAgent.Transport.Name,
-						Protocol: cfgAgent.Transport.Protocol,
-						Address:  cfgAgent.Transport.Address,
-						Port:     cfgAgent.Transport.Port,
-					},
-					State: unitStatus.UnitStatus,
-				}
-				log.Infof("Trying to register service: %s", service)
-				_, err = givc_serviceclient.RegisterRemoteService(cfgAdminServer, serviceEntryRequest)
-				if err != nil {
-					log.Warnf("Error registering service: %s", err)
-				}
-			}
+// Main function of the GIVC agent.
+func main() {
+
+	log.Infof("Running %s", filepath.Base(os.Args[0]))
+	exitCode := 1 // Default exit code in case of failure
+
+	// Setup context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Setup WaitGroup to track background goroutines
+	var wg sync.WaitGroup
+	defer func() {
+		cancel()
+		wg.Wait()
+		log.Infof("Shutdown complete")
+		log.Debugf("final # goroutines: %d", runtime.NumGoroutine())
+		os.Exit(exitCode)
+	}()
+
+	// Setup shutdown signal handling
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case <-ctx.Done():
+			return
+		case sig := <-sigChan:
+			log.Infof("Received signal %v, initiating shutdown", sig)
+			exitCode = 0
+			cancel()
 		}
 	}()
 
-	// Create and start main grpc server
-	grpcServer, err := givc_grpc.NewServer(cfgAgent, grpcServices)
+	// Parse configuration
+	config, err := givc_config.ParseConfig()
 	if err != nil {
-		log.Fatalf("Cannot create grpc server config: %v", err)
+		log.Errorf("Failed to parse configuration: %v", err)
+		return
 	}
-	err = grpcServer.ListenAndServe(context.Background(), serverStarted)
+
+	// Setup log level
+	if !config.Runtime.Debug {
+		log.SetLevel(log.WarnLevel)
+	}
+
+	// Endpoint configurations are already created during parsing
+	agentEndpointConfig := config.Network.AgentEndpoint
+	log.Infof("Allowed systemd units: %v", agentEndpointConfig.Services)
+
+	// Setup GRPC services
+	grpcServices, systemdControlServer, err := setupGRPCServices(agentEndpointConfig, config)
 	if err != nil {
-		log.Fatalf("Grpc server failed: %v", err)
+		log.Errorf("Cannot create GRPC services: %v", err)
+		return
+	}
+	defer systemdControlServer.Close()
+
+	// Start external services
+	StartSocketService(ctx, &wg, config)
+	StartEventService(ctx, &wg, config)
+
+	// Start agent registration
+	serverStarted := make(chan struct{})
+	registrationConfig := givc_registration.RegistrationConfig{
+		SystemdServer: systemdControlServer,
+		AgentConfig:   config,
+	}
+	registry := givc_registration.NewServiceRegistry(registrationConfig)
+	if registry == nil {
+		log.Errorf("failed to create service registry")
+		return
+	}
+	registry.StartRegistrationWorker(ctx, &wg, serverStarted)
+
+	// Start main grpc server
+	grpcServer, err := givc_grpc.NewServer(agentEndpointConfig, grpcServices)
+	if err != nil {
+		log.Errorf("Cannot create grpc server config: %v", err)
+		return
+	}
+	err = grpcServer.ListenAndServe(ctx, serverStarted)
+	if err != nil {
+		log.Errorf("Grpc server failed: %v", err)
+		return
 	}
 }

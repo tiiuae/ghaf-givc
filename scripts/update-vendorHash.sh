@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2024 TII (SSRC) and the Ghaf contributors
+# SPDX-FileCopyrightText: 2024-2026 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
 go mod tidy
 go mod vendor

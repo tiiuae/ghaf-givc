@@ -1,4 +1,4 @@
-# Copyright 2025 TII (SSRC) and the Ghaf contributors
+# SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
 { inputs, ... }:
 {
@@ -73,6 +73,12 @@
             help = "golang linter";
             package = "golangci-lint";
             category = "linters";
+          }
+          {
+            help = "Update copyright years in project files. Usage: update-copyright [-y YEAR]";
+            name = "update-copyright";
+            command = "./scripts/update-copyright.sh $@";
+            category = "tools";
           }
         ];
       };

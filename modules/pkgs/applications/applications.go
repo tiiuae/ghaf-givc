@@ -1,4 +1,4 @@
-// Copyright 2024 TII (SSRC) and the Ghaf contributors
+// SPDX-FileCopyrightText: 2024-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // The application package provides functionality to parse and validate application manifests and
@@ -6,7 +6,6 @@
 package applications
 
 import (
-	"encoding/json"
 	"fmt"
 	"givc/modules/pkgs/types"
 	"givc/modules/pkgs/utility"
@@ -14,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -152,33 +152,31 @@ func validateApplicationArgs(args []string, allowedArgs []string, directories []
 	return nil
 }
 
-// ParseApplicationManifests parses the JSON string of application manifests and validates their formats.
-func ParseApplicationManifests(jsonApplicationString string) ([]types.ApplicationManifest, error) {
-	var applications []types.ApplicationManifest
-
-	// Unmarshal JSON string into applications
-	err := json.Unmarshal([]byte(jsonApplicationString), &applications)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling JSON string: %v", err)
-	}
+// ValidateApplicationManifests validates the application manifests.
+func ValidateApplicationManifests(applications []types.ApplicationManifest) error {
 
 	// Verify application manifest formats
 	appNames := []string{}
 	for _, app := range applications {
 		// Check app name not empty
 		if app.Name == "" {
-			return nil, fmt.Errorf("application name is empty")
+			return fmt.Errorf("application name is empty")
 		}
-		for _, name := range appNames {
-			if name == app.Name {
-				return nil, fmt.Errorf("duplicate application name")
-			}
+		if slices.Contains(appNames, app.Name) {
+			return fmt.Errorf("duplicate application name")
 		}
 		appNames = append(appNames, app.Name)
 
 		// Check app command not empty
 		if app.Command == "" {
-			return nil, fmt.Errorf("application command is empty")
+			return fmt.Errorf("application command is empty")
+		}
+
+		// Check directory argument implies file flag
+		if len(app.Directories) > 0 {
+			if app.Args == nil || !slices.Contains(app.Args, types.APP_ARG_FILE) {
+				return fmt.Errorf("directories specified but file argument type missing")
+			}
 		}
 
 		// Check app args types
@@ -188,16 +186,16 @@ func ParseApplicationManifests(jsonApplicationString string) ([]types.Applicatio
 				case types.APP_ARG_FLAG:
 				case types.APP_ARG_URL:
 				case types.APP_ARG_FILE:
-					if app.Directories == nil {
-						return nil, fmt.Errorf("file argument given but no directories specified")
+					if len(app.Directories) == 0 {
+						return fmt.Errorf("file argument given but no directories specified")
 					}
 				default:
-					return nil, fmt.Errorf("application argument type not supported")
+					return fmt.Errorf("application argument type not supported")
 				}
 			}
 		}
 	}
-	return applications, nil
+	return nil
 }
 
 // ValidateAppUnitRequest validates the application unit request by checking the service name format,

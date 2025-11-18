@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
+# SPDX-License-Identifier: Apache-2.0
+
 { self, ... }:
 let
   nodes = {
@@ -22,6 +25,7 @@ let
           # FIXME: Proper retrieve address, or move it to shared-configs.nix
           192.168.101.200 test-updates.example.com
         '';
+        givc.host.enableExecModule = true;
       };
     updatevm =
       { pkgs, config, ... }:
