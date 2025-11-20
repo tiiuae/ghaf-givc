@@ -59,6 +59,15 @@ message UnitStatusRequest {
     string UnitName = 2;            // Name of the unit
 }
 
+message PolicyQueryRequest {
+    string Query = 1;
+    string PolicyPath = 2;
+}
+
+message PolicyQueryResponse {
+    string result = 1;
+}
+
 // Empty message
 message Empty {
 }
@@ -173,4 +182,7 @@ service AdminService {
     // OTA
     rpc ListGenerations(Empty) returns (ListGenerationsResponse) {}
     rpc SetGeneration(SetGenerationRequest) returns (stream SetGenerationResponse) {}
+
+    // Policy Query
+    rpc PolicyQuery(PolicyQueryRequest) returns (PolicyQueryResponse) {}
 }

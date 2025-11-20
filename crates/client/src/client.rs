@@ -361,6 +361,24 @@ impl AdminClient {
             .rewrap_err()
     }
 
+    /// Posts a policy query to OPA server via admin server
+    /// # Errors
+    /// Fails if there is any error from OPA
+    pub async fn policy_query(
+        &self,
+        query: String,
+        policy_path: String,
+    ) -> anyhow::Result<pb::admin::PolicyQueryResponse> {
+        let request = pb::admin::PolicyQueryRequest { query, policy_path };
+        let response = self
+            .connect_to()
+            .await?
+            .policy_query(request)
+            .await
+            .rewrap_err()?;
+        Ok(response.into_inner())
+    }
+
     /// Watch event stream from admin server
     /// # Errors
     /// Fails if error happens during RPC
