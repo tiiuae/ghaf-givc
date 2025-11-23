@@ -31,8 +31,13 @@ let
     tlsSubmodule
     eventSubmodule
     ;
+  inherit (self.inputs.ghafpkgs.packages.${pkgs.stdenv.hostPlatform.system}) ghaf-artwork;
 in
 {
+  imports = [
+    (import ./notifier.nix { inherit ghaf-artwork; })
+  ];
+
   options.givc.sysvm = {
     enable = mkEnableOption "givc sysvm agent module, which is responsible for managing a system VM and respective services";
     enableUserTlsAccess = mkEnableOption ''
@@ -289,6 +294,10 @@ in
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
         "EVENT_PROXY" = "${optionalString (cfg.eventProxy != null) (toJSON cfg.eventProxy)}";
+        "NOTIFIER" = "${trivial.boolToString cfg.notifier.enable}";
+        "NOTIFIER_SOCKET_DIR" = "${optionalString cfg.notifier.enable (
+          builtins.dirOf cfg.notifier.socketPath
+        )}";
       };
     };
     networking.firewall.allowedTCPPorts =

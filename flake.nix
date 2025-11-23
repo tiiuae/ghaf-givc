@@ -28,6 +28,16 @@
       url = "github:cachix/pre-commit-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    ghafpkgs = {
+      url = "github:tiiuae/ghafpkgs";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-parts.follows = "flake-parts";
+        treefmt-nix.follows = "treefmt-nix";
+        crane.follows = "crane";
+        devshell.follows = "devshell";
+      };
+    };
   };
 
   outputs =

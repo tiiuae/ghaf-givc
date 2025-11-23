@@ -1,0 +1,20 @@
+// Copyright 2025 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+option go_package = "givc/modules/api/notify";
+package notify;
+
+message UserNotification {
+  string Event = 1;
+  string Title = 2;
+  string Urgency = 3;
+  string Message = 4;
+}
+
+message Status {
+  string Status = 1;
+}
+
+service UserNotificationService {
+  rpc NotifyUser(UserNotification) returns (Status) {};
+}

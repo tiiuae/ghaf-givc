@@ -1,0 +1,137 @@
+# Copyright 2025 TII (SSRC) and the Ghaf contributors
+# SPDX-License-Identifier: Apache-2.0
+{ ghaf-artwork }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+let
+  cfg = config.givc.sysvm.notifier;
+  inherit (lib)
+    getExe
+    mkEnableOption
+    mkIf
+    mkOption
+    types
+    ;
+
+  notificationScript = pkgs.writeShellApplication {
+    name = "event-notifier";
+    runtimeInputs = [
+      ghaf-artwork
+      pkgs.libnotify
+      pkgs.jq
+      pkgs.coreutils
+      pkgs.util-linux
+      pkgs.systemd
+    ];
+    text = ''
+      # Exit if user has no graphical session
+      SESSION_INFO=$(loginctl list-sessions --json=short | jq --argjson CUID "$UID" '.[] | select(.seat != null and .uid == $CUID)')
+      [[ -z "$SESSION_INFO" ]] && exit 0
+
+      # Retrieve last object
+      LAST_OBJECT=$(cat)
+      [[ -z "$LAST_OBJECT" ]] && exit 0
+
+      # Validate JSON format
+      if ! echo "$LAST_OBJECT" | jq empty 2>/dev/null; then
+        echo "ERROR: Invalid JSON format received: $LAST_OBJECT" >&2
+        exit 1
+      fi
+
+      # Parse JSON fields with defaults
+      event=$(jq -r '.Event // "event"' <<<"$LAST_OBJECT")
+      title=$(jq -r '.Title // "System Event"' <<<"$LAST_OBJECT")
+      criticality=$(jq -r '.Urgency // "normal"' <<<"$LAST_OBJECT")
+      message=$(jq -r '.Message // "(no details provided)"' <<<"$LAST_OBJECT")
+
+      # Get icon based on criticality level
+      declare -A icons
+      icons=(
+        [low]="${ghaf-artwork}/icons/security-green.svg"
+        [normal]="${ghaf-artwork}/icons/security-yellow.svg"
+        [critical]="${ghaf-artwork}/icons/security-red.svg"
+      )
+      icon_path="''${icons[$criticality]:-''${icons[normal]}}"
+
+      # Call notify-send with the parsed arguments
+      if ! notify-send -t ${toString cfg.timeout} \
+        -a "$event" \
+        -u "$criticality" \
+        -h "string:image-path:$icon_path" \
+        "$title" \
+        "$message"; then
+        echo "ERROR: notify-send failed. Check if notification daemon is running" >&2
+        exit 1
+      fi
+    '';
+  };
+
+in
+{
+  options.givc.sysvm.notifier = {
+    enable = mkEnableOption "notifier service that sends notifications to desktop users.";
+    socketPath = mkOption {
+      type = types.str;
+      default = "/run/log/journal-notifier/user-%U.sock";
+      description = ''
+        The path template to the per-user UNIX socket (read-only). It contains the systemd specifier `%U`,
+        which will be replaced with the user's ID.
+      '';
+      readOnly = true;
+    };
+    timeout = mkOption {
+      type = types.int;
+      default = 10000;
+      description = ''
+        Timeout in milliseconds for desktop notifications sent by the notifier service.
+        This option is only relevant if `notifierService` is enabled.
+      '';
+    };
+    group = mkOption {
+      type = types.str;
+      default = "users";
+      description = ''
+        The group for which the notification service is enabled. Defaults to "users".
+      '';
+    };
+  };
+  config = mkIf cfg.enable {
+
+    systemd.tmpfiles.rules = [
+      "d ${dirOf cfg.socketPath} 0770 root ${cfg.group} -"
+    ];
+
+    systemd.user = {
+      sockets.event-notifier = {
+        description = "Notification event socket";
+        wantedBy = [ "sockets.target" ];
+        unitConfig = {
+          ConditionGroup = [ "${cfg.group}" ];
+          ConditionPathExists = "${dirOf cfg.socketPath}";
+        };
+        socketConfig = {
+          ListenStream = cfg.socketPath;
+          Accept = true;
+          SocketMode = "0660";
+          SocketGroup = "${cfg.group}";
+          DirectoryMode = "0770";
+        };
+      };
+      services."event-notifier@" = {
+        description = "Desktop user notification dispatcher";
+        serviceConfig = {
+          Type = "oneshot";
+          StandardInput = "socket";
+          StandardOutput = "journal";
+          StandardError = "journal";
+          ExecStart = "${getExe notificationScript}";
+          RemainAfterExit = true;
+        };
+      };
+    };
+  };
+}

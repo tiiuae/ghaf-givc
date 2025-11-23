@@ -22,6 +22,7 @@ import (
 	givc_grpc "givc/modules/pkgs/grpc"
 	givc_hwidmanager "givc/modules/pkgs/hwidmanager"
 	givc_localelistener "givc/modules/pkgs/localelistener"
+	givc_notifier "givc/modules/pkgs/notifier"
 	givc_registration "givc/modules/pkgs/registration"
 	givc_servicemanager "givc/modules/pkgs/servicemanager"
 	givc_statsmanager "givc/modules/pkgs/statsmanager"
@@ -84,6 +85,16 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 		} else {
 			log.Infof("Hardware ID capability enabled")
 			grpcServices = append(grpcServices, hwidServer)
+		}
+	}
+
+	if config.Capabilities.Optional.NotifierEnabled {
+		notifierServer, err := givc_notifier.NewUserNotifierServer(config.Capabilities.Optional.NotifierSocket)
+		if err != nil {
+			log.Errorf("Cannot create notification server: %v", err)
+		} else {
+			log.Infof("Notification service capability enabled")
+			grpcServices = append(grpcServices, notifierServer)
 		}
 	}
 
