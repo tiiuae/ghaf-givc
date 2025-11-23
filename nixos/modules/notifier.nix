@@ -45,22 +45,22 @@ let
       # Parse JSON fields with defaults
       event=$(jq -r '.Event // "event"' <<<"$LAST_OBJECT")
       title=$(jq -r '.Title // "System Event"' <<<"$LAST_OBJECT")
-      criticality=$(jq -r '.Urgency // "normal"' <<<"$LAST_OBJECT")
+      urgency=$(jq -r '.Urgency // "normal"' <<<"$LAST_OBJECT")
       message=$(jq -r '.Message // "(no details provided)"' <<<"$LAST_OBJECT")
 
-      # Get icon based on criticality level
+      # Get icon based on urgency level
       declare -A icons
       icons=(
         [low]="${ghaf-artwork}/icons/security-green.svg"
         [normal]="${ghaf-artwork}/icons/security-yellow.svg"
         [critical]="${ghaf-artwork}/icons/security-red.svg"
       )
-      icon_path="''${icons[$criticality]:-''${icons[normal]}}"
+      icon_path="''${icons[$urgency]:-''${icons[normal]}}"
 
       # Call notify-send with the parsed arguments
       if ! notify-send -t ${toString cfg.timeout} \
         -a "$event" \
-        -u "$criticality" \
+        -u "$urgency" \
         -h "string:image-path:$icon_path" \
         "$title" \
         "$message"; then

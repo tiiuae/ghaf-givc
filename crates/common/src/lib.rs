@@ -29,6 +29,9 @@ pub mod pb {
     pub mod stats {
         tonic::include_proto!("stats");
     }
+    pub mod notify {
+        tonic::include_proto!("notify");
+    }
     pub mod reflection {
         pub const ADMIN_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("admin_descriptor");
         pub const SYSTEMD_DESCRIPTOR: &[u8] =

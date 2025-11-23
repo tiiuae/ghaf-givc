@@ -55,7 +55,7 @@ impl AdminClient {
     ) -> Self {
         let (tls_name, tls) = match tls_info {
             Some((name, tls)) => (name, Some(tls)),
-            None => (String::from("bogus(no tls)"), None),
+            _ => (String::from("bogus(no tls)"), None),
         };
         Self {
             endpoint: EndpointConfig {
@@ -387,7 +387,7 @@ impl AdminClient {
                 item
             ),
             Some(_) => bail!("Protocol error, initial item missing"),
-            None => bail!("Protocol error, status field missing"),
+            _ => bail!("Protocol error, status field missing"),
         };
 
         tokio::spawn(async move {
@@ -422,6 +422,35 @@ impl AdminClient {
             _quit: quittx,
         };
         Ok(result)
+    }
+
+    // Send user notification to VM
+    // # Errors
+    // Fails if remote execution of `notify-user` tool failed, or on network IO
+    pub async fn notify_user(
+        &self,
+        vm_name: String,
+        event: String,
+        title: String,
+        urgency: String,
+        message: String,
+    ) -> anyhow::Result<pb::notify::Status> {
+        let request = pb::admin::UserNotificationRequest {
+            vm_name,
+            notification: Some(pb::notify::UserNotification {
+                event,
+                title,
+                urgency,
+                message,
+            }),
+        };
+        let response = self
+            .connect_to()
+            .await?
+            .notify_user(request)
+            .await
+            .rewrap_err()?;
+        Ok(response.into_inner())
     }
 
     /// List installed generations (updates)

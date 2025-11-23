@@ -403,6 +403,19 @@ impl AdminServiceImpl {
         }
         Ok(remote_name)
     }
+
+    pub(crate) async fn notify_user(
+        &self,
+        vm_name: String,
+        notification: pb::notify::UserNotification,
+    ) -> anyhow::Result<pb::notify::Status> {
+        let endpoint = self.agent_endpoint(&vm_name)?;
+        let conn = endpoint.connect().await?;
+        let mut client =
+            pb::notify::user_notification_service_client::UserNotificationServiceClient::new(conn);
+        let response = client.notify_user(notification).await?;
+        Ok(response.into_inner())
+    }
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -782,6 +795,20 @@ impl pb::admin_service_server::AdminService for AdminService {
                  }
             };
             Ok(Box::pin(stream) as Self::WatchStream)
+        })
+        .await
+    }
+
+    // User notification
+    async fn notify_user(
+        &self,
+        request: tonic::Request<pb::admin::UserNotificationRequest>,
+    ) -> Result<tonic::Response<pb::notify::Status>, tonic::Status> {
+        escalate(request, async move |req| {
+            let vm_name = VmName::Vm(&req.vm_name).agent_service();
+            self.inner
+                .notify_user(vm_name, req.notification.unwrap_or_default())
+                .await
         })
         .await
     }
