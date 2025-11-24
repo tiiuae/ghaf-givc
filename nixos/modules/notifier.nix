@@ -41,7 +41,7 @@ let
       fi
 
       # Parse JSON fields with defaults
-      event=$(jq -r '.Event // "event"' <<<"$LAST_OBJECT")
+      event=$(jq -r '.Event // "[unknown]"' <<<"$LAST_OBJECT")
       title=$(jq -r '.Title // "System Event"' <<<"$LAST_OBJECT")
       urgency=$(jq -r '.Urgency // "low"' <<<"$LAST_OBJECT")
       icon=$(jq -r '.Icon // ""' <<<"$LAST_OBJECT")

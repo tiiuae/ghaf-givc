@@ -17,5 +17,6 @@ tonic-types = "0.14"
 tonic = { version = "0.14", features = ["tls-ring"] }
 tower = "0.5"
 tracing = "0.1"
+gethostname = "1.1.0"
 
 givc-common = { path = "../common" }

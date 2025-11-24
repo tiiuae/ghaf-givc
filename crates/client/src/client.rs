@@ -1,5 +1,6 @@
 use anyhow::bail;
 use async_channel::Receiver;
+use gethostname::gethostname;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -436,10 +437,11 @@ impl AdminClient {
         icon: String,
         message: String,
     ) -> anyhow::Result<pb::notify::Status> {
+        let origin_and_event = format!("[{}] {}", gethostname().to_string_lossy(), event);
         let request = pb::admin::UserNotificationRequest {
             vm_name,
             notification: Some(pb::notify::UserNotification {
-                event,
+                event: origin_and_event,
                 title,
                 urgency,
                 icon,
