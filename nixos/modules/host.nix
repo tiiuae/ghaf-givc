@@ -227,7 +227,7 @@ in
       in
       [ port ];
     environment.systemPackages = [
-      self.packages.${pkgs.system}.ota-update
+      self.packages.${pkgs.stdenv.hostPlatform.system}.ota-update
       pkgs.nixos-rebuild # Need for ota-update
     ];
   };
