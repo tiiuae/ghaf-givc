@@ -29,7 +29,8 @@ type UserNotification struct {
 	Event         string                 `protobuf:"bytes,1,opt,name=Event,proto3" json:"Event,omitempty"`
 	Title         string                 `protobuf:"bytes,2,opt,name=Title,proto3" json:"Title,omitempty"`
 	Urgency       string                 `protobuf:"bytes,3,opt,name=Urgency,proto3" json:"Urgency,omitempty"`
-	Message       string                 `protobuf:"bytes,4,opt,name=Message,proto3" json:"Message,omitempty"`
+	Icon          string                 `protobuf:"bytes,4,opt,name=Icon,proto3" json:"Icon,omitempty"`
+	Message       string                 `protobuf:"bytes,5,opt,name=Message,proto3" json:"Message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -81,6 +82,13 @@ func (x *UserNotification) GetTitle() string {
 func (x *UserNotification) GetUrgency() string {
 	if x != nil {
 		return x.Urgency
+	}
+	return ""
+}
+
+func (x *UserNotification) GetIcon() string {
+	if x != nil {
+		return x.Icon
 	}
 	return ""
 }
@@ -140,12 +148,13 @@ var File_notify_notify_proto protoreflect.FileDescriptor
 
 const file_notify_notify_proto_rawDesc = "" +
 	"\n" +
-	"\x13notify/notify.proto\x12\x06notify\"r\n" +
+	"\x13notify/notify.proto\x12\x06notify\"\x86\x01\n" +
 	"\x10UserNotification\x12\x14\n" +
 	"\x05Event\x18\x01 \x01(\tR\x05Event\x12\x14\n" +
 	"\x05Title\x18\x02 \x01(\tR\x05Title\x12\x18\n" +
-	"\aUrgency\x18\x03 \x01(\tR\aUrgency\x12\x18\n" +
-	"\aMessage\x18\x04 \x01(\tR\aMessage\" \n" +
+	"\aUrgency\x18\x03 \x01(\tR\aUrgency\x12\x12\n" +
+	"\x04Icon\x18\x04 \x01(\tR\x04Icon\x12\x18\n" +
+	"\aMessage\x18\x05 \x01(\tR\aMessage\" \n" +
 	"\x06Status\x12\x16\n" +
 	"\x06Status\x18\x01 \x01(\tR\x06Status2S\n" +
 	"\x17UserNotificationService\x128\n" +

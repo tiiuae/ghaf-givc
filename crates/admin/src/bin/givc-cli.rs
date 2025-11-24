@@ -132,6 +132,8 @@ enum Commands {
         title: Option<String>,
         #[arg(long, default_value = "Normal")]
         urgency: Option<String>,
+        #[arg(long, default_value = "dialog-information")]
+        icon: Option<String>,
         #[arg(long, default_value = "(no message)")]
         message: Option<String>,
     },
@@ -375,6 +377,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             event,
             title,
             urgency,
+            icon,
             message,
         } => {
             let reply = admin
@@ -383,6 +386,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                     event.unwrap_or_default(),
                     title.unwrap_or_default(),
                     urgency.unwrap_or_default(),
+                    icon.unwrap_or_default(),
                     message.unwrap_or_default(),
                 )
                 .await?;

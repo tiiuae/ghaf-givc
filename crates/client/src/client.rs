@@ -433,6 +433,7 @@ impl AdminClient {
         event: String,
         title: String,
         urgency: String,
+        icon: String,
         message: String,
     ) -> anyhow::Result<pb::notify::Status> {
         let request = pb::admin::UserNotificationRequest {
@@ -441,6 +442,7 @@ impl AdminClient {
                 event,
                 title,
                 urgency,
+                icon,
                 message,
             }),
         };

@@ -8,7 +8,8 @@ message UserNotification {
   string Event = 1;
   string Title = 2;
   string Urgency = 3;
-  string Message = 4;
+  string Icon = 4;
+  string Message = 5;
 }
 
 message Status {

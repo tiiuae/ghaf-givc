@@ -31,11 +31,10 @@ let
     tlsSubmodule
     eventSubmodule
     ;
-  inherit (self.inputs.ghafpkgs.packages.${pkgs.stdenv.hostPlatform.system}) ghaf-artwork;
 in
 {
   imports = [
-    (import ./notifier.nix { inherit ghaf-artwork; })
+    ./notifier.nix
   ];
 
   options.givc.sysvm = {

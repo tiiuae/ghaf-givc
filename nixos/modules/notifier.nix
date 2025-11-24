@@ -1,6 +1,5 @@
 # Copyright 2025 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
-{ ghaf-artwork }:
 {
   config,
   lib,
@@ -20,7 +19,6 @@ let
   notificationScript = pkgs.writeShellApplication {
     name = "event-notifier";
     runtimeInputs = [
-      ghaf-artwork
       pkgs.libnotify
       pkgs.jq
       pkgs.coreutils
@@ -45,23 +43,28 @@ let
       # Parse JSON fields with defaults
       event=$(jq -r '.Event // "event"' <<<"$LAST_OBJECT")
       title=$(jq -r '.Title // "System Event"' <<<"$LAST_OBJECT")
-      urgency=$(jq -r '.Urgency // "normal"' <<<"$LAST_OBJECT")
+      urgency=$(jq -r '.Urgency // "low"' <<<"$LAST_OBJECT")
+      icon=$(jq -r '.Icon // ""' <<<"$LAST_OBJECT")
       message=$(jq -r '.Message // "(no details provided)"' <<<"$LAST_OBJECT")
 
-      # Get icon based on urgency level
-      declare -A icons
-      icons=(
-        [low]="${ghaf-artwork}/icons/security-green.svg"
-        [normal]="${ghaf-artwork}/icons/security-yellow.svg"
-        [critical]="${ghaf-artwork}/icons/security-red.svg"
-      )
-      icon_path="''${icons[$urgency]:-''${icons[normal]}}"
+      # Use provided icon or fallback to urgency-based default
+      if [[ -n "$icon" ]]; then
+        icon_string="$icon"
+      else
+        declare -A icons
+        icons=(
+          [low]="dialog-information"
+          [normal]="dialog-warning"
+          [critical]="dialog-error"
+        )
+        icon_string="''${icons[$urgency]:-''${icons[normal]}}"
+      fi
 
       # Call notify-send with the parsed arguments
       if ! notify-send -t ${toString cfg.timeout} \
         -a "$event" \
         -u "$urgency" \
-        -h "string:image-path:$icon_path" \
+        -i "$icon_string" \
         "$title" \
         "$message"; then
         echo "ERROR: notify-send failed. Check if notification daemon is running" >&2
