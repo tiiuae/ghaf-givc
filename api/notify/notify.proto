@@ -4,10 +4,16 @@ syntax = "proto3";
 option go_package = "givc/modules/api/notify";
 package notify;
 
+enum UrgencyLevel {
+  LOW = 0;
+  NORMAL = 1;
+  CRITICAL = 2;
+}
+
 message UserNotification {
   string Event = 1;
   string Title = 2;
-  string Urgency = 3;
+  UrgencyLevel Urgency = 3;
   string Icon = 4;
   string Message = 5;
 }

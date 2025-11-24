@@ -43,9 +43,12 @@ let
       # Parse JSON fields with defaults
       event=$(jq -r '.Event // "[unknown]"' <<<"$LAST_OBJECT")
       title=$(jq -r '.Title // "System Event"' <<<"$LAST_OBJECT")
-      urgency=$(jq -r '.Urgency // "low"' <<<"$LAST_OBJECT")
+      urgency=$(jq -r '.Urgency // 1' <<<"$LAST_OBJECT")
       icon=$(jq -r '.Icon // ""' <<<"$LAST_OBJECT")
       message=$(jq -r '.Message // "(no details provided)"' <<<"$LAST_OBJECT")
+
+      # Validate urgency range (0-2), default to 1 if invalid
+      [[ $urgency =~ ^[0-2]$ ]] || urgency=1
 
       # Use provided icon or fallback to urgency-based default
       if [[ -n "$icon" ]]; then
@@ -53,17 +56,17 @@ let
       else
         declare -A icons
         icons=(
-          [low]="dialog-information"
-          [normal]="dialog-warning"
-          [critical]="dialog-error"
+          [0]="dialog-information"    # LOW
+          [1]="dialog-warning"        # NORMAL
+          [2]="dialog-error"          # CRITICAL
         )
-        icon_string="''${icons[$urgency]:-''${icons[normal]}}"
+        icon_string="''${icons[$urgency]:-''${icons[1]}}"
       fi
 
       # Call notify-send with the parsed arguments
       if ! notify-send -t ${toString cfg.timeout} \
         -a "$event" \
-        -u "$urgency" \
+        -h "byte:urgency:$urgency" \
         -i "$icon_string" \
         "$title" \
         "$message"; then

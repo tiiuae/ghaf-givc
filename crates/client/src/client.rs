@@ -425,9 +425,9 @@ impl AdminClient {
         Ok(result)
     }
 
-    // Send user notification to VM
-    // # Errors
-    // Fails if remote execution of `notify-user` tool failed, or on network IO
+    /// Send user notification to VM
+    /// # Errors
+    /// Fails if remote execution of `notify-user` tool failed, or on network IO
     pub async fn notify_user(
         &self,
         vm_name: String,
@@ -438,22 +438,32 @@ impl AdminClient {
         message: String,
     ) -> anyhow::Result<pb::notify::Status> {
         let origin_and_event = format!("[{}] {}", gethostname().to_string_lossy(), event);
+
+        // Convert string urgency to UrgencyLevel enum
+        let urgency_level = match urgency.to_lowercase().as_str() {
+            "low" => pb::notify::UrgencyLevel::Low,
+            "critical" => pb::notify::UrgencyLevel::Critical,
+            _ => pb::notify::UrgencyLevel::Normal,
+        };
+
         let request = pb::admin::UserNotificationRequest {
             vm_name,
             notification: Some(pb::notify::UserNotification {
                 event: origin_and_event,
                 title,
-                urgency,
+                urgency: urgency_level.into(),
                 icon,
                 message,
             }),
         };
+
         let response = self
             .connect_to()
             .await?
             .notify_user(request)
             .await
             .rewrap_err()?;
+
         Ok(response.into_inner())
     }
 

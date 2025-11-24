@@ -154,7 +154,7 @@
                 time.sleep(1)
 
                 # Send test notification directly to local socket
-                guivm.succeed("echo '{\"Event\":\"some-alert\",\"Title\":\"Local Test Alert\",\"Urgency\":\"critical\",\"Icon\":\"dialog-error\",\"Message\":\"This is a test notification\"}' | socat - UNIX-CONNECT:${userSocket}")
+                guivm.succeed("echo '{\"Event\":\"some-alert\",\"Title\":\"Local Test Alert\",\"Urgency\":2,\"Icon\":\"dialog-error\",\"Message\":\"This is a test notification\"}' | socat - UNIX-CONNECT:${userSocket}")
                 time.sleep(4)
 
                 # Verify notification received

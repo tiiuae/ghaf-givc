@@ -24,11 +24,60 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type UrgencyLevel int32
+
+const (
+	UrgencyLevel_LOW      UrgencyLevel = 0
+	UrgencyLevel_NORMAL   UrgencyLevel = 1
+	UrgencyLevel_CRITICAL UrgencyLevel = 2
+)
+
+// Enum value maps for UrgencyLevel.
+var (
+	UrgencyLevel_name = map[int32]string{
+		0: "LOW",
+		1: "NORMAL",
+		2: "CRITICAL",
+	}
+	UrgencyLevel_value = map[string]int32{
+		"LOW":      0,
+		"NORMAL":   1,
+		"CRITICAL": 2,
+	}
+)
+
+func (x UrgencyLevel) Enum() *UrgencyLevel {
+	p := new(UrgencyLevel)
+	*p = x
+	return p
+}
+
+func (x UrgencyLevel) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (UrgencyLevel) Descriptor() protoreflect.EnumDescriptor {
+	return file_notify_notify_proto_enumTypes[0].Descriptor()
+}
+
+func (UrgencyLevel) Type() protoreflect.EnumType {
+	return &file_notify_notify_proto_enumTypes[0]
+}
+
+func (x UrgencyLevel) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use UrgencyLevel.Descriptor instead.
+func (UrgencyLevel) EnumDescriptor() ([]byte, []int) {
+	return file_notify_notify_proto_rawDescGZIP(), []int{0}
+}
+
 type UserNotification struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Event         string                 `protobuf:"bytes,1,opt,name=Event,proto3" json:"Event,omitempty"`
 	Title         string                 `protobuf:"bytes,2,opt,name=Title,proto3" json:"Title,omitempty"`
-	Urgency       string                 `protobuf:"bytes,3,opt,name=Urgency,proto3" json:"Urgency,omitempty"`
+	Urgency       UrgencyLevel           `protobuf:"varint,3,opt,name=Urgency,proto3,enum=notify.UrgencyLevel" json:"Urgency,omitempty"`
 	Icon          string                 `protobuf:"bytes,4,opt,name=Icon,proto3" json:"Icon,omitempty"`
 	Message       string                 `protobuf:"bytes,5,opt,name=Message,proto3" json:"Message,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -79,11 +128,11 @@ func (x *UserNotification) GetTitle() string {
 	return ""
 }
 
-func (x *UserNotification) GetUrgency() string {
+func (x *UserNotification) GetUrgency() UrgencyLevel {
 	if x != nil {
 		return x.Urgency
 	}
-	return ""
+	return UrgencyLevel_LOW
 }
 
 func (x *UserNotification) GetIcon() string {
@@ -148,15 +197,20 @@ var File_notify_notify_proto protoreflect.FileDescriptor
 
 const file_notify_notify_proto_rawDesc = "" +
 	"\n" +
-	"\x13notify/notify.proto\x12\x06notify\"\x86\x01\n" +
+	"\x13notify/notify.proto\x12\x06notify\"\x9c\x01\n" +
 	"\x10UserNotification\x12\x14\n" +
 	"\x05Event\x18\x01 \x01(\tR\x05Event\x12\x14\n" +
-	"\x05Title\x18\x02 \x01(\tR\x05Title\x12\x18\n" +
-	"\aUrgency\x18\x03 \x01(\tR\aUrgency\x12\x12\n" +
+	"\x05Title\x18\x02 \x01(\tR\x05Title\x12.\n" +
+	"\aUrgency\x18\x03 \x01(\x0e2\x14.notify.UrgencyLevelR\aUrgency\x12\x12\n" +
 	"\x04Icon\x18\x04 \x01(\tR\x04Icon\x12\x18\n" +
 	"\aMessage\x18\x05 \x01(\tR\aMessage\" \n" +
 	"\x06Status\x12\x16\n" +
-	"\x06Status\x18\x01 \x01(\tR\x06Status2S\n" +
+	"\x06Status\x18\x01 \x01(\tR\x06Status*1\n" +
+	"\fUrgencyLevel\x12\a\n" +
+	"\x03LOW\x10\x00\x12\n" +
+	"\n" +
+	"\x06NORMAL\x10\x01\x12\f\n" +
+	"\bCRITICAL\x10\x022S\n" +
 	"\x17UserNotificationService\x128\n" +
 	"\n" +
 	"NotifyUser\x12\x18.notify.UserNotification\x1a\x0e.notify.Status\"\x00B\x19Z\x17givc/modules/api/notifyb\x06proto3"
@@ -173,19 +227,22 @@ func file_notify_notify_proto_rawDescGZIP() []byte {
 	return file_notify_notify_proto_rawDescData
 }
 
+var file_notify_notify_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_notify_notify_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_notify_notify_proto_goTypes = []any{
-	(*UserNotification)(nil), // 0: notify.UserNotification
-	(*Status)(nil),           // 1: notify.Status
+	(UrgencyLevel)(0),        // 0: notify.UrgencyLevel
+	(*UserNotification)(nil), // 1: notify.UserNotification
+	(*Status)(nil),           // 2: notify.Status
 }
 var file_notify_notify_proto_depIdxs = []int32{
-	0, // 0: notify.UserNotificationService.NotifyUser:input_type -> notify.UserNotification
-	1, // 1: notify.UserNotificationService.NotifyUser:output_type -> notify.Status
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: notify.UserNotification.Urgency:type_name -> notify.UrgencyLevel
+	1, // 1: notify.UserNotificationService.NotifyUser:input_type -> notify.UserNotification
+	2, // 2: notify.UserNotificationService.NotifyUser:output_type -> notify.Status
+	2, // [2:3] is the sub-list for method output_type
+	1, // [1:2] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_notify_notify_proto_init() }
@@ -198,13 +255,14 @@ func file_notify_notify_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_notify_notify_proto_rawDesc), len(file_notify_notify_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_notify_notify_proto_goTypes,
 		DependencyIndexes: file_notify_notify_proto_depIdxs,
+		EnumInfos:         file_notify_notify_proto_enumTypes,
 		MessageInfos:      file_notify_notify_proto_msgTypes,
 	}.Build()
 	File_notify_notify_proto = out.File
