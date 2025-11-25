@@ -131,6 +131,7 @@ in
           ghaf = {
             isNormalUser = true;
             group = "ghaf";
+            extraGroups = [ "users" ];
             openssh.authorizedKeys.keys = [ snakeOilPublicKey ];
           };
         };
@@ -145,7 +146,11 @@ in
           }
         ];
         environment = {
-          systemPackages = with pkgs; [ waypipe ];
+          systemPackages = with pkgs; [
+            waypipe
+            socat
+            mako
+          ];
           variables = {
             # Use a fixed SWAYSOCK path (for swaymsg):
             "SWAYSOCK" = "/tmp/sway-ipc.sock";
@@ -183,6 +188,7 @@ in
             name = "gui-vm";
           };
           tls.enable = tls;
+          notifier.enable = true;
           services = [
             "poweroff.target"
             "reboot.target"
@@ -228,6 +234,7 @@ in
         ];
         environment = {
           systemPackages = with pkgs; [
+            grpcurl
             # givc-agent expects /run/current-system/sw/bin/run-waypipe
             (pkgs.writeScriptBin "run-waypipe" ''
               #!${pkgs.runtimeShell} -e

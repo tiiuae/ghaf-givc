@@ -1,5 +1,6 @@
 use anyhow::bail;
 use async_channel::Receiver;
+use gethostname::gethostname;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -55,7 +56,7 @@ impl AdminClient {
     ) -> Self {
         let (tls_name, tls) = match tls_info {
             Some((name, tls)) => (name, Some(tls)),
-            None => (String::from("bogus(no tls)"), None),
+            _ => (String::from("bogus(no tls)"), None),
         };
         Self {
             endpoint: EndpointConfig {
@@ -387,7 +388,7 @@ impl AdminClient {
                 item
             ),
             Some(_) => bail!("Protocol error, initial item missing"),
-            None => bail!("Protocol error, status field missing"),
+            _ => bail!("Protocol error, status field missing"),
         };
 
         tokio::spawn(async move {
@@ -422,6 +423,48 @@ impl AdminClient {
             _quit: quittx,
         };
         Ok(result)
+    }
+
+    /// Send user notification to VM
+    /// # Errors
+    /// Fails if remote execution of `notify-user` tool failed, or on network IO
+    pub async fn notify_user(
+        &self,
+        vm_name: String,
+        event: String,
+        title: String,
+        urgency: String,
+        icon: String,
+        message: String,
+    ) -> anyhow::Result<pb::notify::Status> {
+        let origin_and_event = format!("[{}] {}", gethostname().to_string_lossy(), event);
+
+        // Convert string urgency to UrgencyLevel enum
+        let urgency_level = match urgency.to_lowercase().as_str() {
+            "low" => pb::notify::UrgencyLevel::Low,
+            "critical" => pb::notify::UrgencyLevel::Critical,
+            _ => pb::notify::UrgencyLevel::Normal,
+        };
+
+        let request = pb::admin::UserNotificationRequest {
+            vm_name,
+            notification: Some(pb::notify::UserNotification {
+                event: origin_and_event,
+                title,
+                urgency: urgency_level.into(),
+                icon,
+                message,
+            }),
+        };
+
+        let response = self
+            .connect_to()
+            .await?
+            .notify_user(request)
+            .await
+            .rewrap_err()?;
+
+        Ok(response.into_inner())
     }
 
     /// List installed generations (updates)

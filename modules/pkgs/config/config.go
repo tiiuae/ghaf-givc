@@ -18,24 +18,26 @@ import (
 
 // Environment variable constants
 const (
-	EnvAgent        = "AGENT"
-	EnvType         = "TYPE"
-	EnvSubtype      = "SUBTYPE"
-	EnvParent       = "PARENT"
-	EnvAdminServer  = "ADMIN_SERVER"
-	EnvTlsConfig    = "TLS_CONFIG"
-	EnvServices     = "SERVICES"
-	EnvAdmvms       = "ADMVMS"
-	EnvSysvms       = "SYSVMS"
-	EnvAppvms       = "APPVMS"
-	EnvApplications = "APPLICATIONS"
-	EnvEventProxy   = "EVENT_PROXY"
-	EnvSocketProxy  = "SOCKET_PROXY"
-	EnvDebug        = "DEBUG"
-	EnvExec         = "EXEC"
-	EnvWifi         = "WIFI"
-	EnvHwid         = "HWID"
-	EnvHwidIface    = "HWID_IFACE"
+	EnvAgent          = "AGENT"
+	EnvType           = "TYPE"
+	EnvSubtype        = "SUBTYPE"
+	EnvParent         = "PARENT"
+	EnvAdminServer    = "ADMIN_SERVER"
+	EnvTlsConfig      = "TLS_CONFIG"
+	EnvServices       = "SERVICES"
+	EnvAdmvms         = "ADMVMS"
+	EnvSysvms         = "SYSVMS"
+	EnvAppvms         = "APPVMS"
+	EnvApplications   = "APPLICATIONS"
+	EnvEventProxy     = "EVENT_PROXY"
+	EnvSocketProxy    = "SOCKET_PROXY"
+	EnvDebug          = "DEBUG"
+	EnvExec           = "EXEC"
+	EnvWifi           = "WIFI"
+	EnvHwid           = "HWID"
+	EnvHwidIface      = "HWID_IFACE"
+	EnvNotifier       = "NOTIFIER"
+	EnvNotifierSocket = "NOTIFIER_SOCKET_DIR"
 )
 
 // AgentConfig holds the complete configuration for the GIVC agent
@@ -84,10 +86,12 @@ type BridgeConfig struct {
 
 // OptionalCapabilities - Feature flags for optional services
 type OptionalCapabilities struct {
-	ExecEnabled   bool   // Remote execution capability
-	WifiEnabled   bool   // WiFi management capability
-	HwidEnabled   bool   // Hardware ID capability
-	HwidInterface string // Hardware interface for HWID
+	ExecEnabled     bool   // Remote execution capability
+	WifiEnabled     bool   // WiFi management capability
+	HwidEnabled     bool   // Hardware ID capability
+	HwidInterface   string // Hardware interface for HWID
+	NotifierEnabled bool   // Notification service capability
+	NotifierSocket  string // Socket directory for notifications
 }
 
 // parseJSONEnv parses a JSON environment variable into a target struct
@@ -323,6 +327,16 @@ func parseOptionalCapabilities(optional *OptionalCapabilities) {
 		optional.HwidEnabled = hwidService != "false"
 		if optional.HwidEnabled {
 			optional.HwidInterface = os.Getenv(EnvHwidIface)
+		}
+	}
+
+	// Parse notifier capability
+	if notifierService, notifierPresent := os.LookupEnv(EnvNotifier); notifierPresent {
+		if notifierSocket, notifierSocketPresent := os.LookupEnv(EnvNotifierSocket); notifierSocketPresent {
+			optional.NotifierEnabled = (notifierService != "false") && (notifierSocket != "")
+			if optional.NotifierEnabled {
+				optional.NotifierSocket = notifierSocket
+			}
 		}
 	}
 }

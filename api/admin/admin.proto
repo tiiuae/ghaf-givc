@@ -4,6 +4,7 @@ option go_package = "givc/modules/api/admin";
 import "stats/stats.proto";
 import "locale/locale.proto";
 import "systemd/systemd.proto";
+import "notify/notify.proto";
 
 package admin;
 
@@ -95,6 +96,11 @@ message TimezoneRequest {
     string Timezone = 1;            // String with timezone value. Format: [tz database](https://en.wikipedia.org/wiki/Tz_database) name, usually Area/City or Etc/GMT+3.
 }
 
+message UserNotificationRequest {
+    string VmName = 1;
+    notify.UserNotification Notification = 2;
+}
+
 message Generation {
     int32 Generation = 1;
     string Date = 2;
@@ -173,4 +179,7 @@ service AdminService {
     // OTA
     rpc ListGenerations(Empty) returns (ListGenerationsResponse) {}
     rpc SetGeneration(SetGenerationRequest) returns (stream SetGenerationResponse) {}
+
+    // Send user notification
+    rpc NotifyUser(UserNotificationRequest) returns (notify.Status) {}
 }

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 {
   self,
+  lib,
   ...
 }:
 {
@@ -13,11 +14,7 @@
           nodes = {
             adminvm = self.nixosModules.tests-adminvm;
             hostvm = self.nixosModules.tests-hostvm;
-            guivm = {
-              imports = [
-                self.nixosModules.tests-guivm
-              ];
-            };
+            guivm = self.nixosModules.tests-guivm;
             appvm = {
               imports = [
                 self.nixosModules.tests-appvm
@@ -51,6 +48,9 @@
                   else
                     "--notls"
                 }";
+              userSocket =
+                lib.strings.replaceStrings [ "%U" ] [ "1000" ]
+                  nodes.guivm.givc.sysvm.notifier.socketPath;
             in
             # FIXME: why it so bizzare? (derived from name in cert)
             ''
@@ -142,6 +142,36 @@
                   adminvm.wait_for_file("/etc/locale-givc.conf")
                   print(hostvm.succeed("${cli} ${cliArgs} set-timezone UTC"))
                   adminvm.wait_for_file("/etc/timezone.conf")
+
+              with subtest("init user notification"):
+                guivm.wait_for_unit("givc-gui-vm.service")
+                guivm.wait_for_unit("event-notifier.socket", user="ghaf", timeout=5)
+                guivm.succeed("systemctl --user --machine=ghaf@.host start mako.service")
+
+              # Send test and verify test notification via local socket
+              with subtest("test user notification (local)"):
+                guivm.succeed("(timeout 5 busctl --user --machine=ghaf@ monitor org.freedesktop.Notifications > /tmp/notification.log 2>&1 &)")
+                time.sleep(1)
+
+                # Send test notification directly to local socket
+                guivm.succeed("echo '{\"Event\":\"some-alert\",\"Title\":\"Local Test Alert\",\"Urgency\":2,\"Icon\":\"dialog-error\",\"Message\":\"This is a test notification\"}' | socat - UNIX-CONNECT:${userSocket}")
+                time.sleep(4)
+
+                # Verify notification received
+                guivm.succeed("grep -q 'Local Test Alert' /tmp/notification.log")
+                guivm.succeed("rm /tmp/notification.log")
+
+              with subtest("test user notification (remote)"):
+                guivm.succeed("(timeout 5 busctl --user --machine=ghaf@ monitor org.freedesktop.Notifications > /tmp/notification.log 2>&1 &)")
+                time.sleep(1)
+
+                # Send test notification from APP VM to GUI VM
+                appvm.succeed("${cli} ${cliArgs} notify-user gui-vm --event vm-alert --title 'VM Test Alert' --urgency 'critical' --message 'This is a VM test notification' ")
+                time.sleep(4)
+
+                # Verify notification received
+                guivm.succeed("grep -q 'VM Test Alert' /tmp/notification.log")
+                guivm.succeed("rm /tmp/notification.log")
 
               with subtest("get stats"):
                   print(hostvm.succeed("${cli} ${cliArgs} get-stats app-vm"))

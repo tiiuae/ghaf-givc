@@ -124,6 +124,19 @@ enum Commands {
         #[arg(long)]
         limit: Option<u32>,
     },
+    NotifyUser {
+        vm: String,
+        #[arg(long, default_value = "Default Event")]
+        event: Option<String>,
+        #[arg(long, default_value = "Default Title")]
+        title: Option<String>,
+        #[arg(long, default_value = "Normal")]
+        urgency: Option<String>,
+        #[arg(long, default_value = "dialog-information")]
+        icon: Option<String>,
+        #[arg(long, default_value = "(no message)")]
+        message: Option<String>,
+    },
     Update {
         #[command(subcommand)]
         update: UpdateSub,
@@ -315,7 +328,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         } => {
             let ty = match by_type {
                 Some(x) => Some(UnitType::try_from(x)?),
-                None => None,
+                _ => None,
             };
             let reply = admin.query(ty, by_name).await?;
             dump(reply, as_json)?;
@@ -357,6 +370,27 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             while limit.as_mut().is_none_or(|l| l.next().is_some()) {
                 dump(watch.channel.recv().await?, as_json)?;
             }
+        }
+
+        Commands::NotifyUser {
+            vm,
+            event,
+            title,
+            urgency,
+            icon,
+            message,
+        } => {
+            let reply = admin
+                .notify_user(
+                    vm,
+                    event.unwrap_or_default(),
+                    title.unwrap_or_default(),
+                    urgency.unwrap_or_default(),
+                    icon.unwrap_or_default(),
+                    message.unwrap_or_default(),
+                )
+                .await?;
+            print!("{reply:?}");
         }
 
         Commands::Update { update } => update.handle(admin).await?,

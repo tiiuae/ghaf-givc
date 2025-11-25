@@ -1,0 +1,27 @@
+// Copyright 2025 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+option go_package = "givc/modules/api/notify";
+package notify;
+
+enum UrgencyLevel {
+  LOW = 0;
+  NORMAL = 1;
+  CRITICAL = 2;
+}
+
+message UserNotification {
+  string Event = 1;
+  string Title = 2;
+  UrgencyLevel Urgency = 3;
+  string Icon = 4;
+  string Message = 5;
+}
+
+message Status {
+  string Status = 1;
+}
+
+service UserNotificationService {
+  rpc NotifyUser(UserNotification) returns (Status) {};
+}
