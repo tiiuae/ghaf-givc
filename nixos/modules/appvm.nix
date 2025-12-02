@@ -275,7 +275,8 @@ in
       serviceConfig = {
         Type = "exec";
         ExecStart = "${givc-agent}/bin/givc-agent";
-        Restart = "always";
+        Restart = "on-failure";
+        TimeoutStopSec = 5;
         RestartSec = 1;
       };
       environment = {

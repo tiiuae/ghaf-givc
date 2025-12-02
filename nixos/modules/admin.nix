@@ -148,7 +148,8 @@ in
         serviceConfig = {
           Type = "exec";
           ExecStart = "${givc-admin}/bin/givc-admin ${args}";
-          Restart = "always";
+          Restart = "on-failure";
+          TimeoutStopSec = 5;
           RestartSec = 1;
         };
         environment = {
