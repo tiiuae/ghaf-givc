@@ -297,7 +297,8 @@ in
             serviceConfig = {
               Type = "exec";
               ExecStart = "${pkgs.xdg-dbus-proxy}/bin/xdg-dbus-proxy unix:path=/run/dbus/system_bus_socket ${cfg.system.socket} ${args}";
-              Restart = "always";
+              Restart = "on-failure";
+              TimeoutStopSec = 5;
               RestartSec = 1;
               User = cfg.system.user;
             };
@@ -338,7 +339,8 @@ in
             serviceConfig = {
               Type = "exec";
               ExecStart = "${pkgs.xdg-dbus-proxy}/bin/xdg-dbus-proxy unix:path=/run/user/${uid}/bus ${cfg.session.socket} ${args}";
-              Restart = "always";
+              Restart = "on-failure";
+              TimeoutStopSec = 5;
               RestartSec = 1;
             };
           };

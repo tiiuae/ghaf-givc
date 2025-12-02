@@ -68,6 +68,7 @@ in
         wantedBy = [ "multi-user.target" ];
 
         serviceConfig = {
+          Type = "exec";
           ExecStart = ''
             ${ota-update-server}/bin/ota-update-server serve \
               --port ${toString cfg.port} \
@@ -77,6 +78,7 @@ in
               --allowed-profiles ${concatStringsSep "," cfg.allowedProfiles}
           '';
           Restart = "on-failure";
+          TimeoutStopSec = 5;
           DynamicUser = true;
           ProtectSystem = "strict";
           ProtectHome = true;
