@@ -9,23 +9,27 @@ use crate::pb::{
 };
 use anyhow::{Context, anyhow, bail};
 use async_stream::try_stream;
+use futures_util::stream::StreamExt;
 use givc_common::query::Event;
 use regex::Regex;
+use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tonic::{Code, Response, Status};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
 use crate::admin::registry::Registry;
+use crate::policyagent_api::client::PolicyAgentClient;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
 use crate::utils::naming::VmName;
 use crate::utils::tonic::{Stream, escalate};
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::QueryResult;
+use tokio_util::io::ReaderStream;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 const TIMEZONE_CONF: &str = "/etc/timezone.conf";
@@ -47,6 +51,7 @@ pub struct AdminServiceImpl {
     tls_config: Option<TlsConfig>,
     locale_assigns: Mutex<Vec<pb::locale::LocaleAssignment>>,
     timezone: Mutex<String>,
+    policy_admin_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -72,8 +77,8 @@ impl Validator {
 
 impl AdminService {
     #[must_use]
-    pub fn new(use_tls: Option<TlsConfig>, monitoring: bool) -> Self {
-        let inner = Arc::new(AdminServiceImpl::new(use_tls));
+    pub fn new(use_tls: Option<TlsConfig>, monitoring: bool, enable_policy_admin: bool) -> Self {
+        let inner = Arc::new(AdminServiceImpl::new(use_tls, enable_policy_admin));
         let clone = inner.clone();
         if monitoring {
             tokio::task::spawn(async move {
@@ -82,11 +87,16 @@ impl AdminService {
         }
         Self { inner }
     }
+
+    #[must_use]
+    pub fn clone_inner(&self) -> Arc<AdminServiceImpl> {
+        self.inner.clone()
+    }
 }
 
 impl AdminServiceImpl {
     #[must_use]
-    pub fn new(use_tls: Option<TlsConfig>) -> Self {
+    pub fn new(use_tls: Option<TlsConfig>, enable_policy_admin: bool) -> Self {
         let timezone = std::fs::read_to_string(TIMEZONE_CONF)
             .ok()
             .and_then(|l| l.lines().next().map(ToOwned::to_owned))
@@ -112,6 +122,7 @@ impl AdminServiceImpl {
             tls_config: use_tls,
             timezone: Mutex::new(timezone),
             locale_assigns: Mutex::new(locale_assigns),
+            policy_admin_enabled: enable_policy_admin,
         }
     }
 
@@ -172,6 +183,60 @@ impl AdminServiceImpl {
         let endpoint = self.host_endpoint()?;
         let client = SystemDClient::new(endpoint);
         client.start_remote(name).await?;
+        Ok(())
+    }
+
+    pub async fn push_policy_update(
+        &self,
+        vm_name: &str,
+        archive_path: &std::path::Path,
+        old_rev: &str,
+        new_rev: &str,
+        change_set: &str,
+    ) -> anyhow::Result<()> {
+        if !self.policy_admin_enabled {
+            return Ok(());
+        }
+
+        let agent_service_name = VmName::Vm(vm_name).agent_service();
+        info!(
+            "policy-admin: pushing policy update to vm '{}' via agent '{}'",
+            vm_name, agent_service_name
+        );
+
+        let endpoint = self.agent_endpoint(&agent_service_name).with_context(|| {
+            format!(
+                "policy-admin: failed to get endpoint for agent {}",
+                agent_service_name
+            )
+        })?;
+
+        let client = PolicyAgentClient::new(endpoint);
+
+        let file = tokio::fs::File::open(archive_path).await?;
+        let stream = ReaderStream::new(file);
+
+        let old_rev = old_rev.to_string();
+        let new_rev = new_rev.to_string();
+        let change_set = change_set.to_string();
+
+        let updates = stream.map(move |chunk| {
+            let chunk = chunk.unwrap();
+            debug!("policy-admin: policy chunk size: {} bytes", chunk.len());
+            pb::policyagent::StreamPolicyRequest {
+                archive_chunk: chunk.into(),
+                old_rev: old_rev.clone(),
+                new_rev: new_rev.clone(),
+                change_set: change_set.clone(),
+            }
+        });
+        client.stream_policy(updates).await.with_context(|| {
+            format!(
+                "policy-admin: failed to send policy stream to vm '{}'",
+                vm_name
+            )
+        })?;
+
         Ok(())
     }
 
@@ -467,8 +532,48 @@ impl pb::admin_service_server::AdminService for AdminService {
         {
             let locale_assigns = self.inner.locale_assigns.lock().await.clone();
             let timezone = self.inner.timezone.lock().await.clone();
+            let inner_clone = self.inner.clone();
+            let vm_name = endpoint.transport.tls_name.clone();
+
             tokio::spawn(async move {
                 if let Ok(conn) = endpoint.connect().await {
+                    if inner_clone.policy_admin_enabled {
+                        let policy_cache_path = std::path::PathBuf::from(format!(
+                            "/etc/policies/.cache/{}.tar.gz",
+                            vm_name
+                        ));
+
+                        if tokio::fs::metadata(&policy_cache_path).await.is_ok() {
+                            /* Read the cached policy rev in a string */
+                            let rev_file = std::path::PathBuf::from("/etc/policies/.cache/.rev");
+                            let policy_rev = fs::read_to_string(rev_file)
+                                .ok()
+                                .map(|s| s.trim().to_string());
+
+                            if let Err(e) = inner_clone
+                                .push_policy_update(
+                                    &vm_name,
+                                    &policy_cache_path,
+                                    "",
+                                    policy_rev.as_deref().unwrap_or(""),
+                                    "",
+                                )
+                                .await
+                            {
+                                warn!(
+                                    "policy-admin: failed to push cached policy update to {}: {}",
+                                    vm_name, e
+                                );
+                            } else {
+                                info!("policy-admin: pushed cached policy update to {}", vm_name);
+                            }
+                        } else {
+                            info!(
+                                "policy-admin: no cached policy archive found for {}",
+                                vm_name
+                            );
+                        }
+                    }
                     let mut client =
                         pb::locale::locale_client_client::LocaleClientClient::new(conn);
                     let localemsg = pb::locale::LocaleMessage {
