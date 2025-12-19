@@ -1,11 +1,12 @@
 #![allow(clippy::similar_names)]
 
 use super::entry::{Placement, RegistryEntry};
+use super::opa::OPAPolicyClient;
 use crate::pb::{
     self, ApplicationRequest, ApplicationResponse, Empty, ListGenerationsResponse, LocaleRequest,
-    QueryListResponse, RegistryRequest, RegistryResponse, SetGenerationRequest,
-    SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest, UnitStatusRequest,
-    WatchItem,
+    PolicyQueryRequest, PolicyQueryResponse, QueryListResponse, RegistryRequest, RegistryResponse,
+    SetGenerationRequest, SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest,
+    UnitStatusRequest, WatchItem,
 };
 use anyhow::{Context, anyhow, bail};
 use async_stream::try_stream;
@@ -52,6 +53,7 @@ pub struct AdminServiceImpl {
     locale_assigns: Mutex<Vec<pb::locale::LocaleAssignment>>,
     timezone: Mutex<String>,
     policy_admin_enabled: bool,
+    opa_client: Option<OPAPolicyClient>,
 }
 
 #[derive(Debug, Clone)]
@@ -77,8 +79,17 @@ impl Validator {
 
 impl AdminService {
     #[must_use]
-    pub fn new(use_tls: Option<TlsConfig>, monitoring: bool, enable_policy_admin: bool) -> Self {
-        let inner = Arc::new(AdminServiceImpl::new(use_tls, enable_policy_admin));
+    pub fn new(
+        use_tls: Option<TlsConfig>,
+        monitoring: bool,
+        enable_policy_admin: bool,
+        enable_opa_client: bool,
+    ) -> Self {
+        let inner = Arc::new(AdminServiceImpl::new(
+            use_tls,
+            enable_policy_admin,
+            enable_opa_client,
+        ));
         let clone = inner.clone();
         if monitoring {
             tokio::task::spawn(async move {
@@ -96,7 +107,11 @@ impl AdminService {
 
 impl AdminServiceImpl {
     #[must_use]
-    pub fn new(use_tls: Option<TlsConfig>, enable_policy_admin: bool) -> Self {
+    pub fn new(
+        use_tls: Option<TlsConfig>,
+        enable_policy_admin: bool,
+        enable_opa_client: bool,
+    ) -> Self {
         let timezone = std::fs::read_to_string(TIMEZONE_CONF)
             .ok()
             .and_then(|l| l.lines().next().map(ToOwned::to_owned))
@@ -116,6 +131,13 @@ impl AdminServiceImpl {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let opa = if enable_opa_client {
+            Some(OPAPolicyClient::new(
+                "http://localhost:8181/v1/data/".to_string(),
+            ))
+        } else {
+            None
+        };
         Self {
             registry: Registry::new(),
             state: State::Init,
@@ -123,6 +145,7 @@ impl AdminServiceImpl {
             timezone: Mutex::new(timezone),
             locale_assigns: Mutex::new(locale_assigns),
             policy_admin_enabled: enable_policy_admin,
+            opa_client: opa,
         }
     }
 
@@ -184,6 +207,19 @@ impl AdminServiceImpl {
         let client = SystemDClient::new(endpoint);
         client.start_remote(name).await?;
         Ok(())
+    }
+
+    pub async fn send_query_to_opa_client(
+        &self,
+        query: &str,
+        policy_path: &str,
+    ) -> anyhow::Result<String> {
+        if let Some(ref opa_client) = self.opa_client {
+            let result = opa_client.evaluate_query(query, policy_path).await?;
+            return Ok(result);
+        } else {
+            Ok("OPA Server not available".to_string())
+        }
     }
 
     pub async fn push_policy_update(
@@ -949,6 +985,22 @@ impl pb::admin_service_server::AdminService for AdminService {
             }
         })
         .await
+    }
+
+    async fn policy_query(
+        &self,
+        request: tonic::Request<PolicyQueryRequest>,
+    ) -> Result<tonic::Response<PolicyQueryResponse>, tonic::Status> {
+        let inner = request.into_inner();
+        let query: &str = &inner.query;
+        let path: &str = &inner.policy_path;
+        let result = self
+            .inner
+            .send_query_to_opa_client(&query, &path)
+            .await
+            .map_err(|e| tonic::Status::internal(format!("OPA query failed: {}", e)))?;
+
+        Ok(tonic::Response::new(PolicyQueryResponse { result }))
     }
 }
 

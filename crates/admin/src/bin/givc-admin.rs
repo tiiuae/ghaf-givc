@@ -36,6 +36,9 @@ struct Cli {
     #[arg(long, env = "POLICY_ADMIN")]
     policy_admin: bool,
 
+    #[arg(long, env = "OPEN_POLICY_AGENT")]
+    open_policy_agent: bool,
+
     #[arg(long, env = "POLICY_MONITOR")]
     policy_monitor: bool,
 
@@ -85,7 +88,12 @@ async fn main() -> anyhow::Result<()> {
         .build_v1()
         .unwrap();
 
-    let admin_service = admin::server::AdminService::new(tls, cli.monitoring, cli.policy_admin);
+    let admin_service = admin::server::AdminService::new(
+        tls,
+        cli.monitoring,
+        cli.policy_admin,
+        cli.open_policy_agent,
+    );
     let admin_service_svc = admin::server::AdminServiceServer::new(admin_service.clone());
 
     let sys_opts = tokio_listener::SystemOptions::default();
