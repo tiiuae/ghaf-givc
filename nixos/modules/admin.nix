@@ -29,6 +29,9 @@ let
   tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
   unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
   vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
+  opaServerPort = 8181;
+  opaPolicyDir = "/etc/policies/data/opa";
+  opaUser = "opa";
 in
 {
   options.givc.admin = {
@@ -139,6 +142,9 @@ in
         default = null;
       };
 
+      opa = {
+        enable = mkEnableOption "Start open policy agent service.";
+      };
       monitor = {
         enable = mkEnableOption "Enable policy monitor.";
         ref = mkOption {
@@ -171,6 +177,36 @@ in
         message = "For policyAdmin, rev and sha256 should not be null";
       }
     ];
+
+    users.users."${opaUser}" = mkIf cfg.policyAdmin.opa.enable {
+      isSystemUser = true;
+      group = opaUser;
+    };
+    users.groups."${opaUser}" = mkIf cfg.policyAdmin.opa.enable { };
+
+    systemd.services.open-policy-agent = mkIf cfg.policyAdmin.opa.enable {
+      description = "Open Policy Agent";
+      serviceConfig = {
+        Type = "simple";
+        User = "${opaUser}";
+        Group = "${opaUser}";
+        ExecStart = ''
+          ${pkgs.open-policy-agent}/bin/opa run \
+            --server \
+            --addr localhost:${toString opaServerPort} \
+            --watch ${opaPolicyDir} \
+        '';
+        Restart = "always";
+      };
+    };
+
+    systemd.paths.open-policy-agent = mkIf cfg.policyAdmin.opa.enable {
+      description = "Watch policy directory directory";
+      pathConfig = {
+        PathExists = "${opaPolicyDir}";
+      };
+      wantedBy = [ "multi-user.target" ];
+    };
 
     systemd.services.givc-admin =
       let
@@ -257,12 +293,16 @@ in
         }
         // attrsets.optionalAttrs cfg.policyAdmin.enable {
           "POLICY_MONITOR" = "${trivial.boolToString cfg.policyAdmin.monitor.enable}";
+          "OPEN_POLICY_AGENT" = "${trivial.boolToString cfg.policyAdmin.opa.enable}";
           "POLICY_URL" = "${cfg.policyAdmin.url}";
           "POLICY_UPDATE_INTERVAL" = "${builtins.toString cfg.policyAdmin.monitor.interval}";
           "POLICY_UPDATE_REF" = "${cfg.policyAdmin.monitor.ref}";
         };
       };
 
-    networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) tcpAddresses);
+    networking.firewall.allowedTCPPorts = unique (
+      (map (addr: strings.toInt addr.port) tcpAddresses)
+      ++ lib.optional cfg.policyAdmin.opa.enable opaServerPort
+    );
   };
 }
