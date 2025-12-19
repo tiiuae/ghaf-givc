@@ -67,6 +67,7 @@ in
             url = "http://github.com/gngram/policy-store.git";
             rev = "f3554d1313843c947d892070375d9bb6cbade931";
             sha256 = "sha256-3D1t2nBlSWoRWOylo1G4C+KxMtrBpP5EjOpkhwluAmQ=";
+            opa.enable = true;
             monitor.enable = false;
           };
         };
