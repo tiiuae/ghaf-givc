@@ -60,6 +60,15 @@ message UnitStatusRequest {
     string UnitName = 2;            // Name of the unit
 }
 
+message PolicyQueryRequest {
+    string Query = 1;
+    string PolicyPath = 2;
+}
+
+message PolicyQueryResponse {
+    string result = 1;
+}
+
 // Empty message
 message Empty {
 }
@@ -182,4 +191,7 @@ service AdminService {
 
     // Send user notification
     rpc NotifyUser(UserNotificationRequest) returns (notify.Status) {}
+
+    // Policy Query
+    rpc PolicyQuery(PolicyQueryRequest) returns (PolicyQueryResponse) {}
 }
