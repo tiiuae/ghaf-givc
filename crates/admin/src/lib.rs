@@ -1,6 +1,7 @@
 use anyhow::Context;
 
 pub mod admin;
+pub mod policyagent_api;
 pub mod systemd_api;
 pub mod utils;
 

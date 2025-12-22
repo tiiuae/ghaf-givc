@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package policyagent;
+
+option go_package = "givc/modules/api/policyagent";
+
+message StreamPolicyRequest {
+    bytes archive_chunk = 1;
+    string change_set = 2;
+    string old_rev = 3;
+    string new_rev = 4;
+}
+
+message Status {
+    string Status = 1;
+}
+
+service PolicyAgent {
+    rpc StreamPolicy(stream StreamPolicyRequest) returns (Status);
+}

@@ -35,32 +35,42 @@ in
       virtualisation.writableStore = true;
       virtualisation.writableStoreUseTmpfs = true;
     };
-    tests-adminvm = {
-      imports = [
-        self.nixosModules.admin
-        ./snakeoil/gen-test-certs.nix
-      ];
+    tests-adminvm =
+      { ... }:
+      {
+        imports = [
+          self.nixosModules.admin
+          ./snakeoil/gen-test-certs.nix
+        ];
 
-      # TLS parameter
-      givc-tls-test = {
-        inherit (admin) name;
-        addresses = admin.addr;
-      };
+        # TLS parameter
+        givc-tls-test = {
+          inherit (admin) name;
+          addresses = admin.addr;
+        };
 
-      networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
-        {
-          address = addrs.adminvm;
-          prefixLength = 24;
-        }
-      ];
-      givc.admin = {
-        enable = true;
-        debug = true;
-        inherit (adminConfig) name;
-        inherit (adminConfig) addresses;
-        tls.enable = tls;
+        networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
+          {
+            address = addrs.adminvm;
+            prefixLength = 24;
+          }
+        ];
+
+        givc.admin = {
+          enable = true;
+          debug = true;
+          inherit (adminConfig) name;
+          inherit (adminConfig) addresses;
+          tls.enable = tls;
+          policyAdmin = {
+            enable = true;
+            url = "http://github.com/gngram/policy-store.git";
+            rev = "f3554d1313843c947d892070375d9bb6cbade931";
+            sha256 = "sha256-3D1t2nBlSWoRWOylo1G4C+KxMtrBpP5EjOpkhwluAmQ=";
+            monitor.enable = false;
+          };
+        };
       };
-    };
     tests-hostvm = {
       imports = [
         self.nixosModules.host
@@ -265,6 +275,14 @@ in
               command = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot";
             }
           ];
+          policyAgent = {
+            enable = true;
+            policyConfig = {
+              "sample.conf" = {
+                action = "${pkgs.bash}/bin/bash --version";
+              };
+            };
+          };
         };
       };
     tests-updatevm = {
