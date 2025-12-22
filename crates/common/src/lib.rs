@@ -26,6 +26,9 @@ pub mod pb {
     pub mod systemd {
         tonic::include_proto!("systemd");
     }
+    pub mod policyagent {
+        tonic::include_proto!("policyagent");
+    }
     pub mod stats {
         tonic::include_proto!("stats");
     }

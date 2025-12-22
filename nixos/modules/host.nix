@@ -23,7 +23,11 @@ let
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
     tlsSubmodule
+    policyAgentSubmodule
     ;
+  rules = cfg.policyAgent.policyConfig;
+  policyConfigJson = builtins.toJSON (lib.mapAttrs (_name: rule: rule.action) rules);
+
 in
 {
   options.givc.host = {
@@ -161,6 +165,12 @@ in
       '';
     };
 
+    policyAgent = mkOption {
+      type = policyAgentSubmodule;
+      default = { };
+      description = "Ghaf policy rules mapped to actions.";
+    };
+
     enableExecModule = mkEnableOption ''
       execution module for (arbitrary) commands on the host via the GIVC agent. Please be aware that this
       introduces significant security implications as currently, no protection measures are implemented.
@@ -231,5 +241,6 @@ in
       self.packages.${pkgs.stdenv.hostPlatform.system}.ota-update
       pkgs.nixos-rebuild # Need for ota-update
     ];
+    environment.etc."policy-agent/config.json".text = mkIf cfg.policyAgent.enable policyConfigJson;
   };
 }
