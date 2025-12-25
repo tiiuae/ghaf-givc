@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package policyadmin;
+
+option go_package = "givc/modules/api/policyadmin";
+
+message StreamPolicyRequest {
+    string metadata_json = 1;
+    bytes policy_chunk = 2;
+}
+
+message Status {
+    string Status = 1;
+}
+
+service PolicyAdmin {
+    rpc StreamPolicy(stream StreamPolicyRequest) returns (Status);
+}
