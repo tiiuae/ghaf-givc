@@ -39,6 +39,9 @@ const (
 	EnvNotifier       = "NOTIFIER"
 	EnvNotifierSocket = "NOTIFIER_SOCKET_DIR"
 	EnvCtap           = "CTAP"
+	EnvPolicyAdmin    = "POLICY_ADMIN"
+	EnvPolicyConfig   = "POLICY_CONFIG"
+	EnvPolicyStore    = "POLICY_STORE"
 )
 
 // AgentConfig holds the complete configuration for the GIVC agent
@@ -46,6 +49,7 @@ const (
 type AgentConfig struct {
 	Identity     IdentityConfig
 	Network      NetworkConfig
+	Policy       PolicyConfig
 	Capabilities CapabilitiesConfig
 	Runtime      RuntimeConfig
 }
@@ -57,6 +61,13 @@ type IdentityConfig struct {
 	Parent      string // Parent agent name
 	Name        string // Agent name (derived from transport config)
 	ServiceName string // Systemd service name for this agent
+}
+
+// PolicyConfig
+type PolicyConfig struct {
+	PolicyAdminEnabled bool              // Policy admin capability
+	PolicyStorePath    string            // Path to the policy configuration file
+	PoliciesJson       map[string]string // Policy Json
 }
 
 // NetworkConfig
@@ -178,6 +189,11 @@ func ParseConfig() (*AgentConfig, error) {
 		return nil, fmt.Errorf("failed to parse identity config: %w", err)
 	}
 
+	// Parse policy configuration
+	if err := parsePolicyConfig(&config.Policy); err != nil {
+		return nil, fmt.Errorf("failed to parse policy config: %w", err)
+	}
+
 	// Parse capabilities configuration
 	if err := parseCapabilitiesConfig(&config.Capabilities, config.Identity.SubType); err != nil {
 		return nil, fmt.Errorf("failed to parse capabilities config: %w", err)
@@ -221,6 +237,22 @@ func parseIdentityConfig(identity *IdentityConfig) error {
 	// Parse parent (optional)
 	identity.Parent = os.Getenv(EnvParent)
 
+	return nil
+}
+
+// parsePolicyConfig parses policy handling information
+func parsePolicyConfig(policy *PolicyConfig) error {
+	adminEnabled := os.Getenv(EnvPolicyAdmin)
+	if adminEnabled == "true" {
+		policy.PolicyAdminEnabled = true
+		policy.PolicyStorePath = os.Getenv(EnvPolicyStore)
+		policy.PoliciesJson = make(map[string]string)
+		if err := parseJSONEnv(EnvPolicyConfig, &policy.PoliciesJson, false); err != nil {
+			return fmt.Errorf("failed to parse %s: %w", EnvPolicyConfig, err)
+		}
+	} else {
+		policy.PolicyAdminEnabled = false
+	}
 	return nil
 }
 
