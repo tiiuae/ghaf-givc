@@ -38,6 +38,7 @@ const (
 	EnvHwidIface      = "HWID_IFACE"
 	EnvNotifier       = "NOTIFIER"
 	EnvNotifierSocket = "NOTIFIER_SOCKET_DIR"
+	EnvPolicyAdmin    = "POLICY_ADMIN"
 )
 
 // AgentConfig holds the complete configuration for the GIVC agent
@@ -86,12 +87,13 @@ type BridgeConfig struct {
 
 // OptionalCapabilities - Feature flags for optional services
 type OptionalCapabilities struct {
-	ExecEnabled     bool   // Remote execution capability
-	WifiEnabled     bool   // WiFi management capability
-	HwidEnabled     bool   // Hardware ID capability
-	HwidInterface   string // Hardware interface for HWID
-	NotifierEnabled bool   // Notification service capability
-	NotifierSocket  string // Socket directory for notifications
+	ExecEnabled        bool   // Remote execution capability
+	WifiEnabled        bool   // WiFi management capability
+	HwidEnabled        bool   // Hardware ID capability
+	HwidInterface      string // Hardware interface for HWID
+	NotifierEnabled    bool   // Notification service capability
+	NotifierSocket     string // Socket directory for notifications
+	PolicyAdminEnabled bool   // Policy admin capability
 }
 
 // parseJSONEnv parses a JSON environment variable into a target struct
@@ -328,6 +330,12 @@ func parseOptionalCapabilities(optional *OptionalCapabilities) {
 		if optional.HwidEnabled {
 			optional.HwidInterface = os.Getenv(EnvHwidIface)
 		}
+	}
+
+	// Parse policyManagement capability
+	if policyAdmin, policyAdminEnabled := os.LookupEnv(EnvPolicyAdmin); policyAdminEnabled {
+		optional.PolicyAdminEnabled = policyAdmin != "false"
+		//TODO: include policy storage and install rules path also
 	}
 
 	// Parse notifier capability
