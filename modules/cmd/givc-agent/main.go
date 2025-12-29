@@ -23,6 +23,7 @@ import (
 	givc_hwidmanager "givc/modules/pkgs/hwidmanager"
 	givc_localelistener "givc/modules/pkgs/localelistener"
 	givc_notifier "givc/modules/pkgs/notifier"
+	givc_policyadmin "givc/modules/pkgs/policyadmin"
 	givc_registration "givc/modules/pkgs/registration"
 	givc_servicemanager "givc/modules/pkgs/servicemanager"
 	givc_statsmanager "givc/modules/pkgs/statsmanager"
@@ -56,6 +57,21 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 		return nil, nil, err
 	}
 	grpcServices = append(grpcServices, statsServer)
+
+	log.Infof("policy-admin: service setup... ")
+	// Policy agent server
+	if config.Capabilities.Optional.PolicyAdminEnabled {
+
+		log.Infof("policy-admin: service starting... ")
+		//TODO: remove hard coding of config path
+		policyAdminServer, err := givc_policyadmin.NewPolicyAdminServer("/etc/policy-admin/config.json")
+		if err != nil {
+			log.Fatalf("policy-admin: cannot create policy admin service: %v", err)
+		} else {
+			log.Infof("policy-admin: service started.")
+		}
+		grpcServices = append(grpcServices, policyAdminServer)
+	}
 
 	// Optional capability services - instantiate based on config flags
 	if config.Capabilities.Optional.ExecEnabled {
