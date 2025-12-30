@@ -30,6 +30,7 @@ let
     proxySubmodule
     tlsSubmodule
     eventSubmodule
+    policyAdminSubmodule
     ;
 in
 {
@@ -216,6 +217,11 @@ in
       CTAP interaction module for security token proxy host
     '';
 
+    policyAdmin = mkOption {
+      type = policyAdminSubmodule;
+      default = { };
+      description = "Ghaf policy rules mapped to actions.";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -284,7 +290,7 @@ in
         TimeoutStopSec = 5;
         RestartSec = 1;
       };
-      path = [ pkgs.dbus ] ++ lib.optional cfg.enableCtapModule pkgs.qubes-ctap;
+      path = [ pkgs.dbus ];
       environment = {
         "AGENT" = "${toJSON cfg.transport}";
         "DEBUG" = "${trivial.boolToString cfg.debug}";
@@ -303,7 +309,9 @@ in
         "NOTIFIER_SOCKET_DIR" = "${optionalString cfg.notifier.enable (
           builtins.dirOf cfg.notifier.socketPath
         )}";
-        "CTAP" = "${trivial.boolToString cfg.enableCtapModule}";
+        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
+        "POLICY_CONFIG" = "${optionalString cfg.policyAdmin.enable (toJSON cfg.policyAdmin.policyConfig)}";
+        "POLICY_STORE" = "${optionalString cfg.policyAdmin.enable cfg.policyAdmin.storePath}";
       };
     };
     networking.firewall.allowedTCPPorts =
@@ -317,5 +325,8 @@ in
         );
       in
       [ agentPort ] ++ proxyPorts ++ eventPorts;
+    systemd.tmpfiles.rules = [
+      "d ${cfg.policyAdmin.storePath} 0755 1000 100 -"
+    ];
   };
 }
