@@ -9,6 +9,7 @@
 let
   inherit (lib)
     mkOption
+    mkEnableOption
     types
     hasAttrByPath
     literalExpression
@@ -43,6 +44,15 @@ let
         ];
         default = "tcp";
       };
+    };
+  };
+  policySubmodule = types.submodule {
+    options = {
+      target = mkOption {
+        type = types.str;
+        description = "Target of the policy rule.";
+      };
+      bind = mkEnableOption "Whether to mount bind the policy rule.";
     };
   };
 
@@ -185,6 +195,31 @@ in
           Provide the name of the device for which Input Events streaming needs to be supported.
         '';
         type = types.str;
+      };
+    };
+  };
+
+  policyAdminSubmodule = types.submodule {
+    options = {
+      enable = mkEnableOption "Policy admin.";
+      policyConfig = mkOption {
+        type = types.attrsOf policySubmodule;
+        default = { };
+        example = literalExpression ''
+          policyConfig =
+            {
+              'policy-name1' = {
+                target = "<target-path-1>";
+                bind = true;
+              };
+              'policy-name2' = {
+                target = "<target-path-2>";
+                bind = false;
+              };
+            };'';
+        description = ''
+          Policy configuration for the policy agent.
+        '';
       };
     };
   };
