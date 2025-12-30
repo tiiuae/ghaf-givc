@@ -9,6 +9,7 @@
 let
   inherit (lib)
     mkOption
+    mkEnableOption
     types
     hasAttrByPath
     literalExpression
@@ -185,6 +186,22 @@ in
           Provide the name of the device for which Input Events streaming needs to be supported.
         '';
         type = types.str;
+      };
+    };
+  };
+
+  policyAdminSubmodule = types.submodule {
+    options = {
+      enable = mkEnableOption "Policy admin.";
+      storePath = mkOption {
+        type = types.str;
+        default = "/etc/policies";
+        description = "Directory path for policy storage.";
+      };
+      policyConfig = lib.mkOption {
+        type = lib.types.attrsOf lib.types.str;
+        default = { };
+        description = "A set of policy name and it's destination file path.";
       };
     };
   };
