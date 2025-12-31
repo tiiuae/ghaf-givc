@@ -14,9 +14,6 @@ pkgs.buildGo124Module {
     "modules/cmd/${pname}"
     "modules/pkgs/applications"
   ];
-  GOFLAGS = [
-    "-buildmode=pie"
-  ];
   ldflags = [
     "-w"
     "-s"
