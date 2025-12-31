@@ -29,7 +29,12 @@ let
     proxySubmodule
     tlsSubmodule
     eventSubmodule
+    policyAdminSubmodule
     ;
+  rules = cfg.policyAdmin.policyConfig;
+  nonBoundPolicyTargets = lib.filterAttrs (_name: opts: opts.target != null && !opts.bind) rules;
+
+  policyConfigJson = builtins.toJSON (lib.mapAttrs (_name: rule: rule.target) nonBoundPolicyTargets);
 in
 {
   options.givc.appvm = {
@@ -198,6 +203,11 @@ in
         > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
       '';
     };
+    policyAdmin = mkOption {
+      type = policyAdminSubmodule;
+      default = { };
+      description = "Ghaf policy rules mapped to actions.";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -290,6 +300,7 @@ in
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
         "EVENT_PROXY" = "${optionalString (cfg.eventProxy != null) (toJSON cfg.eventProxy)}";
+        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
       };
     };
     networking.firewall.allowedTCPPorts =
@@ -303,5 +314,18 @@ in
         );
       in
       [ agentPort ] ++ proxyPorts ++ eventPorts;
+
+    environment.etc = mkIf cfg.policyAdmin.enable {
+      "policy-admin/config.json".text = policyConfigJson;
+    };
+    fileSystems = lib.mapAttrs' (
+      name: opts:
+      lib.nameValuePair opts.target {
+        device = "/etc/policies/vm-policies/${name}";
+        fsType = "none";
+        options = [ "bind" ];
+      }
+    ) nonBoundPolicyTargets;
+
   };
 }
