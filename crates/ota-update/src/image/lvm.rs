@@ -1,4 +1,4 @@
-use super::slot::Slot;
+use super::slot::{Kind, Slot};
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 
@@ -156,7 +156,7 @@ mod tests {
 
         let slots = slots_from_volumes(&volumes, "vg0");
         assert_eq!(slots.len(), 1);
-        assert_eq!(slots[0].name, "root");
+        assert_eq!(slots[0].kind, Kind::Root);
         assert_eq!(slots[0].version.as_deref(), Some("1.2.3"));
     }
 }
