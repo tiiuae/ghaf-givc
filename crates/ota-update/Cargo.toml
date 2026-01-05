@@ -8,9 +8,11 @@ version = "0.0.1"
 
 [dependencies]
 anyhow = "1.0.101"
+async-trait = "*"
 axum = "*"
 bootspec = "*"
 clap = { version = "4.5.57", features = ["derive", "env"] }
+fs2 = "*" # For locking
 regex = "*"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
@@ -18,6 +20,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 ] }
 serde_json = "1.0.149"
 serde = { version = "1.0.202", features = ["derive"] }
+shell-escape = "*"
 thiserror = "*"
 tokio = { version = "1.49", features = [
   "rt-multi-thread",
