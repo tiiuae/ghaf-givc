@@ -12,9 +12,25 @@ async-channel = "2.3.1"
 async-fn-stream = "*"
 async-stream = "0.3"
 clap = { version = "4.5.55", features = ["derive", "env"] }
+crossbeam-channel = "0.5.15"
+gix = { version = "0.77", default-features = false, features = [
+  "blocking-network-client",
+  "blocking-http-transport-reqwest",
+  "worktree-mutation",
+  "revision",
+  "blob-diff",
+] }
 regex = "1.12"
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+  "gzip",
+  "deflate",
+] }
 serde_json = "1.0.149"
 serde = { version = "1.0.202", features = ["derive"] }
+sha2 = "0.10.9"
+tempfile = "3.24.0"
 tokio-stream = "0.1"
 tokio = { version = "1.49", features = [
   "rt-multi-thread",
@@ -27,6 +43,7 @@ tokio-listener = { version = "0.5.1", features = [
   "vsock",
   "tonic014",
 ] }
+tokio-util = "0.7"
 tokio-vsock = "0.7"
 tonic-reflection = "0.14"
 tonic-types = "0.14"
@@ -34,6 +51,7 @@ tonic = { version = "0.14", features = ["tls-aws-lc"] }
 tracing = "0.1"
 tracing-journald = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+walkdir = "2.5.0"
 x509-parser = "0.18"
 lazy-regex = "3.5.1"
 
