@@ -3,9 +3,10 @@ use clap::Parser;
 use givc::admin;
 use givc::endpoint::TlsConfig;
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
+use std::path::Path;
 use std::path::PathBuf;
 use tonic::transport::Server;
-use tracing::debug;
+use tracing::{debug, info};
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "givc-admin")]
@@ -32,6 +33,11 @@ struct Cli {
     #[arg(long, env = "GIVC_MONITORING", default_value_t = true)]
     monitoring: bool,
 
+    #[arg(long, env = "POLICY_ADMIN")]
+    policy_admin: bool,
+
+    #[arg(long, env = "POLICY_CONFIG")]
+    policy_config: Option<PathBuf>,
     #[arg(
         long,
         env = "SERVICES",
@@ -69,8 +75,8 @@ async fn main() -> anyhow::Result<()> {
         .build_v1()
         .unwrap();
 
-    let admin_service = admin::server::AdminService::new(tls, cli.monitoring);
-    let admin_service_svc = admin::server::AdminServiceServer::new(admin_service);
+    let admin_service = admin::server::AdminService::new(tls, cli.monitoring, cli.policy_admin);
+    let admin_service_svc = admin::server::AdminServiceServer::new(admin_service.clone());
 
     let sys_opts = tokio_listener::SystemOptions::default();
     let user_opts = tokio_listener::UserOptions::default();
@@ -78,11 +84,47 @@ async fn main() -> anyhow::Result<()> {
     let listener =
         tokio_listener::Listener::bind_multiple(&cli.listen, &sys_opts, &user_opts).await?;
 
-    builder
+    let policy_config = cli
+        .policy_config
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let mut th_handle: Option<tokio::task::JoinHandle<()>> = None;
+
+    if cli.policy_admin {
+        debug!("policy-admin: initializing policy manager....");
+        match admin::policy::init_policy_manager(
+            admin_service.clone_inner(),
+            Path::new("/etc/policies"),
+            Path::new(&policy_config),
+        )
+        .await
+        {
+            Ok(handle) => {
+                th_handle = Some(handle.expect("REASON"));
+                debug!("policy-admin: policy manager initialized....");
+                info!("policy-admin enabled.");
+            }
+            Err(e) => {
+                debug!("policy-admin: policy manager initialization failed....");
+                return Err(e);
+            }
+        }
+    } else {
+        info!("policy-admin disabled.");
+    }
+
+    let _ = builder
         .add_service(reflect)
         .add_service(admin_service_svc)
         .serve_with_incoming(listener)
         .await?;
 
+    /* Cleanup policy monitor */
+    if let Some(handle) = th_handle {
+        if let Err(e) = handle.await {
+            tracing::error!("Policy monitor task failed: {}", e);
+        }
+    }
     Ok(())
 }
