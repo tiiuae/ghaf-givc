@@ -3,11 +3,11 @@ use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
-struct Volume {
-    lv_name: String,
-    vg_name: String,
-    lv_attr: Option<String>,
-    lv_size_bytes: Option<u64>,
+pub(crate) struct Volume {
+    pub lv_name: String,
+    pub vg_name: String,
+    pub lv_attr: Option<String>,
+    pub lv_size_bytes: Option<u64>,
 }
 
 fn parse_lv_size(value: &str) -> Result<u64> {
@@ -81,7 +81,7 @@ fn parse_lvs_line(line: &str) -> Result<HashMap<String, String>> {
     Ok(map)
 }
 
-fn parse_lvs_output(output: &str) -> Vec<Volume> {
+pub(crate) fn parse_lvs_output(output: &str) -> Vec<Volume> {
     output
         .lines()
         .filter_map(|line| {

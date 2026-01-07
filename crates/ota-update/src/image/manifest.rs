@@ -5,34 +5,34 @@ use anyhow::Context;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]
-struct File {
-    name: String,
-    sha256sum: String,
+pub struct File {
+    pub name: String,
+    pub sha256sum: String,
 }
 
 #[derive(Debug, Deserialize)]
-struct Manifest {
-    meta: HashMap<String, String>,
-    version: String,
-    verity_root_hash: String,
-    kernel: File,
-    store: File,
-    verity: File,
+pub struct Manifest {
+    pub meta: HashMap<String, String>,
+    pub version: String,
+    pub verity_root_hash: String,
+    pub kernel: File,
+    pub store: File,
+    pub verity: File,
 }
 
 impl Manifest {
-    fn from_file(filename: &Path) -> anyhow::Result<Self> {
+    pub fn from_file(filename: &Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(filename).context("Read manifest")?;
         let this = serde_json::from_str(&content).context("Deserializing manifest)")?;
         Ok(this)
     }
 
-    fn hash_fragment(&self) -> &str {
+    pub fn hash_fragment(&self) -> &str {
         &self.verity_root_hash[..16]
     }
 
     // Validate, if all files mentioned in manifest exists (and have matching hash)
-    fn validate(&self, base_dir: &Path, checksum: bool) -> anyhow::Result<()> {
+    pub fn validate(&self, base_dir: &Path, checksum: bool) -> anyhow::Result<()> {
         self.kernel
             .validate(base_dir, checksum)
             .context("while validating kernel")?;
