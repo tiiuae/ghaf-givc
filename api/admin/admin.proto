@@ -135,6 +135,22 @@ message SetGenerationResponse {
     optional string Error = 3;
 }
 
+message CtapBegin {
+    string Req = 1;
+    repeated string Args = 2;
+}
+
+message CtapRequest {
+    oneof Request {
+        CtapBegin Start = 1;
+        bytes Input = 2;
+    }
+}
+
+message CtapResponse {
+    bytes Output = 1;
+}
+
 service AdminService {
     // Register a remote agent or service
     rpc RegisterService(RegistryRequest) returns (RegistryResponse) {}
@@ -182,4 +198,6 @@ service AdminService {
 
     // Send user notification
     rpc NotifyUser(UserNotificationRequest) returns (notify.Status) {}
+
+    rpc Ctap(stream CtapRequest) returns (stream CtapResponse) {}
 }

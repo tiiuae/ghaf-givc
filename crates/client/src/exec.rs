@@ -1,5 +1,8 @@
 use anyhow::Context;
+use async_stream::{stream, try_stream};
 use std::future::Future;
+use std::pin::Pin;
+use tokio_stream::{Stream, StreamExt};
 use tonic::Request;
 use tonic::transport::Channel;
 use tracing::{debug, warn};
@@ -18,6 +21,11 @@ pub struct ExecClient {
     client: Client,
 }
 
+pub enum CommandOutput {
+    Stdout(Vec<u8>),
+    Stderr(Vec<u8>),
+}
+
 impl ExecClient {
     /// Connects to the gRPC server at the specified address
     /// # Errors
@@ -26,6 +34,81 @@ impl ExecClient {
         let channel = endpoint.connect().await?;
         let client = Client::new(channel);
         Ok(Self { client })
+    }
+
+    pub async fn start_command_stream(
+        &mut self,
+        command: String,
+        arguments: Vec<String>,
+        working_directory: Option<String>,
+        env_vars: Option<std::collections::HashMap<String, String>>,
+        mut stdin: impl Stream<Item = Vec<u8>> + std::marker::Unpin + Send + Sync + 'static,
+        role: Option<String>,
+    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<CommandOutput>> + Send + Sync>>>
+    {
+        let start_command = StartCommand {
+            command,
+            arguments,
+            working_directory,
+            env_vars: env_vars.unwrap_or_default(),
+            stdin: Some(vec![]),
+            role,
+        };
+
+        // Create a streaming request
+        let request_stream = stream! {
+            // Send the StartCommand
+            yield CommandRequest {
+                command: Some(Command::Start(start_command)),
+            };
+
+            while let Some(input) = stdin.next().await {
+                yield CommandRequest {
+                    command: Some(Command::Stdin(CommandIo { payload: input }))
+                };
+            }
+        };
+
+        // Open the request stream and capture responses
+        let mut response = self
+            .client
+            .run_command(Request::new(request_stream))
+            .await?
+            .into_inner();
+
+        let response_stream = try_stream! {
+            while let Some(response) = response.message().await? {
+                match response.event {
+                    Some(Event::Stdout(CommandIO { payload })) => {
+                        debug!(
+                            "Event::Stdout {} bytes: {out}",
+                            payload.len(),
+                            out = String::from_utf8_lossy(&payload)
+                        );
+                        yield CommandOutput::Stdout(payload);
+                    }
+                    Some(Event::Stderr(CommandIO { payload })) => {
+                        debug!(
+                            "Event::Stderr {} bytes: {out}",
+                            payload.len(),
+                            out = String::from_utf8_lossy(&payload)
+                        );
+                        yield CommandOutput::Stderr(payload);
+                    }
+                    Some(Event::Started(started)) => {
+                        debug!("Process started with PID: {}", started.pid);
+                    }
+                    Some(Event::Finished(finished)) => {
+                        debug!("Process finished with exit code: {}", finished.return_code);
+                    }
+                    None => {
+                        warn!("Received empty response");
+                    }
+                }
+            }
+        };
+
+        Ok(Box::pin(response_stream))
     }
 
     /// Starts a subprocess on the server with the given command and arguments
