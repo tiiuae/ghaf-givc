@@ -115,7 +115,7 @@ impl ExecClient {
     /// # Errors
     /// Raise error if program unable to execute, or on gRPC IO errors
     #[allow(clippy::too_many_arguments)]
-    pub async fn start_command<SO, SE, SOA, SEA>(
+    pub async fn start_command<SOA, SEA>(
         &mut self,
         command: String,
         arguments: Vec<String>,
@@ -123,12 +123,10 @@ impl ExecClient {
         env_vars: Option<std::collections::HashMap<String, String>>,
         stdin: Option<Vec<u8>>,
         role: Option<String>,
-        mut stdout_fn: SO,
-        mut stderr_fn: SE,
+        mut stdout_fn: impl FnMut(Vec<u8>) -> SOA,
+        mut stderr_fn: impl FnMut(Vec<u8>) -> SEA,
     ) -> anyhow::Result<i32>
     where
-        SO: FnMut(Vec<u8>) -> SOA,
-        SE: FnMut(Vec<u8>) -> SEA,
         SOA: Future<Output = ()>,
         SEA: Future<Output = ()>,
     {
