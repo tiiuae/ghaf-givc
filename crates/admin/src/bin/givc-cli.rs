@@ -1,3 +1,4 @@
+use async_stream::stream;
 use clap::{Parser, Subcommand};
 use givc::endpoint::TlsConfig;
 use givc::types::UnitType;
@@ -10,7 +11,9 @@ use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
 use serde::ser::Serialize;
 use std::path::PathBuf;
 use std::time;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::interval;
+use tokio_stream::StreamExt;
 use tracing::info;
 
 #[derive(Debug, Parser)] // requires `derive` feature
@@ -144,6 +147,10 @@ enum Commands {
     Test {
         #[command(subcommand)]
         test: Test,
+    },
+    Ctap {
+        op: String,
+        args: Vec<String>,
     },
 }
 
@@ -369,6 +376,22 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
             while limit.as_mut().is_none_or(|l| l.next().is_some()) {
                 dump(watch.channel.recv().await?, as_json)?;
+            }
+        }
+
+        Commands::Ctap { op, args } => {
+            let mut input = tokio::io::stdin();
+            let input_stream = Box::pin(stream! {
+                let mut buf = [0u8; 1024];
+                while let Ok(n) = input.read(&mut buf).await && n > 0 {
+                    yield Vec::from(&buf[0..n]);
+                }
+            });
+            let mut ctap = Box::pin(admin.ctap(op, args, input_stream).await?);
+            let mut output = tokio::io::stdout();
+
+            while let Some(bytes) = ctap.next().await.transpose()? {
+                output.write(&bytes).await?;
             }
         }
 

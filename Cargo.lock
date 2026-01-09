@@ -703,6 +703,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "async-channel",
+ "async-stream",
  "gethostname",
  "givc-common",
  "hyper-util",
