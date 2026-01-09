@@ -4,14 +4,14 @@
 use crate::pb::policyadmin::{
     StreamPolicyRequest, policy_admin_client::PolicyAdminClient as GrpcPolicyAdminClient,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_stream::stream;
 use givc_client::endpoint::EndpointConfig;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio_stream::Stream;
 use tonic::transport::Channel;
-use tracing::info;
+use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct PolicyAdminClient {
@@ -34,10 +34,10 @@ impl PolicyAdminClient {
     ) -> Result<()> {
         let mut client = self.connect().await?;
         let response = client.stream_policy(updates).await?.into_inner();
-        if response.status != "OK" {
+        if response.status != "Success" {
             return Err(anyhow::anyhow!("Policy update failed: {}", response.status));
         }
-        info!("stream_policy() successful");
+        debug!("stream_policy() successful");
         Ok(())
     }
 
@@ -97,7 +97,7 @@ impl PolicyAdminClient {
         };
 
         /* Log the action and initiate the actual gRPC streaming call */
-        info!("upload_policy() uploading policy...");
+        debug!("upload_policy() uploading policy...");
         self.stream_policy(outbound_stream).await
     }
 }

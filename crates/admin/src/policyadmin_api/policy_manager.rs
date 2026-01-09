@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 use tokio::runtime::Runtime;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /*
  * Static storage for the Singleton instance of PolicyManager.
@@ -90,7 +90,6 @@ impl PolicyManager {
     ) -> Result<Self> {
         let configs = JsonNode::from_file(config_path)?;
 
-        info!("policy-admin:PolicyManager initialized.");
         /* Create a dedicated Tokio runtime for async operations inside workers */
         let rt = Runtime::new()
             .map_err(|e| anyhow!("policy-admin:Failed to create Tokio Runtime: {e}"))?;
@@ -107,7 +106,7 @@ impl PolicyManager {
         /* Initialize workers based on config structure */
         /* Assuming structure: { "policies": { "policy_name": { "vms": ["vm1", "vm2"] } } } */
         let policies = manager.configs.get_keys(&["policies"]);
-        info!("policy-admin:PolicyManager policies: {:?}.", policies);
+        debug!("policy-admin:PolicyManager policies: {:?}.", policies);
         for policy in policies {
             let vm_names: Vec<String> = manager
                 .configs
@@ -125,6 +124,7 @@ impl PolicyManager {
             }
         }
 
+        info!("policy-admin:PolicyManager initialized.");
         Ok(manager)
     }
 
@@ -138,7 +138,7 @@ impl PolicyManager {
         if self.workers.contains_key(vm) {
             return;
         }
-        info!("policy-admin:Adding worker for vm [{}].", vm);
+        debug!("policy-admin:Adding worker for vm [{}].", vm);
 
         let (tx, rx) = unbounded::<Policy>();
         let vm_name = vm.to_string();
@@ -167,7 +167,7 @@ impl PolicyManager {
         rt: Arc<Runtime>,
         admin_service: Arc<server::AdminServiceImpl>,
     ) {
-        info!("policy-admin: Worker [{}] started.", vm);
+        debug!("policy-admin: Worker [{}] started.", vm);
 
         while let Ok(msg) = rx.recv() {
             let vm_name = vm.clone();
@@ -183,7 +183,7 @@ impl PolicyManager {
             if let Err(e) = result {
                 error!("policy-admin:Worker [{}]: Failed to push update: {}", vm, e);
             } else {
-                info!("policy-admin:Worker [{}]: Successfully pushed update", vm);
+                debug!("policy-admin:Worker [{}]: Successfully pushed update", vm);
             }
         }
     }
@@ -199,7 +199,7 @@ impl PolicyManager {
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
 
-        info!(
+        debug!(
             "policy-admin:send_to_vm() sending policy {} to vm {}.",
             policy_name, vm
         );
@@ -233,10 +233,6 @@ impl PolicyManager {
      */
     pub fn send_all_policies(&self, vm_name: &str) -> Result<()> {
         let policies = self.configs.get_keys(&["policies"]);
-        info!(
-            "policy-admin:send_all_policies() sending policy {:?} to vm {}.",
-            policies, vm_name
-        );
 
         for policy in policies {
             let policy_dir = self.policy_dir.join(&policy);
@@ -266,7 +262,7 @@ impl PolicyManager {
                                                 vm_name, e
                                             );
                                         } else {
-                                            info!(
+                                            debug!(
                                                 "policy-admin:Sent policy update for {}: {}",
                                                 vm_name,
                                                 path.display()
@@ -317,7 +313,7 @@ impl PolicyManager {
             if line.is_empty() {
                 continue;
             }
-            info!("policy-admin:process_changeset() changeset: {}.", changeset);
+            debug!("policy-admin:process_changeset() changeset: {}.", changeset);
 
             let mut parts = line.split_whitespace();
             /* Ignore status (M, A, etc) for now, just need path */

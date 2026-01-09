@@ -6,7 +6,7 @@ use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use std::path::Path;
 use std::path::PathBuf;
 use tonic::transport::Server;
-use tracing::{debug, info};
+use tracing::{debug, error};
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "givc-admin")]
@@ -103,15 +103,14 @@ async fn main() -> anyhow::Result<()> {
             Ok(handle) => {
                 th_handle = Some(handle.expect("REASON"));
                 debug!("policy-admin: policy manager initialized....");
-                info!("policy-admin enabled.");
             }
             Err(e) => {
-                debug!("policy-admin: policy manager initialization failed....");
+                error!("policy-admin: policy manager initialization failed....");
                 return Err(e);
             }
         }
     } else {
-        info!("policy-admin disabled.");
+        debug!("policy-admin disabled.");
     }
 
     let _ = builder

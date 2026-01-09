@@ -11,14 +11,11 @@ use anyhow::{Context, anyhow, bail};
 use async_stream::try_stream;
 use givc_common::query::Event;
 use regex::Regex;
-use serde_json::json;
-use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
 use tonic::{Code, Response, Status};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
@@ -26,12 +23,10 @@ use crate::admin::registry::Registry;
 use crate::policyadmin_api::client::PolicyAdminClient;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
-use crate::utils::json::JsonNode;
 use crate::utils::naming::VmName;
 use crate::utils::tonic::{Stream, escalate};
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::QueryResult;
-use tokio_util::io::ReaderStream;
 
 use crate::policyadmin_api::policy_manager::PolicyManager;
 
@@ -532,11 +527,11 @@ impl pb::admin_service_server::AdminService for AdminService {
             tokio::spawn(async move {
                 if let Ok(conn) = endpoint.connect().await {
                     if inner_clone.policy_admin_enabled {
-                        info!("policy-admin: sending policy updates to vm '{}'", vm_name);
+                        debug!("policy-admin: sending policy updates to vm '{}'", vm_name);
                         let policy_manager = PolicyManager::instance();
                         policy_manager.send_all_policies(&vm_name);
                     } else {
-                        info!("policy-admin: disabled");
+                        debug!("policy-admin: disabled");
                     }
                     let mut client =
                         pb::locale::locale_client_client::LocaleClientClient::new(conn);
