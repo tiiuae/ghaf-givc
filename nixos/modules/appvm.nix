@@ -29,7 +29,24 @@ let
     proxySubmodule
     tlsSubmodule
     eventSubmodule
+    policyAdminSubmodule
     ;
+  rules = cfg.policyAdmin.policyConfig; # Adjusted 'cfg' to full path for clarity
+
+  policyDir = "/etc/policies";
+  nonBoundPolicyTargets = lib.filterAttrs (_name: opts: !opts.bind) rules;
+  boundedPolicyTargets = lib.filterAttrs (_name: opts: opts.bind) rules;
+
+  policyConfigJson = builtins.toJSON (
+    lib.mapAttrs (_name: rule: rule.targetDir) nonBoundPolicyTargets
+  );
+  tmpFilesRules = lib.flatten (
+    lib.mapAttrsToList (name: value: [
+      "d ${policyDir}/${name} 0755 1000 100 -"
+      "d ${value.targetDir} 0755 1000 100 -"
+    ]) boundedPolicyTargets
+  );
+
 in
 {
   options.givc.appvm = {
@@ -198,6 +215,11 @@ in
         > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
       '';
     };
+    policyAdmin = mkOption {
+      type = policyAdminSubmodule;
+      default = { };
+      description = "Ghaf policy rules mapped to actions.";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -290,6 +312,7 @@ in
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
         "EVENT_PROXY" = "${optionalString (cfg.eventProxy != null) (toJSON cfg.eventProxy)}";
+        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
       };
     };
     networking.firewall.allowedTCPPorts =
@@ -303,5 +326,34 @@ in
         );
       in
       [ agentPort ] ++ proxyPorts ++ eventPorts;
+
+    environment.etc = mkIf cfg.policyAdmin.enable {
+      "policy-admin/config.json".text = policyConfigJson;
+    };
+
+    fileSystems = lib.mapAttrs' (
+      name: opts:
+      let
+        mountPath = opts.targetDir;
+        sourcePath = "${policyDir}/${name}";
+      in
+      lib.nameValuePair mountPath {
+        device = sourcePath;
+        fsType = "none";
+        options = [
+          "bind"
+          "rw"
+          "uid=1000"
+          "gid=100"
+          "umask=0755"
+        ];
+        depends = [ "${policyDir}" ];
+      }
+    ) boundedPolicyTargets;
+    systemd.tmpfiles.rules = [
+      "d ${policyDir} 0755 1000 100 -"
+    ]
+    ++ tmpFilesRules;
   };
+
 }
