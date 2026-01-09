@@ -854,11 +854,11 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<Streaming<CtapRequest>>,
     ) -> Result<tonic::Response<Self::CtapStream>, tonic::Status> {
         escalate(request, async move |mut req| {
-            let guivm_mgr = self
+            let gui_vm_mgr = self
                 .inner
-                .agent_endpoint("givc-guivm.service")
+                .agent_endpoint("givc-gui-vm.service")
                 .context("VM not found")?;
-            let mut client = ExecClient::connect(guivm_mgr).await?;
+            let mut client = ExecClient::connect(gui_vm_mgr).await?;
 
             let Ok(Some(CtapRequest {
                 request: Some(pb::admin::ctap_request::Request::Start(CtapBegin { req: op, args })),
@@ -867,10 +867,10 @@ impl pb::admin_service_server::AdminService for AdminService {
                 anyhow::bail!("Invalid stuff.");
             };
             let cmd = match op.as_str() {
-                "ctap.ClientPin" => "qtap-client-pin",
-                "ctap.GetInfo" => "qtap-get-info",
-                "u2f.Authenticate" => "qtap-get-assertion",
-                "u2f.Register" => "qtap-make-credential",
+                "ctap.ClientPin" => "qctap-client-pin",
+                "ctap.GetInfo" => "qctap-get-info",
+                "u2f.Authenticate" => "qctap-get-assertion",
+                "u2f.Register" => "qctap-make-credential",
                 _ => anyhow::bail!("Invalid operation"),
             };
             let stream = Box::pin(stream! {
@@ -878,11 +878,14 @@ impl pb::admin_service_server::AdminService for AdminService {
                     match req.message().await {
                         Ok(Some(CtapRequest { request: Some(pb::admin::ctap_request::Request::Input(input)) })) => {
                             yield input;
-                        },
+                        }
+                        Ok(None) => {
+                            break;
+                        }
                         Err(e) => {
                             error!("Failed to receive subscription item from registry: {e}");
                             break;
-                        },
+                        }
                         _ => {
                             error!("Invalid request");
                             break;

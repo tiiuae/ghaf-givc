@@ -391,7 +391,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             let mut output = tokio::io::stdout();
 
             while let Some(bytes) = ctap.next().await.transpose()? {
-                output.write(&bytes).await?;
+                output.write_all(&bytes).await?;
             }
         }
 
