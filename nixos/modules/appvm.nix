@@ -31,10 +31,22 @@ let
     eventSubmodule
     policyAdminSubmodule
     ;
-  rules = cfg.policyAdmin.policyConfig;
-  nonBoundPolicyTargets = lib.filterAttrs (_name: opts: opts.target != null && !opts.bind) rules;
+  rules = cfg.policyAdmin.policyConfig; # Adjusted 'cfg' to full path for clarity
 
-  policyConfigJson = builtins.toJSON (lib.mapAttrs (_name: rule: rule.target) nonBoundPolicyTargets);
+  policyDir = "/etc/policies";
+  nonBoundPolicyTargets = lib.filterAttrs (_name: opts: !opts.bind) rules;
+  boundedPolicyTargets = lib.filterAttrs (_name: opts: opts.bind) rules;
+
+  policyConfigJson = builtins.toJSON (
+    lib.mapAttrs (_name: rule: rule.targetDir) nonBoundPolicyTargets
+  );
+  tmpFilesRules = lib.flatten (
+    lib.mapAttrsToList (name: value: [
+      "d ${policyDir}/${name} 0755 1000 100 -"
+      "d ${value.targetDir} 0755 1000 100 -"
+    ]) boundedPolicyTargets
+  );
+
 in
 {
   options.givc.appvm = {
@@ -318,14 +330,30 @@ in
     environment.etc = mkIf cfg.policyAdmin.enable {
       "policy-admin/config.json".text = policyConfigJson;
     };
+
     fileSystems = lib.mapAttrs' (
       name: opts:
-      lib.nameValuePair opts.target {
-        device = "/etc/policies/vm-policies/${name}";
+      let
+        mountPath = opts.targetDir;
+        sourcePath = "${policyDir}/${name}";
+      in
+      lib.nameValuePair mountPath {
+        device = sourcePath;
         fsType = "none";
-        options = [ "bind" ];
+        options = [
+          "bind"
+          "rw"
+          "uid=1000"
+          "gid=100"
+          "umask=0755"
+        ];
+        depends = [ "${policyDir}" ];
       }
-    ) nonBoundPolicyTargets;
-
+    ) boundedPolicyTargets;
+    systemd.tmpfiles.rules = [
+      "d ${policyDir} 0755 1000 100 -"
+    ]
+    ++ tmpFilesRules;
   };
+
 }

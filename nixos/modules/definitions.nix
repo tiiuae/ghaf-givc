@@ -48,7 +48,7 @@ let
   };
   policySubmodule = types.submodule {
     options = {
-      target = mkOption {
+      targetDir = mkOption {
         type = types.str;
         description = "Target of the policy rule.";
       };
@@ -209,11 +209,11 @@ in
           policyConfig =
             {
               'policy-name1' = {
-                target = "<target-path-1>";
+                targetDir = "<target-path-1>";
                 bind = true;
               };
               'policy-name2' = {
-                target = "<target-path-2>";
+                targetDir = "<target-path-2>";
                 bind = false;
               };
             };'';

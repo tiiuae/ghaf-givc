@@ -9,6 +9,7 @@
 }:
 let
   cfg = config.givc.admin;
+  policyConfigPath = "policy-admin/policy-config.json";
   inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-admin;
   inherit (lib)
     mkOption
@@ -21,6 +22,7 @@ let
     concatStringsSep
     attrsets
     literalExpression
+    mapAttrs
     ;
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
@@ -29,6 +31,31 @@ let
   tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
   unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
   vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
+  paCfg = cfg.policy-admin;
+  jsonOutput =
+    if (paCfg.enable && paCfg.resource.centralized.enable) then
+      {
+        source = {
+          type = "centralised";
+          inherit (paCfg.resource.centralized) url;
+          inherit (paCfg.resource.centralized) ref;
+          inherit (paCfg.resource.centralized) poll_interval_secs;
+        };
+        # For centralized, we map the policies to only expose the VMs list
+        policies = mapAttrs (_name: value: {
+          inherit (value) vms;
+        }) paCfg.resource.centralized.policies;
+      }
+    else if (paCfg.enable && paCfg.resource.distributed.enable) then
+      {
+        source = {
+          type = "distributed";
+        };
+        # For distributed, we pass the full policy config (url, vms, interval)
+        inherit (paCfg.resource.distributed) policies;
+      }
+    else
+      { };
 in
 {
   options.givc.admin = {
@@ -120,6 +147,73 @@ in
         > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
       '';
     };
+    policy-admin = {
+      enable = mkEnableOption "policy management";
+      resource = {
+        centralized = {
+          enable = mkEnableOption "centralized policy management";
+
+          url = mkOption {
+            type = types.str;
+            description = "Git URL for the centralized policy repo";
+          };
+
+          ref = mkOption {
+            type = types.str;
+            default = "master";
+            description = "Git reference (branch/tag)";
+          };
+
+          poll_interval_secs = mkOption {
+            type = types.int;
+            default = 30;
+            description = "Global polling interval for the centralized repo";
+          };
+
+          policies = mkOption {
+            description = "Map of policy names to their target VMs";
+            default = { };
+            type = types.attrsOf (
+              types.submodule {
+                options.vms = mkOption {
+                  type = types.listOf types.str;
+                  default = [ ];
+                  description = "List of VMs this policy applies to";
+                };
+              }
+            );
+          };
+        };
+
+        # Distributed Configuration Options
+        distributed = {
+          enable = mkEnableOption "distributed policy management";
+
+          policies = mkOption {
+            description = "Map of distributed policies";
+            default = { };
+            type = types.attrsOf (
+              types.submodule {
+                options = {
+                  vms = mkOption {
+                    type = types.listOf types.str;
+                    default = [ ];
+                  };
+                  url = mkOption {
+                    type = types.str;
+                    description = "URL for the specific policy artifact";
+                  };
+                  poll_interval_secs = mkOption {
+                    type = types.int;
+                    default = 30;
+                  };
+                };
+              }
+            );
+          };
+        };
+      };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -128,6 +222,10 @@ in
         assertion =
           !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
+      }
+      {
+        assertion = !(paCfg.resource.centralized.enable && paCfg.resource.distributed.enable);
+        message = "'centralized' and 'distributed' policies cannot be enabled simultaneously.";
       }
     ];
 
@@ -158,6 +256,8 @@ in
           "SUBTYPE" = "5";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "SERVICES" = "${concatStringsSep " " cfg.services}";
+          "POLICY_ADMIN" = "${trivial.boolToString paCfg.enable}";
+          "POLICY_CONFIG" = "/etc/${policyConfigPath}";
         }
         // attrsets.optionalAttrs cfg.tls.enable {
           "CA_CERT" = "${cfg.tls.caCertPath}";
@@ -170,5 +270,6 @@ in
         };
       };
     networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) tcpAddresses);
+    environment.etc."${policyConfigPath}".text = builtins.toJSON jsonOutput;
   };
 }
