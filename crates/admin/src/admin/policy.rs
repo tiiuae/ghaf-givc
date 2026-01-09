@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::{path::Path, sync::Arc};
-use tracing::info;
+use tracing::debug;
 
 use crate::policyadmin_api::policy_manager::PolicyManager;
 use crate::policyadmin_api::policy_repo::PolicyRepoMonitor;
@@ -66,13 +66,13 @@ pub async fn init_policy_manager(
 
     /* Define the path where VM policies are stored */
     let policy_path = policy_root.join("data").join("vm-policies");
-    info!("policy-monitor: starting policy monitor...");
+    debug!("policy-monitor: starting policy monitor...");
 
     /* * Initialize PolicyManager.
      * Note: Added error handling for the init call.
      */
     PolicyManager::init(policy_path.as_path(), &config_path, admin_service)?;
-    info!("policy-monitor: thread spawned successfully");
+    debug!("policy-monitor: thread spawned successfully");
 
     /* Load config file inside the thread to ensure fresh state */
     let conf = JsonNode::from_file(&config_path)?;

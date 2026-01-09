@@ -14,7 +14,7 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::Mutex, time::sleep};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /* -----------------------------------------------------------------------------
  * Constants
@@ -61,10 +61,10 @@ impl PolicyUrlMonitor {
 
         /* Determine which config file to load */
         let config_source = if local_config_path.exists() {
-            info!("policy-url-monitor: Loading existing local config.");
+            debug!("policy-url-monitor: Loading existing local config.");
             local_config_path.clone()
         } else if read_only_config.as_ref().exists() {
-            info!("policy-url-monitor: Initializing from read-only config.");
+            debug!("policy-url-monitor: Initializing from read-only config.");
             read_only_config.as_ref().to_path_buf()
         } else {
             return Err(anyhow!(
@@ -104,7 +104,7 @@ impl PolicyUrlMonitor {
      * ---------------------------------------------------------------------- */
     pub fn start(self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            info!("policy-url-monitor: Starting monitor tasks...");
+            debug!("policy-url-monitor: Starting monitor tasks...");
             let mut handles = Vec::new();
 
             let policy_names = {
@@ -155,7 +155,7 @@ impl PolicyUrlMonitor {
         }
 
         let policy_manager = PolicyManager::instance();
-        info!(
+        debug!(
             "policy-url-monitor: [{}] Started. Polling every {}s",
             policy_name, interval
         );
@@ -246,7 +246,7 @@ impl PolicyUrlMonitor {
         }
 
         /* Step 2: Download the file (GET) */
-        info!("policy-url-monitor: [{}] Downloading...", name);
+        debug!("policy-url-monitor: [{}] Downloading...", name);
         let get_resp = self.client.get(url).send().await?;
         if !get_resp.status().is_success() {
             return Err(anyhow!(

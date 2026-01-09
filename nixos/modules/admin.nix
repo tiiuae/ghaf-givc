@@ -156,6 +156,7 @@ in
           url = mkOption {
             type = types.str;
             description = "Git URL for the centralized policy repo";
+            default = "";
           };
 
           ref = mkOption {

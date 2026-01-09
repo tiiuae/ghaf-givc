@@ -1,11 +1,11 @@
 use anyhow::{Context, Result, anyhow};
-use gix::bstr::ByteSlice;
+use gix::bstr::{BStr, ByteSlice};
 use gix::object::tree::diff::{Action, Change};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::policyadmin_api::policy_manager::PolicyManager;
 use crate::utils::json::JsonNode;
@@ -67,13 +67,14 @@ impl PolicyRepoMonitor {
         if destination.exists() {
             match gix::open(&destination) {
                 Ok(repo) => {
-                    let remote_url = repo
-                        .config_snapshot()
-                        .string("remote.origin.url")
-                        .map(|s| s.to_string())
-                        .unwrap_or_default();
+                    let conf = repo.config_snapshot();
+                    let remote_url = conf.string_by(
+                        "remote",
+                        Some(BStr::new(&monitor.remote_name.as_bytes())),
+                        "url",
+                    );
 
-                    if remote_url == monitor.url {
+                    if remote_url.is_some_and(|u| *u == monitor.url) {
                         let mut state = monitor.state.lock().unwrap();
                         let head = repo.head_id()?;
                         state.new_head = Some(head.detach());
@@ -100,14 +101,14 @@ impl PolicyRepoMonitor {
      * Performs a fresh clone of the repository.
      */
     fn clone_repo(&self) -> Result<()> {
-        info!("policy-repo: Cloning from: {}", self.url);
+        debug!("policy-repo: Cloning from: {}", self.url);
 
         let temp_dest = self.destination.with_extension("tmp");
         if temp_dest.exists() {
             std::fs::remove_dir_all(&temp_dest)?;
         }
 
-        /* 1. Perform the Clone */
+        /* Perform the Clone */
         let interrupt = &gix::interrupt::IS_INTERRUPTED;
         let mut prepare = gix::prepare_clone(self.url.as_str(), &temp_dest)?
             .with_ref_name(Some(self.branch.as_str()))?;
@@ -118,13 +119,13 @@ impl PolicyRepoMonitor {
         /* Drop repo handle so we can move the directory */
         drop(repo);
 
-        /* 2. Atomic Replace */
+        /* Atomic Replace */
         if self.destination.exists() {
             std::fs::remove_dir_all(&self.destination)?;
         }
         std::fs::rename(&temp_dest, &self.destination)?;
 
-        /* 3. Update State */
+        /* Update State */
         let repo = gix::open(&self.destination)?;
         let head = repo.head_id()?;
 
@@ -132,7 +133,7 @@ impl PolicyRepoMonitor {
         state.new_head = Some(head.detach());
         state.old_head = None; // Reset old head on fresh clone
 
-        info!(
+        debug!(
             "policy-repo: Cloned successfully. HEAD: {}",
             state.new_head.as_ref().unwrap()
         );
@@ -150,7 +151,7 @@ impl PolicyRepoMonitor {
                     if retries > 3 {
                         return Err(anyhow!("Failed to clone repo after retries"));
                     }
-                    std::thread::sleep(Duration::from_secs(5));
+                    std::thread::sleep(Duration::from_mins(5));
                 }
             }
         }
@@ -177,10 +178,11 @@ impl PolicyRepoMonitor {
         let mut state = self.state.lock().unwrap();
         // Note: Using unwrap_or to force update if local head is missing
         if Some(remote_id) != state.new_head {
-            info!("policy-repo: Update detected. Moving to {}", remote_id);
+            debug!("policy-repo: Update detected. Moving to {}", remote_id);
 
             // Perform Checkout
-            let commit = repo.find_object(remote_id)?.into_commit();
+            //TODO let commit = repo.find_object(remote_id)?.into_commit();
+            let commit = repo.find_commit(remote_id)?;
             let tree = commit.tree()?;
             let mut index = repo.index_from_tree(&tree.id)?;
 
@@ -222,8 +224,8 @@ impl PolicyRepoMonitor {
             return Ok(String::new());
         }
 
-        let old_tree = repo.find_object(old)?.into_commit().tree()?;
-        let new_tree = repo.find_object(new)?.into_commit().tree()?;
+        let old_tree = repo.find_commit(old)?.tree()?;
+        let new_tree = repo.find_commit(new)?.tree()?;
 
         let mut changes_str = String::new();
 
@@ -261,7 +263,7 @@ impl PolicyRepoMonitor {
             let mut update_err = false;
 
             loop {
-                info!("policy-repo: --- checking for policy updates ---");
+                debug!("policy-repo: --- checking for policy updates ---");
                 match self.get_update() {
                     Ok(true) => match self.get_change_set() {
                         Ok(changes) => {
@@ -280,7 +282,7 @@ impl PolicyRepoMonitor {
                         }
                     },
                     Ok(false) => {
-                        info!("policy-repo: repository already up-to-date");
+                        debug!("policy-repo: repository already up-to-date");
                         if self.poll_interval == Duration::ZERO {
                             return;
                         }
