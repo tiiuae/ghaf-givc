@@ -67,9 +67,11 @@ impl ExecClient {
 
             while let Some(input) = stdin.next().await {
                 yield CommandRequest {
-                    command: Some(Command::Stdin(CommandIo { payload: input }))
+                    command: Some(Command::Stdin(CommandIo { payload: input, eof: false }))
                 };
             }
+
+            yield CommandRequest { command: Some(Command::Stdin(CommandIo { payload: vec![], eof: true })) };
         };
 
         // Open the request stream and capture responses
@@ -82,18 +84,18 @@ impl ExecClient {
         let response_stream = try_stream! {
             while let Some(response) = response.message().await? {
                 match response.event {
-                    Some(Event::Stdout(CommandIO { payload })) => {
+                    Some(Event::Stdout(CommandIO { payload, .. })) => {
                         debug!(
-                            "Event::Stdout {} bytes: {out}",
-                            payload.len(),
+                            "Event::Stdout {len} bytes: {out}",
+                            len = payload.len(),
                             out = String::from_utf8_lossy(&payload)
                         );
                         yield CommandOutput::Stdout(payload);
                     }
-                    Some(Event::Stderr(CommandIO { payload })) => {
+                    Some(Event::Stderr(CommandIO { payload, .. })) => {
                         debug!(
-                            "Event::Stderr {} bytes: {out}",
-                            payload.len(),
+                            "Event::Stderr {len} bytes: {out}",
+                            len = payload.len(),
                             out = String::from_utf8_lossy(&payload)
                         );
                         yield CommandOutput::Stderr(payload);
@@ -126,8 +128,8 @@ impl ExecClient {
         env_vars: Option<std::collections::HashMap<String, String>>,
         stdin: Option<Vec<u8>>,
         role: Option<String>,
-        mut stdout_fn: impl FnMut(Vec<u8>) -> SOA,
-        mut stderr_fn: impl FnMut(Vec<u8>) -> SEA,
+        mut stdout_fn: impl FnMut(Vec<u8>, bool) -> SOA,
+        mut stderr_fn: impl FnMut(Vec<u8>, bool) -> SEA,
     ) -> anyhow::Result<i32>
     where
         SOA: Future<Output = ()>,
@@ -164,21 +166,21 @@ impl ExecClient {
         // Process the server's responses
         while let Some(response) = response.message().await? {
             match response.event {
-                Some(Event::Stdout(CommandIO { payload })) => {
+                Some(Event::Stdout(CommandIO { payload, eof })) => {
                     debug!(
                         "Event::Stdout {} bytes: {out}",
                         payload.len(),
                         out = String::from_utf8_lossy(&payload)
                     );
-                    stdout_fn(payload).await;
+                    stdout_fn(payload, eof).await;
                 }
-                Some(Event::Stderr(CommandIO { payload })) => {
+                Some(Event::Stderr(CommandIO { payload, eof })) => {
                     debug!(
                         "Event::Stderr {} bytes: {out}",
                         payload.len(),
                         out = String::from_utf8_lossy(&payload)
                     );
-                    stderr_fn(payload).await;
+                    stderr_fn(payload, eof).await;
                 }
                 Some(Event::Started(started)) => {
                     debug!("Process started with PID: {}", started.pid);
@@ -224,11 +226,11 @@ impl ExecClient {
                 env_vars,
                 stdin,
                 role,
-                |payload| {
+                |payload, _eof| {
                     stdout_buffer.extend(&payload);
                     std::future::ready(())
                 },
-                |payload| {
+                |payload, _eof| {
                     stderr_buffer.extend(&payload);
                     std::future::ready(())
                 },
