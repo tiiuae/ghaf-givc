@@ -23,7 +23,13 @@ let
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
     tlsSubmodule
+    policyAdminSubmodule
     ;
+  rules = cfg.policyAdmin.policyConfig;
+  nonBoundPolicyTargets = lib.filterAttrs (_name: opts: opts.target != null && !opts.bind) rules;
+
+  policyConfigJson = builtins.toJSON (lib.mapAttrs (_name: rule: rule.target) nonBoundPolicyTargets);
+
 in
 {
   options.givc.host = {
@@ -161,6 +167,12 @@ in
       '';
     };
 
+    policyAdmin = mkOption {
+      type = policyAdminSubmodule;
+      default = { };
+      description = "Ghaf policy rules mapped to actions.";
+    };
+
     enableExecModule = mkEnableOption ''
       execution module for (arbitrary) commands on the host via the GIVC agent. Please be aware that this
       introduces significant security implications as currently, no protection measures are implemented.
@@ -231,5 +243,16 @@ in
       self.packages.${pkgs.stdenv.hostPlatform.system}.ota-update
       pkgs.nixos-rebuild # Need for ota-update
     ];
+    environment.etc = mkIf cfg.policyAdmin.enable {
+      "policy-admin/config.json".text = policyConfigJson;
+    };
+    fileSystems = lib.mapAttrs' (
+      name: opts:
+      lib.nameValuePair opts.target {
+        device = "/etc/policies/vm-policies/${name}";
+        fsType = "none";
+        options = [ "bind" ];
+      }
+    ) nonBoundPolicyTargets;
   };
 }
