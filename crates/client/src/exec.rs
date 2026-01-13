@@ -36,6 +36,9 @@ impl ExecClient {
         Ok(Self { client })
     }
 
+    /// Starts a command with bidirectional streaming
+    /// # Errors
+    /// Raise error if unable to connect
     pub async fn start_command_stream(
         &mut self,
         command: String,

@@ -73,6 +73,21 @@ enum UpdateSub {
     Cachix(CachixOptions),
 }
 
+#[derive(Debug, Parser)]
+struct Notification {
+    vm: String,
+    #[arg(long, default_value = "Default Event")]
+    event: String,
+    #[arg(long, default_value = "Default Title")]
+    title: String,
+    #[arg(long, default_value = "Normal")]
+    urgency: String,
+    #[arg(long, default_value = "dialog-information")]
+    icon: String,
+    #[arg(long, default_value = "(no message)")]
+    message: String,
+}
+
 #[derive(Debug, Subcommand)]
 enum Commands {
     Start {
@@ -128,17 +143,8 @@ enum Commands {
         limit: Option<u32>,
     },
     NotifyUser {
-        vm: String,
-        #[arg(long, default_value = "Default Event")]
-        event: Option<String>,
-        #[arg(long, default_value = "Default Title")]
-        title: Option<String>,
-        #[arg(long, default_value = "Normal")]
-        urgency: Option<String>,
-        #[arg(long, default_value = "dialog-information")]
-        icon: Option<String>,
-        #[arg(long, default_value = "(no message)")]
-        message: Option<String>,
+        #[command(flatten)]
+        notification: Notification,
     },
     Update {
         #[command(subcommand)]
@@ -279,6 +285,39 @@ impl UpdateSub {
     }
 }
 
+async fn ctap(admin: AdminClient, op: String, args: Vec<String>) -> anyhow::Result<()> {
+    let mut input = tokio::io::stdin();
+    let input_stream = Box::pin(stream! {
+        let mut buf = [0u8; 1024];
+        while let Ok(n) = input.read(&mut buf).await && n > 0 {
+            yield Vec::from(&buf[0..n]);
+        }
+    });
+    let mut ctap = Box::pin(admin.ctap(op, args, input_stream).await?);
+    let mut output = tokio::io::stdout();
+
+    while let Some(bytes) = ctap.next().await.transpose()? {
+        output.write_all(&bytes).await?;
+    }
+    Ok(())
+}
+
+async fn notify_user(admin: AdminClient, notification: Notification) -> anyhow::Result<()> {
+    let Notification {
+        vm,
+        event,
+        title,
+        urgency,
+        icon,
+        message,
+    } = notification;
+    let reply = admin
+        .notify_user(vm, event, title, urgency, icon, message)
+        .await?;
+    print!("{reply:?}");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     givc::trace_init()?;
@@ -380,40 +419,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::Ctap { op, args } => {
-            let mut input = tokio::io::stdin();
-            let input_stream = Box::pin(stream! {
-                let mut buf = [0u8; 1024];
-                while let Ok(n) = input.read(&mut buf).await && n > 0 {
-                    yield Vec::from(&buf[0..n]);
-                }
-            });
-            let mut ctap = Box::pin(admin.ctap(op, args, input_stream).await?);
-            let mut output = tokio::io::stdout();
-
-            while let Some(bytes) = ctap.next().await.transpose()? {
-                output.write_all(&bytes).await?;
-            }
+            ctap(admin, op, args).await?;
         }
 
-        Commands::NotifyUser {
-            vm,
-            event,
-            title,
-            urgency,
-            icon,
-            message,
-        } => {
-            let reply = admin
-                .notify_user(
-                    vm,
-                    event.unwrap_or_default(),
-                    title.unwrap_or_default(),
-                    urgency.unwrap_or_default(),
-                    icon.unwrap_or_default(),
-                    message.unwrap_or_default(),
-                )
-                .await?;
-            print!("{reply:?}");
+        Commands::NotifyUser { notification } => {
+            notify_user(admin, notification).await?;
         }
 
         Commands::Update { update } => update.handle(admin).await?,
