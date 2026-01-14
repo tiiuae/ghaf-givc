@@ -156,7 +156,6 @@ enum Commands {
     },
     Ctap {
         op: String,
-        args: Vec<String>,
     },
 }
 
@@ -285,7 +284,7 @@ impl UpdateSub {
     }
 }
 
-async fn ctap(admin: AdminClient, op: String, args: Vec<String>) -> anyhow::Result<()> {
+async fn ctap(admin: AdminClient, operation: String) -> anyhow::Result<()> {
     let mut input = tokio::io::stdin();
     let input_stream = Box::pin(stream! {
         let mut buf = [0u8; 1024];
@@ -293,6 +292,11 @@ async fn ctap(admin: AdminClient, op: String, args: Vec<String>) -> anyhow::Resu
             yield Vec::from(&buf[0..n]);
         }
     });
+    let (op, args) = if let Some((op, args)) = operation.split_once('+') {
+        (op.to_string(), vec![args.to_string()])
+    } else {
+        (operation, vec![])
+    };
     let mut ctap = Box::pin(admin.ctap(op, args, input_stream).await?);
     let mut output = tokio::io::stdout();
 
@@ -418,8 +422,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Ctap { op, args } => {
-            ctap(admin, op, args).await?;
+        Commands::Ctap { op } => {
+            ctap(admin, op).await?;
         }
 
         Commands::NotifyUser { notification } => {
