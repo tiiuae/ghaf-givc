@@ -265,6 +265,15 @@ in
               command = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot";
             }
           ];
+          policyAdmin = {
+            enable = true;
+            policyConfig = {
+              "proxy-config" = {
+                targetDir = "/etc/proxy";
+                bind = false;
+              };
+            };
+          };
         };
       };
     tests-updatevm = {
