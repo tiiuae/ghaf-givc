@@ -2,13 +2,17 @@ use super::group::{SlotGroup, group_volumes};
 use super::lvm::{Volume, parse_lvs_output};
 use super::manifest::{File, Manifest};
 use super::slot::{Kind, Slot, SlotClass};
-use anyhow::{Result, anyhow};
-use std::collections::HashMap;
+use super::uki::UkiEntry;
+use crate::bootctl::BootctlItem;
+use anyhow::{Result, anyhow, bail};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
 pub struct Runtime {
     pub volumes: Vec<Volume>,
     pub kernel: KernelParams,
+    pub ukis: Vec<UkiEntry>,
+    pub boot: String,
 }
 
 /// Well-known params from kernel /proc/cmdline
@@ -31,10 +35,12 @@ impl SlotSelection {
 }
 
 impl Runtime {
-    fn new(lvs: &str, cmdline: &str) -> Self {
+    pub fn new(lvs: &str, cmdline: &str, bootctl: &Vec<BootctlItem>) -> Self {
         Self {
             volumes: parse_lvs_output(lvs),
             kernel: KernelParams::from_cmdline(cmdline),
+            ukis: UkiEntry::from_bootctl(bootctl),
+            boot: "/boot".into(), // FIXME: detect /boot if possible
         }
     }
 
@@ -65,7 +71,6 @@ impl Runtime {
             return Ok(SlotSelection::AlreadyInstalled);
         }
 
-        println!("slots = {:?}", slots);
         // 2. Find empty, non-active slots
         let mut empty_slots = slots
             .into_iter()
@@ -75,10 +80,71 @@ impl Runtime {
 
         // 3. Select one
         if let Some(slot) = empty_slots.next() {
+            let slot = SlotGroup {
+                uki: Some(UkiEntry {
+                    version: manifest.version.clone(),
+                    hash: manifest.hash_fragment().to_string(),
+                    boot_counter: None,
+                }),
+                ..slot
+            };
             Ok(SlotSelection::Selected(slot))
         } else {
             Err(anyhow!("no empty slot available for update"))
         }
+    }
+
+    pub fn find_slot(&self, version: &str, hash: Option<&str>) -> Result<SlotGroup> {
+        println!("{:?}", self.slot_groups()?);
+        let mut candidates = self
+            .slot_groups()?
+            .into_iter()
+            .filter(|s| s.version.as_deref() == Some(version))
+            .filter(|s| match hash {
+                Some(h) => s.hash.as_deref() == Some(h),
+                None => true,
+            });
+
+        let Some(slot) = candidates.next() else {
+            bail!("slot not found: version={version} hash={hash:?}");
+        };
+
+        if candidates.next().is_some() {
+            bail!("ambiguous slot selection for version={version} hash={hash:?}");
+        }
+
+        Ok(slot)
+    }
+
+    pub fn has_empty_with_hash(&self, hash: &str) -> bool {
+        // FIXME: bogus design, I want this function no-error, but slot_groups() can throw
+        if let Ok(groups) = self.slot_groups() {
+            groups
+                .into_iter()
+                .filter(|s| s.hash.as_deref() == Some(hash))
+                .next()
+                .is_some()
+        } else {
+            false
+        }
+    }
+
+    pub fn allocate_empty_identifier(&self) -> Result<String> {
+        let used: Vec<String> = self
+            .slot_groups()?
+            .into_iter()
+            .filter(|s| s.is_empty())
+            .filter_map(|s| s.hash.clone())
+            .collect();
+
+        for i in 0..1000 {
+            let candidate = format!("{i}");
+            if !used.contains(&candidate) {
+                return Ok(candidate);
+            }
+        }
+
+        bail!("infinite empty identifier space");
     }
 }
 
@@ -119,6 +185,18 @@ impl Default for KernelParams {
 }
 
 #[cfg(test)]
+impl Default for Runtime {
+    fn default() -> Self {
+        Self {
+            volumes: Vec::new(),
+            kernel: KernelParams::default(),
+            boot: "/boot".into(),
+            ukis: Vec::new(),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -139,7 +217,7 @@ mod tests {
                 vol("root_1.2.3_deadbeefdeadbeef"),
                 vol("verity_1.2.3_deadbeefdeadbeef"),
             ],
-            kernel: KernelParams::default(),
+            ..Runtime::default()
         };
 
         let groups = rt.slot_groups().expect("group");
@@ -157,7 +235,7 @@ mod tests {
     fn empty_slot_is_grouped() {
         let rt = Runtime {
             volumes: vec![vol("root_empty_01"), vol("verity_empty_01")],
-            kernel: KernelParams::default(),
+            ..Runtime::default()
         };
 
         let groups = rt.slot_groups().expect("group");
@@ -173,7 +251,7 @@ mod tests {
     fn broken_slot_with_only_root_is_preserved() {
         let rt = Runtime {
             volumes: vec![vol("root_2.0.0_abcdabcdabcdabcd")],
-            kernel: KernelParams::default(),
+            ..Runtime::default()
         };
 
         let groups = rt.slot_groups().expect("group");
@@ -188,7 +266,7 @@ mod tests {
     fn non_slot_volumes_are_ignored() {
         let rt = Runtime {
             volumes: vec![vol("swap"), vol("home"), vol("root_1.0.0_aaaaaaaaaaaaaaaa")],
-            kernel: KernelParams::default(),
+            ..Runtime::default()
         };
 
         let groups = rt.slot_groups().expect("group");
@@ -204,7 +282,7 @@ mod tests {
                 vol("root_2.0.0_bbbbbbbbbbbbbbbb"),
                 vol("verity_2.0.0_bbbbbbbbbbbbbbbb"),
             ],
-            kernel: KernelParams::default(),
+            ..Runtime::default()
         };
 
         let mut groups = rt.slot_groups().expect("group");
@@ -219,7 +297,7 @@ mod tests {
     fn legacy_slot_is_grouped_correctly() {
         let rt = Runtime {
             volumes: vec![vol("root_0_deadbeefdeadbeef")],
-            kernel: KernelParams::default(),
+            ..Runtime::default()
         };
 
         let groups = rt.slot_groups().expect("group");
@@ -233,7 +311,7 @@ mod tests {
         Manifest {
             meta: Default::default(),
             version: version.into(),
-            verity_root_hash: hash.into(),
+            root_verity_hash: hash.into(),
             kernel: File {
                 name: "k".into(),
                 sha256sum: "x".into(),
@@ -260,6 +338,7 @@ mod tests {
                 revision: Some("1.2.3".into()),
                 store_hash: Some("deadbeefdeadbeef".into()),
             },
+            ..Runtime::default()
         };
 
         let m = manifest("1.2.3", "deadbeefdeadbeef");
@@ -281,6 +360,7 @@ mod tests {
                 revision: Some("1.0.0".into()),
                 store_hash: Some("aaaaaaaaaaaaaaaa".into()),
             },
+            ..Runtime::default()
         };
 
         let m = manifest("2.0.0", "bbbbbbbbbbbbbbbb");
@@ -296,7 +376,7 @@ mod tests {
     fn incomplete_empty_slot_is_not_selected() {
         let rt = Runtime {
             volumes: vec![vol("root_empty_01")],
-            kernel: KernelParams::default(),
+            ..Runtime::default()
         };
 
         let m = manifest("1.0.0", "aaaaaaaaaaaaaaaa");
@@ -317,6 +397,7 @@ mod tests {
                 vol("verity_empty_02"),
             ],
             kernel: KernelParams::default(),
+            ..Runtime::default()
         };
 
         let m = manifest("1.0.0", "aaaaaaaaaaaaaaaa");
