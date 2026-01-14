@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::{path::Path, sync::Arc};
-use tracing::debug;
+use tracing::{debug, error, info};
 
 use crate::policyadmin_api::policy_manager::PolicyManager;
 use crate::policyadmin_api::policy_repo::PolicyRepoMonitor;
@@ -84,14 +84,19 @@ pub async fn init_policy_manager(
      */
     let monitor: Option<Box<dyn PolicyMonitor>> = match source_type.as_str() {
         "git-repo" => {
+            info!("Monitoring git repo for Policy updates");
             let r = PolicyRepoMonitor::new(policy_root, config_path)?;
             Some(Box::new(Arc::new(r)))
         }
         "URLs" => {
+            info!("Monitoring URLs for Policy updates");
             let r = PolicyUrlMonitor::new(policy_root, config_path)?;
             Some(Box::new(r))
         }
-        _ => None,
+        _ => {
+            error!("Unknown source type: {}", source_type);
+            None
+        }
     };
 
     Ok(monitor.map(|m| m.start()))

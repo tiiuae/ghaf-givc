@@ -122,6 +122,7 @@ impl PolicyUrlMonitor {
                 let policy_name = name.clone();
 
                 let handle = tokio::spawn(async move {
+                    debug!("policy-url-monitor: monitoring policy '{}'...", policy_name);
                     if let Err(e) = poller.monitor_loop(policy_name.clone()).await {
                         error!(
                             "policy-url-monitor: Task failed for '{}': {:#}",
@@ -185,14 +186,27 @@ impl PolicyUrlMonitor {
                     /* 2. Update State & Persist Config */
                     current_head = new_head.clone();
                     self.update_head(&policy_name, new_head).await;
+                    if interval == 0 {
+                        return Ok(());
+                    }
                 }
-                Ok(None) => { /* No change, do nothing */ }
+                Ok(None) => {
+                    debug!("policy-url-monitor: policy is upto date");
+                    /* No change, do nothing */
+                    if interval == 0 {
+                        return Ok(());
+                    }
+                }
                 Err(e) => {
                     error!("policy-url-monitor: [{}] Poll failed: {}", policy_name, e);
                 }
             }
 
-            sleep(Duration::from_secs(interval)).await;
+            if interval > 0 {
+                sleep(Duration::from_secs(interval)).await;
+            } else {
+                sleep(Duration::from_secs(30)).await;
+            }
         }
     }
 
@@ -263,7 +277,7 @@ impl PolicyUrlMonitor {
             hasher.update(&body);
             let hash = format!("sha256:{:x}", hasher.finalize());
             if hash == current_head {
-                return Ok(None); // Content matches hash, no update needed
+                return Ok(None);
             }
             hash
         } else {

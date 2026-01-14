@@ -9,7 +9,7 @@
 }:
 let
   cfg = config.givc.admin;
-  policyConfigPath = "policies/admin/config.json";
+  policyConfigPath = "admin/policy-config.json";
   inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-admin;
   inherit (lib)
     mkOption
@@ -183,7 +183,6 @@ in
       };
 
       liveUpdate = {
-        enable = mkEnableOption "live update";
         remote = {
           gitRepo = {
             enable = mkEnableOption "updates from default git URL";
