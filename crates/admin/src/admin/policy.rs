@@ -83,16 +83,16 @@ pub async fn init_policy_manager(
      * This allows us to assign different structs to the same variable.
      */
     let monitor: Option<Box<dyn PolicyMonitor>> = match source_type.as_str() {
-        "centralised" => {
+        "git-repo" => {
             let r = PolicyRepoMonitor::new(policy_root, config_path)?;
             Some(Box::new(Arc::new(r)))
         }
-        "distributed" => {
+        "URLs" => {
             let r = PolicyUrlMonitor::new(policy_root, config_path)?;
             Some(Box::new(r))
         }
         _ => None,
     };
 
-    Ok(Some(monitor.expect("REASON").start()))
+    Ok(monitor.map(|m| m.start()))
 }

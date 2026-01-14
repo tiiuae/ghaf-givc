@@ -100,12 +100,22 @@ async fn main() -> anyhow::Result<()> {
         )
         .await
         {
-            Ok(handle) => {
-                th_handle = Some(handle.expect("REASON"));
-                debug!("policy-admin: policy manager initialized....");
+            Ok(Some(handle)) => {
+                th_handle = Some(handle);
+                debug!("policy-admin: policy manager initialized and started.");
             }
+
+            Ok(None) => {
+                debug!(
+                    "policy-admin: policy manager initialized with default policies (without live update)."
+                );
+            }
+
             Err(e) => {
-                error!("policy-admin: policy manager initialization failed....");
+                error!(
+                    "policy-admin: policy manager initialization failed: {:?}",
+                    e
+                );
                 return Err(e);
             }
         }

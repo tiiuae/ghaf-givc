@@ -9,7 +9,7 @@
 }:
 let
   cfg = config.givc.admin;
-  policyConfigPath = "policy-admin/policy-config.json";
+  policyConfigPath = "policies/admin/config.json";
   inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-admin;
   inherit (lib)
     mkOption
@@ -22,7 +22,6 @@ let
     concatStringsSep
     attrsets
     literalExpression
-    mapAttrs
     ;
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
@@ -31,31 +30,34 @@ let
   tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
   unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
   vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
-  paCfg = cfg.policy-admin;
   jsonOutput =
-    if (paCfg.enable && paCfg.resource.centralized.enable) then
+    if (cfg.policyAdmin.enable && cfg.policyAdmin.liveUpdate.remote.gitRepo.enable) then
       {
         source = {
-          type = "centralised";
-          inherit (paCfg.resource.centralized) url;
-          inherit (paCfg.resource.centralized) ref;
-          inherit (paCfg.resource.centralized) poll_interval_secs;
+          type = "git-repo";
+          inherit (cfg.policyAdmin.defaultPolicies) url;
+          inherit (cfg.policyAdmin.liveUpdate.remote.gitRepo) ref;
+          inherit (cfg.policyAdmin.liveUpdate.remote.gitRepo) poll_interval_secs;
         };
-        # For centralized, we map the policies to only expose the VMs list
-        policies = mapAttrs (_name: value: {
-          inherit (value) vms;
-        }) paCfg.resource.centralized.policies;
+        policies =
+          cfg.policyAdmin.defaultPolicies.policies // cfg.policyAdmin.liveUpdate.remote.gitRepo.extraPolicies;
       }
-    else if (paCfg.enable && paCfg.resource.distributed.enable) then
+    else if (cfg.policyAdmin.enable && cfg.policyAdmin.liveUpdate.remote.URLs.enable) then
       {
         source = {
-          type = "distributed";
+          type = "URLs";
         };
-        # For distributed, we pass the full policy config (url, vms, interval)
-        inherit (paCfg.resource.distributed) policies;
+        policies =
+          cfg.policyAdmin.defaultPolicies.policies // cfg.policyAdmin.liveUpdate.remote.URLs.policies;
+
       }
     else
-      { };
+      {
+        source = {
+          type = "none";
+        };
+        inherit (cfg.policyAdmin.defaultPolicies) policies;
+      };
 in
 {
   options.givc.admin = {
@@ -147,70 +149,98 @@ in
         > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
       '';
     };
-    policy-admin = {
-      enable = mkEnableOption "policy management";
-      resource = {
-        centralized = {
-          enable = mkEnableOption "centralized policy management";
-
-          url = mkOption {
-            type = types.str;
-            description = "Git URL for the centralized policy repo";
-            default = "";
-          };
-
-          ref = mkOption {
-            type = types.str;
-            default = "master";
-            description = "Git reference (branch/tag)";
-          };
-
-          poll_interval_secs = mkOption {
-            type = types.int;
-            default = 30;
-            description = "Global polling interval for the centralized repo";
-          };
-
-          policies = mkOption {
-            description = "Map of policy names to their target VMs";
-            default = { };
-            type = types.attrsOf (
-              types.submodule {
-                options.vms = mkOption {
-                  type = types.listOf types.str;
-                  default = [ ];
-                  description = "List of VMs this policy applies to";
-                };
-              }
-            );
-          };
+    policyAdmin = {
+      enable = mkEnableOption "policy admin";
+      defaultPolicies = {
+        url = mkOption {
+          type = types.nullOr types.str;
+          description = "Git URL of policy repository";
+          default = null;
         };
+        rev = mkOption {
+          type = types.nullOr types.str;
+          description = "Rev of the  default policies in the policy repository";
+          default = null;
+        };
+        sha256 = mkOption {
+          type = types.nullOr types.str;
+          description = "SHA of the rev of the default policies in the policy repository";
+          default = null;
+        };
+        policies = mkOption {
+          description = "Map of policy names to their target VMs";
+          default = { };
+          type = types.attrsOf (
+            types.submodule {
+              options.vms = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = "List of VMs this policy applies to";
+              };
+            }
+          );
+        };
+      };
 
-        # Distributed Configuration Options
-        distributed = {
-          enable = mkEnableOption "distributed policy management";
+      liveUpdate = {
+        enable = mkEnableOption "live update";
+        remote = {
+          gitRepo = {
+            enable = mkEnableOption "updates from default git URL";
+            ref = mkOption {
+              type = types.str;
+              default = "master";
+              description = "Git reference (branch/tag)";
+            };
 
-          policies = mkOption {
-            description = "Map of distributed policies";
-            default = { };
-            type = types.attrsOf (
-              types.submodule {
-                options = {
-                  vms = mkOption {
+            poll_interval_secs = mkOption {
+              type = types.int;
+              default = 30;
+              description = "Global polling interval for the centralized repo";
+            };
+
+            extraPolicies = mkOption {
+              description = "Map of policy names to their target VMs";
+              default = { };
+              type = types.attrsOf (
+                types.submodule {
+                  options.vms = mkOption {
                     type = types.listOf types.str;
                     default = [ ];
+                    description = "List of VMs this policy applies to";
                   };
-                  url = mkOption {
-                    type = types.str;
-                    description = "URL for the specific policy artifact";
+                }
+              );
+            };
+          };
+
+          # Distributed Configuration Options
+          URLs = {
+            enable = mkEnableOption "policies hosted on multiple URLs";
+            policies = mkOption {
+              description = "Map of distributed policies";
+              default = { };
+              type = types.attrsOf (
+                types.submodule {
+                  options = {
+                    vms = mkOption {
+                      description = "List of VMs this policy applies to";
+                      type = types.listOf types.str;
+                      default = [ ];
+                    };
+                    url = mkOption {
+                      type = types.str;
+                      description = "URL for the specific policy artifact";
+                    };
+                    poll_interval_secs = mkOption {
+                      description = "Polling interval for the specific policy artifact";
+                      type = types.int;
+                      default = 30;
+                    };
                   };
-                  poll_interval_secs = mkOption {
-                    type = types.int;
-                    default = 30;
-                  };
-                };
-              }
-            );
+                }
+              );
+            };
           };
         };
       };
@@ -225,8 +255,11 @@ in
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
       }
       {
-        assertion = !(paCfg.resource.centralized.enable && paCfg.resource.distributed.enable);
-        message = "'centralized' and 'distributed' policies cannot be enabled simultaneously.";
+        assertion =
+          !(
+            cfg.policyAdmin.liveUpdate.remote.URLs.enable && cfg.policyAdmin.liveUpdate.remote.gitRepo.enable
+          );
+        message = "'URLs' and 'gitRepo' hosted policies cannot co-exist.";
       }
     ];
 
@@ -237,6 +270,28 @@ in
           ++ (map (addr: "--listen ${addr.addr}") unixAddresses)
           ++ (map (addr: "--listen vsock:${addr.addr}:${addr.port}") vsockAddresses)
         );
+        defaultPolicySrc = pkgs.fetchgit {
+          inherit (cfg.policyAdmin.defaultPolicies) url;
+          inherit (cfg.policyAdmin.defaultPolicies) rev;
+          inherit (cfg.policyAdmin.defaultPolicies) sha256;
+          leaveDotGit = true;
+        };
+
+        preStartScript = pkgs.writeScript "policy_init" ''
+          #!${pkgs.bash}/bin/bash
+          policyDir=/etc/policies
+          if [ -d $policyDir/data ]; then
+            echo "Policy is up to date."
+            exit 0
+          fi
+
+          install -d -m 0755  "$policyDir/data"
+          ${pkgs.rsync}/bin/rsync -ar "${defaultPolicySrc}/.git" "$policyDir/data/"
+
+          if [ -d "${defaultPolicySrc}/vm-policies" ]; then
+            ${pkgs.rsync}/bin/rsync -ar "${defaultPolicySrc}/vm-policies" "$policyDir/data/"
+          fi
+        '';
       in
       {
         description = "GIVC admin module.";
@@ -250,6 +305,7 @@ in
           Restart = "on-failure";
           TimeoutStopSec = 5;
           RestartSec = 1;
+          ExecStartPre = mkIf cfg.policyAdmin.enable "!${preStartScript}";
         };
         environment = {
           "NAME" = "${cfg.name}";
@@ -257,7 +313,7 @@ in
           "SUBTYPE" = "5";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "SERVICES" = "${concatStringsSep " " cfg.services}";
-          "POLICY_ADMIN" = "${trivial.boolToString paCfg.enable}";
+          "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
           "POLICY_CONFIG" = "/etc/${policyConfigPath}";
         }
         // attrsets.optionalAttrs cfg.tls.enable {
