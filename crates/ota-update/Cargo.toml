@@ -8,9 +8,11 @@ version = "0.0.1"
 
 [dependencies]
 anyhow = "1.0.100"
+async-trait = "*"
 axum = "*"
 bootspec = "*"
 clap = { version = "4.5.54", features = ["derive", "env"] }
+fs2 = "*" # For locking
 regex = "*"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",

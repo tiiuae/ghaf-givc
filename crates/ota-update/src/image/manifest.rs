@@ -6,7 +6,9 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct File {
+    #[serde(rename = "file")]
     pub name: String,
+    #[serde(rename = "sha256")]
     pub sha256sum: String,
 }
 
@@ -14,8 +16,9 @@ pub struct File {
 pub struct Manifest {
     pub meta: HashMap<String, String>,
     pub version: String,
-    pub verity_root_hash: String,
+    pub root_verity_hash: String,
     pub kernel: File,
+    #[serde(rename = "root")]
     pub store: File,
     pub verity: File,
 }
@@ -28,7 +31,7 @@ impl Manifest {
     }
 
     pub fn hash_fragment(&self) -> &str {
-        &self.verity_root_hash[..16]
+        &self.root_verity_hash[..16]
     }
 
     // Validate, if all files mentioned in manifest exists (and have matching hash)
@@ -47,10 +50,12 @@ impl Manifest {
 }
 
 impl File {
-    fn full_name(&self, base_dir: &Path) -> PathBuf {
-        let mut path = PathBuf::from(base_dir);
-        path.push(&self.name);
-        path
+    pub fn full_name<P: AsRef<Path>>(&self, base_dir: P) -> PathBuf {
+        base_dir.as_ref().join(&self.name)
+    }
+
+    pub fn is_compressed(&self) -> bool {
+        self.name.ends_with(".zst")
     }
 
     fn validate(&self, base_dir: &Path, _checksum: bool) -> anyhow::Result<()> {
