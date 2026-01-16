@@ -15,7 +15,7 @@ require (
 	github.com/jbdemonte/virtual-device v1.1.1-0.20250823152348-1aea79039990
 	github.com/linuxkit/virtsock v0.0.0-20241009230534-cb6a20cc0422
 	github.com/shirou/gopsutil v3.21.11+incompatible
-	github.com/sirupsen/logrus v1.9.3
+	github.com/sirupsen/logrus v1.9.4
 	golang.org/x/net v0.48.0
 	golang.org/x/sync v0.19.0
 	google.golang.org/grpc v1.78.0
