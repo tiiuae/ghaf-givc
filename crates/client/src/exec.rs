@@ -145,12 +145,15 @@ impl ExecClient {
         };
 
         // Create a streaming request
-        let request_stream = tokio_stream::once(
+        let request_stream = stream! {
             // Send the StartCommand
-            CommandRequest {
+            yield CommandRequest {
                 command: Some(Command::Start(start_command)),
-            },
-        );
+            };
+            yield CommandRequest {
+                command: Some(Command::Stdin(CommandIO { payload: vec![], eof: true })),
+            }
+        };
 
         // Open the request stream and capture responses
         let mut response = self

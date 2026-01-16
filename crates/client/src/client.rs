@@ -1,9 +1,8 @@
 use anyhow::bail;
 use async_channel::Receiver;
-use async_stream::{stream, try_stream};
 use gethostname::gethostname;
 use tokio::sync::mpsc;
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tracing::{debug, info};
 
@@ -524,25 +523,11 @@ impl AdminClient {
         &self,
         req: String,
         args: Vec<String>,
-        mut request: impl Stream<Item = Vec<u8>> + Send + Sync + std::marker::Unpin + 'static,
-    ) -> anyhow::Result<impl Stream<Item = anyhow::Result<Vec<u8>>>> {
-        let stream = stream! {
-            yield pb::admin::CtapRequest {
-                request: Some(pb::admin::ctap_request::Request::Start(pb::admin::CtapBegin { req, args })),
-            };
-            while let Some(input) = request.next().await {
-                yield pb::admin::CtapRequest {
-                    request: Some(pb::admin::ctap_request::Request::Input(input)),
-                };
-            }
-        };
+        payload: Vec<u8>,
+    ) -> anyhow::Result<Vec<u8>> {
+        let req = pb::CtapRequest { req, args, payload };
+        let response = self.connect_to().await?.ctap(req).await?.into_inner();
 
-        let mut response = self.connect_to().await?.ctap(stream).await?.into_inner();
-
-        Ok(try_stream! {
-            while let Some(pb::admin::CtapResponse { output }) = response.next().await.transpose()? {
-                yield output;
-            }
-        })
+        Ok(response.output)
     }
 }

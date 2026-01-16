@@ -1,4 +1,3 @@
-use async_stream::stream;
 use clap::{Parser, Subcommand};
 use givc::endpoint::TlsConfig;
 use givc::types::UnitType;
@@ -13,7 +12,6 @@ use std::path::PathBuf;
 use std::time;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::interval;
-use tokio_stream::StreamExt;
 use tracing::info;
 
 #[derive(Debug, Parser)] // requires `derive` feature
@@ -285,24 +283,15 @@ impl UpdateSub {
 }
 
 async fn ctap(admin: AdminClient, operation: String) -> anyhow::Result<()> {
-    let mut input = tokio::io::stdin();
-    let input_stream = Box::pin(stream! {
-        let mut buf = [0u8; 1024];
-        while let Ok(n) = input.read(&mut buf).await && n > 0 {
-            yield Vec::from(&buf[0..n]);
-        }
-    });
+    let mut payload = vec![];
+    tokio::io::stdin().read_to_end(&mut payload).await?;
     let (op, args) = if let Some((op, args)) = operation.split_once('+') {
         (op.to_string(), vec![args.to_string()])
     } else {
         (operation, vec![])
     };
-    let mut ctap = Box::pin(admin.ctap(op, args, input_stream).await?);
-    let mut output = tokio::io::stdout();
-
-    while let Some(bytes) = ctap.next().await.transpose()? {
-        output.write_all(&bytes).await?;
-    }
+    let output = admin.ctap(op, args, payload).await?;
+    tokio::io::stdout().write_all(&output).await?;
     Ok(())
 }
 

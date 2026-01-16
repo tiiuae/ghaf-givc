@@ -2,20 +2,19 @@
 
 use super::entry::{Placement, RegistryEntry};
 use crate::pb::{
-    self, ApplicationRequest, ApplicationResponse, CtapBegin, CtapRequest, CtapResponse, Empty,
+    self, ApplicationRequest, ApplicationResponse, CtapRequest, CtapResponse, Empty,
     ListGenerationsResponse, LocaleRequest, QueryListResponse, RegistryRequest, RegistryResponse,
     SetGenerationRequest, SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest,
     UnitStatusRequest, WatchItem,
 };
 use anyhow::{Context, anyhow, bail};
-use async_stream::{stream, try_stream};
+use async_stream::try_stream;
 use givc_common::query::Event;
 use regex::Regex;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
-use tonic::{Code, Response, Status, Streaming};
+use tonic::{Code, Response, Status};
 use tracing::{debug, error, info};
 
 pub use pb::admin_service_server::AdminServiceServer;
@@ -26,7 +25,7 @@ use crate::types::{ServiceType, UnitType, VmType};
 use crate::utils::naming::VmName;
 use crate::utils::tonic::{Stream, WrapError, escalate};
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
-use givc_client::exec::{CommandOutput, ExecClient};
+use givc_client::exec::ExecClient;
 use givc_common::query::QueryResult;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
@@ -847,62 +846,43 @@ impl pb::admin_service_server::AdminService for AdminService {
         .await
     }
 
-    type CtapStream = Stream<CtapResponse>;
     async fn ctap(
         &self,
-        request: tonic::Request<Streaming<CtapRequest>>,
-    ) -> Result<tonic::Response<Self::CtapStream>, tonic::Status> {
-        escalate(request, async move |mut req| {
+        request: tonic::Request<CtapRequest>,
+    ) -> Result<tonic::Response<CtapResponse>, tonic::Status> {
+        escalate(request, async move |req| {
             let gui_vm_mgr = self
                 .inner
                 .agent_endpoint("givc-gui-vm.service")
                 .context("VM not found")?;
             let mut client = ExecClient::connect(gui_vm_mgr).await?;
 
-            let Ok(Some(CtapRequest {
-                request: Some(pb::admin::ctap_request::Request::Start(CtapBegin { req: op, args })),
-            })) = req.message().await
-            else {
-                anyhow::bail!("Invalid stuff.");
-            };
-            let cmd = match op.as_str() {
+            let cmd = match req.req.as_str() {
                 "ctap.ClientPin" => "qctap-client-pin",
                 "ctap.GetInfo" => "qctap-get-info",
                 "u2f.Authenticate" => "qctap-get-assertion",
                 "u2f.Register" => "qctap-make-credential",
                 _ => anyhow::bail!("Invalid operation"),
             };
-            let stream = Box::pin(stream! {
-                loop {
-                    match req.message().await {
-                        Ok(Some(CtapRequest { request: Some(pb::admin::ctap_request::Request::Input(input)) })) => {
-                            yield input;
-                        }
-                        Ok(None) => {
-                            break;
-                        }
-                        Err(e) => {
-                            error!("Failed to receive subscription item from registry: {e}");
-                            break;
-                        }
-                        _ => {
-                            error!("Invalid request");
-                            break;
-                        }
-                     }
-                 }
-            });
 
-            Ok(Box::pin(try_stream! {
-                let mut stream = client.start_command_stream(cmd.into(), args, None, None, stream, None).await.wrap_error()?;
-
-                while let Some(req) = stream.next().await {
-                    match req.wrap_error()? {
-                        CommandOutput::Stdout(output) => yield CtapResponse { output },
-                        CommandOutput::Stderr(_) => {},
-                    }
-                }
-            }) as Self::CtapStream)
+            let mut output = vec![];
+            client
+                .start_command(
+                    cmd.into(),
+                    req.args,
+                    None,
+                    None,
+                    Some(req.payload),
+                    None,
+                    |data, _eof| {
+                        output.extend_from_slice(&data);
+                        async {}
+                    },
+                    async |_, _| (),
+                )
+                .await
+                .wrap_error()?;
+            Ok(pb::CtapResponse { output })
         })
         .await
     }
