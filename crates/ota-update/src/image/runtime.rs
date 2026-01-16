@@ -1,3 +1,4 @@
+use super::Version;
 use super::group::{SlotGroup, group_volumes};
 use super::lvm::{Volume, parse_lvs_output};
 use super::manifest::{File, Manifest};
@@ -171,6 +172,15 @@ impl KernelParams {
 
     pub fn verity_hash_fragment(&self) -> Option<&str> {
         self.store_hash.as_deref().map(|h| &h[..16])
+    }
+
+    pub fn to_version(&self) -> Option<Version> {
+        self.revision.as_deref().map(|r| {
+            Version::new(
+                r.to_string(),
+                self.verity_hash_fragment().map(|h| h.to_string()),
+            )
+        })
     }
 }
 

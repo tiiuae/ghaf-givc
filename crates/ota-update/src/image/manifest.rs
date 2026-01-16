@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use serde::Deserialize;
 
+use super::Version;
+
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct File {
     #[serde(rename = "file")]
@@ -32,6 +34,10 @@ impl Manifest {
 
     pub fn hash_fragment(&self) -> &str {
         &self.root_verity_hash[..16]
+    }
+
+    pub fn to_version(&self) -> Version {
+        Version::new(self.version.clone(), Some(self.hash_fragment().to_string()))
     }
 
     // Validate, if all files mentioned in manifest exists (and have matching hash)

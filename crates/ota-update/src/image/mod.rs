@@ -8,6 +8,9 @@ pub mod plan;
 pub mod runtime;
 pub mod slot;
 pub mod uki;
+pub mod version;
+
+pub use version::Version;
 
 #[cfg(test)]
 pub mod test;
