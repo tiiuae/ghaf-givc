@@ -16,10 +16,12 @@ impl std::fmt::Display for VmName<'_> {
 }
 
 impl VmName<'_> {
+    #[must_use]
     pub fn agent_service(&self) -> String {
         format!("givc-{self}.service")
     }
 
+    #[must_use]
     pub fn vm_service(&self) -> String {
         format!("microvm@{self}.service")
     }
@@ -42,7 +44,7 @@ pub fn parse_application_name(name: &str) -> anyhow::Result<(&str, i32)> {
             .with_context(|| format!("While parsing number part of {name}"))?;
         return Ok((left, num));
     }
-    bail!("App name {} not it app@<number>.service format", name)
+    bail!("App name {name} not it app@<number>.service format");
 }
 
 #[cfg(test)]

@@ -91,7 +91,7 @@ impl OTA {
                     None,
                     None,
                     None,
-                    |stdout| {
+                    |stdout, _eof| {
                         let out = String::from_utf8_lossy(&stdout);
                         debug!("stdout: {}", out);
                         emitter.emit(SetGenerationResponse {
@@ -100,7 +100,7 @@ impl OTA {
                             error: None,
                         })
                     },
-                    |stderr| {
+                    |stderr, _eof| {
                         let err = String::from_utf8_lossy(&stderr);
                         debug!("stderr: {}", err);
                         emitter.emit(SetGenerationResponse {

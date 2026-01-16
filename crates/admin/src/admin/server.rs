@@ -2,10 +2,10 @@
 
 use super::entry::{Placement, RegistryEntry};
 use crate::pb::{
-    self, ApplicationRequest, ApplicationResponse, Empty, ListGenerationsResponse, LocaleRequest,
-    QueryListResponse, RegistryRequest, RegistryResponse, SetGenerationRequest,
-    SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest, UnitStatusRequest,
-    WatchItem,
+    self, ApplicationRequest, ApplicationResponse, CtapRequest, CtapResponse, Empty,
+    ListGenerationsResponse, LocaleRequest, QueryListResponse, RegistryRequest, RegistryResponse,
+    SetGenerationRequest, SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest,
+    UnitStatusRequest, WatchItem,
 };
 use anyhow::{Context, anyhow, bail};
 use async_stream::try_stream;
@@ -23,8 +23,9 @@ use crate::admin::registry::Registry;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
 use crate::utils::naming::VmName;
-use crate::utils::tonic::{Stream, escalate};
+use crate::utils::tonic::{Stream, WrapError, escalate};
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
+use givc_client::exec::ExecClient;
 use givc_common::query::QueryResult;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
@@ -360,8 +361,7 @@ impl AdminServiceImpl {
         let vm = req
             .vm_name
             .as_deref()
-            .map(VmName::Vm)
-            .unwrap_or(VmName::App(&name));
+            .map_or(VmName::App(&name), VmName::Vm);
         let vm_name = vm.vm_service();
         let systemd_agent_name = vm.agent_service();
 
@@ -842,6 +842,47 @@ impl pb::admin_service_server::AdminService for AdminService {
                 }
                 _ => anyhow::bail!("unimplemented update method"),
             }
+        })
+        .await
+    }
+
+    async fn ctap(
+        &self,
+        request: tonic::Request<CtapRequest>,
+    ) -> Result<tonic::Response<CtapResponse>, tonic::Status> {
+        escalate(request, async move |req| {
+            let gui_vm_mgr = self
+                .inner
+                .agent_endpoint("givc-gui-vm.service")
+                .context("VM not found")?;
+            let mut client = ExecClient::connect(gui_vm_mgr).await?;
+
+            let cmd = match req.req.as_str() {
+                "ctap.ClientPin" => "qctap-client-pin",
+                "ctap.GetInfo" => "qctap-get-info",
+                "u2f.Authenticate" => "qctap-get-assertion",
+                "u2f.Register" => "qctap-make-credential",
+                _ => anyhow::bail!("Invalid operation"),
+            };
+
+            let mut output = vec![];
+            client
+                .start_command(
+                    cmd.into(),
+                    req.args,
+                    None,
+                    None,
+                    Some(req.payload),
+                    None,
+                    |data, _eof| {
+                        output.extend_from_slice(&data);
+                        async {}
+                    },
+                    async |_, _| (),
+                )
+                .await
+                .wrap_error()?;
+            Ok(pb::CtapResponse { output })
         })
         .await
     }

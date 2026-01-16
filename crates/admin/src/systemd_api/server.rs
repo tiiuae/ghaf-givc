@@ -54,7 +54,7 @@ impl pb::systemd::unit_control_service_server::UnitControlService for SystemdSer
     ) -> Result<tonic::Response<pb::systemd::UnitResponse>, Status> {
         unimplemented!()
     }
-    /// Server streaming response type for the MonitorUnit method.
+    /// Server streaming response type for the `MonitorUnit` method.
     type MonitorUnitStream = Stream<pb::systemd::UnitResourceResponse>;
     async fn monitor_unit(
         &self,
@@ -62,13 +62,7 @@ impl pb::systemd::unit_control_service_server::UnitControlService for SystemdSer
     ) -> Result<Response<Self::MonitorUnitStream>, Status> {
         unimplemented!()
     }
-    // FIXME: removed from proto?
-    //         async fn dbus_method(
-    //             &self,
-    //             request: tonic::Request<pb::systemd::UnitRequest>,
-    //         ) -> std::result::Result<tonic::Response<pb::systemd::UnitResponse>, Status>{
-    //                unimplemented!()
-    //         }
+
     async fn start_application(
         &self,
         _request: Request<pb::systemd::AppUnitRequest>,
