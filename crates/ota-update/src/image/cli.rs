@@ -1,3 +1,4 @@
+use super::Version;
 use super::executor::{DryRunExecutor, Executor, ShellExecutor};
 use super::manifest::Manifest;
 use super::plan::Plan;
@@ -64,7 +65,8 @@ impl ImageUpdate {
             }
 
             ImageAction::Remove { version, hash } => {
-                let plan = Plan::remove(&rt, &version, hash.as_deref())?;
+                let version = Version::new(version, hash);
+                let plan = Plan::remove(&rt, &version)?;
 
                 execute_plan(plan, self.dry_run).await
             }

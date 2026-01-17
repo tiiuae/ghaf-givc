@@ -1,13 +1,14 @@
+use super::Version;
+use super::slot::Slot;
 use crate::bootctl::BootctlItem;
 use anyhow::{Result, anyhow, bail};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UkiEntry {
     /// Slot identity
-    pub version: String,
-    pub hash: String,
+    pub version: Version,
 
     /// Boot loader counters parsed from filename
     pub boot_counter: Option<BootCounter>,
@@ -21,7 +22,7 @@ pub struct BootCounter {
 
 impl fmt::Display for UkiEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ghaf-{}-{}", self.version, self.hash)?;
+        write!(f, "ghaf-{}", self.version)?;
 
         if let Some(counter) = &self.boot_counter {
             write!(f, "+{}", counter.remaining)?;
@@ -81,8 +82,7 @@ impl TryFrom<&str> for UkiEntry {
         }
 
         Ok(UkiEntry {
-            version: version.to_string(),
-            hash: hash.to_string(),
+            version: Version::new(version.to_string(), Some(hash.to_string())),
             boot_counter,
         })
     }
@@ -108,6 +108,10 @@ impl UkiEntry {
 
     pub fn full_name<P: AsRef<Path>>(&self, base_dir: P) -> PathBuf {
         base_dir.as_ref().join(&self.to_string())
+    }
+
+    pub fn matches(&self, slot: &Slot) -> bool {
+        slot.version().as_deref() == Some(&self.version)
     }
 }
 

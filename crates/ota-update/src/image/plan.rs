@@ -1,3 +1,4 @@
+use super::Version;
 use super::group::SlotGroup;
 use super::lvm::Volume;
 use super::manifest::{File, Manifest};
@@ -44,26 +45,14 @@ impl Plan {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("slot has no verity volume"))?;
 
-        steps.push(Self::install_volume(root, &m.store, source)?);
-        steps.push(Self::install_volume(verity, &m.verity, source)?);
-        steps.push(Self::finalize_flush(root));
-        steps.push(Self::finalize_flush(verity));
+        steps.push(Self::install_volume(root.volume(), &m.store, source)?);
+        steps.push(Self::install_volume(verity.volume(), &m.verity, source)?);
+        steps.push(Self::finalize_flush(root.volume()));
+        steps.push(Self::finalize_flush(verity.volume()));
 
-        // FIXME: rewrite!
-        let newname = Slot {
-            kind: Kind::Root,
-            version: Some(m.version.clone()),
-            hash: Some(m.hash_fragment().to_string()),
-        };
-        steps.push(Self::finalize_lvrename(root, &newname.to_string()));
-
-        // FIXME: rewrite!
-        let newname = Slot {
-            kind: Kind::Verity,
-            version: Some(m.version.clone()),
-            hash: Some(m.hash_fragment().to_string()),
-        };
-        steps.push(Self::finalize_lvrename(verity, &newname.to_string()));
+        // FIXME: clone!
+        steps.push(root.clone().into_version(m.to_version())?.rename());
+        steps.push(verity.clone().into_version(m.to_version())?.rename());
         steps.push(Self::install_uki(slot, &m.kernel, &rt.boot, source)?);
 
         Ok(Plan { steps })
@@ -113,15 +102,6 @@ impl Plan {
         ))
     }
 
-    fn finalize_lvrename(volume: &Volume, final_name: &str) -> Pipeline {
-        Pipeline::new(
-            CommandSpec::new("lvrename")
-                .arg(&volume.vg_name)
-                .arg(&volume.lv_name)
-                .arg(final_name),
-        )
-    }
-
     fn finalize_flush(volume: &Volume) -> Pipeline {
         let dev = format!("/dev/mapper/{}-{}", volume.vg_name, volume.lv_name);
         Pipeline::new(CommandSpec::new("blockdev").arg("--flushbufs").arg(dev))
@@ -129,8 +109,8 @@ impl Plan {
 }
 
 impl Plan {
-    pub fn remove(rt: &Runtime, version: &str, hash: Option<&str>) -> anyhow::Result<Self> {
-        let slot = rt.find_slot(version, hash)?;
+    pub fn remove(rt: &Runtime, version: &Version) -> anyhow::Result<Self> {
+        let slot = rt.find_slot(version)?;
 
         if slot.is_active(&rt.kernel) {
             bail!("cannot remove active slot");
@@ -144,8 +124,8 @@ impl Plan {
         }
 
         // Full slot: rename to empty
-        let empty_id = match &slot.hash {
-            Some(h) if !rt.has_empty_with_hash(h) => h.clone(),
+        let empty_id = match &slot.empty_id() {
+            Some(h) if !rt.has_empty_with_hash(h) => h.to_string(),
             _ => rt.allocate_empty_identifier()?,
         };
 
@@ -166,6 +146,7 @@ impl Plan {
         let mut steps = Vec::new();
 
         if let Some(root) = &slot.root {
+            let root = root.volume();
             steps.push(Pipeline::new(
                 CommandSpec::new("lvrename")
                     .arg(&root.vg_name)
@@ -175,6 +156,7 @@ impl Plan {
         }
 
         if let Some(verity) = &slot.verity {
+            let verity = verity.volume();
             steps.push(Pipeline::new(
                 CommandSpec::new("lvrename")
                     .arg(&verity.vg_name)
@@ -228,9 +210,11 @@ mod tests {
             "lvrename pool root_25.12.1_deadbeefdeadbeef root_empty_0",
             "lvrename pool verity_25.12.1_deadbeefdeadbeef verity_empty_0",
         ];
-        let plan = Plan::remove(&rt, "25.12.1", None).expect("remove failed");
+        let version = Version::new("25.12.1", None);
+        let plan = Plan::remove(&rt, &version).expect("remove failed");
         assert_eq!(plan.into_script(), expected);
-        let plan = Plan::remove(&rt, "25.12.1", Some("deadbeefdeadbeef")).expect("remove failed");
+        let version = Version::new("25.12.1", Some("deadbeefdeadbeef"));
+        let plan = Plan::remove(&rt, &version).expect("remove failed");
         assert_eq!(plan.into_script(), expected);
     }
 }

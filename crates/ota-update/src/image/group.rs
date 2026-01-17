@@ -1,3 +1,4 @@
+use super::Version;
 use super::lvm::Volume;
 use super::runtime::{KernelParams, Runtime};
 use super::slot::{Kind, Slot, SlotClass};
@@ -5,170 +6,217 @@ use super::uki::UkiEntry;
 use anyhow::{Result, bail};
 use std::collections::HashMap;
 
-#[derive(Debug)]
-struct VolumeSlot {
-    pub volume: Volume,
-    pub slot: Slot,
-}
-
-impl VolumeSlot {
-    pub fn try_from_volume(volume: &Volume) -> Result<Self> {
-        let slot = Slot::try_from(volume.lv_name.as_str())?;
-        Ok(Self {
-            volume: volume.clone(),
-            slot,
-        })
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct SlotGroup {
-    pub version: Option<String>,
-    pub hash: Option<String>,
-    pub root: Option<Volume>,
-    pub verity: Option<Volume>,
+    pub root: Option<Slot>,
+    pub verity: Option<Slot>,
     pub uki: Option<UkiEntry>,
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
-struct SlotKey {
-    version: Option<String>,
-    hash: Option<String>,
-}
-
-impl From<&UkiEntry> for SlotKey {
-    fn from(uki: &UkiEntry) -> Self {
-        Self {
-            version: Some(uki.version.clone()),
-            hash: Some(uki.hash.clone()),
+impl SlotGroup {
+    fn matches_slot(&self, slot: &Slot) -> bool {
+        if let Some(root) = &self.root {
+            return root.matches(slot);
         }
+        if let Some(verity) = &self.verity {
+            return verity.matches(slot);
+        }
+        false
+    }
+
+    fn matches_uki(&self, uki: &UkiEntry) -> bool {
+        // UKI всегда Used и не legacy
+        if let Some(root) = &self.root {
+            return root.version().is_some_and(|v| v == &uki.version);
+        }
+        if let Some(verity) = &self.verity {
+            return verity.version().is_some_and(|v| v == &uki.version);
+        }
+        false
     }
 }
 
 impl SlotGroup {
-    fn key(&self) -> SlotKey {
-        SlotKey {
-            version: self.version.clone(),
-            hash: self.hash.clone(),
-        }
-    }
-}
+    pub fn group_volumes(
+        volumes: Vec<Volume>,
+        ukis: Vec<UkiEntry>,
+    ) -> anyhow::Result<Vec<SlotGroup>> {
+        let slots = Slot::from_volumes(volumes);
 
-pub fn group_volumes(volumes: &Vec<Volume>) -> Result<Vec<SlotGroup>> {
-    let mut map: HashMap<SlotKey, SlotGroup> = HashMap::new();
+        let mut groups: Vec<SlotGroup> = Vec::new();
 
-    for volume in volumes {
-        let VolumeSlot { volume, slot } = match VolumeSlot::try_from_volume(volume) {
-            Ok(slot) => slot,
-            Err(_) => continue, // Ignore non-slot volumes
-        };
+        // 1. Group LVM slots (root / verity)
+        for slot in slots {
+            if let Some(group) = groups.iter_mut().find(|g| g.matches_slot(&slot)) {
+                match slot.kind() {
+                    Kind::Root => {
+                        if group.root.is_some() {
+                            anyhow::bail!("duplicate root slot in group");
+                        }
+                        group.root = Some(slot);
+                    }
+                    Kind::Verity => {
+                        if group.verity.is_some() {
+                            anyhow::bail!("duplicate verity slot in group");
+                        }
+                        group.verity = Some(slot);
+                    }
+                }
+            } else {
+                // Create new group
+                let mut group = SlotGroup {
+                    root: None,
+                    verity: None,
+                    uki: None,
+                };
 
-        let key = SlotKey {
-            version: slot.version.clone(),
-            hash: slot.hash.clone(),
-        };
+                match slot.kind() {
+                    Kind::Root => group.root = Some(slot),
+                    Kind::Verity => group.verity = Some(slot),
+                }
 
-        let entry = map.entry(key).or_insert_with(|| SlotGroup {
-            version: slot.version.clone(),
-            hash: slot.hash.clone(),
-            root: None,
-            verity: None,
-            uki: None,
-        });
-
-        match slot.kind {
-            Kind::Root => entry.root = Some(volume),
-            Kind::Verity => entry.verity = Some(volume),
-        }
-    }
-
-    Ok(map.into_values().collect())
-}
-
-pub fn group_uki(mut slot_groups: Vec<SlotGroup>, ukis: Vec<UkiEntry>) -> Result<Vec<SlotGroup>> {
-    let mut uki_map: HashMap<SlotKey, UkiEntry> = HashMap::new();
-
-    for uki in ukis {
-        let key = SlotKey::from(&uki);
-        if uki_map.insert(key, uki.clone()).is_some() {
-            bail!(
-                "invalid state: multiple UKIs for version={} hash={}",
-                uki.version,
-                uki.hash
-            );
-        }
-    }
-
-    for slot in &mut slot_groups {
-        // legacy slot — no UKI
-        if slot.is_legacy() {
-            continue;
+                groups.push(group);
+            }
         }
 
-        if slot.is_empty() {
-            continue; // empty slot
-        };
-
-        if let Some(uki) = uki_map.remove(&slot.key()) {
-            slot.uki = Some(uki);
+        // 2. Attach UKIs to existing groups or create new ones
+        for uki in ukis {
+            if let Some(group) = groups.iter_mut().find(|g| g.matches_uki(&uki)) {
+                if group.uki.is_some() {
+                    anyhow::bail!("invalid state: multiple UKIs for version={}", uki.version,);
+                }
+                group.uki = Some(uki);
+            } else {
+                // UKI without volumes → still a valid group
+                groups.push(SlotGroup {
+                    root: None,
+                    verity: None,
+                    uki: Some(uki),
+                });
+            }
         }
-    }
 
-    for uki in uki_map.into_values() {
-        slot_groups.push(SlotGroup {
-            version: Some(uki.version.clone()),
-            hash: Some(uki.hash.clone()),
-            root: None,
-            verity: None,
-            uki: Some(uki),
-        })
+        Ok(groups)
     }
-
-    Ok(slot_groups)
 }
 
 impl SlotGroup {
+    /// Returns version of this slot group, if any.
+    ///
+    /// Source priority:
+    /// 1. root slot
+    /// 2. verity slot
+    /// 3. UKI (orphan group)
+    #[must_use]
+    pub fn version(&self) -> Option<&Version> {
+        if let Some(root) = &self.root {
+            return root.version();
+        }
+        if let Some(verity) = &self.verity {
+            return verity.version();
+        }
+        if let Some(uki) = &self.uki {
+            // UKI always represents a used slot
+            // Version is reconstructed only for comparison / display
+            // (no leaking into internal logic)
+            return Some(&uki.version);
+        }
+        None
+    }
+
+    /// Returns empty identifier for this group, if it is an empty slot.
+    ///
+    /// If the group consists only of an orphan UKI, returns None.
+    #[must_use]
+    pub fn empty_id(&self) -> Option<&str> {
+        if let Some(root) = &self.root {
+            return root.empty_id();
+        }
+        if let Some(verity) = &self.verity {
+            return verity.empty_id();
+        }
+        None
+    }
+
+    #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.version.is_none()
+        let mut has_slot = false;
+
+        if let Some(root) = &self.root {
+            has_slot = true;
+            if !root.is_empty() {
+                return false;
+            }
+        }
+
+        if let Some(verity) = &self.verity {
+            has_slot = true;
+            if !verity.is_empty() {
+                return false;
+            }
+        }
+
+        has_slot
+    }
+
+    #[must_use]
+    pub fn is_used(&self) -> bool {
+        self.root.as_ref().is_some_and(|s| !s.is_empty())
+            || self.verity.as_ref().is_some_and(|s| !s.is_empty())
+            || self.uki.is_some()
     }
 
     pub fn is_complete(&self) -> bool {
         self.root.is_some() && self.verity.is_some()
     }
 
+    #[must_use]
     pub fn is_legacy(&self) -> bool {
-        matches!(self.version.as_deref(), Some("0"))
+        self.root.as_ref().is_some_and(|s| s.is_legacy())
+            || self.verity.as_ref().is_some_and(|s| s.is_legacy())
     }
 
+    #[must_use]
     pub fn is_active(&self, kernel: &KernelParams) -> bool {
-        // Legacy case
-        if self.is_legacy() && kernel.store_hash.is_none() {
-            return true;
-        }
+        if let Some(kernel_version) = kernel.to_version() {
+            // Normal case
+            if let Some(group_version) = self.version() {
+                return group_version == &kernel_version;
+            }
 
-        // Normal case
-        match (
-            &self.version,
-            &self.hash,
-            kernel.revision.as_deref(),
-            kernel.verity_hash_fragment(),
-        ) {
-            (Some(v), Some(h), Some(kv), Some(kh)) => v == kv && h == kh,
-            _ => false,
+            // Legacy special case:
+            // kernel has no store hash AND group is legacy
+            !kernel_version.has_hash() && self.is_legacy()
+        } else {
+            self.is_legacy()
         }
     }
 
-    pub fn validate(&self) -> Result<()> {
-        // Root / Verity must be present together
-        match (&self.root, &self.verity) {
-            (Some(_), Some(_)) => {}
-            (None, None) => {}
-            _ => bail!("incomplete slot: root and verity must be present together"),
+    pub fn validate(&self) -> anyhow::Result<()> {
+        // root <-> verity must match
+        if let (Some(root), Some(verity)) = (&self.root, &self.verity) {
+            if !root.matches(verity) {
+                anyhow::bail!("root and verity slots do not match: {} vs {}", root, verity);
+            }
         }
 
-        // If version is set, hash must be set
-        if self.version.is_some() && self.hash.is_none() {
-            bail!("invalid slot: version is set but hash is missing");
+        // UKI must match slots
+        if let Some(uki) = &self.uki {
+            if let Some(root) = &self.root {
+                if !uki.matches(root) {
+                    anyhow::bail!("UKI does not match root slot: {} vs {}", uki, root);
+                }
+            }
+            if let Some(verity) = &self.verity {
+                if !uki.matches(verity) {
+                    anyhow::bail!("UKI does not match verity slot: {} vs {}", uki, verity);
+                }
+            }
+        }
+
+        // empty group must not have UKI
+        if self.is_empty() && self.uki.is_some() {
+            anyhow::bail!("empty slot group contains UKI");
         }
 
         Ok(())
@@ -187,7 +235,7 @@ impl SlotGroup {
         }
 
         // Empty but valid slot
-        if self.version.is_none() {
+        if self.is_empty() {
             return SlotClass::Empty;
         }
 

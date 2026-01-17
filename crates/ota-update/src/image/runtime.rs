@@ -1,5 +1,5 @@
 use super::Version;
-use super::group::{SlotGroup, group_volumes};
+use super::group::SlotGroup;
 use super::lvm::{Volume, parse_lvs_output};
 use super::manifest::{File, Manifest};
 use super::slot::{Kind, Slot, SlotClass};
@@ -56,19 +56,18 @@ impl Runtime {
     }
 
     pub fn slot_groups(&self) -> Result<Vec<SlotGroup>> {
-        group_volumes(&self.volumes)
+        SlotGroup::group_volumes(self.volumes.clone(), self.ukis.clone()) // FIXME: clone!
     }
 
     pub fn select_update_slot(&self, manifest: &Manifest) -> Result<SlotSelection> {
         let slots = self.slot_groups()?;
-        let target_hash = manifest.hash_fragment();
+        let target = manifest.to_version();
 
         // 1. Check if target already installed
-        if slots.iter().any(|slot| {
-            slot.version.as_deref() == Some(&manifest.version)
-                && slot.hash.as_deref() == Some(target_hash)
-                && slot.is_complete()
-        }) {
+        if slots
+            .iter()
+            .any(|slot| slot.version() == Some(&target) && slot.is_complete())
+        {
             return Ok(SlotSelection::AlreadyInstalled);
         }
 
@@ -83,8 +82,7 @@ impl Runtime {
         if let Some(slot) = empty_slots.next() {
             let slot = SlotGroup {
                 uki: Some(UkiEntry {
-                    version: manifest.version.clone(),
-                    hash: manifest.hash_fragment().to_string(),
+                    version: manifest.to_version(),
                     boot_counter: None,
                 }),
                 ..slot
@@ -95,23 +93,19 @@ impl Runtime {
         }
     }
 
-    pub fn find_slot(&self, version: &str, hash: Option<&str>) -> Result<SlotGroup> {
+    pub fn find_slot(&self, version: &Version) -> Result<SlotGroup> {
         println!("{:?}", self.slot_groups()?);
         let mut candidates = self
             .slot_groups()?
             .into_iter()
-            .filter(|s| s.version.as_deref() == Some(version))
-            .filter(|s| match hash {
-                Some(h) => s.hash.as_deref() == Some(h),
-                None => true,
-            });
+            .filter(|s| s.version() == Some(&version));
 
         let Some(slot) = candidates.next() else {
-            bail!("slot not found: version={version} hash={hash:?}");
+            bail!("slot not found: version={version}");
         };
 
         if candidates.next().is_some() {
-            bail!("ambiguous slot selection for version={version} hash={hash:?}");
+            bail!("ambiguous slot selection for version={version}");
         }
 
         Ok(slot)
@@ -122,7 +116,7 @@ impl Runtime {
         if let Ok(groups) = self.slot_groups() {
             groups
                 .into_iter()
-                .filter(|s| s.hash.as_deref() == Some(hash))
+                .filter(|s| s.empty_id() == Some(hash))
                 .next()
                 .is_some()
         } else {
@@ -131,21 +125,17 @@ impl Runtime {
     }
 
     pub fn allocate_empty_identifier(&self) -> Result<String> {
-        let used: Vec<String> = self
-            .slot_groups()?
-            .into_iter()
-            .filter(|s| s.is_empty())
-            .filter_map(|s| s.hash.clone())
-            .collect();
+        let groups = self.slot_groups()?;
+        let used: Vec<&str> = groups.iter().filter_map(|s| s.empty_id()).collect();
 
-        for i in 0..1000 {
-            let candidate = format!("{i}");
-            if !used.contains(&candidate) {
+        for i in 0..100 {
+            let candidate = i.to_string();
+            if !used.iter().any(|&id| id == candidate) {
                 return Ok(candidate);
             }
         }
 
-        bail!("infinite empty identifier space");
+        bail!("empty identifier space exhausted");
     }
 }
 

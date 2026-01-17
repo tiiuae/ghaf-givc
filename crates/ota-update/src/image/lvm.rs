@@ -96,14 +96,6 @@ pub(crate) fn parse_lvs_output(output: &str) -> Vec<Volume> {
         .collect()
 }
 
-fn slots_from_volumes(volumes: &[Volume], vg_name: &str) -> Vec<Slot> {
-    volumes
-        .iter()
-        .filter(|v| v.vg_name == vg_name)
-        .filter_map(|v| Slot::try_from(v.lv_name.as_str()).ok())
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,17 +1,32 @@
-use anyhow::{Context, Result, anyhow};
-use std::convert::TryFrom;
+use super::Version;
+use super::lvm::Volume;
+use super::pipeline::{CommandSpec, Pipeline};
+use anyhow::{Context, Result, anyhow, ensure};
+use std::fmt;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Kind {
     Root,
     Verity,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
+enum EmptyId {
+    Known(String),
+    Legacy, // corresponds to Empty(None) from parsing
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum Status {
+    Used(Version),
+    Empty(EmptyId),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Slot {
-    pub kind: Kind,
-    pub version: Option<String>,
-    pub hash: Option<String>,
+    kind: Kind,
+    status: Status,
+    volume: Volume,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,10 +44,8 @@ pub enum SlotClass {
     Inactive,
 }
 
-impl TryFrom<&str> for Slot {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &str) -> Result<Self> {
+impl Slot {
+    fn decode_status(value: &str) -> Result<(Kind, Status)> {
         // split from the right: [name]_[version]_[hash?]
         let mut parts = value.rsplitn(3, '_');
 
@@ -40,7 +53,7 @@ impl TryFrom<&str> for Slot {
         let middle = parts.next().ok_or_else(|| anyhow!("missing version"))?;
         let first = parts.next();
 
-        let (name, version_raw, hash) = match first {
+        let (name, version_raw, hash_or_id) = match first {
             Some(name) => (name, middle, Some(last)),
             None => (middle, last, None),
         };
@@ -49,10 +62,16 @@ impl TryFrom<&str> for Slot {
             return Err(anyhow!("name is empty"));
         }
 
-        let version = if version_raw == "empty" {
-            None
+        let status = if version_raw == "empty" {
+            Status::Empty(match hash_or_id {
+                Some(id) => EmptyId::Known(id.to_string()),
+                None => EmptyId::Legacy,
+            })
         } else {
-            Some(version_raw.to_string())
+            Status::Used(Version::new(
+                version_raw.to_string(),
+                hash_or_id.map(|x| x.to_string()),
+            ))
         };
 
         let kind = match name {
@@ -61,11 +80,21 @@ impl TryFrom<&str> for Slot {
             _ => return Err(anyhow!("invalid {name}")),
         };
 
-        Ok(Slot {
-            kind,
-            version,
-            hash: hash.map(|h| h.to_string()),
-        })
+        Ok((kind, status))
+    }
+
+    pub fn from_volumes(vols: Vec<Volume>) -> Vec<Self> {
+        vols.into_iter()
+            .filter_map(|volume| {
+                let (kind, status) = Self::decode_status(&volume.lv_name).ok()?;
+
+                Some(Self {
+                    kind,
+                    status,
+                    volume,
+                })
+            })
+            .collect()
     }
 }
 
@@ -78,37 +107,138 @@ impl std::fmt::Display for Kind {
     }
 }
 
-impl std::fmt::Display for Slot {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let version = self.version.as_deref().unwrap_or("empty");
-        write!(f, "{}_{version}", self.kind);
-        if let Some(hash) = &self.hash {
-            write!(f, "_{}", hash)?;
+impl fmt::Display for Slot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.status {
+            Status::Used(version) => {
+                write!(f, "{}_{}", self.kind, version.revision)?;
+                if let Some(hash) = &version.hash {
+                    write!(f, "_{}", hash)?;
+                }
+            }
+            Status::Empty(EmptyId::Known(id)) => {
+                write!(f, "{}_empty_{}", self.kind, id)?;
+            }
+            Status::Empty(EmptyId::Legacy) => {
+                write!(f, "{}_empty", self.kind)?;
+            }
         }
         Ok(())
     }
 }
 
 impl Slot {
-    fn is_empty(&self) -> bool {
-        self.version.is_none()
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        matches!(&self.status, Status::Empty(_))
     }
 
-    fn is_sibling(&self, other: &Self) -> bool {
-        self.kind != other.kind && self.version == other.version && self.hash == other.hash
+    #[must_use]
+    pub fn is_used(&self) -> bool {
+        matches!(&self.status, Status::Used(_))
     }
 
-    // For UI/introspection
-    fn version_id(&self) -> Option<String> {
-        match &self.hash {
-            Some(h) => self.version.as_deref().map(|v| format!("{v}-{h}")),
-            None => self.version.clone(),
+    /// A legacy slot is either:
+    /// - a used slot without hash
+    /// - or an empty slot with legacy (unknown) id
+    #[must_use]
+    pub fn is_legacy(&self) -> bool {
+        match &self.status {
+            Status::Used(version) if !version.has_hash() => true,
+            Status::Empty(EmptyId::Legacy) => true,
+            _ => false,
         }
     }
 
-    /// Generate shell command for renaming slot
-    fn rename(&self, other: &Self) -> String {
-        format!("lvrename {self} {other}")
+    // Create new `Used` slot
+    #[must_use]
+    pub fn new_used(kind: Kind, version: Version, volume: Volume) -> Self {
+        Self {
+            kind,
+            status: Status::Used(version),
+            volume,
+        }
+    }
+
+    // Create new `Empty` slot with known id.
+    // Unknown ids is disallowed here
+    #[must_use]
+    pub fn new_empty(kind: Kind, id: impl AsRef<str>, volume: Volume) -> Self {
+        Self {
+            kind,
+            status: Status::Empty(EmptyId::Known(id.as_ref().to_string())),
+            volume,
+        }
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> Kind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn volume(&self) -> &Volume {
+        &self.volume
+    }
+
+    #[must_use]
+    pub fn empty_id(&self) -> Option<&str> {
+        match &self.status {
+            Status::Empty(EmptyId::Known(known)) => Some(known),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn version(&self) -> Option<&Version> {
+        match &self.status {
+            Status::Used(version) => Some(&version),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn into_version(self, version: Version) -> Result<Self> {
+        ensure!(!self.is_used(), "Can't assign version to already used slot");
+        Ok(Self {
+            status: Status::Used(version),
+            ..self
+        })
+    }
+
+    #[must_use]
+    pub fn into_empty(self, identifier: String) -> Self {
+        Self {
+            status: Status::Empty(EmptyId::Known(identifier)),
+            ..self
+        }
+    }
+
+    // Issue rename command. Slot is consumed, because after renaming it not valid
+    #[must_use]
+    pub fn rename(self) -> Pipeline {
+        Pipeline::new(
+            CommandSpec::new("lvrename")
+                .arg(&self.volume.vg_name)
+                .arg(&self.volume.lv_name)
+                .arg(self.to_string()),
+        )
+    }
+
+    /// Returns true if two slots belong to the same logical update slot.
+    ///
+    /// Slot kind (root / verity) is intentionally ignored.
+    #[must_use]
+    pub fn matches(&self, other: &Slot) -> bool {
+        match (&self.status, &other.status) {
+            (Status::Used(a), Status::Used(b)) => a == b,
+
+            (Status::Empty(EmptyId::Known(a)), Status::Empty(EmptyId::Known(b))) => a == b,
+
+            (Status::Empty(EmptyId::Legacy), Status::Empty(EmptyId::Legacy)) => true,
+
+            _ => false,
+        }
     }
 }
 
