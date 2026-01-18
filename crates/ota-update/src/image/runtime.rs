@@ -152,6 +152,98 @@ impl Runtime {
 
         bail!("empty identifier space exhausted");
     }
+
+    /// Human-readable runtime introspection.
+    /// Intended for debugging, dry-run output and diagnostics.
+    pub fn inspect(&self) -> anyhow::Result<String> {
+        let mut out = String::new();
+
+        let groups = self.slot_groups()?;
+
+        out.push_str("Slot groups:\n");
+
+        for group in &groups {
+            out.push_str("- slot: ");
+            out.push_str(if group.is_used() { "used\n" } else { "empty\n" });
+
+            // Version / empty id
+            if let Some(version) = group.version() {
+                out.push_str(&format!("  version: {}", version.revision));
+                if let Some(hash) = &version.hash {
+                    out.push_str(&format!(" (hash={})", hash));
+                }
+                out.push('\n');
+            } else if let Some(id) = group.empty_id() {
+                out.push_str(&format!("  id: {}\n", id));
+            } else {
+                out.push_str("  id: <none>\n");
+            }
+
+            out.push_str(&format!("  legacy: {}\n", group.is_legacy()));
+            out.push_str(&format!("  active: {}\n", group.is_active(&self.kernel)));
+
+            // Root / verity
+            match &group.root {
+                Some(root) => {
+                    let root = root.volume();
+                    out.push_str(&format!(
+                        "  root: {}/{}{}\n",
+                        root.vg_name,
+                        root.lv_name,
+                        format_size(root.lv_size_bytes)
+                    ));
+                }
+                None => out.push_str("  root: <missing>\n"),
+            }
+
+            match &group.verity {
+                Some(verity) => {
+                    let verity = verity.volume();
+                    out.push_str(&format!(
+                        "  verity: {}/{}{}\n",
+                        verity.vg_name,
+                        verity.lv_name,
+                        format_size(verity.lv_size_bytes)
+                    ));
+                }
+                None => out.push_str("  verity: <missing>\n"),
+            }
+
+            // UKI
+            match &group.uki {
+                Some(uki) => {
+                    out.push_str(&format!("  uki: {}\n", uki.full_name(&self.boot).display()));
+                }
+                None => out.push_str("  uki: <none>\n"),
+            }
+
+            out.push('\n');
+        }
+
+        // Unrecognized volumes
+        if !self.volumes.is_empty() {
+            out.push_str("Unrecognized volumes:\n");
+            for vol in &self.volumes {
+                out.push_str(&format!(
+                    "- {}/{}{}\n",
+                    vol.vg_name,
+                    vol.lv_name,
+                    format_size(vol.lv_size_bytes)
+                ));
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+fn format_size(size: Option<u64>) -> String {
+    let Some(bytes) = size else {
+        return String::new();
+    };
+
+    const G: u64 = 1024 * 1024 * 1024;
+    format!(" ({:.1}G)", bytes as f64 / G as f64)
 }
 
 /// The name of the kernel commandline argument

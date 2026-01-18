@@ -46,6 +46,7 @@ pub enum ImageAction {
         #[arg(long)]
         hash: Option<String>,
     },
+    Status,
 }
 
 impl ImageUpdate {
@@ -69,6 +70,11 @@ impl ImageUpdate {
                 let plan = Plan::remove(&rt, &version)?;
 
                 execute_plan(plan, self.dry_run).await
+            }
+            ImageAction::Status => {
+                let status = rt.inspect()?;
+                println!("{status}");
+                Ok(())
             }
         }
     }
