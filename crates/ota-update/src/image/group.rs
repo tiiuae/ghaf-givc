@@ -37,12 +37,7 @@ impl SlotGroup {
 }
 
 impl SlotGroup {
-    pub fn group_volumes(
-        volumes: Vec<Volume>,
-        ukis: Vec<UkiEntry>,
-    ) -> anyhow::Result<Vec<SlotGroup>> {
-        let slots = Slot::from_volumes(volumes);
-
+    pub fn group_volumes(slots: Vec<Slot>, ukis: Vec<UkiEntry>) -> anyhow::Result<Vec<SlotGroup>> {
         let mut groups: Vec<SlotGroup> = Vec::new();
 
         // 1. Group LVM slots (root / verity)
@@ -176,19 +171,17 @@ impl SlotGroup {
             || self.verity.as_ref().is_some_and(|s| s.is_legacy())
     }
 
-    #[must_use]
     pub fn is_active(&self, kernel: &KernelParams) -> bool {
-        if let Some(kernel_version) = kernel.to_version() {
-            // Normal case
-            if let Some(group_version) = self.version() {
-                return group_version == &kernel_version;
-            }
+        match (self.version(), kernel.to_version()) {
+            // Normal case: exact version match
+            (Some(slot_v), Some(kernel_v)) => slot_v == &kernel_v,
 
-            // Legacy special case:
-            // kernel has no store hash AND group is legacy
-            !kernel_version.has_hash() && self.is_legacy()
-        } else {
-            self.is_legacy()
+            // Legacy fallback:
+            // kernel has no version info, only USED legacy slot is active
+            (Some(slot_v), None) => self.is_legacy(),
+
+            // Empty slots are never active
+            _ => false,
         }
     }
 
@@ -245,220 +238,101 @@ impl SlotGroup {
 }
 
 #[cfg(test)]
-fn vol(name: &str) -> Volume {
-    Volume {
-        lv_name: name.to_string(),
-        vg_name: "vg".into(),
-        lv_attr: None,
-        lv_size_bytes: None,
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn valid_full_slot() {
-        let g = SlotGroup {
-            version: Some("1.2.3".into()),
-            hash: Some("abcdabcdabcdabcd".into()),
-            root: Some(vol("root_1.2.3_abcdabcdabcdabcd")),
-            verity: Some(vol("verity_1.2.3_abcdabcdabcdabcd")),
-            uki: None,
-        };
-
-        assert!(g.validate().is_ok());
-    }
-
-    #[test]
-    fn empty_slot_with_hash_is_valid() {
-        let g = SlotGroup {
-            version: None,
-            hash: Some("deadbeefdeadbeef".into()),
-            root: None,
-            verity: None,
-            uki: None,
-        };
-
-        assert!(g.validate().is_ok());
-    }
-
-    #[test]
-    fn incomplete_pair_is_invalid() {
-        let g = SlotGroup {
-            version: Some("1.2.3".into()),
-            hash: Some("abcdabcdabcdabcd".into()),
-            root: Some(vol("root_1.2.3_abcdabcdabcdabcd")),
-            verity: None,
-            uki: None,
-        };
-
-        let err = g.validate().unwrap_err();
-        assert!(err.to_string().contains("incomplete slot"));
-    }
-
-    #[test]
-    fn version_without_hash_is_invalid() {
-        let g = SlotGroup {
-            version: Some("1.2.3".into()),
-            hash: None,
-            root: Some(vol("root_1.2.3")),
-            verity: Some(vol("verity_1.2.3")),
-            uki: None,
-        };
-
-        let err = g.validate().unwrap_err();
-        assert!(err.to_string().contains("hash is missing"));
-    }
-}
-
-#[cfg(test)]
-mod active_tests {
-    use super::*;
-
-    #[test]
-    fn legacy_slot_is_active_when_no_store_hash() {
-        let slot = SlotGroup {
-            version: Some("0".into()),
-            hash: Some("deadbeefdeadbeef".into()),
-            root: None,
-            verity: None,
-            uki: None,
-        };
-
-        let kernel = KernelParams {
-            store_hash: None,
-            revision: None,
-        };
-
-        assert!(slot.is_active(&kernel));
-    }
-
-    #[test]
-    fn normal_slot_active() {
-        let slot = SlotGroup {
-            version: Some("1.2.3".into()),
-            hash: Some("abcdabcdabcdabcd".into()),
-            root: None,
-            verity: None,
-            uki: None,
-        };
-
-        let kernel = KernelParams {
-            revision: Some("1.2.3".into()),
-            store_hash: Some("abcdabcdabcdabcdffffffff".into()),
-        };
-
-        assert!(slot.is_active(&kernel));
-    }
-
-    #[test]
-    fn legacy_slot_is_active_when_no_store_hash_present() {
-        let slot = SlotGroup {
-            version: Some("0".into()),
-            hash: Some("deadbeefdeadbeef".into()),
-            root: None,
-            verity: None,
-            uki: None,
-        };
-
-        let kernel = KernelParams {
-            revision: None,
-            store_hash: None,
-        };
-
-        assert!(slot.is_active(&kernel));
-    }
-}
-
-#[cfg(test)]
-mod uki_tests {
-    use super::*;
-
-    fn slot(version: Option<&str>, hash: Option<&str>) -> SlotGroup {
-        SlotGroup {
-            version: version.map(str::to_string),
-            hash: hash.map(str::to_string),
-            root: None,
-            verity: None,
-            uki: None,
+    pub fn volume(name: &str) -> Volume {
+        Volume {
+            lv_name: name.to_string(),
+            vg_name: "vg".into(),
+            lv_attr: None,
+            lv_size_bytes: None,
         }
     }
 
-    fn legacy_slot() -> SlotGroup {
-        SlotGroup {
-            version: Some("0".into()),
-            hash: None,
-            root: None,
-            verity: None,
-            uki: None,
-        }
-    }
-
-    fn uki(version: &str, hash: &str) -> UkiEntry {
-        UkiEntry {
-            version: version.into(),
-            hash: hash.into(),
-            boot_counter: None,
-        }
+    pub fn slots(names: &[&str]) -> Vec<Slot> {
+        let vols: Vec<_> = names.iter().map(|n| volume(n)).collect();
+        let (slots, _unparsed) = Slot::from_volumes(vols);
+        slots
     }
 
     #[test]
-    fn uki_is_attached_to_matching_slot() {
-        let slots = vec![slot(Some("1.2.3"), Some("deadbeefdeadbeef"))];
+    fn group_root_and_verity_same_version() {
+        let slots = slots(&["root_1.2.3_deadbeef", "verity_1.2.3_deadbeef"]);
 
-        let ukis = vec![uki("1.2.3", "deadbeefdeadbeef")];
+        let groups = SlotGroup::group_volumes(slots, vec![]).unwrap();
 
-        let result = group_uki(slots, ukis).expect("grouping must succeed");
+        assert_eq!(groups.len(), 1);
+        let g = &groups[0];
 
-        assert_eq!(result.len(), 1);
-        let slot = &result[0];
-        assert!(slot.uki.is_some());
-        assert_eq!(slot.uki.as_ref().unwrap().hash, "deadbeefdeadbeef");
+        assert!(g.is_used());
+        assert!(!g.is_empty());
+        assert!(!g.is_legacy());
+
+        assert!(g.root.is_some());
+        assert!(g.verity.is_some());
+
+        let v = g.version().unwrap();
+        assert_eq!(v.revision, "1.2.3");
+        assert_eq!(v.hash.as_deref(), Some("deadbeef"));
     }
 
     #[test]
-    fn legacy_slot_does_not_receive_uki() {
-        let slots = vec![legacy_slot()];
+    fn group_root_without_verity() {
+        let slots = slots(&["root_2.0.0_cafebabe"]);
 
-        let ukis = vec![uki("0", "deadbeefdeadbeef")];
+        let groups = SlotGroup::group_volumes(slots, vec![]).unwrap();
 
-        let result = group_uki(slots, ukis).expect("grouping must succeed");
+        assert_eq!(groups.len(), 1);
+        let g = &groups[0];
 
-        assert_eq!(result.len(), 2);
-
-        let legacy = result.iter().find(|s| s.is_legacy()).unwrap();
-        assert!(legacy.uki.is_none());
-
-        let uki_slot = result.iter().find(|s| s.uki.is_some()).unwrap();
-        assert_eq!(uki_slot.version.as_deref(), Some("0"));
+        assert!(g.root.is_some());
+        assert!(g.verity.is_none());
+        assert!(g.is_used());
     }
 
     #[test]
-    fn orphan_uki_creates_new_slot_group() {
-        let slots = vec![];
+    fn group_empty_slots_by_id() {
+        let slots = slots(&["root_empty_0", "verity_empty_0"]);
 
-        let ukis = vec![uki("2.0.0", "cafebabecafebabe")];
+        let groups = SlotGroup::group_volumes(slots, vec![]).unwrap();
 
-        let result = group_uki(slots, ukis).expect("grouping must succeed");
+        assert_eq!(groups.len(), 1);
+        let g = &groups[0];
 
-        assert_eq!(result.len(), 1);
-        let slot = &result[0];
-        assert_eq!(slot.version.as_deref(), Some("2.0.0"));
-        assert_eq!(slot.hash.as_deref(), Some("cafebabecafebabe"));
-        assert!(slot.uki.is_some());
+        assert!(g.is_empty());
+        assert!(!g.is_used());
+        assert_eq!(g.empty_id(), Some("0"));
+
+        assert!(g.root.is_some());
+        assert!(g.verity.is_some());
     }
 
     #[test]
-    fn empty_slot_is_ignored() {
-        let slots = vec![slot(None, None)];
+    fn empty_slots_with_different_ids_do_not_group() {
+        let slots = slots(&["root_empty_0", "verity_empty_1"]);
 
-        let ukis = vec![uki("1.2.3", "deadbeefdeadbeef")];
+        let groups = SlotGroup::group_volumes(slots, vec![]).unwrap();
 
-        let result = group_uki(slots, ukis).expect("grouping must succeed");
+        assert_eq!(groups.len(), 2);
 
-        assert_eq!(result.len(), 2);
-        assert_eq!(result.iter().filter(|s| s.uki.is_some()).count(), 1);
+        let ids: Vec<_> = groups.iter().map(|g| g.empty_id()).collect();
+        assert!(ids.contains(&Some("0")));
+        assert!(ids.contains(&Some("1")));
+    }
+
+    #[test]
+    fn legacy_root_and_verity_grouped() {
+        let slots = slots(&["root_0", "verity_0"]);
+
+        let groups = SlotGroup::group_volumes(slots, vec![]).unwrap();
+
+        assert_eq!(groups.len(), 1);
+        let g = &groups[0];
+
+        assert!(g.is_legacy());
+        assert!(g.is_used());
+        assert!(g.root.is_some());
+        assert!(g.verity.is_some());
     }
 }

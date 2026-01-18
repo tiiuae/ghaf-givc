@@ -83,18 +83,30 @@ impl Slot {
         Ok((kind, status))
     }
 
-    pub fn from_volumes(vols: Vec<Volume>) -> Vec<Self> {
-        vols.into_iter()
-            .filter_map(|volume| {
-                let (kind, status) = Self::decode_status(&volume.lv_name).ok()?;
+    /// Partition volumes into parsed slots and unparsed volumes.
+    ///
+    /// - Parsed volumes are converted into `Slot`
+    /// - Unparsed volumes are returned as-is for diagnostics or further handling
+    pub fn from_volumes(vols: Vec<Volume>) -> (Vec<Self>, Vec<Volume>) {
+        let mut slots = Vec::new();
+        let mut unparsed = Vec::new();
 
-                Some(Self {
-                    kind,
-                    status,
-                    volume,
-                })
-            })
-            .collect()
+        for volume in vols {
+            match Self::decode_status(&volume.lv_name) {
+                Ok((kind, status)) => {
+                    slots.push(Self {
+                        kind,
+                        status,
+                        volume,
+                    });
+                }
+                Err(_) => {
+                    unparsed.push(volume);
+                }
+            }
+        }
+
+        (slots, unparsed)
     }
 }
 
@@ -246,62 +258,138 @@ impl Slot {
 mod tests {
     use super::*;
 
-    #[test]
-    fn parse_full_slot() {
-        let s = Slot::try_from("root_1.2.3_abcde").unwrap();
-        assert_eq!(s.kind, Kind::Root);
-        assert_eq!(s.version.as_deref(), Some("1.2.3"));
-        assert_eq!(s.hash.as_deref(), Some("abcde"));
-    }
-
-    #[test]
-    fn parse_without_hash() {
-        let s = Slot::try_from("root_1.2.3").unwrap();
-        assert_eq!(s.kind, Kind::Root);
-        assert_eq!(s.version.as_deref(), Some("1.2.3"));
-        assert!(s.hash.is_none());
-    }
-
-    #[test]
-    fn parse_empty_version() {
-        let s = Slot::try_from("root_empty").unwrap();
-        assert_eq!(s.kind, Kind::Root);
-        assert!(s.version.is_none());
-        assert!(s.hash.is_none());
-    }
-
-    #[test]
-    fn parse_empty_version_with_hash() {
-        let s = Slot::try_from("verity_empty_deadbeef").unwrap();
-        assert_eq!(s.kind, Kind::Verity);
-        assert!(s.version.is_none());
-        assert_eq!(s.hash.as_deref(), Some("deadbeef"));
-    }
-
-    #[test]
-    fn display_roundtrip() {
-        let inputs = [
-            "root_1.2.3_abcde",
-            "root_1.2.3",
-            "verity_empty",
-            "verity_empty_deadbeef",
-        ];
-
-        for input in inputs {
-            let slot = Slot::try_from(input).unwrap();
-            let rendered = slot.to_string();
-            let reparsed = Slot::try_from(rendered.as_str()).unwrap();
-
-            assert_eq!(slot.kind, reparsed.kind);
-            assert_eq!(slot.version, reparsed.version);
-            assert_eq!(slot.hash, reparsed.hash);
+    fn volume(name: &str) -> Volume {
+        Volume {
+            lv_name: name.to_string(),
+            vg_name: "vg".into(),
+            lv_attr: None,
+            lv_size_bytes: None,
         }
     }
 
     #[test]
-    fn invalid_format_fails() {
-        assert!(Slot::try_from("").is_err());
-        assert!(Slot::try_from("_1.2.3").is_err());
-        assert!(Slot::try_from("foobar_123").is_err()); // Kind is not root or verity
+    fn parse_used_root_with_hash() {
+        let (slots, unparsed) = Slot::from_volumes(vec![volume("root_1.2.3_deadbeefdeadbeef")]);
+        assert_eq!(slots.len(), 1);
+        assert!(unparsed.is_empty());
+
+        let slot = &slots[0];
+
+        assert_eq!(slot.kind(), Kind::Root);
+        assert!(slot.is_used());
+        assert!(!slot.is_empty());
+        assert!(!slot.is_legacy());
+
+        let v = slot.version().unwrap();
+        assert_eq!(v.revision, "1.2.3");
+        assert_eq!(v.hash.as_deref(), Some("deadbeefdeadbeef"));
+    }
+
+    #[test]
+    fn parse_used_verity_without_hash_is_legacy() {
+        let (slots, unparsed) = Slot::from_volumes(vec![volume("verity_0")]);
+        assert_eq!(slots.len(), 1);
+        assert!(unparsed.is_empty());
+
+        let slot = &slots[0];
+
+        assert!(slot.is_used());
+        assert!(slot.is_legacy());
+        assert_eq!(slot.version().unwrap().revision, "0");
+        assert!(slot.version().unwrap().hash.is_none());
+    }
+
+    #[test]
+    fn parse_empty_with_known_id() {
+        let (slots, unparsed) = Slot::from_volumes(vec![volume("root_empty_3")]);
+        assert_eq!(slots.len(), 1);
+        assert!(unparsed.is_empty());
+
+        let slot = &slots[0];
+
+        assert!(slot.is_empty());
+        assert!(!slot.is_used());
+        assert!(!slot.is_legacy());
+        assert_eq!(slot.empty_id(), Some("3"));
+    }
+
+    #[test]
+    fn parse_empty_legacy() {
+        let (slots, unparsed) = Slot::from_volumes(vec![volume("verity_empty")]);
+        assert_eq!(slots.len(), 1);
+        assert!(unparsed.is_empty());
+
+        let slot = &slots[0];
+
+        assert!(slot.is_empty());
+        assert!(slot.is_legacy());
+        assert_eq!(slot.empty_id(), None);
+    }
+
+    // Roundtrip tests
+
+    #[test]
+    fn slot_display_roundtrip_used() {
+        let original = "root_1.2.3_deadbeefdeadbeef";
+        let (slots, _) = Slot::from_volumes(vec![volume(original)]);
+
+        let rendered = slots[0].to_string();
+        assert_eq!(rendered, original);
+    }
+
+    #[test]
+    fn slot_display_roundtrip_empty_known() {
+        let original = "verity_empty_7";
+        let (slots, _) = Slot::from_volumes(vec![volume(original)]);
+
+        let rendered = slots[0].to_string();
+        assert_eq!(rendered, original);
+    }
+
+    #[test]
+    fn slot_display_roundtrip_empty_legacy() {
+        let original = "root_empty";
+        let (slots, _) = Slot::from_volumes(vec![volume(original)]);
+
+        let rendered = slots[0].to_string();
+        assert_eq!(rendered, original);
+    }
+
+    // Invarians of API
+
+    #[test]
+    fn cannot_assign_version_to_used_slot() {
+        let (slots, _) = Slot::from_volumes(vec![volume("root_1.0.0_deadbeef")]);
+
+        let slot = slots.into_iter().next().unwrap();
+        let new_version = Version::new("2.0.0".into(), Some("cafebabe".into()));
+
+        assert!(slot.into_version(new_version).is_err());
+    }
+
+    #[test]
+    fn can_assign_version_to_empty_slot() {
+        let (slots, _) = Slot::from_volumes(vec![volume("root_empty_1")]);
+
+        let slot = slots.into_iter().next().unwrap();
+        let new_version = Version::new("1.0.0".into(), Some("deadbeef".into()));
+
+        let slot = slot.into_version(new_version).expect("assign");
+        assert!(slot.is_used());
+    }
+    #[test]
+    fn swap_volume_goes_to_unparsed() {
+        let vols = vec![
+            volume("root_1.2.3_deadbeef"),
+            volume("swap"),
+            volume("verity_empty_0"),
+        ];
+
+        let (slots, unparsed) = Slot::from_volumes(vols);
+
+        assert_eq!(slots.len(), 2);
+        assert_eq!(unparsed.len(), 1);
+
+        assert_eq!(unparsed[0].lv_name, "swap");
     }
 }

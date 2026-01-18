@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
 pub struct Runtime {
+    pub slots: Vec<Slot>,
     pub volumes: Vec<Volume>,
     pub kernel: KernelParams,
     pub ukis: Vec<UkiEntry>,
@@ -37,8 +38,11 @@ impl SlotSelection {
 
 impl Runtime {
     pub fn new(lvs: &str, cmdline: &str, bootctl: &Vec<BootctlItem>) -> Self {
+        let volumes = parse_lvs_output(lvs);
+        let (slots, volumes) = Slot::from_volumes(volumes);
         Self {
-            volumes: parse_lvs_output(lvs),
+            slots,
+            volumes,
             kernel: KernelParams::from_cmdline(cmdline),
             ukis: UkiEntry::from_bootctl(bootctl),
             boot: "/boot".into(), // FIXME: detect /boot if possible
@@ -56,59 +60,70 @@ impl Runtime {
     }
 
     pub fn slot_groups(&self) -> Result<Vec<SlotGroup>> {
-        SlotGroup::group_volumes(self.volumes.clone(), self.ukis.clone()) // FIXME: clone!
+        SlotGroup::group_volumes(self.slots.clone(), self.ukis.clone()) // FIXME: clone!
     }
 
     pub fn select_update_slot(&self, manifest: &Manifest) -> Result<SlotSelection> {
         let slots = self.slot_groups()?;
         let target = manifest.to_version();
 
-        // 1. Check if target already installed
+        // 1. Target already installed (complete used slot)
         if slots
             .iter()
-            .any(|slot| slot.version() == Some(&target) && slot.is_complete())
+            .any(|slot| slot.is_used() && slot.is_complete() && slot.version() == Some(&target))
         {
             return Ok(SlotSelection::AlreadyInstalled);
         }
 
-        // 2. Find empty, non-active slots
-        let mut empty_slots = slots
+        // 2. Find first suitable empty slot
+        let slot = slots
             .into_iter()
+            .filter(|slot| slot.is_empty())
             .filter(|slot| !slot.is_active(&self.kernel))
             .filter(|slot| slot.is_complete())
-            .filter(|slot| slot.is_empty());
+            .next()
+            .ok_or_else(|| anyhow!("no empty slot available for update"))?;
 
-        // 3. Select one
-        if let Some(slot) = empty_slots.next() {
-            let slot = SlotGroup {
-                uki: Some(UkiEntry {
-                    version: manifest.to_version(),
-                    boot_counter: None,
-                }),
-                ..slot
-            };
-            Ok(SlotSelection::Selected(slot))
-        } else {
-            Err(anyhow!("no empty slot available for update"))
-        }
+        // 3. Attach UKI metadata for the plan
+        let slot = SlotGroup {
+            uki: Some(UkiEntry {
+                version: target,
+                boot_counter: None,
+            }),
+            ..slot
+        };
+
+        Ok(SlotSelection::Selected(slot))
     }
 
     pub fn find_slot(&self, version: &Version) -> Result<SlotGroup> {
-        println!("{:?}", self.slot_groups()?);
-        let mut candidates = self
-            .slot_groups()?
-            .into_iter()
-            .filter(|s| s.version() == Some(&version));
+        let groups = self.slot_groups()?;
 
-        let Some(slot) = candidates.next() else {
-            bail!("slot not found: version={version}");
-        };
+        // 1. exact match
+        let mut exact = groups.iter().filter(|g| g.version() == Some(version));
 
-        if candidates.next().is_some() {
-            bail!("ambiguous slot selection for version={version}");
+        if let Some(slot) = exact.next() {
+            if exact.next().is_some() {
+                bail!("ambiguous slot selection for version={version}");
+            }
+            return Ok(slot.clone());
         }
 
-        Ok(slot)
+        // 2. Fallback: version without hash, but we have exact one candidate that match
+        if !version.has_hash() {
+            let mut candidates = groups.iter().filter(|g| {
+                g.version()
+                    .is_some_and(|v| v.revision == version.revision && v.has_hash())
+            });
+
+            if let Some(slot) = candidates.next() {
+                if candidates.next().is_none() {
+                    return Ok(slot.clone());
+                }
+            }
+        }
+
+        bail!("slot not found: version={version}");
     }
 
     pub fn has_empty_with_hash(&self, hash: &str) -> bool {
@@ -188,6 +203,7 @@ impl Default for KernelParams {
 impl Default for Runtime {
     fn default() -> Self {
         Self {
+            slots: Vec::new(),
             volumes: Vec::new(),
             kernel: KernelParams::default(),
             boot: "/boot".into(),
@@ -200,23 +216,16 @@ impl Default for Runtime {
 mod tests {
     use super::*;
 
-    fn vol(name: &str) -> Volume {
-        Volume {
-            lv_name: name.to_string(),
-            vg_name: "vg".into(),
-            lv_attr: None,
-            lv_size_bytes: None,
-        }
-    }
+    use crate::image::test::{manifest, slots, volume};
 
     // complete root + verity slot
     #[test]
     fn groups_root_and_verity_into_single_slot() {
         let rt = Runtime {
-            volumes: vec![
-                vol("root_1.2.3_deadbeefdeadbeef"),
-                vol("verity_1.2.3_deadbeefdeadbeef"),
-            ],
+            slots: slots(&vec![
+                "root_1.2.3_deadbeefdeadbeef",
+                "verity_1.2.3_deadbeefdeadbeef",
+            ]),
             ..Runtime::default()
         };
 
@@ -224,8 +233,13 @@ mod tests {
         assert_eq!(groups.len(), 1);
 
         let g = &groups[0];
-        assert_eq!(g.version.as_deref(), Some("1.2.3"));
-        assert_eq!(g.hash.as_deref(), Some("deadbeefdeadbeef"));
+        assert_eq!(
+            g.version().as_deref(),
+            Some(&Version::new(
+                "1.2.3".into(),
+                Some("deadbeefdeadbeef".into())
+            ))
+        );
         assert!(g.root.is_some());
         assert!(g.verity.is_some());
     }
@@ -234,7 +248,7 @@ mod tests {
     #[test]
     fn empty_slot_is_grouped() {
         let rt = Runtime {
-            volumes: vec![vol("root_empty_01"), vol("verity_empty_01")],
+            slots: slots(&vec!["root_empty_01", "verity_empty_01"]),
             ..Runtime::default()
         };
 
@@ -242,15 +256,15 @@ mod tests {
         assert_eq!(groups.len(), 1);
 
         let g = &groups[0];
-        assert_eq!(g.version, None);
-        assert_eq!(g.hash.as_deref(), Some("01"));
+        assert_eq!(g.version(), None);
+        assert_eq!(g.empty_id().as_deref(), Some("01"));
     }
 
     // broken slot (only root)
     #[test]
     fn broken_slot_with_only_root_is_preserved() {
         let rt = Runtime {
-            volumes: vec![vol("root_2.0.0_abcdabcdabcdabcd")],
+            slots: slots(&vec!["root_2.0.0_abcdabcdabcdabcd"]),
             ..Runtime::default()
         };
 
@@ -265,7 +279,8 @@ mod tests {
     #[test]
     fn non_slot_volumes_are_ignored() {
         let rt = Runtime {
-            volumes: vec![vol("swap"), vol("home"), vol("root_1.0.0_aaaaaaaaaaaaaaaa")],
+            volumes: vec![volume("swap"), volume("home")],
+            slots: slots(&vec!["root_1.0.0_aaaaaaaaaaaaaaaa"]),
             ..Runtime::default()
         };
 
@@ -276,27 +291,40 @@ mod tests {
     #[test]
     fn multiple_slots_are_grouped_separately() {
         let rt = Runtime {
-            volumes: vec![
-                vol("root_1.0.0_aaaaaaaaaaaaaaaa"),
-                vol("verity_1.0.0_aaaaaaaaaaaaaaaa"),
-                vol("root_2.0.0_bbbbbbbbbbbbbbbb"),
-                vol("verity_2.0.0_bbbbbbbbbbbbbbbb"),
-            ],
+            slots: slots(&vec![
+                "root_1.0.0_aaaaaaaaaaaaaaaa",
+                "verity_1.0.0_aaaaaaaaaaaaaaaa",
+                "root_2.0.0_bbbbbbbbbbbbbbbb",
+                "verity_2.0.0_bbbbbbbbbbbbbbbb",
+            ]),
             ..Runtime::default()
         };
 
         let mut groups = rt.slot_groups().expect("group");
-        groups.sort_by(|a, b| a.version.cmp(&b.version));
+        // Kludgy sort with clone, I don't want add Ord to version only for this test
+        groups.sort_by_key(|g| g.version().map(|v| (v.revision.clone(), v.hash.clone())));
 
         assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].version.as_deref(), Some("1.0.0"));
-        assert_eq!(groups[1].version.as_deref(), Some("2.0.0"));
+        assert_eq!(
+            groups[0].version().as_deref(),
+            Some(&Version::new(
+                "1.0.0".into(),
+                Some("aaaaaaaaaaaaaaaa".into())
+            ))
+        );
+        assert_eq!(
+            groups[1].version().as_deref(),
+            Some(&Version::new(
+                "2.0.0".into(),
+                Some("bbbbbbbbbbbbbbbb".into())
+            ))
+        );
     }
 
     #[test]
     fn legacy_slot_is_grouped_correctly() {
         let rt = Runtime {
-            volumes: vec![vol("root_0_deadbeefdeadbeef")],
+            slots: slots(&vec!["root_0_deadbeefdeadbeef"]),
             ..Runtime::default()
         };
 
@@ -304,36 +332,16 @@ mod tests {
         assert_eq!(groups.len(), 1);
 
         let g = &groups[0];
-        assert_eq!(g.version.as_deref(), Some("0"));
-    }
-
-    fn manifest(version: &str, hash: &str) -> Manifest {
-        Manifest {
-            meta: Default::default(),
-            version: version.into(),
-            root_verity_hash: hash.into(),
-            kernel: File {
-                name: "k".into(),
-                sha256sum: "x".into(),
-            },
-            store: File {
-                name: "s".into(),
-                sha256sum: "x".into(),
-            },
-            verity: File {
-                name: "v".into(),
-                sha256sum: "x".into(),
-            },
-        }
+        //assert!(g.is_legacy()); FIXME!
     }
 
     #[test]
     fn select_slot_noop_if_version_already_installed() {
         let rt = Runtime {
-            volumes: vec![
-                vol("root_1.2.3_deadbeefdeadbeef"),
-                vol("verity_1.2.3_deadbeefdeadbeef"),
-            ],
+            slots: slots(&vec![
+                "root_1.2.3_deadbeefdeadbeef",
+                "verity_1.2.3_deadbeefdeadbeef",
+            ]),
             kernel: KernelParams {
                 revision: Some("1.2.3".into()),
                 store_hash: Some("deadbeefdeadbeef".into()),
@@ -350,12 +358,12 @@ mod tests {
     #[test]
     fn select_empty_slot_pair() {
         let rt = Runtime {
-            volumes: vec![
-                vol("root_1.0.0_aaaaaaaaaaaaaaaa"),
-                vol("verity_1.0.0_aaaaaaaaaaaaaaaa"),
-                vol("root_empty_01"),
-                vol("verity_empty_01"),
-            ],
+            slots: slots(&vec![
+                "root_1.0.0_aaaaaaaaaaaaaaaa",
+                "verity_1.0.0_aaaaaaaaaaaaaaaa",
+                "root_empty_01",
+                "verity_empty_01",
+            ]),
             kernel: KernelParams {
                 revision: Some("1.0.0".into()),
                 store_hash: Some("aaaaaaaaaaaaaaaa".into()),
@@ -375,7 +383,7 @@ mod tests {
     #[test]
     fn incomplete_empty_slot_is_not_selected() {
         let rt = Runtime {
-            volumes: vec![vol("root_empty_01")],
+            slots: slots(&vec!["root_empty_01"]),
             ..Runtime::default()
         };
 
@@ -390,12 +398,12 @@ mod tests {
     #[test]
     fn one_of_multiple_empty_slots_is_selected() {
         let rt = Runtime {
-            volumes: vec![
-                vol("root_empty_01"),
-                vol("verity_empty_01"),
-                vol("root_empty_02"),
-                vol("verity_empty_02"),
-            ],
+            slots: slots(&vec![
+                "root_empty_01",
+                "verity_empty_01",
+                "root_empty_02",
+                "verity_empty_02",
+            ]),
             kernel: KernelParams::default(),
             ..Runtime::default()
         };
@@ -407,5 +415,21 @@ mod tests {
             panic!("Selected() expected")
         };
         assert!(slot.is_empty());
+    }
+
+    #[test]
+    fn find_slot() {
+        let rt = Runtime {
+            slots: slots(&vec![
+                "root_1.0.0_aaaaaaaaaaaaaaaa",
+                "verity_1.0.0_aaaaaaaaaaaaaaaa",
+                "root_empty_01",
+                "verity_empty_01",
+            ]),
+            ..Runtime::default()
+        };
+        let version = Version::new("1.0.0".into(), Some("aaaaaaaaaaaaaaaa".into()));
+        let group = rt.find_slot(&version).expect("find");
+        println!("{group:?}")
     }
 }

@@ -99,6 +99,7 @@ pub(crate) fn parse_lvs_output(output: &str) -> Vec<Volume> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image::Version;
 
     #[test]
     fn parse_lv_size_gb() {
@@ -146,9 +147,12 @@ mod tests {
         let volumes = parse_lvs_output(output);
         assert_eq!(volumes.len(), 3);
 
-        let slots = slots_from_volumes(&volumes, "vg0");
-        assert_eq!(slots.len(), 1);
-        assert_eq!(slots[0].kind, Kind::Root);
-        assert_eq!(slots[0].version.as_deref(), Some("1.2.3"));
+        let (slots, _) = Slot::from_volumes(volumes);
+        assert_eq!(slots.len(), 2);
+        assert_eq!(slots[0].kind(), Kind::Root);
+        assert_eq!(
+            slots[0].version().as_deref(),
+            Some(&Version::new("1.2.3".into(), Some("deadbeef".into())))
+        );
     }
 }

@@ -122,8 +122,10 @@ mod tests {
     #[test]
     fn parse_valid_uki() {
         let uki = UkiEntry::try_from("ghaf-1.2.3-deadbeefdeadbeef.efi").unwrap();
-        assert_eq!(uki.version, "1.2.3");
-        assert_eq!(uki.hash, "deadbeefdeadbeef");
+        assert_eq!(
+            uki.version,
+            Version::new("1.2.3".into(), Some("deadbeefdeadbeef".into()))
+        );
         assert!(uki.boot_counter.is_none());
     }
 
@@ -158,9 +160,9 @@ mod tests {
 
     #[test]
     fn uki_roundtrip_display_parse_display() {
+        let version = Version::new("1.2.3".into(), Some("deadbeefdeadbeef".into()));
         let uki = UkiEntry {
-            version: "1.2.3".into(),
-            hash: "deadbeefdeadbeef".into(),
+            version,
             boot_counter: Some(BootCounter {
                 remaining: 5,
                 used: None,
@@ -175,14 +177,14 @@ mod tests {
 
     #[test]
     fn uki_roundtrip_without_counters() {
+        let version = Version::new("2.0.0".into(), Some("deadbeefdeadbeef".into()));
         let uki = UkiEntry {
-            version: "2.0.0".into(),
-            hash: "aaaaaaaaaaaaaaaa".into(),
+            version,
             boot_counter: None,
         };
 
         let name = uki.to_string();
-        assert_eq!(name, "ghaf-2.0.0-aaaaaaaaaaaaaaaa.efi");
+        assert_eq!(name, "ghaf-2.0.0-deadbeefdeadbeef.efi");
 
         let parsed = UkiEntry::try_from(name.as_str()).unwrap();
         assert_eq!(uki, parsed);

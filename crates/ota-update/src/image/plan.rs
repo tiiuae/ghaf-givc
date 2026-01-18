@@ -210,10 +210,10 @@ mod tests {
             "lvrename pool root_25.12.1_deadbeefdeadbeef root_empty_0",
             "lvrename pool verity_25.12.1_deadbeefdeadbeef verity_empty_0",
         ];
-        let version = Version::new("25.12.1", None);
+        let version = Version::new("25.12.1".into(), None);
         let plan = Plan::remove(&rt, &version).expect("remove failed");
         assert_eq!(plan.into_script(), expected);
-        let version = Version::new("25.12.1", Some("deadbeefdeadbeef"));
+        let version = Version::new("25.12.1".into(), Some("deadbeefdeadbeef".into()));
         let plan = Plan::remove(&rt, &version).expect("remove failed");
         assert_eq!(plan.into_script(), expected);
     }
