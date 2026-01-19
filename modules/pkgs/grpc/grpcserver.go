@@ -63,14 +63,20 @@ func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistrati
 		// return nil, grpc_status.Error(grpc_codes.Unavailable, "TLS configuration not provided")
 	}
 
+	// Interceptor chain
+	interceptors := []grpc.UnaryServerInterceptor{
+		grpc_ctxtags.UnaryServerInterceptor(grpc_ctxtags.WithFieldExtractor(grpc_ctxtags.TagBasedRequestFieldExtractor("log"))),
+		unaryLogRequestInterceptor,
+		grpc_logrus.UnaryServerInterceptor(log.NewEntry(log.StandardLogger())),
+	}
+	if srv.config.TlsConfig != nil {
+		interceptors = append(interceptors, givc_util.CertIPVerifyInterceptor)
+	}
+
 	// GRPC Server
 	srv.grpcServer = grpc.NewServer(
 		grpc.UnaryInterceptor(
-			grpc_middleware.ChainUnaryServer(
-				grpc_ctxtags.UnaryServerInterceptor(grpc_ctxtags.WithFieldExtractor(grpc_ctxtags.TagBasedRequestFieldExtractor("log"))),
-				grpc.UnaryServerInterceptor(unaryLogRequestInterceptor),
-				grpc_logrus.UnaryServerInterceptor(log.NewEntry(log.StandardLogger())),
-			),
+			grpc_middleware.ChainUnaryServer(interceptors...),
 		),
 		grpcTlsConfig,
 	)
