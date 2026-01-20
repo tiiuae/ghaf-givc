@@ -39,6 +39,12 @@ impl CommandSpec {
     }
 }
 
+impl Into<Pipeline> for CommandSpec {
+    fn into(self) -> Pipeline {
+        Pipeline::new(self)
+    }
+}
+
 impl Pipeline {
     pub fn new(first: CommandSpec) -> Self {
         Self {
