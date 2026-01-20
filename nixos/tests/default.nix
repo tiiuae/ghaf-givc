@@ -8,6 +8,5 @@
     ./app.nix
     ./ota-update.nix
     ./event.nix
-    ./tls-ip-verify.nix
   ];
 }

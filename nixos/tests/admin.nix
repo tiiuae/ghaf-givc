@@ -29,6 +29,7 @@
                 ];
               };
             };
+            badvm = self.nixosModules.tests-badvm;
           };
           testScript =
             { nodes, ... }:
@@ -38,6 +39,7 @@
               addrs = {
                 appvm = (builtins.head nodes.appvm.networking.interfaces.eth1.ipv4.addresses).address;
               };
+              host = nodes.hostvm.givc.host.transport;
               cli = "${self'.packages.givc-admin.cli}/bin/givc-cli";
               expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
               cliArgs =
@@ -48,6 +50,7 @@
                   else
                     "--notls"
                 }";
+              grpcurl = "grpcurl -cacert /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem";
               userSocket =
                 lib.strings.replaceStrings [ "%U" ] [ "1000" ]
                   nodes.guivm.givc.sysvm.notifier.socketPath;
@@ -117,12 +120,42 @@
                   guivm.wait_for_unit("multi-user.target")
                   print(hostvm.succeed("${cli} ${cliArgs} get-status gui-vm multi-user.target"))
                   appvm.wait_for_unit("multi-user.target")
+                  badvm.wait_for_unit("multi-user.target")
                   guivm.wait_for_unit("givc-gui-vm.service")
 
                   time.sleep(1)
                   # Ensure, that hostvm's agent registered in admin service. It take ~10 seconds to spin up and register itself
                   print(hostvm.succeed("${cli} ${cliArgs} test ensure --retry 60 --type 0 ${expected}"))
                   print(hostvm.succeed("${cli} ${cliArgs} test ensure --retry 60 --type 11 --vm app-vm microvm@app-vm.service"))
+
+              # TLS-IP verification: badvm has cert with wrong IP, connections should be rejected
+              with subtest("tls-ip: valid cert connects to agent"):
+                  (exit_code, output) = appvm.execute(
+                      "${grpcurl} -d '{\"UnitName\": \"poweroff.target\"}' "
+                      "${host.addr}:${host.port} systemd.UnitControlService/GetUnitStatus 2>&1"
+                  )
+                  assert exit_code == 0, f"Valid connection to agent failed: {output}"
+
+              with subtest("tls-ip: mismatched cert rejected by agent"):
+                  (exit_code, output) = badvm.execute(
+                      "${grpcurl} -d '{\"UnitName\": \"poweroff.target\"}' "
+                      "${host.addr}:${host.port} systemd.UnitControlService/GetUnitStatus 2>&1"
+                  )
+                  assert exit_code != 0, f"Mismatched cert should have been rejected: {output}"
+                  assert "PermissionDenied" in output, f"Expected PermissionDenied, got: {output}"
+
+              with subtest("tls-ip: valid cert connects to admin"):
+                  (exit_code, output) = appvm.execute(
+                      "${grpcurl} ${admin.addr}:${admin.port} admin.AdminService/QueryList 2>&1"
+                  )
+                  assert exit_code == 0, f"Valid connection to admin failed: {output}"
+
+              with subtest("tls-ip: mismatched cert rejected by admin"):
+                  (exit_code, output) = badvm.execute(
+                      "${grpcurl} ${admin.addr}:${admin.port} admin.AdminService/QueryList 2>&1"
+                  )
+                  assert exit_code != 0, f"Mismatched cert should have been rejected: {output}"
+                  assert "PermissionDenied" in output, f"Expected PermissionDenied, got: {output}"
 
               with subtest("setup gui vm"):
                   # Ensure that sway in guiVM finished startup

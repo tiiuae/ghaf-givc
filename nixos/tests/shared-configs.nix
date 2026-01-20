@@ -14,6 +14,8 @@ let
     appvm = "192.168.101.5";
     guivm = "192.168.101.3";
     updatevm = "192.168.101.200";
+    badvm = "192.168.101.30";
+    badvm-cert-ip = "192.168.101.99";
   };
   adminConfig = {
     name = "admin-vm";
@@ -275,5 +277,25 @@ in
         }
       ];
     };
+    # badvm has a certificate with wrong IP for TLS-IP verification testing
+    # No agent - just grpcurl and certs for testing rejected connections
+    tests-badvm =
+      { pkgs, ... }:
+      {
+        imports = [
+          ./snakeoil/gen-test-certs.nix
+        ];
+        givc-tls-test = {
+          name = "bad-vm";
+          addresses = addrs.badvm-cert-ip; # Cert has WRONG IP (.99)
+        };
+        networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
+          {
+            address = addrs.badvm; # Actual IP is .30
+            prefixLength = 24;
+          }
+        ];
+        environment.systemPackages = [ pkgs.grpcurl ];
+      };
   };
 }
