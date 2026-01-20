@@ -52,10 +52,12 @@ impl TlsConfig {
     /// # Errors
     /// Fails if unable to read TLS certs/keys
     pub fn server_config(&self) -> anyhow::Result<ServerTlsConfig> {
+        let ca_pem = std::fs::read(&self.ca_cert_file_path)?;
         let cert = std::fs::read(&self.cert_file_path)?;
         let key = std::fs::read(&self.key_file_path)?;
         let identity = Identity::from_pem(cert, key);
-        let config = ServerTlsConfig::new().identity(identity);
+        let ca = Certificate::from_pem(ca_pem);
+        let config = ServerTlsConfig::new().identity(identity).client_ca_root(ca);
         Ok(config)
     }
 }

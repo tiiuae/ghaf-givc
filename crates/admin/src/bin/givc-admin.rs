@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::Parser;
 use givc::admin;
 use givc::endpoint::TlsConfig;
+use givc::utils::auth::{auth_interceptor, no_auth_interceptor};
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use std::path::PathBuf;
 use tonic::transport::Server;
@@ -69,8 +70,15 @@ async fn main() -> anyhow::Result<()> {
         .build_v1()
         .unwrap();
 
+    let interceptor = if tls.is_some() {
+        auth_interceptor
+    } else {
+        no_auth_interceptor
+    };
+
     let admin_service = admin::server::AdminService::new(tls, cli.monitoring);
-    let admin_service_svc = admin::server::AdminServiceServer::new(admin_service);
+    let admin_service_svc =
+        admin::server::AdminServiceServer::with_interceptor(admin_service, interceptor);
 
     let sys_opts = tokio_listener::SystemOptions::default();
     let user_opts = tokio_listener::UserOptions::default();

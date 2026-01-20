@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
 #
-# Test that the Go agent verifies the peer's IP matches their certificate's SAN IP
+# Test that agents and admin verify the peer's IP matches their certificate's SAN IP
 #
 {
   self,
@@ -166,20 +166,20 @@ in
                 badvm.wait_for_unit("multi-user.target")
                 time.sleep(2)
 
-            with subtest("valid connection - matching IP in cert"):
+            with subtest("valid connection to agent - matching IP in cert"):
                 # goodvm has cert with correct IP, connection to hostvm should succeed
-                result = goodvm.succeed(
+                (exit_code, output) = goodvm.execute(
                     "grpcurl -cacert /etc/givc/ca-cert.pem "
                     "-cert /etc/givc/cert.pem "
                     "-key /etc/givc/key.pem "
                     '-d \'{"UnitName": "poweroff.target"}\' '
-                    "${addrs.host}:9000 systemd.UnitControlService/GetUnitStatus 2>&1 || true"
+                    "${addrs.host}:9000 systemd.UnitControlService/GetUnitStatus 2>&1"
                 )
-                # Should NOT be rejected with PermissionDenied (gRPC code 7)
-                assert "Code: PermissionDenied" not in result, \
-                    f"Valid connection was incorrectly rejected with PermissionDenied: {result}"
+                assert exit_code == 0, f"Valid connection to agent failed: {output}"
+                assert "Code: PermissionDenied" not in output, \
+                    f"Valid connection to agent was incorrectly rejected: {output}"
 
-            with subtest("invalid connection - mismatched IP in cert"):
+            with subtest("invalid connection to agent - mismatched IP in cert"):
                 # badvm has cert with wrong IP (.99) but connects from .30
                 (exit_code, output) = badvm.execute(
                     "grpcurl -cacert /etc/givc/ca-cert.pem "
@@ -188,10 +188,33 @@ in
                     '-d \'{"UnitName": "poweroff.target"}\' '
                     "${addrs.host}:9000 systemd.UnitControlService/GetUnitStatus 2>&1"
                 )
-                # Should fail with gRPC PermissionDenied (code 7)
-                assert exit_code != 0, "Connection should have failed but succeeded"
+                assert exit_code != 0, f"Connection should have failed but succeeded: {output}"
                 assert "Code: PermissionDenied" in output, \
-                    f"Expected gRPC PermissionDenied status code, got: {output}"
+                    f"Expected PermissionDenied, got: {output}"
+
+            with subtest("valid connection to admin - matching IP in cert"):
+                # goodvm has cert with correct IP, connection to adminvm should succeed
+                (exit_code, output) = goodvm.execute(
+                    "grpcurl -cacert /etc/givc/ca-cert.pem "
+                    "-cert /etc/givc/cert.pem "
+                    "-key /etc/givc/key.pem "
+                    "${addrs.adminvm}:9001 admin.AdminService/QueryList 2>&1"
+                )
+                assert exit_code == 0, f"Valid connection to admin failed: {output}"
+                assert "Code: PermissionDenied" not in output, \
+                    f"Valid connection to admin was incorrectly rejected: {output}"
+
+            with subtest("invalid connection to admin - mismatched IP in cert"):
+                # badvm has cert with wrong IP (.99) but connects from .30
+                (exit_code, output) = badvm.execute(
+                    "grpcurl -cacert /etc/givc/ca-cert.pem "
+                    "-cert /etc/givc/cert.pem "
+                    "-key /etc/givc/key.pem "
+                    "${addrs.adminvm}:9001 admin.AdminService/QueryList 2>&1"
+                )
+                assert exit_code != 0, f"Connection should have failed but succeeded: {output}"
+                assert "Code: PermissionDenied" in output, \
+                    f"Expected PermissionDenied, got: {output}"
           '';
         };
       };
