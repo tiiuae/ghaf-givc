@@ -126,6 +126,27 @@ impl Runtime {
         bail!("slot not found: version={version}");
     }
 
+    pub fn active_slot(&self) -> Result<SlotGroup> {
+        let mut active = self
+            .slot_groups()?
+            .into_iter()
+            .filter(|slot| slot.is_active(&self.kernel));
+
+        let Some(first) = active.next() else {
+            bail!("no active slot detected");
+        };
+
+        if let Some(second) = active.next() {
+            bail!(
+                "multiple active slots detected: {:?} and {:?}",
+                first,
+                second
+            );
+        }
+
+        Ok(first)
+    }
+
     pub fn has_empty_with_hash(&self, hash: &str) -> bool {
         // FIXME: bogus design, I want this function no-error, but slot_groups() can throw
         if let Ok(groups) = self.slot_groups() {
@@ -523,5 +544,18 @@ mod tests {
         let version = Version::new("1.0.0".into(), Some("aaaaaaaaaaaaaaaa".into()));
         let group = rt.find_slot(&version).expect("find");
         println!("{group:?}")
+    }
+
+    #[test]
+    fn detects_legacy_active_slot() {
+        let rt = Runtime {
+            slots: slots(&vec!["root_1.0.0", "verity_1.0.0"]),
+            ..Runtime::default()
+        };
+
+        let active = rt.active_slot().unwrap();
+
+        assert!(active.is_legacy());
+        assert!(active.is_active(&rt.kernel));
     }
 }

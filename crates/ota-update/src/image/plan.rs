@@ -54,6 +54,9 @@ impl Plan {
         steps.push(root.clone().into_version(m.to_version())?.rename());
         steps.push(verity.clone().into_version(m.to_version())?.rename());
         steps.push(Self::install_uki(slot, &m.kernel, &rt.boot, source)?);
+        if rt.active_slot()?.is_legacy() {
+            steps.extend(Self::legacy_bootloader_migration(rt))
+        }
 
         Ok(Plan { steps })
     }
@@ -100,6 +103,24 @@ impl Plan {
                 .arg_path(file.full_name(source))
                 .arg(format!("{boot}/EFI/Linux/{uki_name}")),
         ))
+    }
+
+    fn legacy_bootloader_migration(rt: &Runtime) -> Vec<Pipeline> {
+        vec![
+            CommandSpec::new("sed")
+                .arg("-i")
+                .arg("s/^default .*/default @saved/")
+                .arg(format!("{}/loader/loader.conf", rt.boot))
+                .into(),
+            CommandSpec::new("rm")
+                .arg("-f")
+                .arg(format!("{}/loader/entries.srel", rt.boot))
+                .into(),
+            CommandSpec::new("bootctl")
+                .arg("set-default")
+                .arg("auto")
+                .into(),
+        ]
     }
 
     fn finalize_flush(volume: &Volume) -> Pipeline {
@@ -196,6 +217,9 @@ mod tests {
             "lvrename pool root_empty root_25.12.1_44cc41b403a2d323",
             "lvrename pool verity_empty verity_25.12.1_44cc41b403a2d323",
             "install -m 0644 /sysupdate/ghaf_kernel_25.12.1_44cc41b403a2d323.efi /boot/EFI/Linux/ghaf-25.12.1-44cc41b403a2d323.efi",
+            "sed -i 's/^default .*/default @saved/' /boot/loader/loader.conf",
+            "rm -f /boot/loader/entries.srel",
+            "bootctl set-default auto",
         ];
 
         let plan = Plan::install(&rt, &m, &Path::new("/sysupdate")).expect("install failed");
