@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	stats_api "givc/modules/api/stats"
 )
@@ -64,6 +65,7 @@ type process struct {
 }
 
 type StatsController struct {
+	mu        sync.Mutex
 	jiffies   uint64
 	processes map[uint64]process
 	totals    []uint64
@@ -159,6 +161,10 @@ func (c *StatsController) GetProcessStats(ctx context.Context) (*stats_api.Proce
 	if ctx == nil {
 		return nil, fmt.Errorf("context cannot be nil")
 	}
+
+	// Mutex lock to ensure thread safety
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	file, err := os.Open("/proc/stat")
 	if err != nil {
