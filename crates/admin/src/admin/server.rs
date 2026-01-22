@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tonic::{Code, Response, Status};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 pub use pb::admin_service_server::AdminServiceServer;
 
@@ -314,7 +314,7 @@ impl AdminServiceImpl {
                     );
                 }
 
-                debug!("Status of {} is {:#?} (updated)", entry.name, status);
+                trace!("Status of {} is {:?} (updated)", entry.name, status);
                 // We have immutable copy of entry here, but need update _in registry_ copy
                 self.registry.update_state(&entry.name, status)?;
 
@@ -337,13 +337,12 @@ impl AdminServiceImpl {
             watch.tick().await;
             let watch_list = self.registry.watch_list();
             for entry in watch_list {
-                debug!("Monitoring {}...", entry.name);
+                trace!("Monitoring {}", entry.name);
                 let name = entry.name.clone();
                 if let Err(err) = self.monitor_routine(entry).await {
                     error!("Error during watch {}: {err}", name);
                 }
             }
-            info!("{:#?}", self.registry);
         }
     }
 

@@ -37,10 +37,10 @@ impl Registry {
 
     pub(crate) fn register(&self, entry: RegistryEntry) {
         let mut state = self.map.lock().unwrap();
-        info!("Registering {:#?}", entry);
+        info!("Registering {:?}", entry);
         let event = Event::UnitRegistered(entry.clone().into());
         if let Some(old) = state.insert(entry.name.clone(), entry) {
-            info!("Replaced old entry {:#?}", old);
+            debug!("Replaced old entry {:?}", old);
             self.send_event(Event::UnitShutdown(old.into()));
         }
         info!("Sending event {event:?}");
@@ -58,7 +58,7 @@ impl Registry {
                 }) {
                     self.send_event(Event::UnitShutdown(entry.into()));
                 }
-                info!("Deregistering {:#?}", entry);
+                info!("Deregistering {:?}", entry);
                 self.send_event(Event::UnitShutdown(entry.into()));
                 Ok(())
             }
