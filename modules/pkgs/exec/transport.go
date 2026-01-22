@@ -117,9 +117,19 @@ func handleInput(stream pb.Exec_RunCommandServer, proc *process) {
 					log.Warnf("handleInput: stdin received but process not started")
 					return
 				}
-				if _, err := proc.stdin.Write(v.Stdin.Payload); err != nil {
-					log.Warnf("handleInput: write to stdin failed: %v", err)
+				if proc.stdin == nil {
+					log.Warnf("handleInput: stdin received but stdin not open")
 					return
+				}
+				if v.Stdin.Payload != nil {
+					if _, err := proc.stdin.Write(v.Stdin.Payload); err != nil {
+						log.Warnf("handleInput: write to stdin failed: %v", err)
+						return
+					}
+				}
+				if v.Stdin.GetEof() {
+					proc.stdin.Close()
+					proc.stdin = nil
 				}
 			case *pb.CommandRequest_Signal:
 				if proc == nil {
@@ -188,21 +198,21 @@ func (s *ExecServer) startCommand(req *pb.StartCommand, wg *sync.WaitGroup, stre
 	}
 
 	// Stream stdout
-	go streamOutput(stdout, stream, wg, func(data []byte) *pb.CommandResponse {
+	go streamOutput(stdout, stream, wg, func(data []byte, eof bool) *pb.CommandResponse {
 		log.Infof("Streaming stdout: %d bytes\n", len(data))
 		return &pb.CommandResponse{
 			Event: &pb.CommandResponse_Stdout{
-				Stdout: &pb.CommandIO{Payload: data},
+				Stdout: &pb.CommandIO{Payload: data, Eof: eof},
 			},
 		}
 	})
 
 	// Stream stderr
-	go streamOutput(stderr, stream, wg, func(data []byte) *pb.CommandResponse {
+	go streamOutput(stderr, stream, wg, func(data []byte, eof bool) *pb.CommandResponse {
 		log.Infof("Streaming stderr: %d bytes\n", len(data))
 		return &pb.CommandResponse{
 			Event: &pb.CommandResponse_Stderr{
-				Stderr: &pb.CommandIO{Payload: data},
+				Stderr: &pb.CommandIO{Payload: data, Eof: eof},
 			},
 		}
 	})
@@ -224,7 +234,7 @@ func (s *ExecServer) startCommand(req *pb.StartCommand, wg *sync.WaitGroup, stre
 	return proc, nil
 }
 
-func streamOutput(reader io.ReadCloser, stream pb.Exec_RunCommandServer, wg *sync.WaitGroup, makeResponse func(data []byte) *pb.CommandResponse) {
+func streamOutput(reader io.ReadCloser, stream pb.Exec_RunCommandServer, wg *sync.WaitGroup, makeResponse func(data []byte, eof bool) *pb.CommandResponse) {
 	defer reader.Close()
 	defer wg.Done()
 	// Create a buffered reader
@@ -233,14 +243,15 @@ func streamOutput(reader io.ReadCloser, stream pb.Exec_RunCommandServer, wg *syn
 	for {
 		n, err := bufReader.Read(buffer)
 		if err == io.EOF {
-			log.Errorf("EOF during reading input: %v", err)
+			makeResponse(buffer[:0], true)
+			log.Infof("EOF during reading input: %v", err)
 			break
 		}
 		if err != nil {
 			log.Errorf("unknown error reading input: %v", err)
 			return
 		}
-		resp := makeResponse(buffer[:n])
+		resp := makeResponse(buffer[:n], false)
 		if err := stream.Send(resp); err != nil {
 			log.Errorf("failed to stream: %v", err)
 		}
