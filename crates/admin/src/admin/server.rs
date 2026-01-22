@@ -359,8 +359,7 @@ impl AdminServiceImpl {
         let vm = req
             .vm_name
             .as_deref()
-            .map(VmName::Vm)
-            .unwrap_or(VmName::App(&name));
+            .map_or(VmName::App(&name), VmName::Vm);
         let vm_name = vm.vm_service();
         let systemd_agent_name = vm.agent_service();
 

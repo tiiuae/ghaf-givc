@@ -58,14 +58,11 @@ impl Registry {
                 }) {
                     self.send_event(Event::UnitShutdown(entry.into()));
                 }
-                info!("Deregistering {:?}", entry);
+                info!("Deregistering {entry:?}");
                 self.send_event(Event::UnitShutdown(entry.into()));
                 Ok(())
             }
-            None => Err(anyhow!(
-                "Can't deregister entry {}, it not registered",
-                name
-            )),
+            None => Err(anyhow!("Can't deregister entry {name}, it not registered",)),
         }
     }
 
@@ -85,7 +82,7 @@ impl Registry {
             .cloned()
             .collect();
         if list.is_empty() {
-            bail!("No entries match string {}", name)
+            bail!("No entries match string {name}")
         }
         Ok(list)
     }
