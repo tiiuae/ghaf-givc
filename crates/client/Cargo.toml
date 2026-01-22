@@ -9,6 +9,7 @@ version = "0.0.1"
 [dependencies]
 anyhow = "1.0.100"
 async-channel = "2.5.0"
+async-stream = "*"
 hyper-util = "0.1"
 tokio-stream = "0.1"
 tokio = { version = "1.49", features = ["rt-multi-thread", "time", "macros"] }

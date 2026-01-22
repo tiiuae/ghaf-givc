@@ -16,6 +16,7 @@ message StartCommand {
 
 message CommandIO {
     bytes Payload = 1;
+    bool Eof = 2;
 }
 
 message SignalCommand {
