@@ -211,6 +211,11 @@ in
         > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
       '';
     };
+
+    enableCtapModule = mkEnableOption ''
+      CTAP interaction module for security token proxy host
+    '';
+
   };
 
   config = mkIf cfg.enable {
@@ -279,7 +284,7 @@ in
         TimeoutStopSec = 5;
         RestartSec = 1;
       };
-      path = [ pkgs.dbus ];
+      path = [ pkgs.dbus ] ++ lib.optional cfg.enableCtapModule pkgs.qubes-ctap;
       environment = {
         "AGENT" = "${toJSON cfg.transport}";
         "DEBUG" = "${trivial.boolToString cfg.debug}";
@@ -298,6 +303,7 @@ in
         "NOTIFIER_SOCKET_DIR" = "${optionalString cfg.notifier.enable (
           builtins.dirOf cfg.notifier.socketPath
         )}";
+        "CTAP" = "${trivial.boolToString cfg.enableCtapModule}";
       };
     };
     networking.firewall.allowedTCPPorts =

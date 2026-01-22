@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	givc_config "givc/modules/pkgs/config"
+	givc_ctap "givc/modules/pkgs/ctap"
 	givc_exec "givc/modules/pkgs/exec"
 	givc_grpc "givc/modules/pkgs/grpc"
 	givc_hwidmanager "givc/modules/pkgs/hwidmanager"
@@ -95,6 +96,16 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 		} else {
 			log.Infof("Notification service capability enabled")
 			grpcServices = append(grpcServices, notifierServer)
+		}
+	}
+
+	if config.Capabilities.Optional.CtapEnabled {
+		ctapServer, err := givc_ctap.NewCtapServer()
+		if err != nil {
+			log.Errorf("Cannot create ctap server: %v", err)
+		} else {
+			log.Infof("Ctap service capability enabled")
+			grpcServices = append(grpcServices, ctapServer)
 		}
 	}
 

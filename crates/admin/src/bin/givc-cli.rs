@@ -10,6 +10,7 @@ use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
 use serde::ser::Serialize;
 use std::path::PathBuf;
 use std::time;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::interval;
 use tracing::info;
 
@@ -145,6 +146,9 @@ enum Commands {
         #[command(subcommand)]
         test: Test,
     },
+    Ctap {
+        op: String,
+    },
 }
 
 fn unit_type_parse(s: &str) -> anyhow::Result<UnitType> {
@@ -272,6 +276,19 @@ impl UpdateSub {
     }
 }
 
+async fn ctap(admin: AdminClient, operation: String) -> anyhow::Result<()> {
+    let mut payload = vec![];
+    tokio::io::stdin().read_to_end(&mut payload).await?;
+    let (op, args) = if let Some((op, args)) = operation.split_once('+') {
+        (op.to_string(), vec![args.to_string()])
+    } else {
+        (operation, vec![])
+    };
+    let output = admin.ctap(op, args, payload).await?;
+    tokio::io::stdout().write_all(&output).await?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     givc::trace_init()?;
@@ -370,6 +387,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             while limit.as_mut().is_none_or(|l| l.next().is_some()) {
                 dump(watch.channel.recv().await?, as_json)?;
             }
+        }
+
+        Commands::Ctap { op } => {
+            ctap(admin, op).await?;
         }
 
         Commands::NotifyUser {

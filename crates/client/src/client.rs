@@ -516,4 +516,19 @@ impl AdminClient {
         .await?;
         Ok(())
     }
+
+    /// Run a CTAP authentication request
+    /// # Errors
+    /// Fails if there was an error while accessing the authentication token
+    pub async fn ctap(
+        &self,
+        req: String,
+        args: Vec<String>,
+        payload: Vec<u8>,
+    ) -> anyhow::Result<Vec<u8>> {
+        let req = pb::ctap::CtapRequest { req, args, payload };
+        let response = self.connect_to().await?.ctap(req).await?.into_inner();
+
+        Ok(response.output)
+    }
 }
