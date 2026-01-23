@@ -38,6 +38,7 @@ const (
 	EnvHwidIface      = "HWID_IFACE"
 	EnvNotifier       = "NOTIFIER"
 	EnvNotifierSocket = "NOTIFIER_SOCKET_DIR"
+	EnvCtap           = "CTAP"
 )
 
 // AgentConfig holds the complete configuration for the GIVC agent
@@ -92,6 +93,7 @@ type OptionalCapabilities struct {
 	HwidInterface   string // Hardware interface for HWID
 	NotifierEnabled bool   // Notification service capability
 	NotifierSocket  string // Socket directory for notifications
+	CtapEnabled     bool   // Ctap interaction capability
 }
 
 // parseJSONEnv parses a JSON environment variable into a target struct
@@ -338,5 +340,9 @@ func parseOptionalCapabilities(optional *OptionalCapabilities) {
 				optional.NotifierSocket = notifierSocket
 			}
 		}
+	}
+
+	if ctapService, ctapPresent := os.LookupEnv(EnvCtap); ctapPresent {
+		optional.CtapEnabled = ctapService != "false"
 	}
 }

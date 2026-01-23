@@ -5,6 +5,7 @@ import "stats/stats.proto";
 import "locale/locale.proto";
 import "systemd/systemd.proto";
 import "notify/notify.proto";
+import "ctap/ctap.proto";
 
 package admin;
 
@@ -135,6 +136,16 @@ message SetGenerationResponse {
     optional string Error = 3;
 }
 
+message CtapRequest {
+    string Req = 1;
+    repeated string Args = 2;
+    bytes Payload = 3;
+}
+
+message CtapResponse {
+    bytes Output = 1;
+}
+
 service AdminService {
     // Register a remote agent or service
     rpc RegisterService(RegistryRequest) returns (RegistryResponse) {}
@@ -182,4 +193,7 @@ service AdminService {
 
     // Send user notification
     rpc NotifyUser(UserNotificationRequest) returns (notify.Status) {}
+
+    // Perform CTAP action
+    rpc Ctap(ctap.CtapRequest) returns (ctap.CtapResponse) {}
 }

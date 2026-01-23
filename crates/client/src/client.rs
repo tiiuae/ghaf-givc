@@ -384,8 +384,7 @@ impl AdminClient {
                 status: Some(Status::Initial(init)),
             }) => QueryResult::parse_list(init.list)?,
             Some(WatchItem { status: Some(item) }) => bail!(
-                "Protocol error, first item in stream not pb::admin::watch_item::Status::Initial, {:?}",
-                item
+                "Protocol error, first item in stream not pb::admin::watch_item::Status::Initial, {item:?}",
             ),
             Some(_) => bail!("Protocol error, initial item missing"),
             _ => bail!("Protocol error, status field missing"),
@@ -515,5 +514,20 @@ impl AdminClient {
         })
         .await?;
         Ok(())
+    }
+
+    /// Run a CTAP authentication request
+    /// # Errors
+    /// Fails if there was an error while accessing the authentication token
+    pub async fn ctap(
+        &self,
+        req: String,
+        args: Vec<String>,
+        payload: Vec<u8>,
+    ) -> anyhow::Result<Vec<u8>> {
+        let req = pb::ctap::CtapRequest { req, args, payload };
+        let response = self.connect_to().await?.ctap(req).await?.into_inner();
+
+        Ok(response.output)
     }
 }

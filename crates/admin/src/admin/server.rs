@@ -5,7 +5,7 @@ use crate::pb::{
     self, ApplicationRequest, ApplicationResponse, Empty, ListGenerationsResponse, LocaleRequest,
     QueryListResponse, RegistryRequest, RegistryResponse, SetGenerationRequest,
     SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest, UnitStatusRequest,
-    WatchItem,
+    WatchItem, ctap::CtapRequest, ctap::CtapResponse,
 };
 use anyhow::{Context, anyhow, bail};
 use async_stream::try_stream;
@@ -359,8 +359,7 @@ impl AdminServiceImpl {
         let vm = req
             .vm_name
             .as_deref()
-            .map(VmName::Vm)
-            .unwrap_or(VmName::App(&name));
+            .map_or(VmName::App(&name), VmName::Vm);
         let vm_name = vm.vm_service();
         let systemd_agent_name = vm.agent_service();
 
@@ -841,6 +840,22 @@ impl pb::admin_service_server::AdminService for AdminService {
                 }
                 _ => anyhow::bail!("unimplemented update method"),
             }
+        })
+        .await
+    }
+
+    async fn ctap(
+        &self,
+        request: tonic::Request<CtapRequest>,
+    ) -> Result<tonic::Response<CtapResponse>, tonic::Status> {
+        escalate(request, async move |req| {
+            let gui_vm_mgr = self
+                .inner
+                .agent_endpoint("givc-gui-vm.service")
+                .context("VM not found")?;
+            let mut client = pb::ctap::ctap_client::CtapClient::new(gui_vm_mgr.connect().await?);
+
+            Ok(client.ctap(req).await?.into_inner())
         })
         .await
     }
