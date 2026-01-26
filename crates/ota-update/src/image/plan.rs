@@ -92,8 +92,10 @@ impl Plan {
         source: &Path,
     ) -> anyhow::Result<Pipeline> {
         let uki_name = slot
-            .uki
+            .boot
             .as_ref()
+            .and_then(|x| x.uki())
+            .map(|x| x.to_string())
             .ok_or_else(|| anyhow::anyhow!("cannot determine UKI name for slot"))?;
 
         Ok(Pipeline::new(
@@ -139,28 +141,20 @@ impl Plan {
 
         let mut steps = Vec::new();
 
-        // Remove UKI if present
-        if let Some(uki) = &slot.uki {
-            steps.push(Self::remove_uki(rt, uki));
-        }
-
         // Full slot: rename to empty
-        let empty_id = match &slot.empty_id() {
+        let empty_id = match slot.empty_id() {
             Some(h) if !rt.has_empty_with_hash(h) => h.to_string(),
             _ => rt.allocate_empty_identifier()?,
         };
 
+        // Remove UKI if present
+        if let Some(boot) = &slot.boot {
+            steps.push(boot.clone().to_remove()); // FIXME: clone
+        }
+
         steps.extend(Self::rename_slot_to_empty(&slot, &empty_id));
 
         Ok(Plan { steps })
-    }
-
-    fn remove_uki(rt: &Runtime, uki: &UkiEntry) -> Pipeline {
-        Pipeline::new(
-            CommandSpec::new("rm")
-                .arg("-f")
-                .arg_path(uki.full_name(&rt.boot)),
-        )
     }
 
     fn rename_slot_to_empty(slot: &SlotGroup, empty_id: &str) -> Vec<Pipeline> {

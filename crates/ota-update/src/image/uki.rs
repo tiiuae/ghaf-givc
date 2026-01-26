@@ -56,6 +56,22 @@ impl fmt::Display for UkiEntry {
     }
 }
 
+impl fmt::Display for BootEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            BootEntryKind::Managed(uki) => {
+                write!(f, "managed: {} [id={}]", uki, self.id)
+            }
+            BootEntryKind::Unmanaged => {
+                write!(f, "unmanaged: id={}", self.id)
+            }
+            BootEntryKind::Legacy => {
+                write!(f, "legacy: id={}", self.id)
+            }
+        }
+    }
+}
+
 impl TryFrom<&str> for UkiEntry {
     type Error = anyhow::Error;
 
@@ -143,6 +159,27 @@ impl BootEntry {
     #[must_use]
     pub fn is_legacy(&self) -> bool {
         matches!(self.kind, BootEntryKind::Legacy)
+    }
+
+    #[must_use]
+    pub fn uki(&self) -> Option<&UkiEntry> {
+        match &self.kind {
+            BootEntryKind::Managed(uki) => Some(&uki),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn version(&self) -> Option<&Version> {
+        self.uki().map(|x| &x.version)
+    }
+
+    #[must_use]
+    pub fn matches(&self, slot: &Slot) -> bool {
+        match &self.kind {
+            BootEntryKind::Managed(uki) => uki.matches(slot),
+            _ => false,
+        }
     }
 
     pub fn to_remove(self) -> Pipeline {
