@@ -37,16 +37,16 @@ impl SlotSelection {
 }
 
 impl Runtime {
-    pub fn new(lvs: &str, cmdline: &str, bootctl: &Vec<BootctlItem>) -> Self {
+    pub fn new(lvs: &str, cmdline: &str, bootctl: &Vec<BootctlItem>) -> Result<Self> {
         let volumes = parse_lvs_output(lvs);
         let (slots, volumes) = Slot::from_volumes(volumes);
-        Self {
+        Ok(Self {
             slots,
             volumes,
             kernel: KernelParams::from_cmdline(cmdline),
             ukis: UkiEntry::from_bootctl(bootctl),
             boot: "/boot".into(), // FIXME: detect /boot if possible
-        }
+        })
     }
 
     pub fn slots_by_class<'a>(

@@ -86,7 +86,7 @@ async fn populate_runtime() -> anyhow::Result<Runtime> {
         .context("while reading /proc/cmdline")?;
     let bootctl = get_bootctl_info().await?;
     let lvs = read_lvs_output().await.context("while read lvs")?;
-    Ok(Runtime::new(&lvs, &cmdline, &bootctl))
+    Ok(Runtime::new(&lvs, &cmdline, &bootctl)?)
 }
 
 async fn execute_plan(plan: Plan, dry_run: bool) -> anyhow::Result<()> {
