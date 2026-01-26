@@ -10,12 +10,12 @@ pub use helpers::{manifest, slots, volume};
 
 pub fn make_test_runtime() -> Runtime {
     let bootctl = parse_bootctl(&BOOTCTL).unwrap();
-    Runtime::new(&LVS, "root=fstab", &bootctl).unwrap()
+    Runtime::new(&LVS, "root=fstab", bootctl).unwrap()
 }
 
 pub fn make_test_runtime_installed() -> Runtime {
     let bootctl = parse_bootctl(&BOOTCTL).unwrap();
-    Runtime::new(&LVS_INSTALLED, &KERNEL_CMDLINE, &bootctl).unwrap()
+    Runtime::new(&LVS_INSTALLED, &KERNEL_CMDLINE, bootctl).unwrap()
 }
 
 pub fn make_test_manifest() -> Manifest {
