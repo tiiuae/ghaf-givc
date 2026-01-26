@@ -89,10 +89,13 @@ impl Runtime {
 
         // 3. Attach UKI metadata for the plan
         let slot = SlotGroup {
-            uki: Some(UkiEntry {
-                version: target,
-                boot_counter: None,
-            }),
+            boot: Some(
+                (UkiEntry {
+                    version: target,
+                    boot_counter: None,
+                })
+                .into(),
+            ),
             ..slot
         };
 
@@ -234,11 +237,11 @@ impl Runtime {
             }
 
             // UKI
-            match &group.uki {
-                Some(uki) => {
-                    out.push_str(&format!("  uki: {}\n", uki.full_name(&self.boot).display()));
+            match &group.boot {
+                Some(boot) => {
+                    out.push_str(&format!("  boot: {}\n", boot));
                 }
-                None => out.push_str("  uki: <none>\n"),
+                None => out.push_str("  boot: <none>\n"),
             }
 
             out.push('\n');
