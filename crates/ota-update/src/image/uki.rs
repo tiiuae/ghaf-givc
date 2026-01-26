@@ -1,9 +1,30 @@
 use super::Version;
+use super::pipeline::{CommandSpec, Pipeline};
 use super::slot::Slot;
 use crate::bootctl::BootctlItem;
 use anyhow::{Result, anyhow, bail};
 use std::fmt;
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BootEntryKind {
+    /// Ghaf-managed UKI
+    Managed(UkiEntry),
+
+    /// type2, but not recognized as Ghaf UKI
+    Unmanaged,
+
+    /// Legacy boot entry (type1)
+    Legacy,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BootEntry {
+    /// bootctl entry id (used for unlink)
+    pub id: String,
+
+    pub kind: BootEntryKind,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UkiEntry {
@@ -88,24 +109,60 @@ impl TryFrom<&str> for UkiEntry {
     }
 }
 
-impl UkiEntry {
-    pub fn from_bootctl(bootctl: &Vec<BootctlItem>) -> Vec<Self> {
-        bootctl
-            .iter()
-            .filter_map(|each| {
-                if each.r#type == "type2" {
-                    // Invalid entries just skipped
-                    each.path
-                        .file_name()
-                        .and_then(|x| x.to_str())
-                        .and_then(|x| UkiEntry::try_from(x).ok())
-                } else {
-                    None
-                }
+impl BootEntry {
+    pub fn from_bootctl(items: Vec<BootctlItem>) -> Vec<Self> {
+        items
+            .into_iter()
+            .filter_map(|item| {
+                let id = item.id;
+
+                let kind = match item.r#type.as_str() {
+                    // UKI entries
+                    "type2" => match UkiEntry::try_from(id.as_str()).ok() {
+                        Some(uki) => BootEntryKind::Managed(uki),
+                        None => BootEntryKind::Unmanaged,
+                    },
+
+                    // Legacy entries
+                    "type1" => BootEntryKind::Legacy,
+
+                    // Ignore everything else
+                    _ => return None,
+                };
+
+                Some(BootEntry { id, kind })
             })
             .collect()
     }
 
+    #[must_use]
+    pub fn is_managed(&self) -> bool {
+        matches!(self.kind, BootEntryKind::Managed(_))
+    }
+
+    #[must_use]
+    pub fn is_legacy(&self) -> bool {
+        matches!(self.kind, BootEntryKind::Legacy)
+    }
+
+    pub fn to_remove(self) -> Pipeline {
+        CommandSpec::new("bootctl")
+            .arg("unlink")
+            .arg(self.id)
+            .into()
+    }
+}
+
+impl From<UkiEntry> for BootEntry {
+    fn from(uki: UkiEntry) -> Self {
+        BootEntry {
+            id: uki.to_string(),
+            kind: BootEntryKind::Managed(uki),
+        }
+    }
+}
+
+impl UkiEntry {
     pub fn full_name<P: AsRef<Path>>(&self, base_dir: P) -> PathBuf {
         base_dir.as_ref().join(&self.to_string())
     }

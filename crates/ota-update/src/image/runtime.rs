@@ -3,7 +3,7 @@ use super::group::SlotGroup;
 use super::lvm::{Volume, parse_lvs_output};
 use super::manifest::{File, Manifest};
 use super::slot::{Kind, Slot, SlotClass};
-use super::uki::UkiEntry;
+use super::uki::{BootEntry, UkiEntry};
 use crate::bootctl::BootctlItem;
 use anyhow::{Result, anyhow, bail};
 use std::collections::{HashMap, HashSet};
@@ -13,7 +13,8 @@ pub struct Runtime {
     pub slots: Vec<Slot>,
     pub volumes: Vec<Volume>,
     pub kernel: KernelParams,
-    pub ukis: Vec<UkiEntry>,
+    // Unmanaged and/or legacy boot entries which didn't match to SlotGroup
+    pub boot_entries: Vec<BootEntry>,
     pub boot: String,
 }
 
@@ -37,14 +38,16 @@ impl SlotSelection {
 }
 
 impl Runtime {
-    pub fn new(lvs: &str, cmdline: &str, bootctl: &Vec<BootctlItem>) -> Result<Self> {
+    pub fn new(lvs: &str, cmdline: &str, bootctl: Vec<BootctlItem>) -> Result<Self> {
         let volumes = parse_lvs_output(lvs);
         let (slots, volumes) = Slot::from_volumes(volumes);
+        let boot_entries = BootEntry::from_bootctl(bootctl);
+        let (managed, unmanaged) = boot_entries.into_iter().partition(|x| x.is_managed());
         Ok(Self {
             slots,
             volumes,
             kernel: KernelParams::from_cmdline(cmdline),
-            ukis: UkiEntry::from_bootctl(bootctl),
+            boot_entries: unmanaged,
             boot: "/boot".into(), // FIXME: detect /boot if possible
         })
     }
@@ -60,7 +63,7 @@ impl Runtime {
     }
 
     pub fn slot_groups(&self) -> Result<Vec<SlotGroup>> {
-        SlotGroup::group_volumes(self.slots.clone(), self.ukis.clone()) // FIXME: clone!
+        SlotGroup::group_volumes(self.slots.clone(), vec![]) // FIXME: clone!
     }
 
     pub fn select_update_slot(&self, manifest: &Manifest) -> Result<SlotSelection> {
@@ -320,7 +323,7 @@ impl Default for Runtime {
             volumes: Vec::new(),
             kernel: KernelParams::default(),
             boot: "/boot".into(),
-            ukis: Vec::new(),
+            boot_entries: Vec::new(),
         }
     }
 }
