@@ -1,5 +1,5 @@
 // Expected parameters in /proc/cmdline with some unrelated params (`root=fstab`)
-pub const KERNEL_CMDLINE: &str = "ghav.revision=25.12.1 storehash=deadbeefcafebabe root=fstab";
+pub const KERNEL_CMDLINE: &str = "ghaf.revision=25.12.1 storehash=deadbeefcafebabe root=fstab";
 
 // Captured by `sudo lvs --all --nameprefixes --noheadings` from prototype Ghaf with A/B update placeholder slots
 pub const LVS: &str = r#"
@@ -27,8 +27,8 @@ pub const BOOTCTL: &str = r#"
         {
                 "type" : "type2",
                 "source" : "esp",
-                "id" : "nixos_25.12.1.efi",
-                "path" : "/boot/EFI/Linux/nixos_25.12.1+2-1.efi",
+                "id" : "ghaf-25.12.1-deadbeefdeadbeef.efi",
+                "path" : "/boot/EFI/Linux/ghaf-25.12.1-deadbeefdeadbeef+2-1.efi",
                 "root" : "/boot",
                 "title" : "NixOS 25.11 (Xantusia)",
                 "showTitle" : "NixOS 25.11 (Xantusia)",
