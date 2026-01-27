@@ -99,6 +99,7 @@ pub(crate) fn parse_lvs_output(output: &str) -> Vec<Volume> {
 mod tests {
     use super::*;
     use crate::image::Version;
+    use crate::image::slot::{Kind, Slot};
 
     #[test]
     fn parse_lv_size_gb() {

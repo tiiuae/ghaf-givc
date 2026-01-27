@@ -9,7 +9,9 @@ use anyhow::{Result, anyhow, bail};
 
 #[derive(Debug)]
 pub struct Runtime {
-    pub slots: Vec<Slot>,
+    // Managed slots
+    pub slots: Vec<SlotGroup>,
+    // Unmanaged volumes (boot, swap, etc)
     pub volumes: Vec<Volume>,
     pub kernel: KernelParams,
     // Unmanaged and/or legacy boot entries which didn't match to SlotGroup
@@ -42,6 +44,7 @@ impl Runtime {
         let (slots, volumes) = Slot::from_volumes(volumes);
         let boot_entries = BootEntry::from_bootctl(bootctl);
         let (managed, unmanaged) = boot_entries.into_iter().partition(|x| x.is_managed());
+        let slots = SlotGroup::group_volumes(slots, managed)?;
         Ok(Self {
             slots,
             volumes,
@@ -61,12 +64,12 @@ impl Runtime {
             .filter(move |g| g.classify(&self.kernel) == class)
     }
 
-    pub fn slot_groups(&self) -> Result<Vec<SlotGroup>> {
-        SlotGroup::group_volumes(self.slots.clone(), vec![]) // FIXME: clone!
+    pub fn slot_groups(&self) -> &Vec<SlotGroup> {
+        &self.slots
     }
 
     pub fn select_update_slot(&self, manifest: &Manifest) -> Result<SlotSelection> {
-        let slots = self.slot_groups()?;
+        let slots = self.slot_groups();
         let target = manifest.to_version();
 
         // 1. Target already installed (complete used slot)
@@ -95,14 +98,14 @@ impl Runtime {
                 })
                 .into(),
             ),
-            ..slot
+            ..slot.clone()
         };
 
         Ok(SlotSelection::Selected(slot))
     }
 
     pub fn find_slot(&self, version: &Version) -> Result<SlotGroup> {
-        let groups = self.slot_groups()?;
+        let groups = self.slot_groups();
 
         // 1. exact match
         let mut exact = groups.iter().filter(|g| g.version() == Some(version));
@@ -133,7 +136,7 @@ impl Runtime {
 
     pub fn active_slot(&self) -> Result<SlotGroup> {
         let mut active = self
-            .slot_groups()?
+            .slot_groups()
             .into_iter()
             .filter(|slot| slot.is_active(&self.kernel));
 
@@ -149,24 +152,19 @@ impl Runtime {
             );
         }
 
-        Ok(first)
+        Ok(first.clone())
     }
 
     pub fn has_empty_with_hash(&self, hash: &str) -> bool {
-        // FIXME: bogus design, I want this function no-error, but slot_groups() can throw
-        if let Ok(groups) = self.slot_groups() {
-            groups
-                .into_iter()
-                .filter(|s| s.empty_id() == Some(hash))
-                .next()
-                .is_some()
-        } else {
-            false
-        }
+        self.slot_groups()
+            .into_iter()
+            .filter(|s| s.empty_id() == Some(hash))
+            .next()
+            .is_some()
     }
 
     pub fn allocate_empty_identifier(&self) -> Result<String> {
-        let groups = self.slot_groups()?;
+        let groups = self.slot_groups();
         let used: Vec<&str> = groups.iter().filter_map(|s| s.empty_id()).collect();
 
         for i in 0..100 {
@@ -184,11 +182,11 @@ impl Runtime {
     pub fn inspect(&self) -> anyhow::Result<String> {
         let mut out = String::new();
 
-        let groups = self.slot_groups()?;
+        let groups = self.slot_groups();
 
         out.push_str("Slot groups:\n");
 
-        for group in &groups {
+        for group in groups {
             out.push_str("- slot: ");
             out.push_str(if group.is_used() { "used\n" } else { "empty\n" });
 
@@ -334,20 +332,20 @@ impl Default for Runtime {
 mod tests {
     use super::*;
 
-    use crate::image::test::{manifest, slots, volume};
+    use crate::image::test::{groups, manifest, volume};
 
     // complete root + verity slot
     #[test]
     fn groups_root_and_verity_into_single_slot() {
         let rt = Runtime {
-            slots: slots(&vec![
+            slots: groups(&vec![
                 "root_1.2.3_deadbeefdeadbeef",
                 "verity_1.2.3_deadbeefdeadbeef",
             ]),
             ..Runtime::default()
         };
 
-        let groups = rt.slot_groups().expect("group");
+        let groups = rt.slot_groups();
         assert_eq!(groups.len(), 1);
 
         let g = &groups[0];
@@ -366,11 +364,11 @@ mod tests {
     #[test]
     fn empty_slot_is_grouped() {
         let rt = Runtime {
-            slots: slots(&vec!["root_empty_01", "verity_empty_01"]),
+            slots: groups(&vec!["root_empty_01", "verity_empty_01"]),
             ..Runtime::default()
         };
 
-        let groups = rt.slot_groups().expect("group");
+        let groups = rt.slot_groups();
         assert_eq!(groups.len(), 1);
 
         let g = &groups[0];
@@ -382,11 +380,11 @@ mod tests {
     #[test]
     fn broken_slot_with_only_root_is_preserved() {
         let rt = Runtime {
-            slots: slots(&vec!["root_2.0.0_abcdabcdabcdabcd"]),
+            slots: groups(&vec!["root_2.0.0_abcdabcdabcdabcd"]),
             ..Runtime::default()
         };
 
-        let groups = rt.slot_groups().expect("group");
+        let groups = rt.slot_groups();
         assert_eq!(groups.len(), 1);
 
         let g = &groups[0];
@@ -398,18 +396,18 @@ mod tests {
     fn non_slot_volumes_are_ignored() {
         let rt = Runtime {
             volumes: vec![volume("swap"), volume("home")],
-            slots: slots(&vec!["root_1.0.0_aaaaaaaaaaaaaaaa"]),
+            slots: groups(&vec!["root_1.0.0_aaaaaaaaaaaaaaaa"]),
             ..Runtime::default()
         };
 
-        let groups = rt.slot_groups().expect("group");
+        let groups = rt.slot_groups();
         assert_eq!(groups.len(), 1);
     }
 
     #[test]
     fn multiple_slots_are_grouped_separately() {
         let rt = Runtime {
-            slots: slots(&vec![
+            slots: groups(&vec![
                 "root_1.0.0_aaaaaaaaaaaaaaaa",
                 "verity_1.0.0_aaaaaaaaaaaaaaaa",
                 "root_2.0.0_bbbbbbbbbbbbbbbb",
@@ -418,7 +416,7 @@ mod tests {
             ..Runtime::default()
         };
 
-        let mut groups = rt.slot_groups().expect("group");
+        let mut groups = rt.slot_groups().clone();
         // Kludgy sort with clone, I don't want add Ord to version only for this test
         groups.sort_by_key(|g| g.version().map(|v| (v.revision.clone(), v.hash.clone())));
 
@@ -442,21 +440,21 @@ mod tests {
     #[test]
     fn legacy_slot_is_grouped_correctly() {
         let rt = Runtime {
-            slots: slots(&vec!["root_0_deadbeefdeadbeef"]),
+            slots: groups(&vec!["root_0"]),
             ..Runtime::default()
         };
 
-        let groups = rt.slot_groups().expect("group");
+        let groups = rt.slot_groups();
         assert_eq!(groups.len(), 1);
 
         let g = &groups[0];
-        //assert!(g.is_legacy()); FIXME!
+        assert!(g.is_legacy());
     }
 
     #[test]
     fn select_slot_noop_if_version_already_installed() {
         let rt = Runtime {
-            slots: slots(&vec![
+            slots: groups(&vec![
                 "root_1.2.3_deadbeefdeadbeef",
                 "verity_1.2.3_deadbeefdeadbeef",
             ]),
@@ -476,7 +474,7 @@ mod tests {
     #[test]
     fn select_empty_slot_pair() {
         let rt = Runtime {
-            slots: slots(&vec![
+            slots: groups(&vec![
                 "root_1.0.0_aaaaaaaaaaaaaaaa",
                 "verity_1.0.0_aaaaaaaaaaaaaaaa",
                 "root_empty_01",
@@ -501,7 +499,7 @@ mod tests {
     #[test]
     fn incomplete_empty_slot_is_not_selected() {
         let rt = Runtime {
-            slots: slots(&vec!["root_empty_01"]),
+            slots: groups(&vec!["root_empty_01"]),
             ..Runtime::default()
         };
 
@@ -516,7 +514,7 @@ mod tests {
     #[test]
     fn one_of_multiple_empty_slots_is_selected() {
         let rt = Runtime {
-            slots: slots(&vec![
+            slots: groups(&vec![
                 "root_empty_01",
                 "verity_empty_01",
                 "root_empty_02",
@@ -538,7 +536,7 @@ mod tests {
     #[test]
     fn find_slot() {
         let rt = Runtime {
-            slots: slots(&vec![
+            slots: groups(&vec![
                 "root_1.0.0_aaaaaaaaaaaaaaaa",
                 "verity_1.0.0_aaaaaaaaaaaaaaaa",
                 "root_empty_01",
@@ -554,7 +552,7 @@ mod tests {
     #[test]
     fn detects_legacy_active_slot() {
         let rt = Runtime {
-            slots: slots(&vec!["root_1.0.0", "verity_1.0.0"]),
+            slots: groups(&vec!["root_1.0.0", "verity_1.0.0"]),
             ..Runtime::default()
         };
 
