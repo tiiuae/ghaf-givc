@@ -179,7 +179,7 @@ impl Runtime {
 
     /// Human-readable runtime introspection.
     /// Intended for debugging, dry-run output and diagnostics.
-    pub fn inspect(&self) -> anyhow::Result<String> {
+    pub fn inspect(&self) -> String {
         let mut out = String::new();
 
         let groups = self.slot_groups();
@@ -257,7 +257,7 @@ impl Runtime {
             }
         }
 
-        Ok(out)
+        out
     }
 }
 

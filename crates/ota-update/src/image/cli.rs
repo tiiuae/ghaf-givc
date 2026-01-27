@@ -72,7 +72,7 @@ impl ImageUpdate {
                 execute_plan(plan, self.dry_run).await
             }
             ImageAction::Status => {
-                let status = rt.inspect()?;
+                let status = rt.inspect();
                 println!("{status}");
                 Ok(())
             }
