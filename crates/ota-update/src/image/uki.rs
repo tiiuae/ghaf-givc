@@ -60,7 +60,7 @@ impl fmt::Display for BootEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {
             BootEntryKind::Managed(uki) => {
-                write!(f, "managed: {} [id={}]", uki, self.id)
+                write!(f, "managed: {uki} [id={}]", self.id)
             }
             BootEntryKind::Unmanaged => {
                 write!(f, "unmanaged: id={}", self.id)
@@ -76,7 +76,10 @@ impl TryFrom<&str> for UkiEntry {
     type Error = anyhow::Error;
 
     fn try_from(name: &str) -> Result<Self> {
-        if !name.ends_with(".efi") {
+        if Path::new(name)
+            .extension()
+            .is_some_and(|ext| !ext.eq_ignore_ascii_case("efi"))
+        {
             bail!("not an EFI binary");
         }
 
@@ -126,6 +129,7 @@ impl TryFrom<&str> for UkiEntry {
 }
 
 impl BootEntry {
+    #[must_use]
     pub fn from_bootctl(items: Vec<BootctlItem>) -> Vec<Self> {
         items
             .into_iter()
@@ -182,6 +186,7 @@ impl BootEntry {
         }
     }
 
+    #[must_use]
     pub fn to_remove(&self) -> Pipeline {
         CommandSpec::new("bootctl")
             .arg("unlink")
@@ -205,7 +210,7 @@ impl UkiEntry {
     }
 
     pub fn matches(&self, slot: &Slot) -> bool {
-        slot.version().as_deref() == Some(&self.version)
+        slot.version() == Some(&self.version)
     }
 }
 

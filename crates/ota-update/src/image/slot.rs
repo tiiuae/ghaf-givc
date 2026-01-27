@@ -125,11 +125,11 @@ impl fmt::Display for Slot {
             Status::Used(version) => {
                 write!(f, "{}_{}", self.kind, version.revision)?;
                 if let Some(hash) = &version.hash {
-                    write!(f, "_{}", hash)?;
+                    write!(f, "_{hash}")?;
                 }
             }
             Status::Empty(EmptyId::Known(id)) => {
-                write!(f, "{}_empty_{}", self.kind, id)?;
+                write!(f, "{}_empty_{id}", self.kind)?;
             }
             Status::Empty(EmptyId::Legacy) => {
                 write!(f, "{}_empty", self.kind)?;
@@ -204,13 +204,13 @@ impl Slot {
     #[must_use]
     pub fn version(&self) -> Option<&Version> {
         match &self.status {
-            Status::Used(version) => Some(&version),
+            Status::Used(version) => Some(version),
             _ => None,
         }
     }
 
     #[must_use]
-    pub fn into_version(self, version: Version) -> Result<Self> {
+    pub(crate) fn into_version(self, version: Version) -> Result<Self> {
         ensure!(!self.is_used(), "Can't assign version to already used slot");
         Ok(Self {
             status: Status::Used(version),

@@ -43,7 +43,7 @@ impl Runtime {
         let volumes = parse_lvs_output(lvs);
         let (slots, volumes) = Slot::from_volumes(volumes);
         let boot_entries = BootEntry::from_bootctl(bootctl);
-        let (managed, unmanaged) = boot_entries.into_iter().partition(|x| x.is_managed());
+        let (managed, unmanaged) = boot_entries.into_iter().partition(BootEntry::is_managed);
         let slots = SlotGroup::group_volumes(slots, managed)?;
         Ok(Self {
             slots,
@@ -194,11 +194,11 @@ impl Runtime {
             if let Some(version) = group.version() {
                 out.push_str(&format!("  version: {}", version.revision));
                 if let Some(hash) = &version.hash {
-                    out.push_str(&format!(" (hash={})", hash));
+                    out.push_str(&format!(" (hash={hash})"));
                 }
                 out.push('\n');
             } else if let Some(id) = group.empty_id() {
-                out.push_str(&format!("  id: {}\n", id));
+                out.push_str(&format!("  id: {id}\n"));
             } else {
                 out.push_str("  id: <none>\n");
             }
@@ -236,7 +236,7 @@ impl Runtime {
             // UKI
             match &group.boot {
                 Some(boot) => {
-                    out.push_str(&format!("  boot: {}\n", boot));
+                    out.push_str(&format!("  boot: {boot}\n"));
                 }
                 None => out.push_str("  boot: <none>\n"),
             }
