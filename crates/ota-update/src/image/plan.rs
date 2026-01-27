@@ -4,8 +4,6 @@ use super::lvm::Volume;
 use super::manifest::{File, Manifest};
 use super::pipeline::{CommandSpec, Pipeline};
 use super::runtime::{Runtime, SlotSelection};
-use super::slot::{Kind, Slot};
-use super::uki::UkiEntry;
 use anyhow::bail;
 use std::path::Path;
 

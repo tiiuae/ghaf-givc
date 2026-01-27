@@ -1,7 +1,7 @@
 use super::Version;
 use super::lvm::Volume;
 use super::pipeline::{CommandSpec, Pipeline};
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Result, anyhow, ensure};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq)]

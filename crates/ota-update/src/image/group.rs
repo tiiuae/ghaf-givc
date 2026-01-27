@@ -1,10 +1,7 @@
 use super::Version;
-use super::lvm::Volume;
-use super::runtime::{KernelParams, Runtime};
+use super::runtime::KernelParams;
 use super::slot::{Kind, Slot, SlotClass};
 use super::uki::BootEntry;
-use anyhow::{Result, bail};
-use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct SlotGroup {
@@ -184,7 +181,7 @@ impl SlotGroup {
 
             // Legacy fallback:
             // kernel has no version info, only USED legacy slot is active
-            (Some(slot_v), None) => self.is_legacy(),
+            (Some(_), None) => self.is_legacy(),
 
             // Empty slots are never active
             _ => false,
