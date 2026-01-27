@@ -147,7 +147,14 @@ impl Plan {
 
         // Remove UKI if present
         if let Some(boot) = &slot.boot {
-            steps.push(boot.clone().to_remove()); // FIXME: clone
+            steps.push(boot.to_remove());
+        }
+
+        // Remove legacy boot entries, if any
+        if slot.is_legacy() {
+            for boot in rt.boot_entries.iter().filter(|boot| boot.is_legacy()) {
+                steps.push(boot.to_remove())
+            }
         }
 
         steps.extend(Self::rename_slot_to_empty(&slot, &empty_id));
@@ -198,7 +205,7 @@ mod tests {
     use crate::image::test::*;
 
     #[test]
-    fn install() {
+    fn install_from_legacy() {
         let rt = make_test_runtime();
         let m = make_test_manifest();
         let expected = &[
@@ -222,7 +229,7 @@ mod tests {
     fn remove() {
         let rt = make_test_runtime_installed();
         let expected = &[
-            // FIXME: UKI removal?
+            "bootctl unlink ghaf-25.12.1-deadbeefdeadbeef.efi",
             "lvrename pool root_25.12.1_deadbeefdeadbeef root_empty_0",
             "lvrename pool verity_25.12.1_deadbeefdeadbeef verity_empty_0",
         ];
@@ -230,6 +237,19 @@ mod tests {
         let plan = Plan::remove(&rt, &version).expect("remove failed");
         assert_eq!(plan.into_script(), expected);
         let version = Version::new("25.12.1".into(), Some("deadbeefdeadbeef".into()));
+        let plan = Plan::remove(&rt, &version).expect("remove failed");
+        assert_eq!(plan.into_script(), expected);
+    }
+
+    #[test]
+    fn remove_legacy() {
+        let rt = make_test_runtime_installed();
+        let expected = &[
+            "bootctl unlink nixos-generation-1.conf",
+            "lvrename pool root_0 root_empty_0",
+            "lvrename pool verity_0 verity_empty_0",
+        ];
+        let version = Version::new("0".into(), None);
         let plan = Plan::remove(&rt, &version).expect("remove failed");
         assert_eq!(plan.into_script(), expected);
     }
