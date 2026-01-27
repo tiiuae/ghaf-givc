@@ -14,7 +14,7 @@ tokio-stream = "0.1"
 tokio = { version = "1.49", features = ["rt-multi-thread", "time", "macros"] }
 tokio-vsock = "*"
 tonic-types = "0.14"
-tonic = { version = "0.14", features = ["tls-ring"] }
+tonic = { version = "0.14", features = ["tls-aws-lc"] }
 tower = "0.5"
 tracing = "0.1"
 gethostname = "1.1.0"
