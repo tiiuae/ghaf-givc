@@ -182,10 +182,10 @@ impl BootEntry {
         }
     }
 
-    pub fn to_remove(self) -> Pipeline {
+    pub fn to_remove(&self) -> Pipeline {
         CommandSpec::new("bootctl")
             .arg("unlink")
-            .arg(self.id)
+            .arg(&self.id)
             .into()
     }
 }
