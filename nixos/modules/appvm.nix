@@ -33,7 +33,7 @@ let
     proxySubmodule
     tlsSubmodule
     eventSubmodule
-    policyAdminSubmodule
+    policyClientSubmodule
     ;
 in
 {
@@ -203,8 +203,8 @@ in
         > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
       '';
     };
-    policyAdmin = mkOption {
-      type = policyAdminSubmodule;
+    policyClient = mkOption {
+      type = policyClientSubmodule;
       default = { };
       description = "Ghaf policy rules mapped to actions.";
     };
@@ -300,9 +300,11 @@ in
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
         "EVENT_PROXY" = "${optionalString (cfg.eventProxy != null) (toJSON cfg.eventProxy)}";
-        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
-        "POLICY_CONFIG" = "${optionalString cfg.policyAdmin.enable (toJSON cfg.policyAdmin.policyConfig)}";
-        "POLICY_STORE" = "${optionalString cfg.policyAdmin.enable cfg.policyAdmin.storePath}";
+        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyClient.enable}";
+        "POLICY_CONFIG" = "${optionalString cfg.policyClient.enable (
+          toJSON cfg.policyClient.policyConfig
+        )}";
+        "POLICY_STORE" = "${optionalString cfg.policyClient.enable cfg.policyClient.storePath}";
       };
     };
     networking.firewall.allowedTCPPorts =
@@ -317,7 +319,7 @@ in
       in
       [ agentPort ] ++ proxyPorts ++ eventPorts;
     systemd.tmpfiles.rules = [
-      "d ${cfg.policyAdmin.storePath} 0755 1000 100 -"
+      "d ${cfg.policyClient.storePath} 0755 1000 100 -"
     ];
   };
 }

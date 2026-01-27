@@ -71,6 +71,6 @@ writeShellApplication {
 
     # build/run the test driver, passing any remaining arguments
     # shellcheck disable=SC2068,SC2086
-    nix run ".#apps.$system.vmTests-$name" ''${nix_args} -- ''${driver_args[@]}
+    nix run ".#apps.$system.vmTests-$name" "--print-build-logs" ''${nix_args} -- ''${driver_args[@]}
   '';
 }
