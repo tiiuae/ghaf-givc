@@ -5,7 +5,7 @@ use super::plan::Plan;
 use super::runtime::Runtime;
 use crate::bootctl::get_bootctl_info;
 use anyhow::{Context, Result};
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use fs2::FileExt;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ use tokio::fs::read_to_string;
 use tokio::process::Command;
 
 struct UpdateLock {
-    file: File,
+    _file: File,
     path: PathBuf,
 }
 
@@ -137,7 +137,7 @@ impl UpdateLock {
         file.try_lock_exclusive()
             .context("another ota-update instance is already running")?;
 
-        Ok(Self { file, path })
+        Ok(Self { _file: file, path })
     }
 }
 
