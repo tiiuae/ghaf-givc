@@ -43,8 +43,8 @@ impl Plan {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("slot has no verity volume"))?;
 
-        steps.push(Self::install_volume(root.volume(), &m.store, source)?);
-        steps.push(Self::install_volume(verity.volume(), &m.verity, source)?);
+        steps.push(Self::install_volume(root.volume(), &m.store, source));
+        steps.push(Self::install_volume(verity.volume(), &m.verity, source));
         steps.push(Self::finalize_flush(root.volume()));
         steps.push(Self::finalize_flush(verity.volume()));
 
@@ -59,7 +59,7 @@ impl Plan {
         Ok(Plan { steps })
     }
 
-    fn install_volume(volume: &Volume, file: &File, source: &Path) -> anyhow::Result<Pipeline> {
+    fn install_volume(volume: &Volume, file: &File, source: &Path) -> Pipeline {
         let target = format!("/dev/mapper/{}-{}", volume.vg_name, volume.lv_name);
         let input = file.full_name(source);
 
@@ -80,7 +80,7 @@ impl Plan {
             )
         };
 
-        Ok(pipeline)
+        pipeline
     }
 
     fn install_uki(

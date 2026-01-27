@@ -3,7 +3,7 @@ use super::group::SlotGroup;
 use super::lvm::{Volume, parse_lvs_output};
 use super::manifest::Manifest;
 use super::slot::{Slot, SlotClass};
-use super::uki::{BootEntry, UkiEntry};
+use super::uki::{BootEntry, BootEntryKind, UkiEntry};
 use crate::bootctl::BootctlItem;
 use anyhow::{Result, anyhow, bail};
 
@@ -43,7 +43,7 @@ impl Runtime {
         let volumes = parse_lvs_output(lvs);
         let (slots, volumes) = Slot::from_volumes(volumes);
         let boot_entries = BootEntry::from_bootctl(bootctl);
-        let (managed, unmanaged) = boot_entries.into_iter().partition(|x| x.is_managed());
+        let (managed, unmanaged) = boot_entries.into_iter().partition(BootEntry::is_managed);
         let slots = SlotGroup::group_volumes(slots, managed)?;
         Ok(Self {
             slots,
@@ -194,11 +194,11 @@ impl Runtime {
             if let Some(version) = group.version() {
                 out.push_str(&format!("  version: {}", version.revision));
                 if let Some(hash) = &version.hash {
-                    out.push_str(&format!(" (hash={})", hash));
+                    out.push_str(&format!(" (hash={hash})"));
                 }
                 out.push('\n');
             } else if let Some(id) = group.empty_id() {
-                out.push_str(&format!("  id: {}\n", id));
+                out.push_str(&format!("  id: {id}\n"));
             } else {
                 out.push_str("  id: <none>\n");
             }
@@ -236,7 +236,7 @@ impl Runtime {
             // UKI
             match &group.boot {
                 Some(boot) => {
-                    out.push_str(&format!("  boot: {}\n", boot));
+                    out.push_str(&format!("  boot: {boot}\n"));
                 }
                 None => out.push_str("  boot: <none>\n"),
             }
@@ -257,6 +257,27 @@ impl Runtime {
             }
         }
 
+        // Unmanaged and legacy boot entries
+        if !self.boot_entries.is_empty() {
+            out.push_str("Boot entries:\n");
+            for entry in &self.boot_entries {
+                match &entry.kind {
+                    BootEntryKind::Managed(uki) => {
+                        // Managed entry at runtime == invalid state
+                        out.push_str("  [ERROR] managed: ");
+                        out.push_str(&format!("{} [id={}]\n", uki, entry.id));
+                    }
+                    BootEntryKind::Legacy => {
+                        out.push_str("  legacy: ");
+                        out.push_str(&format!("id={}\n", entry.id));
+                    }
+                    BootEntryKind::Unmanaged => {
+                        out.push_str("  unmanaged: ");
+                        out.push_str(&format!("id={}\n", entry.id));
+                    }
+                }
+            }
+        }
         out
     }
 }
@@ -275,19 +296,18 @@ const CMDLINE_ARG_NAME: &str = "storehash";
 const GHAF_REVISION_NAME: &str = "ghaf.revision";
 
 impl KernelParams {
+    fn find_arg<'a>(cmdline: &'a str, key: &str) -> Option<&'a str> {
+        cmdline
+            .split_whitespace()
+            .filter_map(|s| s.split_once('='))
+            .find_map(|(k, v)| (k == key).then_some(v))
+    }
+
     /// Parse the storehash from a provided kernel commandline
     fn from_cmdline(cmdline: &str) -> Self {
-        let storehash_arg = cmdline
-            .split_whitespace()
-            .find(|&s| s.contains(&format!("{CMDLINE_ARG_NAME}=")));
-        let revision_arg = cmdline
-            .split_whitespace()
-            .find(|&s| s.contains(&format!("{GHAF_REVISION_NAME}=")));
-        let revision = revision_arg.and_then(|r| r.split("=").last());
-        let store_hash = storehash_arg.and_then(|h| h.split("=").last());
         Self {
-            store_hash: store_hash.map(ToOwned::to_owned),
-            revision: revision.map(ToOwned::to_owned),
+            store_hash: Self::find_arg(cmdline, CMDLINE_ARG_NAME).map(ToOwned::to_owned),
+            revision: Self::find_arg(cmdline, GHAF_REVISION_NAME).map(ToOwned::to_owned),
         }
     }
 

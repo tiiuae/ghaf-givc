@@ -20,15 +20,22 @@ impl fmt::Display for Version {
 }
 
 impl Version {
+    #[must_use]
     pub fn new(revision: String, hash: Option<String>) -> Self {
         Self { revision, hash }
     }
+
+    #[must_use]
     pub fn as_ref(&self) -> &str {
         &self.revision
     }
+
+    #[must_use]
     pub fn has_hash(&self) -> bool {
         self.hash.is_some()
     }
+
+    #[must_use]
     pub fn hash_as_ref(&self) -> Option<&str> {
         self.hash.as_deref()
     }
