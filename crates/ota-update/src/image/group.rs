@@ -243,21 +243,7 @@ impl SlotGroup {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    pub fn volume(name: &str) -> Volume {
-        Volume {
-            lv_name: name.to_string(),
-            vg_name: "vg".into(),
-            lv_attr: None,
-            lv_size_bytes: None,
-        }
-    }
-
-    pub fn slots(names: &[&str]) -> Vec<Slot> {
-        let vols: Vec<_> = names.iter().map(|n| volume(n)).collect();
-        let (slots, _unparsed) = Slot::from_volumes(vols);
-        slots
-    }
+    use crate::image::test::slots;
 
     #[test]
     fn group_root_and_verity_same_version() {
