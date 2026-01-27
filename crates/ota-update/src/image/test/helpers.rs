@@ -1,3 +1,4 @@
+use crate::image::group::SlotGroup;
 use crate::image::lvm::Volume;
 use crate::image::manifest::{File, Manifest};
 use crate::image::slot::Slot;
@@ -35,4 +36,10 @@ pub fn manifest(version: &str, hash: &str) -> Manifest {
             sha256sum: "x".into(),
         },
     }
+}
+
+pub fn groups(names: &[&str]) -> Vec<SlotGroup> {
+    let vols: Vec<_> = names.iter().map(|n| volume(n)).collect();
+    let (slots, _unparsed) = Slot::from_volumes(vols);
+    SlotGroup::group_volumes(slots, Vec::new()).unwrap()
 }
