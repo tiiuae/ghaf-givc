@@ -61,6 +61,21 @@ in
         inherit (adminConfig) name;
         inherit (adminConfig) addresses;
         tls.enable = tls;
+        policyAdmin = {
+          enable = true;
+          factoryPolicies = {
+            enable = true;
+            url = "https://github.com/gngram/policy-store.git";
+            rev = "18b896782587b220d144c166e9acf83ff5beb194";
+            sha256 = "sha256-mq4Fz0IYBM8hisdpNmBSstyNCW9rMoLdsFcZEJLQSmE=";
+          };
+
+          policies = {
+            "proxy-config" = {
+              vms = [ "app-vm" ];
+            };
+          };
+        };
       };
     };
     tests-hostvm = {
@@ -267,6 +282,10 @@ in
               command = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot";
             }
           ];
+          policyClient = {
+            enable = true;
+            policyConfig."proxy-config" = "";
+          };
         };
       };
     tests-updatevm = {

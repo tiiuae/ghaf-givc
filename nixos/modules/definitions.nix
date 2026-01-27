@@ -190,7 +190,7 @@ in
     };
   };
 
-  policyAdminSubmodule = types.submodule {
+  policyClientSubmodule = types.submodule {
     options = {
       enable = mkEnableOption "Policy admin.";
       storePath = mkOption {

@@ -24,7 +24,7 @@ let
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
     tlsSubmodule
-    policyAdminSubmodule
+    policyClientSubmodule
     ;
 in
 {
@@ -163,8 +163,8 @@ in
       '';
     };
 
-    policyAdmin = mkOption {
-      type = policyAdminSubmodule;
+    policyClient = mkOption {
+      type = policyClientSubmodule;
       default = { };
       description = "Ghaf policy rules mapped to actions.";
     };
@@ -228,9 +228,11 @@ in
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
         "EXEC" = "${trivial.boolToString cfg.enableExecModule}";
-        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
-        "POLICY_CONFIG" = "${optionalString cfg.policyAdmin.enable (toJSON cfg.policyAdmin.policyConfig)}";
-        "POLICY_STORE" = "${optionalString cfg.policyAdmin.enable cfg.policyAdmin.storePath}";
+        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyClient.enable}";
+        "POLICY_CONFIG" = "${optionalString cfg.policyClient.enable (
+          toJSON cfg.policyClient.policyConfig
+        )}";
+        "POLICY_STORE" = "${optionalString cfg.policyClient.enable cfg.policyClient.storePath}";
       };
     };
     networking.firewall.allowedTCPPorts =
@@ -243,7 +245,7 @@ in
       pkgs.nixos-rebuild # Need for ota-update
     ];
     systemd.tmpfiles.rules = [
-      "d ${cfg.policyAdmin.storePath} 0755 1000 100 -"
+      "d ${cfg.policyClient.storePath} 0755 1000 100 -"
     ];
   };
 }

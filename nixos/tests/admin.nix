@@ -247,6 +247,12 @@
                   print(hostvm.succeed("${cli} ${cliArgs} start app --vm app-vm clearexit"))
                   time.sleep(20) # Give few seconds to application to spin up, exit, then start it again
                   print(hostvm.succeed("${cli} ${cliArgs} start app --vm app-vm clearexit"))
+
+              with subtest("setup app-vm policies"):
+                  time.sleep(5)
+                  appvm.wait_for_file("/etc/policies/proxy-config/policy.bin")
+                  print("\033[94m" + "\n-- policy test completed successfully --\n" + "\033[0m")
+
             '';
         };
       };
