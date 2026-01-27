@@ -1,12 +1,11 @@
 use super::Version;
 use super::group::SlotGroup;
 use super::lvm::{Volume, parse_lvs_output};
-use super::manifest::{File, Manifest};
-use super::slot::{Kind, Slot, SlotClass};
+use super::manifest::Manifest;
+use super::slot::{Slot, SlotClass};
 use super::uki::{BootEntry, UkiEntry};
 use crate::bootctl::BootctlItem;
 use anyhow::{Result, anyhow, bail};
-use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
 pub struct Runtime {

@@ -1,9 +1,8 @@
-use super::slot::{Kind, Slot};
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Volume {
+pub struct Volume {
     pub lv_name: String,
     pub vg_name: String,
     pub lv_attr: Option<String>,
