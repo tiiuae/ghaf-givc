@@ -240,4 +240,17 @@ mod tests {
         let plan = Plan::remove(&rt, &version).expect("remove failed");
         assert_eq!(plan.into_script(), expected);
     }
+
+    #[test]
+    fn remove_legacy() {
+        let rt = make_test_runtime_installed();
+        let expected = &[
+            "bootctl unlink nixos-generation-1.conf",
+            "lvrename pool root_0 root_empty_0",
+            "lvrename pool verity_0 verity_empty_0",
+        ];
+        let version = Version::new("0".into(), None);
+        let plan = Plan::remove(&rt, &version).expect("remove failed");
+        assert_eq!(plan.into_script(), expected);
+    }
 }
