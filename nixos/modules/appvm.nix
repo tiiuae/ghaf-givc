@@ -22,13 +22,18 @@ let
     optionals
     literalExpression
     ;
-  inherit (builtins) toJSON;
+
+  inherit (builtins)
+    toJSON
+    ;
+
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
     applicationSubmodule
     proxySubmodule
     tlsSubmodule
     eventSubmodule
+    policyClientSubmodule
     ;
 in
 {
@@ -198,6 +203,11 @@ in
         > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
       '';
     };
+    policyClient = mkOption {
+      type = policyClientSubmodule;
+      default = { };
+      description = "Ghaf policy rules mapped to actions.";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -290,6 +300,11 @@ in
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
         "EVENT_PROXY" = "${optionalString (cfg.eventProxy != null) (toJSON cfg.eventProxy)}";
+        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyClient.enable}";
+        "POLICY_CONFIG" = "${optionalString cfg.policyClient.enable (
+          toJSON cfg.policyClient.policyConfig
+        )}";
+        "POLICY_STORE" = "${optionalString cfg.policyClient.enable cfg.policyClient.storePath}";
       };
     };
     networking.firewall.allowedTCPPorts =
@@ -303,5 +318,8 @@ in
         );
       in
       [ agentPort ] ++ proxyPorts ++ eventPorts;
+    systemd.tmpfiles.rules = [
+      "d ${cfg.policyClient.storePath} 0755 1000 100 -"
+    ];
   };
 }
