@@ -167,13 +167,10 @@ impl PolicyManager {
         debug!("policy-admin: Worker [{}] started.", vm);
 
         while let Ok(msg) = rx.recv() {
-            let vm_name = vm.clone();
-            let admin_service = Arc::clone(&admin_service);
-
             /* Execute async code synchronously within this thread */
-            let result = rt.block_on(async move {
+            let result = rt.block_on(async {
                 admin_service
-                    .push_policy_update(&vm_name, Path::new(&msg.file), &msg.policy_name)
+                    .push_policy_update(&vm, Path::new(&msg.file), &msg.policy_name)
                     .await
             });
 
@@ -190,7 +187,7 @@ impl PolicyManager {
      *
      * Helper to construct metadata JSON and send the policy task to the worker.
      */
-    pub fn send_to_vm(&self, vm: &str, policy_name: String, file_path: &Path) -> Result<()> {
+    pub fn send_to_vm(&self, vm: &str, policy_name: &str, file_path: &Path) -> Result<()> {
         debug!(
             "policy-admin:send_to_vm() sending policy {} to vm {}.",
             policy_name, vm
@@ -220,13 +217,8 @@ impl PolicyManager {
         for policy in policies {
             let policy_dir = self.policy_dir.join(&policy);
 
-            if fs::metadata(&policy_dir).is_ok() {
-                let should_process = self
-                    .configs
-                    .get_value(&["policies", &policy, "vms"])
-                    .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().any(|v| v == &vm_name))
-                    .unwrap_or(false);
+            if policy_dir.exists() {
+                let should_process = self.workers.contains_key(vm_name);
 
                 if should_process {
                     /* Read directory and send every file */
@@ -237,9 +229,7 @@ impl PolicyManager {
                                     let path = entry.path();
 
                                     if path.is_file() {
-                                        if let Err(e) =
-                                            self.send_to_vm(&vm_name, policy.to_string(), &path)
-                                        {
+                                        if let Err(e) = self.send_to_vm(&vm_name, &policy, &path) {
                                             error!(
                                                 "policy-admin:Failed to send policy update for {}: {}",
                                                 vm_name, e
@@ -324,7 +314,7 @@ impl PolicyManager {
                 if fs::metadata(&full_path).is_ok() {
                     let vms = self.configs.get_keys(&["policies", policy_name, "vms"]);
                     for vm in vms {
-                        let _ = self.send_to_vm(&vm, policy_name.to_string(), &full_path);
+                        let _ = self.send_to_vm(&vm, &policy_name, &full_path);
                     }
                 }
             }

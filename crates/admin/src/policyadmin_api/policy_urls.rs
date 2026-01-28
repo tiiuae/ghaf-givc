@@ -160,7 +160,7 @@ impl PolicyUrlMonitor {
 
                     for vm in &vms {
                         if let Err(e) =
-                            policy_manager.send_to_vm(vm, policy_name.clone(), &full_path)
+                            policy_manager.send_to_vm(vm, policy_name.as_str(), &full_path)
                         {
                             error!(
                                 "policy-url-monitor: [{}] Failed to send to VM {}: {}",

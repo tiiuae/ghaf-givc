@@ -7,7 +7,7 @@ use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use std::path::Path;
 use std::path::PathBuf;
 use tonic::transport::Server;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "givc-admin")]

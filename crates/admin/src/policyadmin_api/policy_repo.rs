@@ -137,7 +137,7 @@ impl PolicyRepoMonitor {
         Ok(())
     }
 
-    pub fn ensure_clone(&self) -> Result<()> {
+    pub async fn ensure_clone(&self) -> Result<()> {
         let mut retries = 0;
         loop {
             match self.clone_repo() {
@@ -148,7 +148,7 @@ impl PolicyRepoMonitor {
                     if retries > 3 {
                         return Err(anyhow!("Failed to clone repo after retries"));
                     }
-                    std::thread::sleep(Duration::from_mins(5));
+                    tokio::time::sleep(Duration::from_secs(300)).await;
                 }
             }
         }
@@ -291,7 +291,7 @@ impl PolicyRepoMonitor {
                 }
 
                 if update_err {
-                    let _ = self.ensure_clone();
+                    let _ = self.ensure_clone().await;
                     let _ = policy_manager.force_update_all_vms();
                     update_err = false;
                 }

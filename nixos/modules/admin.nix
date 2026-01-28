@@ -21,7 +21,6 @@ let
     concatStringsSep
     attrsets
     literalExpression
-    optionalString
     ;
   inherit (builtins) toJSON;
   inherit (import ./definitions.nix { inherit config lib; })
@@ -301,8 +300,8 @@ in
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "SERVICES" = "${concatStringsSep " " cfg.services}";
           "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
-          "POLICY_CONFIG" = "${optionalString cfg.policyAdmin.enable (toJSON jsonPolicies)}";
-          "POLICY_STORE" = "${optionalString cfg.policyAdmin.enable cfg.policyAdmin.storePath}";
+          "POLICY_CONFIG" = "${toJSON jsonPolicies}";
+          "POLICY_STORE" = "${cfg.policyAdmin.storePath}";
         }
         // attrsets.optionalAttrs cfg.tls.enable {
           "CA_CERT" = "${cfg.tls.caCertPath}";
