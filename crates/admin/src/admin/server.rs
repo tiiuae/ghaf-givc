@@ -524,11 +524,11 @@ impl pb::admin_service_server::AdminService for AdminService {
             tokio::spawn(async move {
                 if let Ok(conn) = endpoint.connect().await {
                     if inner_clone.policy_admin_enabled {
-                        info!("policy-admin: sending policy updates to vm '{}'", vm_name);
+                        debug!("policy-admin: sending policy updates to vm '{}'", vm_name);
                         let policy_manager = PolicyManager::instance();
                         let _ = policy_manager.send_all_policies(&vm_name);
                     } else {
-                        info!("policy-admin: disabled");
+                        debug!("policy-admin: disabled");
                     }
                     let mut client =
                         pb::locale::locale_client_client::LocaleClientClient::new(conn);
@@ -542,7 +542,7 @@ impl pb::admin_service_server::AdminService for AdminService {
                 }
             });
         }
-        info!("Responding with {res:?}");
+        debug!("Responding with {res:?}");
         Ok(Response::new(res))
     }
 

@@ -86,6 +86,7 @@ func (self *PolicyAdminController) UpdatePolicy(policyName string, pulledPolicyP
 	}
 
 	/* Copy the file to the defined destination */
+
 	if err := self.copyPolicy(pulledPolicyPath, policy.Destination); err != nil {
 		return fmt.Errorf("policy-admin: failed to deploy policy file: %v", err)
 	}
@@ -107,15 +108,12 @@ func (self *PolicyAdminController) UpdatePolicy(policyName string, pulledPolicyP
  */
 func (self *PolicyAdminController) copyPolicy(src string, dest string) error {
 	/* Ensure the destination directory structure exists */
-	log.Infof("policy-admin:copyPolicy() Creating directory structure for %s", filepath.Dir(dest))
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return fmt.Errorf("policy-admin: failed to create destination directory (%v)", err)
-	}
 
-	log.Debugf("policy-admin:copyPolicy() Copying policy from %s to %s", src, dest)
+	log.Infof("policy-admin:copyPolicy() Copying policy from %s to %s", src, dest)
 
 	dstFile, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
+		log.Errorf("policy-admin:copyPolicy() Failed to open %s", dest)
 		return fmt.Errorf("policy-admin: failed to open destination file. (%v)", err)
 	}
 	defer dstFile.Close()
@@ -123,12 +121,14 @@ func (self *PolicyAdminController) copyPolicy(src string, dest string) error {
 	/* Open the source policy file for reading */
 	srcFile, err := os.Open(src)
 	if err != nil {
+		log.Errorf("policy-admin:copyPolicy() Failed to open Src %s", src)
 		return fmt.Errorf("policy-admin: failed to open policy file. (%v)", err)
 	}
 	defer srcFile.Close()
 
 	/* Perform the file copy operation */
 	if _, err = io.Copy(dstFile, srcFile); err != nil {
+		log.Errorf("policy-admin:copyPolicy() Failed to copy policy from %s to %s", src, dest)
 		return fmt.Errorf("policy-admin: failed to copy policy. (%v)", err)
 	}
 

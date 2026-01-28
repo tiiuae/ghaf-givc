@@ -50,8 +50,7 @@ func (s *PolicyAdminServer) StreamPolicy(stream pb.PolicyAdmin_StreamPolicyServe
 	var tempFile *os.File
 	var policyFilePath string
 
-	log.SetLevel(log.DebugLevel)
-	log.Infof("policy-admin:StreamPolicy()")
+	log.Debugf("policy-admin:StreamPolicy()")
 	firstChunk := true
 
 	/* Receive stream chunks from the client */
@@ -60,19 +59,19 @@ func (s *PolicyAdminServer) StreamPolicy(stream pb.PolicyAdmin_StreamPolicyServe
 
 		/* Check for End of File (EOF), indicating the stream has finished successfully */
 		if err == io.EOF {
-			log.Infof("policy-admin:StreamPolicy() policy downloaded successfully.\n")
+			log.Debugf("policy-admin:StreamPolicy() policy downloaded successfully.\n")
 			break
 		}
 
 		if err != nil {
-			log.Infof("policy-admin:StreamPolicy() policy download failed.")
+			log.Errorf("policy-admin:StreamPolicy() policy download failed.")
 			if tempFile != nil {
 				tempFile.Close()
 				os.Remove(policyFilePath)
 			}
 			return err
 		}
-		log.Infof("policy-admin:StreamPolicy() chunk received.")
+		log.Debugf("policy-admin:StreamPolicy() chunk received.")
 
 		/* The first chunk is metadata, and create the temporary file to store policy file */
 		if firstChunk {
@@ -86,7 +85,7 @@ func (s *PolicyAdminServer) StreamPolicy(stream pb.PolicyAdmin_StreamPolicyServe
 			if err := os.MkdirAll(filepath.Join(s.policy.PolicyStorePath, ".temp"), 0755); err != nil {
 				return fmt.Errorf("policy-admin: failed to create policy directory: %v", err)
 			}
-			log.Infof("policy-admin:StreamPolicy() received policy: %s\n\n", policyName)
+			log.Debugf("policy-admin:StreamPolicy() received policy: %s\n\n", policyName)
 
 			/* Create a distinct temporary file to store the incoming binary data */
 			tempFile, err = os.CreateTemp(filepath.Join(s.policy.PolicyStorePath, ".temp"), "policy.bin-*")
@@ -109,7 +108,7 @@ func (s *PolicyAdminServer) StreamPolicy(stream pb.PolicyAdmin_StreamPolicyServe
 		/* Handle subsequent chunks: Write the binary policy data to the temporary file */
 		policyChunk := req.GetPolicyChunk()
 		if policyChunk != nil {
-			log.Infof("policy-agent: writing chunk of %d bytes to temporary file....Chunk: %s\n\n", len(policyChunk), string(policyChunk))
+			log.Debugf("policy-agent: writing chunk of %d bytes to temporary file....Chunk: %s\n\n", len(policyChunk), string(policyChunk))
 			if _, err := tempFile.Write(policyChunk); err != nil {
 				log.Errorf("policy-agent: failed to write to temporary file: %v", err)
 				tempFile.Close()
@@ -121,8 +120,19 @@ func (s *PolicyAdminServer) StreamPolicy(stream pb.PolicyAdmin_StreamPolicyServe
 		}
 	}
 
-	s.controller.UpdatePolicy(policyName, policyFilePath)
+	tempFile.Close()
+	if err := s.controller.UpdatePolicy(policyName, policyFilePath); err != nil {
+		if PathExists(policyFilePath) {
+			os.Remove(policyFilePath)
+		}
+		log.Errorf("policy-admin: failed to update policy: %v", err)
+		return err
+	}
 
+	/* Remove file policyfile if it exists */
+	if PathExists(policyFilePath) {
+		os.Remove(policyFilePath)
+	}
 	/* Send success status to the client and close the stream */
 	return stream.SendAndClose(&policyadmin.Status{Status: "Success"})
 }
