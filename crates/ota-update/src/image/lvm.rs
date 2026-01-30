@@ -1,6 +1,8 @@
+use super::pipeline::{CommandSpec, Pipeline};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_with::{DisplayFromStr, serde_as};
+use std::path::PathBuf;
 use tokio::process::Command;
 
 #[serde_as]
@@ -29,6 +31,27 @@ struct LvsReport {
 }
 
 impl Volume {
+    #[must_use]
+    pub fn device_file(&self) -> PathBuf {
+        let mut path = PathBuf::from("/dev/mapper");
+        path.push(&format!("{}-{}", self.vg_name, self.lv_name));
+        path
+    }
+
+    #[must_use]
+    pub fn device_file_string(&self) -> String {
+        self.device_file().as_path().to_string_lossy().into_owned()
+    }
+
+    pub fn rename_to(&self, new_name: impl AsRef<str>) -> Pipeline {
+        Pipeline::new(
+            CommandSpec::new("lvrename")
+                .arg(&self.vg_name)
+                .arg(&self.lv_name)
+                .arg(new_name.as_ref()),
+        )
+    }
+
     #[cfg(test)]
     pub fn new(name: &str) -> Self {
         Self {
@@ -104,5 +127,21 @@ mod tests {
             slots[0].version().as_deref(),
             Some(&Version::new("1.2.3".into(), Some("deadbeef".into())))
         );
+    }
+
+    #[test]
+    fn device_file() {
+        let vol = Volume::new("test");
+        assert_eq!(
+            vol.device_file().as_path(),
+            std::path::Path::new("/dev/mapper/vg0-test")
+        )
+    }
+
+    #[test]
+    fn rename_to() {
+        let vol = Volume::new("test");
+        let pipeline = vol.rename_to("swap");
+        assert_eq!(pipeline.format_shell(), "lvrename vg0 test swap")
     }
 }
