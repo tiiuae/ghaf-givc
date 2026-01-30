@@ -1,3 +1,5 @@
+use shell_escape::escape;
+use std::borrow::Cow;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,24 +70,12 @@ impl Pipeline {
                 let mut s = cmd.program.clone();
                 for arg in &cmd.args {
                     s.push(' ');
-                    s.push_str(&shell_escape(arg));
+                    s.push_str(&escape(Cow::Borrowed(arg)));
                 }
                 s
             })
             .collect::<Vec<_>>()
             .join(" | ")
-    }
-}
-
-// Minimal, enough for MVP. Is not from user input, so relatively safe
-// FIXME: use some full featured escaper from crates.io
-fn shell_escape(s: &str) -> String {
-    if s.chars()
-        .all(|c| c.is_ascii_alphanumeric() || "-_./=".contains(c))
-    {
-        s.to_string()
-    } else {
-        format!("'{}'", s.replace('\'', "'\"'\"'"))
     }
 }
 
