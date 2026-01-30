@@ -5,6 +5,7 @@ use crate::bootctl::BootctlItem;
 use anyhow::{Result, anyhow, bail};
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BootEntryKind {
@@ -72,10 +73,10 @@ impl fmt::Display for BootEntry {
     }
 }
 
-impl TryFrom<&str> for UkiEntry {
-    type Error = anyhow::Error;
+impl FromStr for UkiEntry {
+    type Err = anyhow::Error;
 
-    fn try_from(name: &str) -> Result<Self> {
+    fn from_str(name: &str) -> Result<Self> {
         if Path::new(name)
             .extension()
             .is_some_and(|ext| !ext.eq_ignore_ascii_case("efi"))
@@ -93,16 +94,13 @@ impl TryFrom<&str> for UkiEntry {
         let (core, boot_counter) = if let Some((left, right)) = stem.rsplit_once('+') {
             let (remaining, used) = match right.split_once('-') {
                 Some((r, u)) => (
-                    r.parse::<u32>()
+                    r.parse()
                         .map_err(|_| anyhow!("invalid remaining counter"))?,
-                    Some(
-                        u.parse::<u32>()
-                            .map_err(|_| anyhow!("invalid used counter"))?,
-                    ),
+                    Some(u.parse().map_err(|_| anyhow!("invalid used counter"))?),
                 ),
                 None => (
                     right
-                        .parse::<u32>()
+                        .parse()
                         .map_err(|_| anyhow!("invalid remaining counter"))?,
                     None,
                 ),
@@ -130,29 +128,26 @@ impl TryFrom<&str> for UkiEntry {
 
 impl BootEntry {
     #[must_use]
-    pub fn from_bootctl(items: Vec<BootctlItem>) -> Vec<Self> {
-        items
-            .into_iter()
-            .filter_map(|item| {
-                let id = item.id;
+    pub fn from_bootctl(items: Vec<BootctlItem>) -> impl Iterator<Item = Self> {
+        items.into_iter().filter_map(|item| {
+            let id = item.id;
 
-                let kind = match item.r#type.as_str() {
-                    // UKI entries
-                    "type2" => match UkiEntry::try_from(id.as_str()).ok() {
-                        Some(uki) => BootEntryKind::Managed(uki),
-                        None => BootEntryKind::Unmanaged,
-                    },
+            let kind = match item.r#type.as_str() {
+                // UKI entries
+                "type2" => match id.parse() {
+                    Ok(uki) => BootEntryKind::Managed(uki),
+                    Err(_) => BootEntryKind::Unmanaged,
+                },
 
-                    // Legacy entries
-                    "type1" => BootEntryKind::Legacy,
+                // Legacy entries
+                "type1" => BootEntryKind::Legacy,
 
-                    // Ignore everything else
-                    _ => return None,
-                };
+                // Ignore everything else
+                _ => return None,
+            };
 
-                Some(BootEntry { id, kind })
-            })
-            .collect()
+            Some(BootEntry { id, kind })
+        })
     }
 
     #[must_use]
@@ -220,7 +215,7 @@ mod tests {
 
     #[test]
     fn parse_valid_uki() {
-        let uki = UkiEntry::try_from("ghaf-1.2.3-deadbeefdeadbeef.efi").unwrap();
+        let uki = UkiEntry::from_str("ghaf-1.2.3-deadbeefdeadbeef.efi").unwrap();
         assert_eq!(
             uki.version,
             Version::new("1.2.3".into(), Some("deadbeefdeadbeef".into()))
@@ -230,7 +225,7 @@ mod tests {
 
     #[test]
     fn parse_uki_with_counters() {
-        let uki = UkiEntry::try_from("ghaf-1.2.3-deadbeefdeadbeef+3-1.efi").unwrap();
+        let uki = UkiEntry::from_str("ghaf-1.2.3-deadbeefdeadbeef+3-1.efi").unwrap();
         let c = uki.boot_counter.unwrap();
         assert_eq!(c.remaining, 3);
         assert_eq!(c.used, Some(1));
@@ -238,21 +233,21 @@ mod tests {
 
     #[test]
     fn reject_empty_version_uki() {
-        assert!(UkiEntry::try_from("ghaf-empty-deadbeefdeadbeef.efi").is_err());
+        assert!(UkiEntry::from_str("ghaf-empty-deadbeefdeadbeef.efi").is_err());
     }
 
     #[test]
     fn reject_non_efi_file() {
-        assert!(UkiEntry::try_from("ghaf-1.2.3-deadbeefdeadbeef").is_err());
+        assert!(UkiEntry::from_str("ghaf-1.2.3-deadbeefdeadbeef").is_err());
     }
 
     #[test]
     fn uki_roundtrip_parse_display_parse() {
         let original = "ghaf-1.2.3-deadbeefdeadbeef+3-1.efi";
 
-        let parsed = UkiEntry::try_from(original).unwrap();
+        let parsed: UkiEntry = original.parse().unwrap();
         let rendered = parsed.to_string();
-        let reparsed = UkiEntry::try_from(rendered.as_str()).unwrap();
+        let reparsed = rendered.parse().unwrap();
 
         assert_eq!(parsed, reparsed);
     }
@@ -269,7 +264,7 @@ mod tests {
         };
 
         let name = uki.to_string();
-        let parsed = UkiEntry::try_from(name.as_str()).unwrap();
+        let parsed = name.parse().unwrap();
 
         assert_eq!(uki, parsed);
     }
@@ -285,7 +280,7 @@ mod tests {
         let name = uki.to_string();
         assert_eq!(name, "ghaf-2.0.0-deadbeefdeadbeef.efi");
 
-        let parsed = UkiEntry::try_from(name.as_str()).unwrap();
+        let parsed = name.parse().unwrap();
         assert_eq!(uki, parsed);
     }
 }
