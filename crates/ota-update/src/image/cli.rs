@@ -1,5 +1,6 @@
 use super::Version;
 use super::executor::{DryRunExecutor, Executor, ShellExecutor};
+use super::lvm::read_lvs_output;
 use super::manifest::Manifest;
 use super::plan::Plan;
 use super::runtime::Runtime;
@@ -10,7 +11,6 @@ use fs2::FileExt;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use tokio::fs::read_to_string;
-use tokio::process::Command;
 
 struct UpdateLock {
     _file: File,
@@ -85,8 +85,8 @@ async fn populate_runtime() -> anyhow::Result<Runtime> {
         .await
         .context("while reading /proc/cmdline")?;
     let bootctl = get_bootctl_info().await?;
-    let lvs = read_lvs_output().await.context("while read lvs")?;
-    Ok(Runtime::new(&lvs, &cmdline, bootctl)?)
+    let lvs = read_lvs_output().await.context("while invoking lvs")?;
+    Ok(Runtime::new(lvs, &cmdline, bootctl)?)
 }
 
 async fn execute_plan(plan: Plan, dry_run: bool) -> anyhow::Result<()> {
@@ -107,21 +107,6 @@ async fn execute_plan(plan: Plan, dry_run: bool) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-async fn read_lvs_output() -> Result<String> {
-    let output = Command::new("lvs")
-        .args(["--all", "--nameprefixes", "--noheadings"])
-        .output()
-        .await
-        .context("failed to execute lvs")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("lvs failed: {}", stderr.trim());
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 impl UpdateLock {

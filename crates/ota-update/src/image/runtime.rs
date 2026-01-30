@@ -1,6 +1,6 @@
 use super::Version;
 use super::group::SlotGroup;
-use super::lvm::{Volume, parse_lvs_output};
+use super::lvm::Volume;
 use super::manifest::Manifest;
 use super::slot::{Slot, SlotClass};
 use super::uki::{BootEntry, BootEntryKind, UkiEntry};
@@ -39,8 +39,7 @@ impl SlotSelection {
 }
 
 impl Runtime {
-    pub fn new(lvs: &str, cmdline: &str, bootctl: Vec<BootctlItem>) -> Result<Self> {
-        let volumes = parse_lvs_output(lvs);
+    pub fn new(volumes: Vec<Volume>, cmdline: &str, bootctl: Vec<BootctlItem>) -> Result<Self> {
         let (slots, volumes) = Slot::from_volumes(volumes);
         let boot_entries = BootEntry::from_bootctl(bootctl);
         let (managed, unmanaged) = boot_entries.into_iter().partition(BootEntry::is_managed);
@@ -352,7 +351,7 @@ impl Default for Runtime {
 mod tests {
     use super::*;
 
-    use crate::image::test::{groups, manifest, volume};
+    use crate::image::test::{groups, manifest};
 
     // complete root + verity slot
     #[test]
@@ -415,7 +414,7 @@ mod tests {
     #[test]
     fn non_slot_volumes_are_ignored() {
         let rt = Runtime {
-            volumes: vec![volume("swap"), volume("home")],
+            volumes: vec![Volume::new("swap"), Volume::new("home")],
             slots: groups(&vec!["root_1.0.0_aaaaaaaaaaaaaaaa"]),
             ..Runtime::default()
         };

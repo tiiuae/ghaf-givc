@@ -1,23 +1,45 @@
 // Expected parameters in /proc/cmdline with some unrelated params (`root=fstab`)
 pub const KERNEL_CMDLINE: &str = "ghaf.revision=25.12.1 storehash=deadbeefcafebabe root=fstab";
 
-// Captured by `sudo lvs --all --nameprefixes --noheadings` from prototype Ghaf with A/B update placeholder slots
+// Captured by `LC_NUMERIC=C  lvs --all --report-format json --units B` from prototype Ghaf with A/B update placeholder slots
 pub const LVS: &str = r#"
-  LVM2_LV_NAME='persist' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-ao----' LVM2_LV_SIZE='<829.38g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
-  LVM2_LV_NAME='root_0' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-ao----' LVM2_LV_SIZE='50.00g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
-  LVM2_LV_NAME='root_empty' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-a-----' LVM2_LV_SIZE='50.00g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
-  LVM2_LV_NAME='swap' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-ao----' LVM2_LV_SIZE='12.00g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
-  LVM2_LV_NAME='verity_0' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-a-----' LVM2_LV_SIZE='6.00g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
-  LVM2_LV_NAME='verity_empty' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-a-----' LVM2_LV_SIZE='6.00g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
+  {
+      "report": [
+          {
+              "lv": [
+                  {"lv_name":"persist", "vg_name":"pool", "lv_attr":"-wi-ao----", "lv_size":"890538819584", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"root_0", "vg_name":"pool", "lv_attr":"-wi-a-----", "lv_size":"53687091200", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"root_empty", "vg_name":"pool", "lv_attr":"-wi-ao----", "lv_size":"53687091200", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"swap", "vg_name":"pool", "lv_attr":"-wi-ao----", "lv_size":"12884901888", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"verity_0", "vg_name":"pool", "lv_attr":"-wi-a-----", "lv_size":"6442450944", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"verity_empty", "vg_name":"pool", "lv_attr":"-wi-ao----", "lv_size":"6442450944", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""}
+              ]
+          }
+      ]
+      ,
+      "log": [
+      ]
+  }
 "#;
 
 pub const LVS_INSTALLED: &str = r#"
-  LVM2_LV_NAME='persist' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-ao----' LVM2_LV_SIZE='<829.38g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
-  LVM2_LV_NAME='root_0' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-ao----' LVM2_LV_SIZE='50.00g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
-  LVM2_LV_NAME='root_25.12.1_deadbeefdeadbeef' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-a-----' LVM2_LV_SIZE='50.00g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
-  LVM2_LV_NAME='swap' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-ao----' LVM2_LV_SIZE='12.00g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
-  LVM2_LV_NAME='verity_0' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-a-----' LVM2_LV_SIZE='6.00g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
-  LVM2_LV_NAME='verity_25.12.1_deadbeefdeadbeef' LVM2_VG_NAME='pool' LVM2_LV_ATTR='-wi-a-----' LVM2_LV_SIZE='6.00g' LVM2_POOL_LV='' LVM2_ORIGIN='' LVM2_DATA_PERCENT='' LVM2_METADATA_PERCENT='' LVM2_MOVE_PV='' LVM2_MIRROR_LOG='' LVM2_COPY_PERCENT='' LVM2_CONVERT_LV=''
+  {
+      "report": [
+          {
+              "lv": [
+                  {"lv_name":"persist", "vg_name":"pool", "lv_attr":"-wi-ao----", "lv_size":"890538819584", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"root_0", "vg_name":"pool", "lv_attr":"-wi-a-----", "lv_size":"53687091200", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"root_25.12.1_deadbeefdeadbeef", "vg_name":"pool", "lv_attr":"-wi-ao----", "lv_size":"53687091200B", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"swap", "vg_name":"pool", "lv_attr":"-wi-ao----", "lv_size":"12884901888", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"verity_0", "vg_name":"pool", "lv_attr":"-wi-a-----", "lv_size":"6442450944", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"verity_25.12.1_deadbeefdeadbeef", "vg_name":"pool", "lv_attr":"-wi-ao----", "lv_size":"6442450944", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""}
+              ]
+          }
+      ]
+      ,
+      "log": [
+      ]
+  }
 "#;
 
 // Captured by `bootctl list --json=pretty` on Lenovo Carbon X1 gen11 with Ghaf with one debug image, addition UKI kernel,
