@@ -1,5 +1,5 @@
+use crate::admin::policy::PolicyConfig;
 use crate::admin::server;
-use crate::utils::json::JsonNode;
 use anyhow::{Result, anyhow};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::collections::HashMap;
@@ -37,7 +37,7 @@ pub struct Policy {
  */
 pub struct PolicyManager {
     policy_dir: PathBuf,
-    configs: JsonNode,
+    configs: PolicyConfig,
     admin_service: Arc<server::AdminServiceImpl>,
     rt: Arc<Runtime>,
     workers: HashMap<String, (Sender<Policy>, JoinHandle<()>)>,
@@ -51,7 +51,7 @@ impl PolicyManager {
      */
     pub fn init(
         store_dir: &Path,
-        configs: &JsonNode,
+        configs: &PolicyConfig,
         admin_service: Arc<server::AdminServiceImpl>,
     ) -> Result<()> {
         let manager = Self::new(store_dir, configs, admin_service)?;
@@ -84,13 +84,21 @@ impl PolicyManager {
      */
     fn new(
         store_dir: &Path,
-        configs: &JsonNode,
+        configs: &PolicyConfig,
         admin_service: Arc<server::AdminServiceImpl>,
     ) -> Result<Self> {
         /* Create a dedicated Tokio runtime for async operations inside workers */
         let rt = Runtime::new()
             .map_err(|e| anyhow!("policy-admin:Failed to create Tokio Runtime: {e}"))?;
         let rt = Arc::new(rt);
+
+        let vm_names = configs
+            .policies
+            .values()
+            .flat_map(|policy| &policy.vms)
+            .collect::<std::collections::HashSet<_>>();
+
+        debug!("policy-admin:PolicyManager policies: {:?}.", configs);
 
         let mut manager = Self {
             policy_dir: store_dir.to_path_buf(),
@@ -100,25 +108,8 @@ impl PolicyManager {
             workers: HashMap::new(),
         };
 
-        /* Initialize workers based on config structure */
-        /* Assuming structure: { "policies": { "policy_name": { "vms": ["vm1", "vm2"] } } } */
-        let policies = manager.configs.get_keys(&["policies"]);
-        debug!("policy-admin:PolicyManager policies: {:?}.", policies);
-        for policy in policies {
-            let vm_names: Vec<String> = manager
-                .configs
-                .get_value(&["policies", &policy, "vms"])
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            for vm_name in vm_names {
-                manager.add_worker(&vm_name);
-            }
+        for vm_name in vm_names {
+            manager.add_worker(vm_name);
         }
 
         info!("policy-admin:PolicyManager initialized.");
@@ -212,13 +203,17 @@ impl PolicyManager {
      * sends all files in that policy directory to the VM.
      */
     pub fn send_all_policies(&self, vm_name: &str) -> Result<()> {
-        let policies = self.configs.get_keys(&["policies"]);
-
-        for policy in policies {
-            let policy_dir = self.policy_dir.join(&policy);
+        for policy in self.configs.policies.keys() {
+            let policy_dir = self.policy_dir.join(policy);
 
             if policy_dir.exists() {
-                let should_process = self.workers.contains_key(vm_name);
+                /* Send only those policies that the VM is subscribed to. */
+                let should_process = self
+                    .configs
+                    .policies
+                    .get(policy)
+                    .map(|p| p.vms.iter().any(|v| v == vm_name))
+                    .unwrap_or(false);
 
                 if should_process {
                     /* Read directory and send every file */
@@ -229,7 +224,7 @@ impl PolicyManager {
                                     let path = entry.path();
 
                                     if path.is_file() {
-                                        if let Err(e) = self.send_to_vm(&vm_name, &policy, &path) {
+                                        if let Err(e) = self.send_to_vm(vm_name, policy, &path) {
                                             error!(
                                                 "policy-admin:Failed to send policy update for {}: {}",
                                                 vm_name, e
@@ -312,7 +307,12 @@ impl PolicyManager {
                 let full_path = self.policy_dir.join(policy_name).join(file_name);
 
                 if fs::metadata(&full_path).is_ok() {
-                    let vms = self.configs.get_keys(&["policies", policy_name, "vms"]);
+                    let vms = self
+                        .configs
+                        .policies
+                        .get(policy_name)
+                        .into_iter()
+                        .flat_map(|p| &p.vms);
                     for vm in vms {
                         let _ = self.send_to_vm(&vm, &policy_name, &full_path);
                     }

@@ -1,33 +1,56 @@
 use anyhow::Result;
-use std::{path::Path, sync::Arc};
-use tracing::{debug, error, info};
+use std::{collections::HashMap, path::Path, sync::Arc};
+use tracing::{debug, info};
 
 use crate::policyadmin_api::policy_manager::PolicyManager;
 use crate::policyadmin_api::policy_repo::PolicyRepoMonitor;
 use crate::policyadmin_api::policy_urls::PolicyUrlMonitor;
-use crate::utils::json::JsonNode;
 
-/* -----------------------------------------------------------------------------
- * Policy config format:
- *
- * Expected config schema (config.json):
- *
- * {
- *   "source": {
- *     "type": "centralised" | "distributed",
- *     "url": "https://example/user/repo.git", (For: centralized)
- *     "ref": "master", (For: centralized)
- *     "poll_interval_secs": 30, (For: centralized)
- *   },
- *   "policies": {
- *      "policy-name": {
- *      "url": "https://example/policy.tar.gz", (For: distributed)
- *      "vms": ["vm1","vm2"],
- *      "poll_interval_secs": 30, (For: distributed)
- *   }
- * }
- *
- * -------------------------------------------------------------------------- */
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Copy, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum PolicySourceType {
+    #[default]
+    None,
+    GitUrl,
+    PerPolicy,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct PolicySource {
+    #[serde(rename = "type", default)]
+    pub kind: PolicySourceType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poll_interval_secs: Option<u64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct PolicyConfigPolicyUpdater {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poll_interval_secs: Option<u64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PolicyConfigPolicy {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    pub vms: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub per_policy_updater: Option<PolicyConfigPolicyUpdater>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct PolicyConfig {
+    pub source: PolicySource,
+    pub policies: HashMap<String, PolicyConfigPolicy>,
+}
 
 /*
  * PolicyMonitor
@@ -59,12 +82,12 @@ impl PolicyMonitor for PolicyUrlMonitor {
 pub async fn init_policy_manager(
     admin_service: Arc<super::server::AdminServiceImpl>,
     policy_root: &Path,
-    configs: &String,
+    configs: &str,
 ) -> Result<Option<tokio::task::JoinHandle<()>>> {
     let policy_root = policy_root.to_path_buf();
 
     /* Load config file inside the thread to ensure fresh state */
-    let config_json = JsonNode::from_str(configs)?;
+    let config = serde_json::from_str(configs)?;
 
     /* Define the path where VM policies are stored */
     let policy_path = policy_root.join("data").join("vm-policies");
@@ -73,29 +96,26 @@ pub async fn init_policy_manager(
     /* * Initialize PolicyManager.
      * Note: Added error handling for the init call.
      */
-    PolicyManager::init(policy_path.as_path(), &config_json, admin_service)?;
+    PolicyManager::init(policy_path.as_path(), &config, admin_service)?;
     debug!("policy-monitor: thread spawned successfully");
 
-    let source_type = config_json.get_field(&["source", "type"]);
+    let source_type = config.source.kind;
 
     /* * Use a Box<dyn PolicyMonitor> to hold different monitor types.
      * This allows us to assign different structs to the same variable.
      */
-    let monitor: Option<Box<dyn PolicyMonitor>> = match source_type.as_str() {
-        "git-url" => {
+    let monitor: Option<Box<dyn PolicyMonitor>> = match source_type {
+        PolicySourceType::GitUrl => {
             info!("Monitoring git repo for Policy updates");
-            let r = PolicyRepoMonitor::new(policy_root, &config_json)?;
+            let r = PolicyRepoMonitor::new(policy_root, &config)?;
             Some(Box::new(Arc::new(r)))
         }
-        "per-policy" => {
+        PolicySourceType::PerPolicy => {
             info!("Monitoring URLs for Policy updates");
-            let r = PolicyUrlMonitor::new(policy_root, &config_json)?;
+            let r = PolicyUrlMonitor::new(policy_root, &config)?;
             Some(Box::new(r))
         }
-        _ => {
-            error!("Unknown source type: {}", source_type);
-            None
-        }
+        PolicySourceType::None => None,
     };
 
     Ok(monitor.map(|m| m.start()))

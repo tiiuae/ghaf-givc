@@ -7,8 +7,8 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
 
+use crate::admin::policy::PolicyConfig;
 use crate::policyadmin_api::policy_manager::PolicyManager;
-use crate::utils::json::JsonNode;
 
 /*
  * RepoState
@@ -38,15 +38,12 @@ pub struct PolicyRepoMonitor {
 }
 
 impl PolicyRepoMonitor {
-    pub fn new(policy_root: impl AsRef<Path>, configs: &JsonNode) -> Result<Self> {
-        let url = configs.get_field(&["source", "url"]);
-        let branch = configs.get_field(&["source", "ref"]);
+    pub fn new(policy_root: impl AsRef<Path>, configs: &PolicyConfig) -> Result<Self> {
+        let url = configs.source.url.clone().unwrap_or_default();
+        let branch = configs.source.branch.clone().unwrap_or("master".into());
         let destination = policy_root.as_ref().join("data");
 
-        let interval_secs = configs
-            .get_field(&["source", "poll_interval_secs"])
-            .parse::<u64>()
-            .unwrap_or(60);
+        let interval_secs = configs.source.poll_interval_secs.unwrap_or(60);
 
         let monitor = Self {
             url,

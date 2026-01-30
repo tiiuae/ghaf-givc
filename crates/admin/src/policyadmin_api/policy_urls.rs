@@ -1,11 +1,10 @@
+use crate::admin::policy::PolicyConfig;
 use crate::policyadmin_api::policy_manager::PolicyManager;
-use crate::utils::json::JsonNode;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use reqwest::{
     Client,
     header::{ETAG, LAST_MODIFIED},
 };
-use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -34,7 +33,7 @@ const DEFAULT_POLL_INTERVAL: u64 = 60;
 pub struct PolicyUrlMonitor {
     client: Client,
     /* Shared Mutable State: The config JSON that holds URLs, VMs, and current HEADs */
-    config_state: Arc<Mutex<JsonNode>>,
+    config_state: Arc<Mutex<PolicyConfig>>,
     /* The writable path where the updated config.json is saved */
     config_file_path: PathBuf,
     /* The root directory where downloaded policy files are stored */
@@ -49,7 +48,7 @@ impl PolicyUrlMonitor {
      * 1. Sets up the destination directory.
      * 2. Loads the initial configuration (preferring the local writable copy).
      * ---------------------------------------------------------------------- */
-    pub fn new(policy_root: impl AsRef<Path>, configs: &JsonNode) -> Result<Self> {
+    pub fn new(policy_root: impl AsRef<Path>, configs: &PolicyConfig) -> Result<Self> {
         let root = policy_root.as_ref();
         let destination = root.join("data").join("vm-policies");
         let cfgpath = root.join(CONFIG_FILE_NAME);
@@ -61,11 +60,16 @@ impl PolicyUrlMonitor {
 
         let configs_json = if cfgpath.exists() {
             debug!("policy-url-monitor: Loading existing local config.");
-            let jsonnode = JsonNode::from_file(&cfgpath)
-                .with_context(|| format!("Failed to parse config from {:?}", cfgpath))?;
-            jsonnode
+            serde_json::from_slice(
+                &fs::read(&cfgpath)
+                    .with_context(|| format!("Failed to load config from {}", cfgpath.display()))?,
+            )
+            .with_context(|| format!("Failed to parse config {}", cfgpath.display()))?
         } else {
-            if let Err(e) = configs.to_file(&cfgpath) {
+            if let Err(e) = serde_json::to_vec(&configs)
+                .context("Serializing data")
+                .and_then(|json| fs::write(&cfgpath, json).context("Writing config file"))
+            {
                 warn!(
                     "policy-url-monitor: Failed to persist initial config: {}",
                     e
@@ -95,7 +99,7 @@ impl PolicyUrlMonitor {
 
             let policy_names = {
                 let guard = self.config_state.lock().await;
-                guard.get_keys(&["policies"])
+                guard.policies.keys().cloned().collect::<Vec<_>>()
             };
 
             if policy_names.is_empty() {
@@ -171,7 +175,9 @@ impl PolicyUrlMonitor {
 
                     /* 2. Update State & Persist Config */
                     current_head = new_head.clone();
-                    self.update_head(&policy_name, new_head).await;
+                    if let Err(e) = self.update_head(&policy_name, new_head).await {
+                        warn!("Failed to update head for {policy_name}: {e}");
+                    }
                     if interval == 0 {
                         return Ok(());
                     }
@@ -289,27 +295,16 @@ impl PolicyUrlMonitor {
      * ---------------------------------------------------------------------- */
     async fn read_policy_config(&self, name: &str) -> Result<(String, String, Vec<String>, u64)> {
         let guard = self.config_state.lock().await;
-
-        let url = guard.get_field(&["policies", name, "perPolicyUpdater", "url"]);
-        let head = guard.get_field(&["policies", name, "perPolicyUpdater", "head"]);
-
-        /* Handle VMs list extraction */
-        let mut vms = Vec::new();
-        if let Some(vm_array) = guard
-            .get_value(&["policies", name, "vms"])
-            .and_then(|v| v.as_array())
-        {
-            for v in vm_array {
-                if let Some(s) = v.as_str() {
-                    vms.push(s.to_string());
-                }
-            }
-        }
-
-        let interval = guard
-            .get_value(&["policies", name, "perPolicyUpdater", "poll_interval_secs"])
-            .and_then(|v| v.as_u64())
-            .unwrap_or(DEFAULT_POLL_INTERVAL);
+        let Some(policy) = guard.policies.get(name) else {
+            bail!("Policy {name} not found in config");
+        };
+        let Some(updater) = &policy.per_policy_updater else {
+            bail!("Policy {name} has no updater");
+        };
+        let url = updater.url.clone();
+        let head = updater.head.clone().unwrap_or_default();
+        let vms = policy.vms.clone();
+        let interval = updater.poll_interval_secs.unwrap_or(DEFAULT_POLL_INTERVAL);
 
         Ok((url, head, vms, interval))
     }
@@ -317,21 +312,23 @@ impl PolicyUrlMonitor {
     /* -------------------------------------------------------------------------
      * Helper: Update HEAD and persist config
      * ---------------------------------------------------------------------- */
-    async fn update_head(&self, name: &str, new_head: String) {
+    async fn update_head(&self, name: &str, new_head: String) -> Result<()> {
         let mut guard = self.config_state.lock().await;
 
-        /* Update the field in memory */
-        if let Err(e) = guard.add_field(
-            &["policies", name, "perPolicyUpdater", "head"],
-            json!(new_head),
-        ) {
-            error!("policy-url-monitor: Failed to update memory config: {}", e);
-            return;
-        }
+        guard
+            .policies
+            .get_mut(name)
+            .with_context(|| format!("Policy {name} not found in config"))?
+            .per_policy_updater
+            .as_mut()
+            .with_context(|| format!("Policy {name} has no updater in config"))?
+            .head = Some(new_head);
 
         /* Write to disk */
-        if let Err(e) = guard.to_file(&self.config_file_path) {
-            error!("policy-url-monitor: Failed to save config.json: {}", e);
-        }
+        fs::write(
+            &self.config_file_path,
+            &serde_json::to_vec(&*guard).context("Failed to serialize config for saving")?,
+        )
+        .context("Failed to write config")
     }
 }
