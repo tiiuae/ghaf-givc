@@ -6,6 +6,7 @@ use super::slot::{Slot, SlotClass};
 use super::uki::{BootEntry, BootEntryKind, UkiEntry};
 use crate::bootctl::BootctlItem;
 use anyhow::{Result, anyhow, bail};
+use std::fmt::Write;
 
 #[derive(Debug)]
 pub struct Runtime {
@@ -183,100 +184,101 @@ impl Runtime {
 
         let groups = self.slot_groups();
 
-        out.push_str("Slot groups:\n");
+        let _ = writeln!(out, "Slot groups:");
 
         for group in groups {
-            out.push_str("- slot: ");
-            out.push_str(if group.is_used() { "used\n" } else { "empty\n" });
+            let state = if group.is_used() { "used" } else { "empty" };
+            let _ = writeln!(out, "- slot: {state}");
 
             // Version / empty id
-            if let Some(version) = group.version() {
-                out.push_str(&format!("  version: {}", version.revision));
+            let _ = if let Some(version) = group.version() {
                 if let Some(hash) = &version.hash {
-                    out.push_str(&format!(" (hash={hash})"));
+                    let revision = &version.revision;
+                    writeln!(out, "  version: {revision} (hash={hash})")
+                } else {
+                    let revision = &version.revision;
+                    writeln!(out, "  version: {revision}")
                 }
-                out.push('\n');
             } else if let Some(id) = group.empty_id() {
-                out.push_str(&format!("  id: {id}\n"));
+                writeln!(out, "  id: {id}")
             } else {
-                out.push_str("  id: <none>\n");
-            }
+                writeln!(out, "  id: <none>")
+            };
 
-            out.push_str(&format!("  legacy: {}\n", group.is_legacy()));
-            out.push_str(&format!("  active: {}\n", group.is_active(&self.kernel)));
+            let _ = writeln!(out, "  legacy: {}", group.is_legacy());
+            let _ = writeln!(out, "  active: {}", group.is_active(&self.kernel));
 
-            // Root / verity
-            match &group.root {
+            // Root
+            let _ = match &group.root {
                 Some(root) => {
                     let root = root.volume();
-                    out.push_str(&format!(
-                        "  root: {}/{}{}\n",
-                        root.vg_name,
-                        root.lv_name,
-                        format_size(root.lv_size_bytes)
-                    ));
+                    let vg = &root.vg_name;
+                    let lv = &root.lv_name;
+                    let size = format_size(root.lv_size_bytes);
+                    writeln!(out, "  root: {vg}/{lv}{size}")
                 }
-                None => out.push_str("  root: <missing>\n"),
-            }
+                None => {
+                    writeln!(out, "  root: <missing>")
+                }
+            };
 
-            match &group.verity {
+            // Verity
+            let _ = match &group.verity {
                 Some(verity) => {
                     let verity = verity.volume();
-                    out.push_str(&format!(
-                        "  verity: {}/{}{}\n",
-                        verity.vg_name,
-                        verity.lv_name,
-                        format_size(verity.lv_size_bytes)
-                    ));
+                    let vg = &verity.vg_name;
+                    let lv = &verity.lv_name;
+                    let size = format_size(verity.lv_size_bytes);
+                    writeln!(out, "  verity: {vg}/{lv}{size}")
                 }
-                None => out.push_str("  verity: <missing>\n"),
-            }
+                None => {
+                    writeln!(out, "  verity: <missing>")
+                }
+            };
 
-            // UKI
-            match &group.boot {
+            // UKI / boot
+            let _ = match &group.boot {
                 Some(boot) => {
-                    out.push_str(&format!("  boot: {boot}\n"));
+                    writeln!(out, "  boot: {boot}")
                 }
-                None => out.push_str("  boot: <none>\n"),
-            }
+                None => {
+                    writeln!(out, "  boot: <none>")
+                }
+            };
 
-            out.push('\n');
+            let _ = writeln!(out);
         }
 
         // Unrecognized volumes
         if !self.volumes.is_empty() {
-            out.push_str("Unrecognized volumes:\n");
+            let _ = writeln!(out, "Unrecognized volumes:");
             for vol in &self.volumes {
-                out.push_str(&format!(
-                    "- {}/{}{}\n",
-                    vol.vg_name,
-                    vol.lv_name,
-                    format_size(vol.lv_size_bytes)
-                ));
+                let vg = &vol.vg_name;
+                let lv = &vol.lv_name;
+                let size = format_size(vol.lv_size_bytes);
+                let _ = writeln!(out, "- {vg}/{lv}{size}");
             }
         }
 
-        // Unmanaged and legacy boot entries
+        // Boot entries
         if !self.boot_entries.is_empty() {
-            out.push_str("Boot entries:\n");
+            let _ = writeln!(out, "Boot entries:");
             for entry in &self.boot_entries {
-                match &entry.kind {
+                let id = &entry.id;
+                let _ = match &entry.kind {
                     BootEntryKind::Managed(uki) => {
-                        // Managed entry at runtime == invalid state
-                        out.push_str("  [ERROR] managed: ");
-                        out.push_str(&format!("{} [id={}]\n", uki, entry.id));
+                        writeln!(out, "  [ERROR] managed: {uki} [id={id}]")
                     }
                     BootEntryKind::Legacy => {
-                        out.push_str("  legacy: ");
-                        out.push_str(&format!("id={}\n", entry.id));
+                        writeln!(out, "  legacy: id={id}")
                     }
                     BootEntryKind::Unmanaged => {
-                        out.push_str("  unmanaged: ");
-                        out.push_str(&format!("id={}\n", entry.id));
+                        writeln!(out, "  unmanaged: id={id}")
                     }
-                }
+                };
             }
         }
+
         out
     }
 }
