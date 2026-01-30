@@ -258,18 +258,10 @@ impl Slot {
 mod tests {
     use super::*;
 
-    fn volume(name: &str) -> Volume {
-        Volume {
-            lv_name: name.to_string(),
-            vg_name: "vg".into(),
-            lv_attr: None,
-            lv_size_bytes: None,
-        }
-    }
-
     #[test]
     fn parse_used_root_with_hash() {
-        let (slots, unparsed) = Slot::from_volumes(vec![volume("root_1.2.3_deadbeefdeadbeef")]);
+        let (slots, unparsed) =
+            Slot::from_volumes(vec![Volume::new("root_1.2.3_deadbeefdeadbeef")]);
         assert_eq!(slots.len(), 1);
         assert!(unparsed.is_empty());
 
@@ -287,7 +279,7 @@ mod tests {
 
     #[test]
     fn parse_used_verity_without_hash_is_legacy() {
-        let (slots, unparsed) = Slot::from_volumes(vec![volume("verity_0")]);
+        let (slots, unparsed) = Slot::from_volumes(vec![Volume::new("verity_0")]);
         assert_eq!(slots.len(), 1);
         assert!(unparsed.is_empty());
 
@@ -301,7 +293,7 @@ mod tests {
 
     #[test]
     fn parse_empty_with_known_id() {
-        let (slots, unparsed) = Slot::from_volumes(vec![volume("root_empty_3")]);
+        let (slots, unparsed) = Slot::from_volumes(vec![Volume::new("root_empty_3")]);
         assert_eq!(slots.len(), 1);
         assert!(unparsed.is_empty());
 
@@ -315,7 +307,7 @@ mod tests {
 
     #[test]
     fn parse_empty_legacy() {
-        let (slots, unparsed) = Slot::from_volumes(vec![volume("verity_empty")]);
+        let (slots, unparsed) = Slot::from_volumes(vec![Volume::new("verity_empty")]);
         assert_eq!(slots.len(), 1);
         assert!(unparsed.is_empty());
 
@@ -331,7 +323,7 @@ mod tests {
     #[test]
     fn slot_display_roundtrip_used() {
         let original = "root_1.2.3_deadbeefdeadbeef";
-        let (slots, _) = Slot::from_volumes(vec![volume(original)]);
+        let (slots, _) = Slot::from_volumes(vec![Volume::new(original)]);
 
         let rendered = slots[0].to_string();
         assert_eq!(rendered, original);
@@ -340,7 +332,7 @@ mod tests {
     #[test]
     fn slot_display_roundtrip_empty_known() {
         let original = "verity_empty_7";
-        let (slots, _) = Slot::from_volumes(vec![volume(original)]);
+        let (slots, _) = Slot::from_volumes(vec![Volume::new(original)]);
 
         let rendered = slots[0].to_string();
         assert_eq!(rendered, original);
@@ -349,7 +341,7 @@ mod tests {
     #[test]
     fn slot_display_roundtrip_empty_legacy() {
         let original = "root_empty";
-        let (slots, _) = Slot::from_volumes(vec![volume(original)]);
+        let (slots, _) = Slot::from_volumes(vec![Volume::new(original)]);
 
         let rendered = slots[0].to_string();
         assert_eq!(rendered, original);
@@ -359,7 +351,7 @@ mod tests {
 
     #[test]
     fn cannot_assign_version_to_used_slot() {
-        let (slots, _) = Slot::from_volumes(vec![volume("root_1.0.0_deadbeef")]);
+        let (slots, _) = Slot::from_volumes(vec![Volume::new("root_1.0.0_deadbeef")]);
 
         let slot = slots.into_iter().next().unwrap();
         let new_version = Version::new("2.0.0".into(), Some("cafebabe".into()));
@@ -369,7 +361,7 @@ mod tests {
 
     #[test]
     fn can_assign_version_to_empty_slot() {
-        let (slots, _) = Slot::from_volumes(vec![volume("root_empty_1")]);
+        let (slots, _) = Slot::from_volumes(vec![Volume::new("root_empty_1")]);
 
         let slot = slots.into_iter().next().unwrap();
         let new_version = Version::new("1.0.0".into(), Some("deadbeef".into()));
@@ -380,9 +372,9 @@ mod tests {
     #[test]
     fn swap_volume_goes_to_unparsed() {
         let vols = vec![
-            volume("root_1.2.3_deadbeef"),
-            volume("swap"),
-            volume("verity_empty_0"),
+            Volume::new("root_1.2.3_deadbeef"),
+            Volume::new("swap"),
+            Volume::new("verity_empty_0"),
         ];
 
         let (slots, unparsed) = Slot::from_volumes(vols);

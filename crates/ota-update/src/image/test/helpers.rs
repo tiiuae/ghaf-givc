@@ -3,17 +3,8 @@ use crate::image::lvm::Volume;
 use crate::image::manifest::{File, Manifest};
 use crate::image::slot::Slot;
 
-pub fn volume(name: &str) -> Volume {
-    Volume {
-        lv_name: name.to_string(),
-        vg_name: "vg".into(),
-        lv_attr: None,
-        lv_size_bytes: None,
-    }
-}
-
 pub fn slots(names: &[&str]) -> Vec<Slot> {
-    let vols: Vec<_> = names.iter().map(|n| volume(n)).collect();
+    let vols: Vec<_> = names.iter().map(|n| Volume::new(n)).collect();
     let (slots, _unparsed) = Slot::from_volumes(vols);
     slots
 }
@@ -39,7 +30,7 @@ pub fn manifest(version: &str, hash: &str) -> Manifest {
 }
 
 pub fn groups(names: &[&str]) -> Vec<SlotGroup> {
-    let vols: Vec<_> = names.iter().map(|n| volume(n)).collect();
+    let vols: Vec<_> = names.iter().map(|n| Volume::new(n)).collect();
     let (slots, _unparsed) = Slot::from_volumes(vols);
     SlotGroup::group_volumes(slots, Vec::new()).unwrap()
 }
