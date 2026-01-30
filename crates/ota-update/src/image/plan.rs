@@ -60,7 +60,7 @@ impl Plan {
     }
 
     fn install_volume(volume: &Volume, file: &File, source: &Path) -> Pipeline {
-        let target = format!("/dev/mapper/{}-{}", volume.vg_name, volume.lv_name);
+        let target = volume.device_file_string();
         let input = file.full_name(source);
 
         let pipeline = if file.is_compressed() {
