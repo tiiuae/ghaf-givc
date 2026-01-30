@@ -1,98 +1,72 @@
-use anyhow::{Result, anyhow};
-use std::collections::HashMap;
+use anyhow::{Context, Result};
+use serde::Deserialize;
+use serde_with::{DisplayFromStr, serde_as};
+use tokio::process::Command;
 
-#[derive(Debug, Clone, PartialEq)]
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Volume {
     pub lv_name: String,
     pub vg_name: String,
+
+    #[serde(default)]
     pub lv_attr: Option<String>,
+
+    /// Parsed from strings like "34359738368"
+    #[serde(default)]
+    #[serde_as(as = "Option<DisplayFromStr>")]
     pub lv_size_bytes: Option<u64>,
 }
 
-fn parse_lv_size(value: &str) -> Result<u64> {
-    if value.is_empty() {
-        return Err(anyhow!("empty LV size"));
+#[derive(Deserialize)]
+struct LvsJson {
+    report: Vec<LvsReport>,
+}
+
+#[derive(Deserialize)]
+struct LvsReport {
+    lv: Vec<Volume>,
+}
+
+impl Volume {
+    #[cfg(test)]
+    pub fn new(name: &str) -> Self {
+        Self {
+            lv_name: name.to_string(),
+            vg_name: "vg0".into(),
+            lv_attr: None,
+            lv_size_bytes: Some(1_1000_1000_1000),
+        }
+    }
+}
+
+pub(crate) fn parse_lvs_json(input: impl AsRef<[u8]>) -> Result<Vec<Volume>> {
+    let parsed: LvsJson = serde_json::from_slice(input.as_ref()).context("parsing lvs json")?;
+
+    Ok(parsed.report.into_iter().flat_map(|r| r.lv).collect())
+}
+
+pub async fn read_lvs_output() -> Result<Vec<Volume>> {
+    let output = Command::new("lvs")
+        .args([
+            "--all",
+            "--report-format",
+            "json",
+            "--units",
+            "b",
+            "--no-suffix",
+        ])
+        .env("LC_NUMERIC", "C") // Set locale to C, actually not needed with --units, but let be deterministic
+        .output()
+        .await
+        .context("failed to execute lvs")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("lvs failed: {}", stderr.trim());
     }
 
-    let value = value.trim();
-    let (number, unit) = value.split_at(value.len() - 1);
-
-    let multiplier = match unit.to_ascii_lowercase().as_str() {
-        "k" => 1024_u64,
-        "m" => 1024_u64.pow(2),
-        "g" => 1024_u64.pow(3),
-        "t" => 1024_u64.pow(4),
-        _ => return Err(anyhow!("unknown size unit: {unit}")),
-    };
-
-    let number = number.replace(',', ".");
-    let number: f64 = number
-        .parse()
-        .map_err(|_| anyhow!("invalid size number: {number}"))?;
-
-    Ok((number * multiplier as f64) as u64)
-}
-
-fn volume_from_map(fields: &HashMap<String, String>) -> Result<Volume> {
-    let lv_name = fields
-        .get("LVM2_LV_NAME")
-        .ok_or_else(|| anyhow!("missing LV name"))?
-        .to_string();
-
-    let vg_name = fields
-        .get("LVM2_VG_NAME")
-        .ok_or_else(|| anyhow!("missing VG name"))?
-        .to_string();
-
-    let lv_attr = fields.get("LVM2_LV_ATTR").cloned();
-
-    let lv_size_bytes = fields
-        .get("LVM2_LV_SIZE")
-        .filter(|s| !s.is_empty())
-        .map(|s| parse_lv_size(s))
-        .transpose()?;
-
-    Ok(Volume {
-        lv_name,
-        vg_name,
-        lv_attr,
-        lv_size_bytes,
-    })
-}
-
-fn parse_lvs_line(line: &str) -> Result<HashMap<String, String>> {
-    let mut map = HashMap::new();
-
-    for token in line.split_whitespace() {
-        let (key, raw_value) = token
-            .split_once('=')
-            .ok_or_else(|| anyhow!("invalid token: {token}"))?;
-
-        // ожидаем значение в одинарных кавычках
-        let value = raw_value
-            .strip_prefix('\'')
-            .and_then(|v| v.strip_suffix('\''))
-            .ok_or_else(|| anyhow!("invalid quoted value: {raw_value}"))?;
-
-        map.insert(key.to_string(), value.to_string());
-    }
-
-    Ok(map)
-}
-
-pub(crate) fn parse_lvs_output(output: &str) -> Vec<Volume> {
-    output
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            if line.is_empty() {
-                return None;
-            }
-
-            let fields = parse_lvs_line(line).ok()?;
-            volume_from_map(&fields).ok()
-        })
-        .collect()
+    parse_lvs_json(&output.stdout)
 }
 
 #[cfg(test)]
@@ -102,49 +76,25 @@ mod tests {
     use crate::image::slot::{Kind, Slot};
 
     #[test]
-    fn parse_lv_size_gb() {
-        let size = parse_lv_size("32,00g").unwrap();
-        assert_eq!(size, 32 * 1024_u64.pow(3));
-    }
-
-    #[test]
-    fn parse_lv_size_fractional() {
-        let size = parse_lv_size("1,50g").unwrap();
-        assert_eq!(size, (1.5 * 1024_f64.powi(3)) as u64);
-    }
-
-    #[test]
-    fn parse_lvs_line_basic() {
-        let line = "LVM2_LV_NAME='fast'  LVM2_VG_NAME='vg0'   LVM2_LV_SIZE='1,00g'";
-        let map = parse_lvs_line(line).unwrap();
-
-        assert_eq!(map["LVM2_LV_NAME"], "fast");
-        assert_eq!(map["LVM2_VG_NAME"], "vg0");
-        assert_eq!(map["LVM2_LV_SIZE"], "1,00g");
-    }
-
-    #[test]
-    fn volume_from_map_ok() {
-        let mut map = HashMap::new();
-        map.insert("LVM2_LV_NAME".into(), "fast".into());
-        map.insert("LVM2_VG_NAME".into(), "vg0".into());
-        map.insert("LVM2_LV_SIZE".into(), "2,00g".into());
-
-        let vol = volume_from_map(&map).unwrap();
-        assert_eq!(vol.lv_name, "fast");
-        assert_eq!(vol.vg_name, "vg0");
-        assert_eq!(vol.lv_size_bytes, Some(2 * 1024_u64.pow(3)));
-    }
-
-    #[test]
     fn parse_lvs_output_and_slots() {
         let output = r#"
-          LVM2_LV_NAME='root_1.2.3_deadbeef' LVM2_VG_NAME='vg0' LVM2_LV_SIZE='10,00g'
-          LVM2_LV_NAME='swap' LVM2_VG_NAME='vg0' LVM2_LV_SIZE='2,00g'
-          LVM2_LV_NAME='root_empty' LVM2_VG_NAME='vg1' LVM2_LV_SIZE='5,00g'
+  {
+      "report": [
+          {
+              "lv": [
+                  {"lv_name":"root_1.2.3_deadbeef", "vg_name":"vg0", "lv_attr":"-wi-ao----", "lv_size":"10000000000", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"swap", "vg_name":"vg0", "lv_attr":"-wi-ao----", "lv_size":"2000000000", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""},
+                  {"lv_name":"root_empty", "vg_name":"vg0", "lv_attr":"-wi-ao----", "lv_size":"2000000000", "pool_lv":"", "origin":"", "data_percent":"", "metadata_percent":"", "move_pv":"", "mirror_log":"", "copy_percent":"", "convert_lv":""}
+              ]
+          }
+      ]
+      ,
+      "log": [
+      ]
+  }
         "#;
 
-        let volumes = parse_lvs_output(output);
+        let volumes = parse_lvs_json(&output).unwrap();
         assert_eq!(volumes.len(), 3);
 
         let (slots, _) = Slot::from_volumes(volumes);
