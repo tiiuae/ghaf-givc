@@ -83,23 +83,15 @@ impl Runtime {
         // 2. Find first suitable empty slot
         let slot = slots
             .into_iter()
-            .filter(|slot| slot.is_empty())
-            .filter(|slot| !slot.is_active(&self.kernel))
-            .filter(|slot| slot.is_complete())
+            .filter(|slot| slot.is_empty() && !slot.is_active(&self.kernel) && slot.is_complete())
             .next()
             .ok_or_else(|| anyhow!("no empty slot available for update"))?;
 
         // 3. Attach UKI metadata for the plan
-        let slot = SlotGroup {
-            boot: Some(
-                (UkiEntry {
-                    version: target,
-                    boot_counter: None,
-                })
-                .into(),
-            ),
-            ..slot.clone()
-        };
+        let slot = slot.attach_uki(UkiEntry {
+            version: target,
+            boot_counter: None,
+        })?;
 
         Ok(SlotSelection::Selected(slot))
     }
@@ -134,10 +126,10 @@ impl Runtime {
         bail!("slot not found: version={version}");
     }
 
-    pub fn active_slot(&self) -> Result<SlotGroup> {
+    pub fn active_slot(&self) -> Result<&SlotGroup> {
         let mut active = self
             .slot_groups()
-            .into_iter()
+            .iter()
             .filter(|slot| slot.is_active(&self.kernel));
 
         let Some(first) = active.next() else {
@@ -152,12 +144,12 @@ impl Runtime {
             );
         }
 
-        Ok(first.clone())
+        Ok(first)
     }
 
     pub fn has_empty_with_hash(&self, hash: &str) -> bool {
         self.slot_groups()
-            .into_iter()
+            .iter()
             .filter(|s| s.empty_id() == Some(hash))
             .next()
             .is_some()
@@ -169,7 +161,7 @@ impl Runtime {
 
         for i in 0..100 {
             let candidate = i.to_string();
-            if !used.iter().any(|&id| id == candidate) {
+            if !used.contains(&candidate.as_str()) {
                 return Ok(candidate);
             }
         }

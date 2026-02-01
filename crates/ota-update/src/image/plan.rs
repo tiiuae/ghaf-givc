@@ -124,8 +124,12 @@ impl Plan {
     }
 
     fn finalize_flush(volume: &Volume) -> Pipeline {
-        let dev = format!("/dev/mapper/{}-{}", volume.vg_name, volume.lv_name);
-        Pipeline::new(CommandSpec::new("blockdev").arg("--flushbufs").arg(dev))
+        let dev = volume.device_file();
+        Pipeline::new(
+            CommandSpec::new("blockdev")
+                .arg("--flushbufs")
+                .arg_path(dev.as_path()),
+        )
     }
 }
 

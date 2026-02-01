@@ -3,8 +3,10 @@ use super::lvm::Volume;
 use super::pipeline::{CommandSpec, Pipeline};
 use anyhow::{Result, anyhow, ensure};
 use std::fmt;
+use strum::EnumString;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, EnumString, strum::Display)]
+#[strum(serialize_all = "lowercase")]
 pub enum Kind {
     Root,
     Verity,
@@ -53,14 +55,10 @@ impl Slot {
         let middle = parts.next().ok_or_else(|| anyhow!("missing version"))?;
         let first = parts.next();
 
-        let (name, version_raw, hash_or_id) = match first {
-            Some(name) => (name, middle, Some(last)),
-            None => (middle, last, None),
-        };
+        let (name, version_raw, hash_or_id) =
+            first.map_or((middle, last, None), |name| (name, middle, Some(last)));
 
-        if name.is_empty() {
-            return Err(anyhow!("name is empty"));
-        }
+        ensure!(!name.is_empty(), "name is empty");
 
         let status = if version_raw == "empty" {
             Status::Empty(match hash_or_id {
@@ -74,11 +72,7 @@ impl Slot {
             ))
         };
 
-        let kind = match name {
-            "root" => Kind::Root,
-            "verity" => Kind::Verity,
-            _ => return Err(anyhow!("invalid {name}")),
-        };
+        let kind = name.parse()?;
 
         Ok((kind, status))
     }
@@ -87,7 +81,7 @@ impl Slot {
     ///
     /// - Parsed volumes are converted into `Slot`
     /// - Unparsed volumes are returned as-is for diagnostics or further handling
-    pub fn from_volumes(vols: Vec<Volume>) -> (Vec<Self>, Vec<Volume>) {
+    pub fn from_volumes(vols: impl IntoIterator<Item = Volume>) -> (Vec<Self>, Vec<Volume>) {
         let mut slots = Vec::new();
         let mut unparsed = Vec::new();
 
@@ -110,32 +104,20 @@ impl Slot {
     }
 }
 
-impl std::fmt::Display for Kind {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match &self {
-            Kind::Root => write!(f, "root"),
-            Kind::Verity => write!(f, "verity"),
-        }
-    }
-}
-
 impl fmt::Display for Slot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.status {
-            Status::Used(version) => {
-                write!(f, "{}_{}", self.kind, version.revision)?;
-                if let Some(hash) = &version.hash {
+        let Self { kind, status, .. } = self;
+        match status {
+            Status::Used(Version { revision, hash }) => {
+                write!(f, "{kind}_{revision}")?;
+                if let Some(hash) = hash {
                     write!(f, "_{hash}")?;
                 }
+                Ok(())
             }
-            Status::Empty(EmptyId::Known(id)) => {
-                write!(f, "{}_empty_{id}", self.kind)?;
-            }
-            Status::Empty(EmptyId::Legacy) => {
-                write!(f, "{}_empty", self.kind)?;
-            }
+            Status::Empty(EmptyId::Known(id)) => write!(f, "{kind}_empty_{id}"),
+            Status::Empty(EmptyId::Legacy) => write!(f, "{kind}_empty"),
         }
-        Ok(())
     }
 }
 
