@@ -34,7 +34,7 @@ impl Volume {
     #[must_use]
     pub fn device_file(&self) -> PathBuf {
         let mut path = PathBuf::from("/dev/mapper");
-        path.push(&format!("{}-{}", self.vg_name, self.lv_name));
+        path.push(format!("{}-{}", self.vg_name, self.lv_name));
         path
     }
 
@@ -69,7 +69,7 @@ pub(crate) fn parse_lvs_json(input: impl AsRef<[u8]>) -> Result<Vec<Volume>> {
     Ok(parsed.report.into_iter().flat_map(|r| r.lv).collect())
 }
 
-pub async fn read_lvs_output() -> Result<Vec<Volume>> {
+pub(crate) async fn read_lvs_output() -> Result<Vec<Volume>> {
     let output = Command::new("lvs")
         .args([
             "--all",

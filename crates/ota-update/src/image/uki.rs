@@ -2,7 +2,7 @@ use super::Version;
 use super::pipeline::{CommandSpec, Pipeline};
 use super::slot::Slot;
 use crate::bootctl::BootctlItem;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -49,7 +49,7 @@ impl fmt::Display for UkiEntry {
         if let Some(counter) = &self.boot_counter {
             write!(f, "+{}", counter.remaining)?;
             if let Some(used) = counter.used {
-                write!(f, "-{}", used)?;
+                write!(f, "-{used}")?;
             }
         }
 
@@ -77,33 +77,21 @@ impl FromStr for UkiEntry {
     type Err = anyhow::Error;
 
     fn from_str(name: &str) -> Result<Self> {
-        if Path::new(name)
-            .extension()
-            .is_some_and(|ext| !ext.eq_ignore_ascii_case("efi"))
-        {
-            bail!("not an EFI binary");
-        }
+        let stem = name
+            .split_at_checked(name.len().saturating_sub(4))
+            .and_then(|(stem, ext)| ext.eq_ignore_ascii_case(".efi").then_some(stem))
+            .context("Not an EFI")?;
 
-        let stem = name.trim_end_matches(".efi");
-
-        let stem = stem
-            .strip_prefix("ghaf-")
-            .ok_or_else(|| anyhow!("invalid UKI prefix"))?;
+        let stem = stem.strip_prefix("ghaf-").context("invalid UKI prefix")?;
 
         // Parse optional boot counters from the end: +N or +N-M
         let (core, boot_counter) = if let Some((left, right)) = stem.rsplit_once('+') {
             let (remaining, used) = match right.split_once('-') {
                 Some((r, u)) => (
-                    r.parse()
-                        .map_err(|_| anyhow!("invalid remaining counter"))?,
-                    Some(u.parse().map_err(|_| anyhow!("invalid used counter"))?),
+                    r.parse().context("invalid remaining counter")?,
+                    Some(u.parse().context("invalid used counter")?),
                 ),
-                None => (
-                    right
-                        .parse()
-                        .map_err(|_| anyhow!("invalid remaining counter"))?,
-                    None,
-                ),
+                None => (right.parse().context("invalid remaining counter")?, None),
             };
 
             (left, Some(BootCounter { remaining, used }))
@@ -111,12 +99,10 @@ impl FromStr for UkiEntry {
             (stem, None)
         };
 
-        let (version, hash) = core
-            .split_once('-')
-            .ok_or_else(|| anyhow!("missing version/hash"))?;
+        let (version, hash) = core.split_once('-').context("missing version/hash")?;
 
         if version == "empty" {
-            bail!("UKI version must not be empty");
+            bail!("UKI version must not be 'empty'");
         }
 
         Ok(UkiEntry {
@@ -127,7 +113,6 @@ impl FromStr for UkiEntry {
 }
 
 impl BootEntry {
-    #[must_use]
     pub fn from_bootctl(items: Vec<BootctlItem>) -> impl Iterator<Item = Self> {
         items.into_iter().filter_map(|item| {
             let id = item.id;
@@ -163,7 +148,7 @@ impl BootEntry {
     #[must_use]
     pub fn uki(&self) -> Option<&UkiEntry> {
         match &self.kind {
-            BootEntryKind::Managed(uki) => Some(&uki),
+            BootEntryKind::Managed(uki) => Some(uki),
             _ => None,
         }
     }
@@ -175,10 +160,7 @@ impl BootEntry {
 
     #[must_use]
     pub fn matches(&self, slot: &Slot) -> bool {
-        match &self.kind {
-            BootEntryKind::Managed(uki) => uki.matches(slot),
-            _ => false,
-        }
+        matches!(&self.kind, BootEntryKind::Managed(uki) if uki.matches(slot))
     }
 
     #[must_use]
@@ -200,10 +182,12 @@ impl From<UkiEntry> for BootEntry {
 }
 
 impl UkiEntry {
+    #[must_use]
     pub fn full_name<P: AsRef<Path>>(&self, base_dir: P) -> PathBuf {
-        base_dir.as_ref().join(&self.to_string())
+        base_dir.as_ref().join(self.to_string())
     }
 
+    #[must_use]
     pub fn matches(&self, slot: &Slot) -> bool {
         slot.version() == Some(&self.version)
     }
@@ -216,6 +200,16 @@ mod tests {
     #[test]
     fn parse_valid_uki() {
         let uki = UkiEntry::from_str("ghaf-1.2.3-deadbeefdeadbeef.efi").unwrap();
+        assert_eq!(
+            uki.version,
+            Version::new("1.2.3".into(), Some("deadbeefdeadbeef".into()))
+        );
+        assert!(uki.boot_counter.is_none());
+    }
+
+    #[test]
+    fn parse_valid_uki_mix_case() {
+        let uki = UkiEntry::from_str("ghaf-1.2.3-deadbeefdeadbeef.EFI").unwrap();
         assert_eq!(
             uki.version,
             Version::new("1.2.3".into(), Some("deadbeefdeadbeef".into()))
