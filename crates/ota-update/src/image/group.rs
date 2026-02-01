@@ -1,7 +1,8 @@
 use super::Version;
 use super::runtime::KernelParams;
 use super::slot::{Kind, Slot, SlotClass};
-use super::uki::BootEntry;
+use super::uki::{BootEntry, UkiEntry};
+use anyhow::{Result, ensure};
 
 #[derive(Debug, Clone)]
 pub struct SlotGroup {
@@ -12,29 +13,21 @@ pub struct SlotGroup {
 
 impl SlotGroup {
     fn matches_slot(&self, slot: &Slot) -> bool {
-        if let Some(root) = &self.root {
-            return root.matches(slot);
-        }
-        if let Some(verity) = &self.verity {
-            return verity.matches(slot);
-        }
-        false
+        self.root.as_ref().is_some_and(|r| r.matches(slot))
+            || self.verity.as_ref().is_some_and(|v| v.matches(slot))
     }
 
     fn matches_boot(&self, boot: &BootEntry) -> bool {
-        // UKI always Used и не legacy
-        if let Some(root) = &self.root {
-            return root.version() == boot.version();
-        }
-        if let Some(verity) = &self.verity {
-            return verity.version() == boot.version();
-        }
-        false
+        let bv = boot.version();
+        self.root.as_ref().is_some_and(|r| {
+            r.version() == bv || self.verity.as_ref().is_some_and(|v| v.version() == bv)
+        })
     }
 }
 
 impl SlotGroup {
-    pub fn group_volumes(
+    // NOTE: This algoritm intentionally avoid HashMap/HashSet, because we have only 2-3 slot pairs.
+    pub(crate) fn group_volumes(
         slots: Vec<Slot>,
         boots: Vec<BootEntry>,
     ) -> anyhow::Result<Vec<SlotGroup>> {
@@ -108,18 +101,17 @@ impl SlotGroup {
     #[must_use]
     pub fn version(&self) -> Option<&Version> {
         if let Some(root) = &self.root {
-            return root.version();
-        }
-        if let Some(verity) = &self.verity {
-            return verity.version();
-        }
-        if let Some(boot) = &self.boot {
+            root.version()
+        } else if let Some(verity) = &self.verity {
+            verity.version()
+        } else if let Some(boot) = &self.boot {
             // UKI always represents a used slot
             // Version is reconstructed only for comparison / display
             // (no leaking into internal logic)
-            return boot.version();
+            boot.version()
+        } else {
+            None
         }
-        None
     }
 
     /// Returns empty identifier for this group, if it is an empty slot.
@@ -164,16 +156,18 @@ impl SlotGroup {
             || self.boot.is_some()
     }
 
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.root.is_some() && self.verity.is_some()
     }
 
     #[must_use]
     pub fn is_legacy(&self) -> bool {
-        self.root.as_ref().is_some_and(|s| s.is_legacy())
-            || self.verity.as_ref().is_some_and(|s| s.is_legacy())
+        self.root.as_ref().is_some_and(Slot::is_legacy)
+            || self.verity.as_ref().is_some_and(Slot::is_legacy)
     }
 
+    #[must_use]
     pub fn is_active(&self, kernel: &KernelParams) -> bool {
         match (self.version(), kernel.to_version()) {
             // Normal case: exact version match
@@ -188,37 +182,42 @@ impl SlotGroup {
         }
     }
 
-    pub fn validate(&self) -> anyhow::Result<()> {
+    pub(crate) fn validate(&self) -> anyhow::Result<()> {
         // root <-> verity must match
         if let (Some(root), Some(verity)) = (&self.root, &self.verity) {
-            if !root.matches(verity) {
-                anyhow::bail!("root and verity slots do not match: {} vs {}", root, verity);
-            }
+            ensure!(
+                root.matches(verity),
+                "root and verity slots do not match: {root} vs {verity}"
+            );
         }
 
         // UKI must match slots
         if let Some(boot) = &self.boot {
             if let Some(root) = &self.root {
-                if !boot.matches(root) {
-                    anyhow::bail!("UKI does not match root slot: {} vs {}", boot, root);
-                }
+                ensure!(
+                    boot.matches(root),
+                    "UKI does not match root slot: {boot} vs {root}"
+                );
             }
             if let Some(verity) = &self.verity {
-                if !boot.matches(verity) {
-                    anyhow::bail!("UKI does not match verity slot: {} vs {}", boot, verity);
-                }
+                ensure!(
+                    boot.matches(verity),
+                    "UKI does not match verity slot: {boot} vs {verity}"
+                );
             }
         }
 
         // empty group must not have UKI
-        if self.is_empty() && self.boot.is_some() {
-            anyhow::bail!("empty slot group contains UKI");
-        }
+        ensure!(
+            self.is_empty() && self.boot.is_some(),
+            "empty slot group contains UKI"
+        );
 
         Ok(())
     }
 
     /// Classify slot state based on runtime kernel parameters.
+    #[must_use]
     pub fn classify(&self, kernel: &KernelParams) -> SlotClass {
         // Structural validation always comes first
         if self.validate().is_err() {
@@ -237,6 +236,14 @@ impl SlotGroup {
 
         // Installed but not active
         SlotClass::Inactive
+    }
+
+    pub(crate) fn attach_uki(&self, uki: UkiEntry) -> Result<SlotGroup> {
+        ensure!(self.boot.is_none(), "Already have UKI (state error)");
+        Ok(Self {
+            boot: Some(uki.into()),
+            ..self.clone()
+        })
     }
 }
 

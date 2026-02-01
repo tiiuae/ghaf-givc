@@ -1,5 +1,4 @@
 use shell_escape::escape;
-use std::borrow::Cow;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,6 +13,7 @@ pub struct Pipeline {
 }
 
 impl CommandSpec {
+    #[must_use]
     pub fn new<S: Into<String>>(program: S) -> Self {
         Self {
             program: program.into(),
@@ -21,16 +21,19 @@ impl CommandSpec {
         }
     }
 
+    #[must_use]
     pub fn arg_path<P: AsRef<Path>>(mut self, path: P) -> Self {
         self.args.push(path.as_ref().to_string_lossy().into_owned());
         self
     }
 
+    #[must_use]
     pub fn arg<S: Into<String>>(mut self, arg: S) -> Self {
         self.args.push(arg.into());
         self
     }
 
+    #[must_use]
     pub fn args<I, S>(mut self, args: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -41,28 +44,32 @@ impl CommandSpec {
     }
 }
 
-impl Into<Pipeline> for CommandSpec {
-    fn into(self) -> Pipeline {
-        Pipeline::new(self)
+impl From<CommandSpec> for Pipeline {
+    fn from(val: CommandSpec) -> Pipeline {
+        Pipeline::new(val)
     }
 }
 
 impl Pipeline {
+    #[must_use]
     pub fn new(first: CommandSpec) -> Self {
         Self {
             stages: vec![first],
         }
     }
 
+    #[must_use]
     pub fn pipe(mut self, next: CommandSpec) -> Self {
         self.stages.push(next);
         self
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.stages.is_empty()
     }
 
+    #[must_use]
     pub fn format_shell(&self) -> String {
         self.stages
             .iter()
@@ -70,7 +77,7 @@ impl Pipeline {
                 let mut s = cmd.program.clone();
                 for arg in &cmd.args {
                     s.push(' ');
-                    s.push_str(&escape(Cow::Borrowed(arg)));
+                    s.push_str(&escape(arg.into()));
                 }
                 s
             })

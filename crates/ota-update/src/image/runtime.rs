@@ -5,7 +5,7 @@ use super::manifest::Manifest;
 use super::slot::{Slot, SlotClass};
 use super::uki::{BootEntry, BootEntryKind, UkiEntry};
 use crate::bootctl::BootctlItem;
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use std::fmt::Write;
 
 #[derive(Debug)]
@@ -28,19 +28,25 @@ pub struct KernelParams {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum SlotSelection {
     AlreadyInstalled,
     Selected(SlotGroup),
 }
 
 impl SlotSelection {
+    #[must_use]
     pub fn is_none(&self) -> bool {
         matches!(&self, Self::AlreadyInstalled)
     }
 }
 
 impl Runtime {
-    pub fn new(volumes: Vec<Volume>, cmdline: &str, bootctl: Vec<BootctlItem>) -> Result<Self> {
+    pub(crate) fn new(
+        volumes: Vec<Volume>,
+        cmdline: &str,
+        bootctl: Vec<BootctlItem>,
+    ) -> Result<Self> {
         let (slots, volumes) = Slot::from_volumes(volumes);
         let boot_entries = BootEntry::from_bootctl(bootctl);
         let (managed, unmanaged) = boot_entries.into_iter().partition(BootEntry::is_managed);
@@ -64,11 +70,12 @@ impl Runtime {
             .filter(move |g| g.classify(&self.kernel) == class)
     }
 
+    #[must_use]
     pub fn slot_groups(&self) -> &Vec<SlotGroup> {
         &self.slots
     }
 
-    pub fn select_update_slot(&self, manifest: &Manifest) -> Result<SlotSelection> {
+    pub(crate) fn select_update_slot(&self, manifest: &Manifest) -> Result<SlotSelection> {
         let slots = self.slot_groups();
         let target = manifest.to_version();
 
@@ -82,29 +89,20 @@ impl Runtime {
 
         // 2. Find first suitable empty slot
         let slot = slots
-            .into_iter()
-            .filter(|slot| slot.is_empty())
-            .filter(|slot| !slot.is_active(&self.kernel))
-            .filter(|slot| slot.is_complete())
-            .next()
-            .ok_or_else(|| anyhow!("no empty slot available for update"))?;
+            .iter()
+            .find(|slot| slot.is_empty() && !slot.is_active(&self.kernel) && slot.is_complete())
+            .context("no empty slot available for update")?;
 
         // 3. Attach UKI metadata for the plan
-        let slot = SlotGroup {
-            boot: Some(
-                (UkiEntry {
-                    version: target,
-                    boot_counter: None,
-                })
-                .into(),
-            ),
-            ..slot.clone()
-        };
+        let slot = slot.attach_uki(UkiEntry {
+            version: target,
+            boot_counter: None,
+        })?;
 
         Ok(SlotSelection::Selected(slot))
     }
 
-    pub fn find_slot(&self, version: &Version) -> Result<SlotGroup> {
+    pub(crate) fn find_slot_group<'a>(&'a self, version: &Version) -> Result<&'a SlotGroup> {
         let groups = self.slot_groups();
 
         // 1. exact match
@@ -114,7 +112,7 @@ impl Runtime {
             if exact.next().is_some() {
                 bail!("ambiguous slot selection for version={version}");
             }
-            return Ok(slot.clone());
+            return Ok(slot);
         }
 
         // 2. Fallback: version without hash, but we have exact one candidate that match
@@ -124,52 +122,46 @@ impl Runtime {
                     .is_some_and(|v| v.revision == version.revision && v.has_hash())
             });
 
-            if let Some(slot) = candidates.next() {
-                if candidates.next().is_none() {
-                    return Ok(slot.clone());
-                }
+            if let Some(slot) = candidates.next()
+                && candidates.next().is_none()
+            {
+                return Ok(slot);
             }
         }
 
         bail!("slot not found: version={version}");
     }
 
-    pub fn active_slot(&self) -> Result<SlotGroup> {
+    pub(crate) fn active_slot(&self) -> Result<&SlotGroup> {
         let mut active = self
             .slot_groups()
-            .into_iter()
+            .iter()
             .filter(|slot| slot.is_active(&self.kernel));
 
-        let Some(first) = active.next() else {
-            bail!("no active slot detected");
-        };
+        let first = active.next().context("no active slot detected")?;
 
         if let Some(second) = active.next() {
-            bail!(
-                "multiple active slots detected: {:?} and {:?}",
-                first,
-                second
-            );
+            bail!("multiple active slots detected: {first:?} and {second:?}",);
         }
 
-        Ok(first.clone())
+        Ok(first)
     }
 
+    #[must_use]
     pub fn has_empty_with_hash(&self, hash: &str) -> bool {
         self.slot_groups()
-            .into_iter()
-            .filter(|s| s.empty_id() == Some(hash))
-            .next()
-            .is_some()
+            .iter()
+            .any(|s| s.empty_id() == Some(hash))
     }
 
-    pub fn allocate_empty_identifier(&self) -> Result<String> {
+    // NOTE: This algoritm intentionally avoid HashMap/HashSet, because we have only 2-3 slots
+    pub(crate) fn allocate_empty_identifier(&self) -> Result<String> {
         let groups = self.slot_groups();
         let used: Vec<&str> = groups.iter().filter_map(|s| s.empty_id()).collect();
 
         for i in 0..100 {
             let candidate = i.to_string();
-            if !used.iter().any(|&id| id == candidate) {
+            if !used.contains(&candidate.as_str()) {
                 return Ok(candidate);
             }
         }
@@ -179,6 +171,7 @@ impl Runtime {
 
     /// Human-readable runtime introspection.
     /// Intended for debugging, dry-run output and diagnostics.
+    #[must_use]
     pub fn inspect(&self) -> String {
         let mut out = String::new();
 
@@ -283,12 +276,14 @@ impl Runtime {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn format_size(size: Option<u64>) -> String {
+    const G: u64 = 1024 * 1024 * 1024;
+
     let Some(bytes) = size else {
         return String::new();
     };
 
-    const G: u64 = 1024 * 1024 * 1024;
     format!(" ({:.1}G)", bytes as f64 / G as f64)
 }
 
@@ -319,16 +314,18 @@ impl KernelParams {
         })
     }
 
+    #[must_use]
     pub fn verity_hash_fragment(&self) -> Option<&str> {
-        // SAFETY: We ensure that hash always equal 64 characters
+        // SAFETY: We ensure that hash always equal 64 characters in constructor above
         self.store_hash.as_deref().map(|h| &h[..16])
     }
 
+    #[must_use]
     pub fn to_version(&self) -> Option<Version> {
         self.revision.as_deref().map(|r| {
             Version::new(
                 r.to_string(),
-                self.verity_hash_fragment().map(|h| h.to_string()),
+                self.verity_hash_fragment().map(ToString::to_string),
             )
         })
     }
@@ -574,7 +571,7 @@ mod tests {
             ..Runtime::default()
         };
         let version = Version::new("1.0.0".into(), Some("aaaaaaaaaaaaaaaa".into()));
-        let group = rt.find_slot(&version).expect("find");
+        let group = rt.find_slot_group(&version).expect("find");
         println!("{group:?}")
     }
 
