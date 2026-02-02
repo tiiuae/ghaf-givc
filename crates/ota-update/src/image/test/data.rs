@@ -1,5 +1,5 @@
 // Expected parameters in /proc/cmdline with some unrelated params (`root=fstab`)
-pub const KERNEL_CMDLINE: &str = "ghaf.revision=25.12.1 storehash=deadbeefcafebabe root=fstab";
+pub const KERNEL_CMDLINE: &str = "ghaf.revision=25.12.1 storehash=deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe root=fstab";
 
 // Captured by `LC_NUMERIC=C  lvs --all --report-format json --units B` from prototype Ghaf with A/B update placeholder slots
 pub const LVS: &str = r#"

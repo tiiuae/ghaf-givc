@@ -5,7 +5,7 @@ use super::manifest::Manifest;
 use super::slot::{Slot, SlotClass};
 use super::uki::{BootEntry, BootEntryKind, UkiEntry};
 use crate::bootctl::BootctlItem;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail, ensure};
 use std::fmt::Write;
 
 #[derive(Debug)]
@@ -23,7 +23,7 @@ pub struct Runtime {
 /// Well-known params from kernel /proc/cmdline
 #[derive(Debug, Clone)]
 pub struct KernelParams {
-    pub store_hash: Option<String>,
+    store_hash: Option<String>,
     pub revision: Option<String>,
 }
 
@@ -48,7 +48,7 @@ impl Runtime {
         Ok(Self {
             slots,
             volumes,
-            kernel: KernelParams::from_cmdline(cmdline),
+            kernel: KernelParams::from_cmdline(cmdline)?,
             boot_entries: unmanaged,
             boot: "/boot".into(), // FIXME: detect /boot if possible
         })
@@ -305,14 +305,22 @@ impl KernelParams {
     }
 
     /// Parse the storehash from a provided kernel commandline
-    fn from_cmdline(cmdline: &str) -> Self {
-        Self {
-            store_hash: Self::find_arg(cmdline, CMDLINE_ARG_NAME).map(ToOwned::to_owned),
+    fn from_cmdline(cmdline: &str) -> Result<Self> {
+        let store_hash = Self::find_arg(cmdline, CMDLINE_ARG_NAME).map(ToOwned::to_owned);
+        ensure!(
+            store_hash
+                .as_ref()
+                .is_none_or(|hash| hash.chars().all(|c| c.is_ascii_hexdigit()) && hash.len() == 64),
+            "Invalid verity hash"
+        );
+        Ok(Self {
+            store_hash,
             revision: Self::find_arg(cmdline, GHAF_REVISION_NAME).map(ToOwned::to_owned),
-        }
+        })
     }
 
     pub fn verity_hash_fragment(&self) -> Option<&str> {
+        // SAFETY: We ensure that hash always equal 64 characters
         self.store_hash.as_deref().map(|h| &h[..16])
     }
 
@@ -581,5 +589,28 @@ mod tests {
 
         assert!(active.is_legacy());
         assert!(active.is_active(&rt.kernel));
+    }
+
+    // Following two test copied from ghaf-store-veritysetup-generator.
+    // If you change them here, update them there as well.
+    #[test]
+    fn invalid_verity_hash_chars() {
+        let expected_storehash = "invalid2dbec8355df07f3670177b0cb147683a355c07da6a2fb85313cc02254";
+        let expected_revision = "25.12.2";
+        let cmdline = format!(
+            "{CMDLINE_ARG_NAME}={expected_storehash} {GHAF_REVISION_NAME}={expected_revision}"
+        );
+        assert!(KernelParams::from_cmdline(&cmdline).is_err())
+    }
+
+    #[test]
+    // Most important test, cutting 16 chars of too short hash could panic
+    fn invalid_verity_hash_too_short() {
+        let expected_storehash = "94821122db";
+        let expected_revision = "25.12.2";
+        let cmdline = format!(
+            "{CMDLINE_ARG_NAME}={expected_storehash} {GHAF_REVISION_NAME}={expected_revision}"
+        );
+        assert!(KernelParams::from_cmdline(&cmdline).is_err())
     }
 }
