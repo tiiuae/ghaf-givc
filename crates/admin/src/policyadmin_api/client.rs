@@ -7,6 +7,7 @@ use crate::pb::policyadmin::{
 use anyhow::Result;
 use async_stream::stream;
 use givc_client::endpoint::EndpointConfig;
+use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio_stream::Stream;
@@ -48,13 +49,13 @@ impl PolicyAdminClient {
      * sends a sequence of `StreamPolicyRequest` messages:
      */
 
-    pub async fn upload_policy(&self, name: String, path: String) -> Result<()> {
+    pub async fn upload_policy(&self, name: String, path: PathBuf) -> Result<()> {
         debug!("Uploading policy: {}", name);
         let outbound_stream = stream! {
             let mut file = match File::open(&path).await {
                 Ok(f) => f,
                 Err(e) => {
-                    error!("Failed to open policy file {}: {}", path, e);
+                    error!("Failed to open policy file {:#?}: {}", path, e);
                     return;
                 }
             };

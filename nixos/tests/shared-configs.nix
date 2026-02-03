@@ -65,9 +65,9 @@ in
           enable = true;
           factoryPolicies = {
             enable = true;
-            url = "https://github.com/gngram/policy-store.git";
-            rev = "18b896782587b220d144c166e9acf83ff5beb194";
-            sha256 = "sha256-mq4Fz0IYBM8hisdpNmBSstyNCW9rMoLdsFcZEJLQSmE=";
+            url = "https://github.com/tiiuae/ghaf-policies.git";
+            rev = "a0d8002b5d304e846f18a466b4bfb1efdf571882";
+            sha256 = "sha256-Rpu9yudQOhvnGHVDWFOqrOPdiKS0z4SGaba6mRDrnCg=";
           };
 
           policies = {

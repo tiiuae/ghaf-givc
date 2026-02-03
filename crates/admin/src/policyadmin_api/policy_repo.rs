@@ -43,7 +43,7 @@ impl PolicyRepoMonitor {
         let branch = configs.source.branch.clone().unwrap_or("master".into());
         let destination = policy_root.as_ref().join("data");
 
-        let interval_secs = configs.source.poll_interval_secs.unwrap_or(60);
+        let interval_secs = configs.source.poll_interval_secs.unwrap_or(300);
 
         let monitor = Self {
             url,
@@ -250,7 +250,7 @@ impl PolicyRepoMonitor {
             let wait_time = if self.poll_interval.clone() == Duration::ZERO {
                 Duration::from_secs(300)
             } else {
-                self.poll_interval.clone()
+                self.poll_interval
             };
 
             let policy_manager = PolicyManager::instance();
@@ -260,14 +260,16 @@ impl PolicyRepoMonitor {
                 debug!("policy-repo: --- checking for policy updates ---");
                 match self.get_update() {
                     Ok(true) => match self.get_change_set() {
-                        Ok(changes) => {
-                            if !changes.is_empty() {
-                                if let Err(e) = policy_manager.process_changeset(&changes) {
-                                    error!("policy-repo: failed to apply changeset: {}", e);
-                                    update_err = true;
-                                }
-                            } else {
-                                let _ = policy_manager.force_update_all_vms();
+                        Ok(changes) if !changes.is_empty() => {
+                            if let Err(e) = policy_manager.process_changeset(&changes) {
+                                error!("policy-repo: failed to apply changeset: {}", e);
+                                update_err = true;
+                            }
+                        }
+                        Ok(_) => {
+                            if let Err(e) = policy_manager.force_update_all_vms() {
+                                error!("policy-repo: failed to force update: {}", e);
+                                update_err = true;
                             }
                         }
                         Err(e) => {

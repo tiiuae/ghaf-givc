@@ -7,7 +7,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
-use tokio::runtime::Runtime;
 use tracing::{debug, error, info, warn};
 
 /*
@@ -39,7 +38,6 @@ pub struct PolicyManager {
     policy_dir: PathBuf,
     configs: PolicyConfig,
     admin_service: Arc<server::AdminServiceImpl>,
-    rt: Arc<Runtime>,
     workers: HashMap<String, (Sender<Policy>, JoinHandle<()>)>,
 }
 
@@ -50,7 +48,7 @@ impl PolicyManager {
      * Initializes the singleton. Must be called once at startup.
      */
     pub fn init(
-        store_dir: &Path,
+        store_dir: PathBuf,
         configs: &PolicyConfig,
         admin_service: Arc<server::AdminServiceImpl>,
     ) -> Result<()> {
@@ -83,15 +81,10 @@ impl PolicyManager {
      * 3. Spawns initial workers for VMs defined in the config.
      */
     fn new(
-        store_dir: &Path,
+        store_dir: PathBuf,
         configs: &PolicyConfig,
         admin_service: Arc<server::AdminServiceImpl>,
     ) -> Result<Self> {
-        /* Create a dedicated Tokio runtime for async operations inside workers */
-        let rt = Runtime::new()
-            .map_err(|e| anyhow!("policy-admin:Failed to create Tokio Runtime: {e}"))?;
-        let rt = Arc::new(rt);
-
         let vm_names = configs
             .policies
             .values()
@@ -104,7 +97,6 @@ impl PolicyManager {
             policy_dir: store_dir.to_path_buf(),
             configs: configs.clone(),
             admin_service: Arc::clone(&admin_service),
-            rt: rt.clone(),
             workers: HashMap::new(),
         };
 
@@ -132,7 +124,7 @@ impl PolicyManager {
         let vm_name = vm.to_string();
 
         /* Clone Arcs to pass shared ownership to the thread */
-        let rt_share = Arc::clone(&self.rt);
+        let rt_share = tokio::runtime::Handle::current();
         let service_share = Arc::clone(&self.admin_service);
 
         let handle = thread::spawn(move || {
@@ -152,7 +144,7 @@ impl PolicyManager {
     fn worker_loop(
         vm: String,
         rx: Receiver<Policy>,
-        rt: Arc<Runtime>,
+        rt: tokio::runtime::Handle,
         admin_service: Arc<server::AdminServiceImpl>,
     ) {
         debug!("policy-admin: Worker [{}] started.", vm);
@@ -283,13 +275,9 @@ impl PolicyManager {
             }
             debug!("policy-admin:process_changeset() changeset: {}.", changeset);
 
-            let mut parts = line.split_whitespace();
-            /* Ignore status (M, A, etc) for now, just need path */
-            let _status = parts.next();
-
-            let relative_path = match parts.next() {
-                Some(p) => p,
-                None => continue,
+            /* Path is the second token of a line */
+            let Some(relative_path) = line.split_whitespace().nth(1) else {
+                continue;
             };
 
             const PREFIX: &str = "vm-policies/";

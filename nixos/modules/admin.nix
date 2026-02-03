@@ -261,21 +261,26 @@ in
           leaveDotGit = true;
         };
 
-        preStartScript = pkgs.writeScript "policy_init" ''
-          #!${pkgs.bash}/bin/bash
-          policyDir=${cfg.policyAdmin.storePath}
-          if [ -d $policyDir/data ]; then
-            echo "Policy is up to date."
-            exit 0
-          fi
+        preStartScript = pkgs.writeShellApplication {
+          name = "policy_init";
+          runtimeInputs = with pkgs; [
+            rsync
+          ];
+          text = ''
+            policyDir=${cfg.policyAdmin.storePath}
+            if [ -d $policyDir/data ]; then
+              echo "Policy is up to date."
+              exit 0
+            fi
 
-          install -d -m 0755  "$policyDir/data"
-          ${pkgs.rsync}/bin/rsync -ar "${initialPolicySrc}/.git" "$policyDir/data/"
+            install -d -m 0755  "$policyDir/data"
+            rsync -ar "${initialPolicySrc}/.git" "$policyDir/data/"
 
-          if [ -d "${initialPolicySrc}/vm-policies" ]; then
-            ${pkgs.rsync}/bin/rsync -ar "${initialPolicySrc}/vm-policies" "$policyDir/data/"
-          fi
-        '';
+            if [ -d "${initialPolicySrc}/vm-policies" ]; then
+              rsync -ar "${initialPolicySrc}/vm-policies" "$policyDir/data/"
+            fi
+          '';
+        };
       in
       {
         description = "GIVC admin module.";
@@ -291,7 +296,7 @@ in
           RestartSec = 1;
           ExecStartPre = mkIf (
             cfg.policyAdmin.enable && cfg.policyAdmin.factoryPolicies.enable
-          ) "!${preStartScript}";
+          ) "-!${lib.getExe preStartScript}";
         };
         environment = {
           "NAME" = "${cfg.name}";

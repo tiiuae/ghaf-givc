@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	cfg "givc/modules/pkgs/config"
 
@@ -28,6 +29,7 @@ type PolicyDetail struct {
  * applying policy updates.
  */
 type PolicyAdminController struct {
+	mu               sync.Mutex
 	tempDir          string
 	policiesInfoFile string
 	storePath        string
@@ -47,6 +49,9 @@ func NewPolicyAdminController(policy cfg.PolicyConfig) (*PolicyAdminController, 
 
 /* Updates the policies to the targets as per defined in config */
 func (self *PolicyAdminController) UpdatePolicy(policyName string, pulledPolicyPath string) error {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+
 	policyDir := filepath.Join(self.storePath, policyName)
 	policyFile := filepath.Join(policyDir, "policy.bin")
 	policy, exists := self.policyMap[policyName]

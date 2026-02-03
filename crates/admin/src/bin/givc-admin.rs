@@ -34,7 +34,7 @@ struct Cli {
     #[arg(long, env = "GIVC_MONITORING", default_value_t = true)]
     monitoring: bool,
 
-    #[arg(long, env = "POLICY_ADMIN")]
+    #[arg(long, env = "POLICY_ADMIN", requires = "policy_config")]
     policy_admin: bool,
 
     #[arg(long, env = "POLICY_CONFIG")]
@@ -96,12 +96,11 @@ async fn main() -> anyhow::Result<()> {
     let listener =
         tokio_listener::Listener::bind_multiple(&cli.listen, &sys_opts, &user_opts).await?;
 
-    let mut th_handle: Option<tokio::task::JoinHandle<()>> = None;
     debug!(
         "policy-admin: enabled: {}",
         if cli.policy_admin { "yes" } else { "no" }
     );
-    if cli.policy_admin {
+    let ttask = if cli.policy_admin {
         let default_json = "{}".to_string();
         debug!(
             "policy:admin: policy store: {:#?}",
@@ -123,17 +122,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .await
         {
-            Ok(Some(handle)) => {
-                th_handle = Some(handle);
-                debug!("policy-admin: policy manager initialized and started.");
-            }
-
-            Ok(None) => {
-                debug!(
-                    "policy-admin: policy manager initialized with default policies (without live update)."
-                );
-            }
-
+            Ok(handle) => Some(handle),
             Err(e) => {
                 error!(
                     "policy-admin: policy manager initialization failed: {:?}",
@@ -144,7 +133,8 @@ async fn main() -> anyhow::Result<()> {
         }
     } else {
         debug!("policy-admin disabled.");
-    }
+        None
+    };
 
     let _ = builder
         .add_service(reflect)
@@ -152,11 +142,14 @@ async fn main() -> anyhow::Result<()> {
         .serve_with_incoming(listener)
         .await?;
 
-    /* Cleanup policy monitor */
-    if let Some(handle) = th_handle {
-        if let Err(e) = handle.await {
-            tracing::error!("Policy monitor task failed: {}", e);
+    if let Some(Some(handle)) = ttask {
+        match handle.await {
+            Ok(result) => debug!("Policy manager task completed with result: {:?}", result),
+            Err(e) => error!("Policy manager task failed: {:?}", e),
         }
+    } else {
+        debug!("Policy update not enabled.");
     }
+
     Ok(())
 }

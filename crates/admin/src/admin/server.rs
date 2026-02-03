@@ -21,14 +21,13 @@ pub use pb::admin_service_server::AdminServiceServer;
 
 use crate::admin::registry::Registry;
 use crate::policyadmin_api::client::PolicyAdminClient;
+use crate::policyadmin_api::policy_manager::PolicyManager;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
 use crate::utils::naming::VmName;
 use crate::utils::tonic::{Stream, escalate};
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::QueryResult;
-
-use crate::policyadmin_api::policy_manager::PolicyManager;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 const TIMEZONE_CONF: &str = "/etc/timezone.conf";
@@ -214,7 +213,7 @@ impl AdminServiceImpl {
         let temp_path = policy_file_path.with_extension("tmp");
         tokio::fs::copy(policy_file_path, &temp_path).await?;
         let result = client
-            .upload_policy(policy_name.to_string(), temp_path.display().to_string())
+            .upload_policy(policy_name.to_string(), temp_path.clone())
             .await;
         let _ = tokio::fs::remove_file(&temp_path).await;
         result

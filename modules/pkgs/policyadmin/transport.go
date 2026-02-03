@@ -36,6 +36,10 @@ func NewPolicyAdminServer(policy cfg.PolicyConfig) (*PolicyAdminServer, error) {
 		policy:     policy,
 		controller: nil,
 	}
+	/* Create temporary directory  to store policy binaries */
+	if err := os.MkdirAll(filepath.Join(s.policy.PolicyStorePath, ".temp"), 0755); err != nil {
+		return nil, fmt.Errorf("policy-admin: failed to create policy directory: %v", err)
+	}
 	var err error
 	s.controller, err = NewPolicyAdminController(policy)
 	if err != nil {
@@ -81,10 +85,6 @@ func (s *PolicyAdminServer) StreamPolicy(stream pb.PolicyAdmin_StreamPolicyServe
 				return fmt.Errorf("policy-admin: policy name is nil")
 			}
 
-			/* Ensure the temporary directory exists before creating the file */
-			if err := os.MkdirAll(filepath.Join(s.policy.PolicyStorePath, ".temp"), 0755); err != nil {
-				return fmt.Errorf("policy-admin: failed to create policy directory: %v", err)
-			}
 			log.Debugf("policy-admin:StreamPolicy() received policy: %s\n\n", policyName)
 
 			/* Create a distinct temporary file to store the incoming binary data */

@@ -93,30 +93,23 @@ pub async fn init_policy_manager(
     let policy_path = policy_root.join("data").join("vm-policies");
     debug!("policy-monitor: starting policy monitor...");
 
-    /* * Initialize PolicyManager.
-     * Note: Added error handling for the init call.
-     */
-    PolicyManager::init(policy_path.as_path(), &config, admin_service)?;
+    PolicyManager::init(policy_path, &config, admin_service)?;
     debug!("policy-monitor: thread spawned successfully");
 
     let source_type = config.source.kind;
 
-    /* * Use a Box<dyn PolicyMonitor> to hold different monitor types.
-     * This allows us to assign different structs to the same variable.
-     */
-    let monitor: Option<Box<dyn PolicyMonitor>> = match source_type {
+    let handle = match source_type {
         PolicySourceType::GitUrl => {
             info!("Monitoring git repo for Policy updates");
             let r = PolicyRepoMonitor::new(policy_root, &config)?;
-            Some(Box::new(Arc::new(r)))
+            Some(Arc::new(r).start())
         }
         PolicySourceType::PerPolicy => {
             info!("Monitoring URLs for Policy updates");
             let r = PolicyUrlMonitor::new(policy_root, &config)?;
-            Some(Box::new(r))
+            Some(r.start())
         }
         PolicySourceType::None => None,
     };
-
-    Ok(monitor.map(|m| m.start()))
+    Ok(handle)
 }
