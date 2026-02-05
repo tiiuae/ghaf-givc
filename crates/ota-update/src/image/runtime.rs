@@ -5,7 +5,7 @@ use super::manifest::Manifest;
 use super::slot::{Slot, SlotClass};
 use super::uki::{BootEntry, BootEntryKind, UkiEntry};
 use crate::bootctl::BootctlItem;
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use std::fmt::Write;
 
 #[derive(Debug)]
@@ -85,7 +85,7 @@ impl Runtime {
             .into_iter()
             .filter(|slot| slot.is_empty() && !slot.is_active(&self.kernel) && slot.is_complete())
             .next()
-            .ok_or_else(|| anyhow!("no empty slot available for update"))?;
+            .context("no empty slot available for update")?;
 
         // 3. Attach UKI metadata for the plan
         let slot = slot.attach_uki(UkiEntry {
@@ -96,7 +96,7 @@ impl Runtime {
         Ok(SlotSelection::Selected(slot))
     }
 
-    pub fn find_slot(&self, version: &Version) -> Result<SlotGroup> {
+    pub fn find_slot_group<'a>(&'a self, version: &Version) -> Result<&'a SlotGroup> {
         let groups = self.slot_groups();
 
         // 1. exact match
@@ -106,7 +106,7 @@ impl Runtime {
             if exact.next().is_some() {
                 bail!("ambiguous slot selection for version={version}");
             }
-            return Ok(slot.clone());
+            return Ok(slot);
         }
 
         // 2. Fallback: version without hash, but we have exact one candidate that match
@@ -116,10 +116,10 @@ impl Runtime {
                     .is_some_and(|v| v.revision == version.revision && v.has_hash())
             });
 
-            if let Some(slot) = candidates.next() {
-                if candidates.next().is_none() {
-                    return Ok(slot.clone());
-                }
+            if let Some(slot) = candidates.next()
+                && candidates.next().is_none()
+            {
+                return Ok(slot);
             }
         }
 
@@ -132,9 +132,7 @@ impl Runtime {
             .iter()
             .filter(|slot| slot.is_active(&self.kernel));
 
-        let Some(first) = active.next() else {
-            bail!("no active slot detected");
-        };
+        let first = active.next().context("no active slot detected")?;
 
         if let Some(second) = active.next() {
             bail!(
@@ -150,11 +148,10 @@ impl Runtime {
     pub fn has_empty_with_hash(&self, hash: &str) -> bool {
         self.slot_groups()
             .iter()
-            .filter(|s| s.empty_id() == Some(hash))
-            .next()
-            .is_some()
+            .any(|s| s.empty_id() == Some(hash))
     }
 
+    // NOTE: This algoritm intentionally avoid HashMap/HashSet, because we have only 2-3 slots
     pub fn allocate_empty_identifier(&self) -> Result<String> {
         let groups = self.slot_groups();
         let used: Vec<&str> = groups.iter().filter_map(|s| s.empty_id()).collect();
@@ -566,7 +563,7 @@ mod tests {
             ..Runtime::default()
         };
         let version = Version::new("1.0.0".into(), Some("aaaaaaaaaaaaaaaa".into()));
-        let group = rt.find_slot(&version).expect("find");
+        let group = rt.find_slot_group(&version).expect("find");
         println!("{group:?}")
     }
 

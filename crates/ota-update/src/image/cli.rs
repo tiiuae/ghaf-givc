@@ -57,7 +57,7 @@ impl ImageUpdate {
                 let manifest_path = Path::new(&manifest);
                 let source_dir = manifest_path
                     .parent()
-                    .ok_or_else(|| anyhow::anyhow!("manifest path has no parent directory"))?;
+                    .context("manifest path has no parent directory")?;
 
                 let manifest = Manifest::from_file(manifest_path)?;
                 let plan = Plan::install(&rt, &manifest, &source_dir)?;

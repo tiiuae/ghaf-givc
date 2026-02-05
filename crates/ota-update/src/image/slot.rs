@@ -1,7 +1,7 @@
 use super::Version;
 use super::lvm::Volume;
 use super::pipeline::{CommandSpec, Pipeline};
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Context, Result, ensure};
 use std::fmt;
 use strum::EnumString;
 
@@ -51,8 +51,8 @@ impl Slot {
         // split from the right: [name]_[version]_[hash?]
         let mut parts = value.rsplitn(3, '_');
 
-        let last = parts.next().ok_or_else(|| anyhow!("empty input"))?;
-        let middle = parts.next().ok_or_else(|| anyhow!("missing version"))?;
+        let last = parts.next().context("empty input")?;
+        let middle = parts.next().context("missing version")?;
         let first = parts.next();
 
         let (name, version_raw, hash_or_id) =
@@ -224,15 +224,7 @@ impl Slot {
     /// Slot kind (root / verity) is intentionally ignored.
     #[must_use]
     pub fn matches(&self, other: &Slot) -> bool {
-        match (&self.status, &other.status) {
-            (Status::Used(a), Status::Used(b)) => a == b,
-
-            (Status::Empty(EmptyId::Known(a)), Status::Empty(EmptyId::Known(b))) => a == b,
-
-            (Status::Empty(EmptyId::Legacy), Status::Empty(EmptyId::Legacy)) => true,
-
-            _ => false,
-        }
+        self.status == other.status
     }
 }
 

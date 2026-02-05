@@ -26,6 +26,7 @@ impl SlotGroup {
 }
 
 impl SlotGroup {
+    // NOTE: This algoritm intentionally avoid HashMap/HashSet, because we have only 2-3 slot pairs.
     pub fn group_volumes(
         slots: Vec<Slot>,
         boots: Vec<BootEntry>,
@@ -100,18 +101,17 @@ impl SlotGroup {
     #[must_use]
     pub fn version(&self) -> Option<&Version> {
         if let Some(root) = &self.root {
-            return root.version();
-        }
-        if let Some(verity) = &self.verity {
-            return verity.version();
-        }
-        if let Some(boot) = &self.boot {
+            root.version()
+        } else if let Some(verity) = &self.verity {
+            verity.version()
+        } else if let Some(boot) = &self.boot {
             // UKI always represents a used slot
             // Version is reconstructed only for comparison / display
             // (no leaking into internal logic)
-            return boot.version();
+            boot.version()
+        } else {
+            None
         }
-        None
     }
 
     /// Returns empty identifier for this group, if it is an empty slot.

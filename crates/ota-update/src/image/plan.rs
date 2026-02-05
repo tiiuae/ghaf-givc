@@ -4,7 +4,7 @@ use super::lvm::Volume;
 use super::manifest::{File, Manifest};
 use super::pipeline::{CommandSpec, Pipeline};
 use super::runtime::{Runtime, SlotSelection};
-use anyhow::bail;
+use anyhow::{Context, bail};
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34,14 +34,8 @@ impl Plan {
     ) -> anyhow::Result<Self> {
         let mut steps = Vec::new();
 
-        let root = slot
-            .root
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("slot has no root volume"))?;
-        let verity = slot
-            .verity
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("slot has no verity volume"))?;
+        let root = slot.root.as_ref().context("slot has no root volume")?;
+        let verity = slot.verity.as_ref().context("slot has no verity volume")?;
 
         steps.push(Self::install_volume(root.volume(), &m.store, source));
         steps.push(Self::install_volume(verity.volume(), &m.verity, source));
@@ -94,7 +88,7 @@ impl Plan {
             .as_ref()
             .and_then(|x| x.uki())
             .map(|x| x.to_string())
-            .ok_or_else(|| anyhow::anyhow!("cannot determine UKI name for slot"))?;
+            .context("cannot determine UKI name for slot")?;
 
         Ok(Pipeline::new(
             CommandSpec::new("install")
@@ -135,7 +129,7 @@ impl Plan {
 
 impl Plan {
     pub fn remove(rt: &Runtime, version: &Version) -> anyhow::Result<Self> {
-        let slot = rt.find_slot(version)?;
+        let slot = rt.find_slot_group(version)?;
 
         if slot.is_active(&rt.kernel) {
             bail!("cannot remove active slot");

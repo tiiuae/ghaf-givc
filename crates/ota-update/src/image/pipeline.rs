@@ -1,5 +1,4 @@
 use shell_escape::escape;
-use std::borrow::Cow;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,7 +69,7 @@ impl Pipeline {
                 let mut s = cmd.program.clone();
                 for arg in &cmd.args {
                     s.push(' ');
-                    s.push_str(&escape(Cow::Borrowed(arg)));
+                    s.push_str(&escape(arg.into()));
                 }
                 s
             })
