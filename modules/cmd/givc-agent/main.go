@@ -4,12 +4,12 @@
 // The GIVC agent is a service that allows remote management of systemd units and applications.
 //
 // The built-in gRPC server listens for commands from the GIVC admin server (or other instances) and executes
-// them on the local system. In order to configure its functionality, it reads environment variables from the
-// respective nixosModule configuration.
+// them on the local system. Configuration is loaded from a JSON file specified via command-line arguments.
 package main
 
 import (
 	"context"
+	"flag"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -39,7 +39,12 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 	var grpcServices []givc_types.GrpcServiceRegistration
 
 	// Systemd control server
-	systemdControlServer, err := givc_servicemanager.NewSystemdControlServer(agentEndpointConfig.Services, config.Capabilities.Applications)
+	applications := config.Capabilities.Applications
+	if applications == nil {
+		applications = make([]givc_types.ApplicationManifest, 0)
+	}
+
+	systemdControlServer, err := givc_servicemanager.NewSystemdControlServer(agentEndpointConfig.Services, applications)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -63,7 +68,6 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 	// Policy agent server
 	if config.Policy.PolicyAdminEnabled {
 		log.Infof("policy-admin: service starting... ")
-		//TODO: remove hard coding of config path
 		policyAdminServer, err := givc_policyadmin.NewPolicyAdminServer(config.Policy)
 		if err != nil {
 			log.Fatalf("policy-admin: cannot create policy admin service: %v", err)
@@ -73,8 +77,8 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 		grpcServices = append(grpcServices, policyAdminServer)
 	}
 
-	// Optional capability services - instantiate based on config flags
-	if config.Capabilities.Optional.ExecEnabled {
+	// Capability-based services
+	if config.Capabilities.Exec.Enabled {
 		execServer, err := givc_exec.NewExecServer()
 		if err != nil {
 			log.Errorf("Cannot create exec server: %v", err)
@@ -84,7 +88,7 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 		}
 	}
 
-	if config.Capabilities.Optional.WifiEnabled {
+	if config.Capabilities.Wifi.Enabled {
 		wifiServer, err := givc_wifimanager.NewWifiControlServer()
 		if err != nil {
 			log.Errorf("Cannot create wifi server: %v", err)
@@ -94,27 +98,27 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 		}
 	}
 
-	if config.Capabilities.Optional.HwidEnabled {
-		hwidServer, err := givc_hwidmanager.NewHwIdServer(config.Capabilities.Optional.HwidInterface)
+	if config.Capabilities.Hwid.Enabled {
+		hwidServer, err := givc_hwidmanager.NewHwIdServer(config.Capabilities.Hwid.Interface)
 		if err != nil {
 			log.Errorf("Cannot create hwid server: %v", err)
 		} else {
-			log.Infof("Hardware ID capability enabled")
+			log.Infof("Hardware ID capability enabled (interface: %s)", config.Capabilities.Hwid.Interface)
 			grpcServices = append(grpcServices, hwidServer)
 		}
 	}
 
-	if config.Capabilities.Optional.NotifierEnabled {
-		notifierServer, err := givc_notifier.NewUserNotifierServer(config.Capabilities.Optional.NotifierSocket)
+	if config.Capabilities.Notifier.Enabled {
+		notifierServer, err := givc_notifier.NewUserNotifierServer(config.Capabilities.Notifier.Socket)
 		if err != nil {
 			log.Errorf("Cannot create notification server: %v", err)
 		} else {
-			log.Infof("Notification service capability enabled")
+			log.Infof("Notification service capability enabled (socket: %s)", config.Capabilities.Notifier.Socket)
 			grpcServices = append(grpcServices, notifierServer)
 		}
 	}
 
-	if config.Capabilities.Optional.CtapEnabled {
+	if config.Capabilities.Ctap.Enabled {
 		ctapServer, err := givc_ctap.NewCtapServer()
 		if err != nil {
 			log.Errorf("Cannot create ctap server: %v", err)
@@ -129,8 +133,21 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 
 // Main function of the GIVC agent.
 func main() {
+	// Parse command-line arguments
+	configFile := flag.String("config", "", "Path to JSON configuration file (required)")
+	debugFlag := flag.Bool("debug", false, "Enable debug mode (overrides config file setting)")
+	flag.Parse()
+
+	// Validate required arguments
+	if *configFile == "" {
+		log.Errorf("Configuration file is required. Use -config flag to specify the path.")
+		log.Errorf("Usage: %s -config <path-to-config.json> [-debug]", filepath.Base(os.Args[0]))
+		os.Exit(1)
+	}
 
 	log.Infof("Running %s", filepath.Base(os.Args[0]))
+	log.Infof("Configuration file: %s", *configFile)
+
 	exitCode := 1 // Default exit code in case of failure
 
 	// Setup context
@@ -163,17 +180,24 @@ func main() {
 		}
 	}()
 
-	// Parse configuration
-	config, err := givc_config.ParseConfig()
+	config, err := givc_config.LoadConfig(*configFile)
 	if err != nil {
-		log.Errorf("Failed to parse configuration: %v", err)
+		log.Errorf("Failed to load configuration: %v", err)
 		return
 	}
 
 	// Setup log level
-	if !config.Runtime.Debug {
+	if *debugFlag {
+		log.SetLevel(log.DebugLevel)
+		log.Debugf("-- Debug mode enabled --")
+	} else {
 		log.SetLevel(log.WarnLevel)
 	}
+
+	log.Debugf("AGENT_CONFIG: %+v", config)
+	log.Debugf("AGENT_CONFIG-admin: %+v", config.Network.AdminEndpoint)
+	log.Debugf("AGENT_CONFIG-agent: %+v", config.Network.AgentEndpoint)
+	log.Debugf("AGENT_CONFIG-tls: %+v", config.Network.TlsConfig)
 
 	// Endpoint configurations are already created during parsing
 	agentEndpointConfig := config.Network.AgentEndpoint

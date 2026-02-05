@@ -15,10 +15,10 @@ let
     mkEnableOption
     mkIf
     types
-    concatStringsSep
-    trivial
     literalExpression
     optionalString
+    lists
+    strings
     ;
   inherit (builtins) toJSON;
   inherit (import ./definitions.nix { inherit config lib; })
@@ -26,6 +26,54 @@ let
     tlsSubmodule
     policyClientSubmodule
     ;
+  # GIVC agent JSON configuration for host
+  agentConfig =
+    let
+      cfgHost = config.givc.host;
+      adminVmList = lists.filter (s: s != "") (strings.splitString " " cfgHost.adminVm);
+    in
+    {
+      agent = {
+        inherit (cfgHost.transport) name;
+        type = "host:service";
+        parent = "";
+        ipaddr = cfgHost.transport.addr;
+        inherit (cfgHost.transport) port;
+        inherit (cfgHost.transport) protocol;
+      };
+
+      adminServer = {
+        inherit (cfgHost.admin) name;
+        ipaddr = cfgHost.admin.addr;
+        inherit (cfgHost.admin) port;
+        inherit (cfgHost.admin) protocol;
+      };
+
+      tls = {
+        inherit (cfgHost.tls) enable;
+        inherit (cfgHost.tls) caCertPath;
+        inherit (cfgHost.tls) certPath;
+        inherit (cfgHost.tls) keyPath;
+      };
+
+      policy = {
+        inherit (cfgHost.policyClient) enable;
+        inherit (cfgHost.policyClient) storePath;
+        policies = cfgHost.policyClient.policyConfig;
+      };
+
+      capabilities = {
+        inherit (cfgHost) services;
+        vmManager = {
+          admvms = adminVmList;
+          sysvms = cfgHost.systemVms;
+          appvms = cfgHost.appVms;
+        };
+        exec = {
+          enable = cfgHost.enableExecModule;
+        };
+      };
+    };
 in
 {
   options.givc.host = {
@@ -191,6 +239,9 @@ in
       }
     ];
 
+    # JSON configuration for GIVC host agent
+    environment.etc."givc-agent/config.json".text = toJSON agentConfig;
+
     systemd.services."givc-${cfg.transport.name}" = {
       description = "GIVC remote service manager for the host.";
       enable = true;
@@ -205,7 +256,9 @@ in
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "exec";
-        ExecStart = "${givc-agent}/bin/givc-agent";
+        ExecStart =
+          "${givc-agent}/bin/givc-agent -config /etc/givc-agent/config.json"
+          + optionalString cfg.debug " -debug";
         Restart = "on-failure";
         TimeoutStopSec = 5;
         RestartSec = 1;
@@ -216,24 +269,6 @@ in
         pkgs.nixos-rebuild
         pkgs.openssh
       ];
-      environment = {
-        "AGENT" = "${toJSON cfg.transport}";
-        "DEBUG" = "${trivial.boolToString cfg.debug}";
-        "TYPE" = "0";
-        "SUBTYPE" = "1";
-        "SERVICES" = "${concatStringsSep " " cfg.services}";
-        "ADMVMS" = "${cfg.adminVm}";
-        "SYSVMS" = "${concatStringsSep " " cfg.systemVms}";
-        "APPVMS" = "${concatStringsSep " " cfg.appVms}";
-        "ADMIN_SERVER" = "${toJSON cfg.admin}";
-        "TLS_CONFIG" = "${toJSON cfg.tls}";
-        "EXEC" = "${trivial.boolToString cfg.enableExecModule}";
-        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyClient.enable}";
-        "POLICY_CONFIG" = "${optionalString cfg.policyClient.enable (
-          toJSON cfg.policyClient.policyConfig
-        )}";
-        "POLICY_STORE" = "${optionalString cfg.policyClient.enable cfg.policyClient.storePath}";
-      };
     };
     networking.firewall.allowedTCPPorts =
       let

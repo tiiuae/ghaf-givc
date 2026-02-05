@@ -5,532 +5,371 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
+
+	givc_types "givc/modules/pkgs/types"
 )
 
-func TestParseJSONEnv(t *testing.T) {
-	tests := []struct {
-		name     string
-		envVar   string
-		envValue string
-		target   interface{}
-		required bool
-		wantErr  bool
-	}{
-		{
-			name:     "valid JSON",
-			envVar:   "TEST_JSON",
-			envValue: `{"name": "test", "port": "9000"}`,
-			target: &struct {
-				Name string `json:"name"`
-				Port string `json:"port"`
-			}{},
-			required: true,
-			wantErr:  false,
-		},
-		{
-			name:     "invalid JSON",
-			envVar:   "TEST_INVALID",
-			envValue: `{"name": "test", "port":}`,
-			target:   &struct{}{},
-			required: true,
-			wantErr:  true,
-		},
-		{
-			name:     "missing required env var",
-			envVar:   "TEST_MISSING",
-			envValue: "",
-			target:   &struct{}{},
-			required: true,
-			wantErr:  true,
-		},
-		{
-			name:     "missing optional env var",
-			envVar:   "TEST_OPTIONAL",
-			envValue: "",
-			target:   &struct{}{},
-			required: false,
-			wantErr:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set up environment
-			if tt.envValue != "" {
-				os.Setenv(tt.envVar, tt.envValue)
-				defer os.Unsetenv(tt.envVar)
-			} else {
-				os.Unsetenv(tt.envVar)
-			}
-
-			err := parseJSONEnv(tt.envVar, tt.target, tt.required)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseJSONEnv() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestParseAgentType(t *testing.T) {
-	tests := []struct {
-		name     string
-		envVar   string
-		envValue string
-		wantErr  bool
-	}{
-		{
-			name:     "valid agent type",
-			envVar:   "TEST_TYPE",
-			envValue: "1",
-			wantErr:  false,
-		},
-		{
-			name:     "invalid agent type",
-			envVar:   "TEST_TYPE_INVALID",
-			envValue: "999",
-			wantErr:  true,
-		},
-		{
-			name:     "non-numeric agent type",
-			envVar:   "TEST_TYPE_NON_NUMERIC",
-			envValue: "abc",
-			wantErr:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv(tt.envVar, tt.envValue)
-			defer os.Unsetenv(tt.envVar)
-
-			_, err := parseAgentType(tt.envVar)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseAgentType() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestParseBridgeConfig_Events(t *testing.T) {
+func TestGetIdentityConfig(t *testing.T) {
 	tests := []struct {
 		name        string
-		envValue    string
+		json        AgentConfigJSON
 		expectError bool
-		expectCount int
+		want        IdentityConfig
 	}{
 		{
-			name:        "empty config",
-			envValue:    "",
-			expectError: false,
-			expectCount: 0,
+			name: "valid identity",
+			json: AgentConfigJSON{
+				Name:   "agent-a",
+				Type:   "host:application",
+				Parent: "parent-a",
+			},
+			want: IdentityConfig{
+				Name:        "agent-a",
+				ServiceName: "givc-agent-a.service",
+				Type:        givc_types.UNIT_TYPE_HOST_MGR,
+				SubType:     givc_types.UNIT_TYPE_HOST_APP,
+				Parent:      "parent-a",
+			},
 		},
 		{
-			name:        "valid single event config",
-			envValue:    `[{"transport":{"name":"test","address":"127.0.0.1","port":"9001","protocol":"tcp"},"producer":false,"device":"test-device"}]`,
-			expectError: false,
-			expectCount: 1,
-		},
-		{
-			name:        "valid multiple event configs",
-			envValue:    `[{"transport":{"name":"test1","address":"127.0.0.1","port":"9001","protocol":"tcp"},"producer":false,"device":"test-device1"},{"transport":{"name":"test2","address":"127.0.0.1","port":"9002","protocol":"tcp"},"producer":true,"device":"test-device2"}]`,
-			expectError: false,
-			expectCount: 2,
-		},
-		{
-			name:        "invalid JSON",
-			envValue:    `[{"transport":{"name":"test","address"}}`,
+			name: "invalid format",
+			json: AgentConfigJSON{
+				Name: "agent-b",
+				Type: "invalidformat",
+			},
 			expectError: true,
-			expectCount: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set up environment
-			if tt.envValue != "" {
-				os.Setenv(EnvEventProxy, tt.envValue)
-				defer os.Unsetenv(EnvEventProxy)
-			} else {
-				os.Unsetenv(EnvEventProxy)
-			}
-
-			var bridge BridgeConfig
-			err := parseBridgeConfig(&bridge)
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("parseBridgeConfig() expected error but got none")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("parseBridgeConfig() unexpected error = %v", err)
-				}
-				if len(bridge.Events) != tt.expectCount {
-					t.Errorf("parseBridgeConfig() expected %d event configs, got %d", tt.expectCount, len(bridge.Events))
-				}
-			}
-		})
-	}
-}
-
-func TestParseBridgeConfig_Sockets(t *testing.T) {
-	tests := []struct {
-		name        string
-		envValue    string
-		expectError bool
-		expectCount int
-	}{
-		{
-			name:        "empty config",
-			envValue:    "",
-			expectError: false,
-			expectCount: 0,
 		},
 		{
-			name:        "valid single proxy config",
-			envValue:    `[{"socket":"/tmp/test.sock","server":true,"transport":{"name":"proxy1","address":"127.0.0.1","port":"9001","protocol":"tcp"}}]`,
-			expectError: false,
-			expectCount: 1,
-		},
-		{
-			name:        "valid multiple proxy configs",
-			envValue:    `[{"socket":"/tmp/test1.sock","server":true,"transport":{"name":"proxy1","address":"127.0.0.1","port":"9001","protocol":"tcp"}},{"socket":"/tmp/test2.sock","server":false,"transport":{"name":"proxy2","address":"127.0.0.1","port":"9002","protocol":"tcp"}}]`,
-			expectError: false,
-			expectCount: 2,
-		},
-		{
-			name:        "invalid JSON",
-			envValue:    `[{"socket":"/tmp/test.sock","server":}`,
+			name: "invalid type",
+			json: AgentConfigJSON{
+				Name: "agent-c",
+				Type: "unknown:service",
+			},
 			expectError: true,
-			expectCount: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up environment
-			if tt.envValue != "" {
-				os.Setenv(EnvSocketProxy, tt.envValue)
-				defer os.Unsetenv(EnvSocketProxy)
-			} else {
-				os.Unsetenv(EnvSocketProxy)
-			}
-
-			var bridge BridgeConfig
-			err := parseBridgeConfig(&bridge)
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("parseBridgeConfig() expected error but got none")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("parseBridgeConfig() unexpected error = %v", err)
-				}
-				if len(bridge.Sockets) != tt.expectCount {
-					t.Errorf("parseBridgeConfig() expected %d socket configs, got %d", tt.expectCount, len(bridge.Sockets))
-				}
-			}
-		})
-	}
-}
-
-func TestParseIdentityConfig(t *testing.T) {
-	tests := []struct {
-		name            string
-		agentJSON       string
-		typeValue       string
-		subTypeValue    string
-		parentValue     string
-		expectError     bool
-		expectedName    string
-		expectedType    uint32
-		expectedSubType uint32
-		expectedParent  string
-	}{
-		{
-			name:            "valid identity config",
-			agentJSON:       `{"name":"test-agent","addr":"127.0.0.1","port":"9000","protocol":"tcp"}`,
-			typeValue:       "1",
-			subTypeValue:    "2",
-			parentValue:     "parent-agent",
-			expectError:     false,
-			expectedName:    "test-agent",
-			expectedType:    1,
-			expectedSubType: 2,
-			expectedParent:  "parent-agent",
-		},
-		{
-			name:         "missing agent transport",
-			agentJSON:    "",
-			typeValue:    "1",
-			subTypeValue: "2",
-			parentValue:  "",
-			expectError:  true,
-		},
-		{
-			name:         "invalid agent type",
-			agentJSON:    `{"name":"test-agent","addr":"127.0.0.1","port":"9000","protocol":"tcp"}`,
-			typeValue:    "999",
-			subTypeValue: "2",
-			parentValue:  "",
-			expectError:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup environment
-			if tt.agentJSON != "" {
-				os.Setenv(EnvAgent, tt.agentJSON)
-				defer os.Unsetenv(EnvAgent)
-			}
-			if tt.typeValue != "" {
-				os.Setenv(EnvType, tt.typeValue)
-				defer os.Unsetenv(EnvType)
-			}
-			if tt.subTypeValue != "" {
-				os.Setenv(EnvSubtype, tt.subTypeValue)
-				defer os.Unsetenv(EnvSubtype)
-			}
-			if tt.parentValue != "" {
-				os.Setenv(EnvParent, tt.parentValue)
-				defer os.Unsetenv(EnvParent)
-			} else {
-				os.Unsetenv(EnvParent)
-			}
-
 			var identity IdentityConfig
-			err := parseIdentityConfig(&identity)
+			err := getIdentityConfig(&identity, &tt.json)
 
 			if tt.expectError {
 				if err == nil {
-					t.Errorf("parseIdentityConfig() expected error but got none")
+					t.Fatalf("getIdentityConfig() expected error")
 				}
-			} else {
-				if err != nil {
-					t.Errorf("parseIdentityConfig() unexpected error = %v", err)
-				}
-				if identity.Name != tt.expectedName {
-					t.Errorf("parseIdentityConfig() name = %v, want %v", identity.Name, tt.expectedName)
-				}
-				if identity.Type != tt.expectedType {
-					t.Errorf("parseIdentityConfig() type = %v, want %v", identity.Type, tt.expectedType)
-				}
-				if identity.SubType != tt.expectedSubType {
-					t.Errorf("parseIdentityConfig() subtype = %v, want %v", identity.SubType, tt.expectedSubType)
-				}
-				if identity.Parent != tt.expectedParent {
-					t.Errorf("parseIdentityConfig() parent = %v, want %v", identity.Parent, tt.expectedParent)
-				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("getIdentityConfig() unexpected error = %v", err)
+			}
+
+			if identity != tt.want {
+				t.Fatalf("getIdentityConfig() got %+v, want %+v", identity, tt.want)
 			}
 		})
 	}
 }
 
-func TestParseConfig_Integration(t *testing.T) {
-	tests := []struct {
-		name         string
-		setupEnv     map[string]string
-		expectError  bool
-		expectedName string
-		expectedType uint32
-	}{
-		{
-			name: "complete valid config",
-			setupEnv: map[string]string{
-				EnvAgent:       `{"name":"test-agent","addr":"127.0.0.1","port":"9000","protocol":"tcp"}`,
-				EnvType:        "1",
-				EnvSubtype:     "2",
-				EnvParent:      "parent-agent",
-				EnvAdminServer: `{"name":"admin-server","addr":"127.0.0.1","port":"8000","protocol":"tcp"}`,
-				EnvDebug:       "true",
+func TestGetCapabilitiesConfig(t *testing.T) {
+	jsonCapabilities := CapabilitiesConfigJSON{
+		Services: []string{"svc-a", "svc-b"},
+		VMManager: &VMManagerUnitsConfig{
+			Admvms: []string{"admvm-a"},
+			Sysvms: []string{"sysvm-a"},
+			Appvms: []string{"appvm-a"},
+		},
+		Applications: []ApplicationConfigJSON{
+			{Name: "app1", Command: "/bin/app1", Args: []string{"--flag"}, Directories: []string{"/data"}},
+		},
+		Exec: &ExecCapabilityJSON{Enabled: true},
+		Wifi: &WifiCapabilityJSON{Enabled: false},
+		Ctap: &CtapCapabilityJSON{Enabled: false},
+		Hwid: &HwidCapabilityJSON{
+			Enabled:   true,
+			Interface: "eth0",
+		},
+		Notifier: &NotifierCapabilityJSON{
+			Enabled: true,
+			Socket:  "/run/not.sock",
+		},
+	}
+
+	var capabilities CapabilitiesConfig
+	err := getCapabilitiesConfig(&capabilities, &jsonCapabilities, givc_types.UNIT_TYPE_HOST_APP)
+	if err != nil {
+		t.Fatalf("getCapabilitiesConfig() unexpected error = %v", err)
+	}
+
+	wantUnits := map[string]uint32{
+		"svc-a":   givc_types.UNIT_TYPE_HOST_APP,
+		"svc-b":   givc_types.UNIT_TYPE_HOST_APP,
+		"admvm-a": givc_types.UNIT_TYPE_ADMVM,
+		"sysvm-a": givc_types.UNIT_TYPE_SYSVM,
+		"appvm-a": givc_types.UNIT_TYPE_APPVM,
+	}
+
+	if len(capabilities.Units) != len(wantUnits) {
+		t.Fatalf("expected %d units, got %d", len(wantUnits), len(capabilities.Units))
+	}
+
+	for unit, expectedType := range wantUnits {
+		if got, ok := capabilities.Units[unit]; !ok || got != expectedType {
+			t.Fatalf("unit %s type = %d, want %d", unit, got, expectedType)
+		}
+	}
+
+	if len(capabilities.Applications) != 1 || capabilities.Applications[0].Name != "app1" {
+		t.Fatalf("applications not converted correctly: %+v", capabilities.Applications)
+	}
+
+	if !capabilities.Exec.Enabled || capabilities.Wifi.Enabled {
+		t.Fatalf("capability flags not converted correctly: Exec=%v, Wifi=%v", capabilities.Exec.Enabled, capabilities.Wifi.Enabled)
+	}
+	if !capabilities.Hwid.Enabled || capabilities.Hwid.Interface != "eth0" {
+		t.Fatalf("hwid options not converted correctly: %+v", capabilities.Hwid)
+	}
+	if !capabilities.Notifier.Enabled || capabilities.Notifier.Socket != "/run/not.sock" {
+		t.Fatalf("notifier options not converted correctly: %+v", capabilities.Notifier)
+	}
+	if capabilities.Ctap.Enabled {
+		t.Fatalf("ctap expected disabled, got enabled")
+	}
+}
+
+func TestGetNetworkConfig(t *testing.T) {
+	jsonConfig := JSONConfig{
+		Agent: AgentConfigJSON{
+			Name:     "agent-a",
+			IPAddr:   "127.0.0.1",
+			Port:     "9000",
+			Protocol: "tcp",
+		},
+		AdminServer: AdminServerJSON{
+			Name:     "admin-a",
+			IPAddr:   "127.0.0.2",
+			Port:     "8000",
+			Protocol: "tcp",
+		},
+		TLS: &TLSConfigJSON{Enable: false},
+		Capabilities: &CapabilitiesConfigJSON{
+			EventProxy: &EventProxyJSON{
+				Enabled: true,
+				Events: []EventConfigJSON{
+					{Name: "ev1", IPAddr: "10.0.0.1", Port: "1000", Protocol: "tcp", Producer: true, Device: "dev1"},
+				},
 			},
-			expectError:  false,
-			expectedName: "test-agent",
-			expectedType: 1,
-		},
-		{
-			name: "missing required fields",
-			setupEnv: map[string]string{
-				EnvType: "1",
+			SocketProxy: &SocketProxyJSON{
+				Enabled: true,
+				Sockets: []SocketConfigJSON{
+					{Name: "proxy1", IPAddr: "10.0.0.2", Port: "1001", Protocol: "udp", Server: true, Socket: "/tmp/sock1"},
+				},
 			},
-			expectError: true,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup environment
-			for key, value := range tt.setupEnv {
-				os.Setenv(key, value)
-				defer os.Unsetenv(key)
-			}
-
-			config, err := ParseConfig()
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("ParseConfig() expected error but got none")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("ParseConfig() unexpected error = %v", err)
-				}
-				if config.Identity.Name != tt.expectedName {
-					t.Errorf("ParseConfig() name = %v, want %v", config.Identity.Name, tt.expectedName)
-				}
-				if config.Identity.Type != tt.expectedType {
-					t.Errorf("ParseConfig() type = %v, want %v", config.Identity.Type, tt.expectedType)
-				}
-			}
-		})
-	}
-}
-
-func TestParseOptionalCapabilities(t *testing.T) {
-	tests := []struct {
-		name                string
-		setupEnv            map[string]string
-		expectedExecEnabled bool
-		expectedWifiEnabled bool
-		expectedHwidEnabled bool
-		expectedHwidIface   string
-	}{
-		{
-			name:                "all capabilities enabled",
-			setupEnv:            map[string]string{EnvExec: "true", EnvWifi: "true", EnvHwid: "true", EnvHwidIface: "eth0"},
-			expectedExecEnabled: true,
-			expectedWifiEnabled: true,
-			expectedHwidEnabled: true,
-			expectedHwidIface:   "eth0",
-		},
-		{
-			name:                "all capabilities disabled with false",
-			setupEnv:            map[string]string{EnvExec: "false", EnvWifi: "false", EnvHwid: "false"},
-			expectedExecEnabled: false,
-			expectedWifiEnabled: false,
-			expectedHwidEnabled: false,
-			expectedHwidIface:   "",
-		},
-		{
-			name:                "capabilities enabled with non-false values",
-			setupEnv:            map[string]string{EnvExec: "yes", EnvWifi: "enabled", EnvHwid: "on"},
-			expectedExecEnabled: true,
-			expectedWifiEnabled: true,
-			expectedHwidEnabled: true,
-			expectedHwidIface:   "",
-		},
-		{
-			name:                "no capabilities set",
-			setupEnv:            map[string]string{},
-			expectedExecEnabled: false,
-			expectedWifiEnabled: false,
-			expectedHwidEnabled: false,
-			expectedHwidIface:   "",
-		},
-		{
-			name:                "hwid enabled but no interface set",
-			setupEnv:            map[string]string{EnvHwid: "true"},
-			expectedExecEnabled: false,
-			expectedWifiEnabled: false,
-			expectedHwidEnabled: true,
-			expectedHwidIface:   "",
-		},
+	identity := IdentityConfig{
+		Name:        "agent-a",
+		ServiceName: "givc-agent-a.service",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Clean up environment first
-			envVars := []string{EnvExec, EnvWifi, EnvHwid, EnvHwidIface}
-			for _, env := range envVars {
-				os.Unsetenv(env)
-			}
+	capabilities := CapabilitiesConfig{
+		Units: map[string]uint32{"svc-a": 1, "svc-b": 2},
+	}
 
-			// Setup test environment
-			for key, value := range tt.setupEnv {
-				os.Setenv(key, value)
-				defer os.Unsetenv(key)
-			}
+	var network NetworkConfig
+	err := getNetworkConfig(&network, &jsonConfig, &identity, &capabilities)
+	if err != nil {
+		t.Fatalf("getNetworkConfig() unexpected error = %v", err)
+	}
 
-			var optional OptionalCapabilities
-			parseOptionalCapabilities(&optional)
+	if network.TlsConfig != nil {
+		t.Fatalf("expected nil TLS config when disabled")
+	}
 
-			if optional.ExecEnabled != tt.expectedExecEnabled {
-				t.Errorf("ExecEnabled = %v, want %v", optional.ExecEnabled, tt.expectedExecEnabled)
-			}
-			if optional.WifiEnabled != tt.expectedWifiEnabled {
-				t.Errorf("WifiEnabled = %v, want %v", optional.WifiEnabled, tt.expectedWifiEnabled)
-			}
-			if optional.HwidEnabled != tt.expectedHwidEnabled {
-				t.Errorf("HwidEnabled = %v, want %v", optional.HwidEnabled, tt.expectedHwidEnabled)
-			}
-			if optional.HwidInterface != tt.expectedHwidIface {
-				t.Errorf("HwidInterface = %v, want %v", optional.HwidInterface, tt.expectedHwidIface)
-			}
-		})
+	if network.AdminEndpoint.Transport.Name != "admin-a" || network.AdminEndpoint.Transport.Address != "127.0.0.2" {
+		t.Fatalf("admin endpoint not converted correctly: %+v", network.AdminEndpoint.Transport)
+	}
+
+	if network.AgentEndpoint.Transport.Name != "agent-a" || network.AgentEndpoint.Transport.Address != "127.0.0.1" {
+		t.Fatalf("agent endpoint not converted correctly: %+v", network.AgentEndpoint.Transport)
+	}
+
+	wantServices := map[string]struct{}{
+		"givc-agent-a.service": {},
+		"svc-a":                {},
+		"svc-b":                {},
+	}
+	for _, svc := range network.AgentEndpoint.Services {
+		delete(wantServices, svc)
+	}
+	if len(wantServices) != 0 {
+		t.Fatalf("agent endpoint services missing: %v", wantServices)
+	}
+
+	if len(network.Bridge.Events) != 1 || network.Bridge.Events[0].Transport.Name != "ev1" {
+		t.Fatalf("bridge events not converted correctly: %+v", network.Bridge.Events)
+	}
+	if len(network.Bridge.Sockets) != 1 || network.Bridge.Sockets[0].Transport.Name != "proxy1" {
+		t.Fatalf("bridge sockets not converted correctly: %+v", network.Bridge.Sockets)
 	}
 }
 
-func TestParseTLSConfig(t *testing.T) {
-	tests := []struct {
-		name        string
-		tlsJSON     string
-		expectError bool
-		expectNil   bool
-	}{
-		{
-			name:        "TLS disabled",
-			tlsJSON:     `{"enable":false}`,
-			expectError: false,
-			expectNil:   true,
+func TestGetAgentConfig(t *testing.T) {
+	jsonConfig := JSONConfig{
+		Agent: AgentConfigJSON{
+			Name:     "agent-x",
+			Type:     "host:application",
+			Parent:   "parent-x",
+			IPAddr:   "127.0.0.1",
+			Port:     "9000",
+			Protocol: "tcp",
 		},
-		{
-			name:        "no TLS config",
-			tlsJSON:     "",
-			expectError: false,
-			expectNil:   true,
+		AdminServer: AdminServerJSON{
+			Name:     "admin-x",
+			IPAddr:   "127.0.0.2",
+			Port:     "8000",
+			Protocol: "tcp",
 		},
-		{
-			name:        "invalid TLS JSON",
-			tlsJSON:     `{"enable":true,"caCertPath"}`,
-			expectError: true,
-			expectNil:   true,
+		TLS: &TLSConfigJSON{Enable: false},
+		Policy: &PolicyConfigJSON{
+			Enabled:   true,
+			StorePath: "/tmp/policy",
+			Policies:  map[string]string{"p1": "v1"},
+		},
+		Capabilities: &CapabilitiesConfigJSON{
+			Services: []string{"svc-x"},
+			VMManager: &VMManagerUnitsConfig{
+				Appvms: []string{"appvm-x"},
+			},
+			Applications: []ApplicationConfigJSON{
+				{Name: "app-x", Command: "/bin/app", Args: []string{"--flag"}},
+			},
+			Exec: &ExecCapabilityJSON{Enabled: true},
+			EventProxy: &EventProxyJSON{
+				Enabled: true,
+				Events: []EventConfigJSON{
+					{Name: "ev-x", IPAddr: "10.0.0.1", Port: "1000", Protocol: "tcp", Producer: true, Device: "dev"},
+				},
+			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup environment
-			if tt.tlsJSON != "" {
-				os.Setenv(EnvTlsConfig, tt.tlsJSON)
-				defer os.Unsetenv(EnvTlsConfig)
-			} else {
-				os.Unsetenv(EnvTlsConfig)
-			}
+	config, err := getAgentConfig(&jsonConfig)
+	if err != nil {
+		t.Fatalf("getAgentConfig() unexpected error = %v", err)
+	}
 
-			tlsConfig, err := parseTLSConfig()
+	if config.Identity.Name != "agent-x" || config.Identity.Parent != "parent-x" {
+		t.Fatalf("identity not converted correctly: %+v", config.Identity)
+	}
+	if config.Policy.PolicyStorePath != "/tmp/policy" || !config.Policy.PolicyAdminEnabled {
+		t.Fatalf("policy not converted correctly: %+v", config.Policy)
+	}
+	if len(config.Capabilities.Units) != 2 {
+		t.Fatalf("capabilities units not converted correctly: %+v", config.Capabilities.Units)
+	}
+	if len(config.Network.Bridge.Events) != 1 {
+		t.Fatalf("bridge events not converted correctly: %+v", config.Network.Bridge.Events)
+	}
+}
 
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("parseTLSConfig() expected error but got none")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("parseTLSConfig() unexpected error = %v", err)
-				}
-			}
+func TestLoadConfig(t *testing.T) {
+	jsonContent := `{
+		"agent":{"name":"agent-y","type":"host:application","parent":"parent-y","ipaddr":"127.0.0.1","port":"9000","protocol":"tcp"},
+		"adminServer":{"name":"admin-y","ipaddr":"127.0.0.2","port":"8000","protocol":"tcp"},
+		"tls":{"enable":false},
+		"policy":{"enable":true,"storePath":"/tmp/policy","policies":{"k":"v"}},
+		"capabilities":{
+			"services":["svc-y"],
+			"vmManager":{"admvms":[],"sysvms":[],"appvms":[]},
+			"applications":[{"name":"app-y","command":"/bin/app","args":["--flag"],"directories":["/data"]}],
+			"exec":{"enable":true},
+			"wifi":{"enable":false},
+			"ctap":{"enable":false},
+			"hwid":{"enable":false,"interface":""},
+			"notifier":{"enable":false,"socket":""},
+			"eventProxy":{"enable":false,"events":[]},
+			"socketProxy":{"enable":false,"sockets":[]}
+		}
+	}`
 
-			if tt.expectNil {
-				if tlsConfig != nil {
-					t.Errorf("parseTLSConfig() expected nil but got %v", tlsConfig)
-				}
-			} else {
-				if tlsConfig == nil {
-					t.Errorf("parseTLSConfig() expected non-nil but got nil")
-				}
-			}
-		})
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(jsonContent), 0o600); err != nil {
+		t.Fatalf("failed to write temp config: %v", err)
+	}
+
+	config, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() unexpected error = %v", err)
+	}
+
+	if config.Identity.Name != "agent-y" || config.Identity.Parent != "parent-y" {
+		t.Fatalf("LoadConfig() identity mismatch: %+v", config.Identity)
+	}
+	if !config.Policy.PolicyAdminEnabled || config.Policy.PolicyStorePath != "/tmp/policy" {
+		t.Fatalf("LoadConfig() policy mismatch: %+v", config.Policy)
+	}
+
+	if len(config.Capabilities.Applications) != 1 || config.Capabilities.Applications[0].Name != "app-y" {
+		t.Fatalf("LoadConfig() applications mismatch: %+v", config.Capabilities.Applications)
+	}
+
+	_, err = LoadConfig("non-existent.json")
+	if err == nil {
+		t.Fatalf("LoadConfig() expected error for missing file")
+	}
+}
+
+func TestLoadConfigMissingFields(t *testing.T) {
+	jsonContent := `{
+		"agent":{"name":"agent-z","type":"host:application","ipaddr":"127.0.0.1","port":"9000","protocol":"tcp"},
+		"adminServer":{"name":"admin-z","ipaddr":"127.0.0.2","port":"8000","protocol":"tcp"}
+	}`
+
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config_minimal.json")
+	if err := os.WriteFile(cfgPath, []byte(jsonContent), 0o600); err != nil {
+		t.Fatalf("failed to write temp config: %v", err)
+	}
+
+	config, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() failed with minimal config: %v", err)
+	}
+
+	if config.Identity.Name != "agent-z" {
+		t.Fatalf("LoadConfig() identity mismatch: %+v", config.Identity)
+	}
+	if config.Policy.PolicyAdminEnabled {
+		t.Fatalf("LoadConfig() expected policy disabled by default")
+	}
+	if len(config.Capabilities.Units) != 0 {
+		t.Fatalf("LoadConfig() expected empty capabilities")
+	}
+}
+
+func TestUnallowedCapability(t *testing.T) {
+	jsonContent := `{
+		"agent":{"name":"agent-bad","type":"admin:service","ipaddr":"127.0.0.1","port":"9000","protocol":"tcp"},
+		"adminServer":{"name":"admin-bad","ipaddr":"127.0.0.2","port":"8000","protocol":"tcp"},
+		"capabilities":{
+			"wifi":{"enable":true}
+		}
+	}`
+
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config_bad.json")
+	if err := os.WriteFile(cfgPath, []byte(jsonContent), 0o600); err != nil {
+		t.Fatalf("failed to write temp config: %v", err)
+	}
+
+	_, err := LoadConfig(cfgPath)
+	if err == nil {
+		t.Fatalf("LoadConfig() expected error for unallowed capability")
 	}
 }
