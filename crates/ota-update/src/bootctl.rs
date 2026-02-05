@@ -61,7 +61,9 @@ pub async fn get_bootctl_info() -> anyhow::Result<BootctlInfo> {
     }
 }
 
-// Pure parser, for test data injection
+/// Pure parser, for test data injection
+/// # Errors
+/// * Throw out JSON parsing error
 pub fn parse_bootctl(json: impl AsRef<[u8]>) -> anyhow::Result<BootctlInfo> {
     // Design defence:
     // we have our struct matching only NixOS boot records, so filter out all with sort_key != "nixos" before deserializing
