@@ -27,7 +27,7 @@ impl SlotGroup {
 
 impl SlotGroup {
     // NOTE: This algoritm intentionally avoid HashMap/HashSet, because we have only 2-3 slot pairs.
-    pub fn group_volumes(
+    pub(crate) fn group_volumes(
         slots: Vec<Slot>,
         boots: Vec<BootEntry>,
     ) -> anyhow::Result<Vec<SlotGroup>> {
@@ -156,16 +156,18 @@ impl SlotGroup {
             || self.boot.is_some()
     }
 
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.root.is_some() && self.verity.is_some()
     }
 
     #[must_use]
     pub fn is_legacy(&self) -> bool {
-        self.root.as_ref().is_some_and(|s| s.is_legacy())
-            || self.verity.as_ref().is_some_and(|s| s.is_legacy())
+        self.root.as_ref().is_some_and(Slot::is_legacy)
+            || self.verity.as_ref().is_some_and(Slot::is_legacy)
     }
 
+    #[must_use]
     pub fn is_active(&self, kernel: &KernelParams) -> bool {
         match (self.version(), kernel.to_version()) {
             // Normal case: exact version match
@@ -180,7 +182,7 @@ impl SlotGroup {
         }
     }
 
-    pub fn validate(&self) -> anyhow::Result<()> {
+    pub(crate) fn validate(&self) -> anyhow::Result<()> {
         // root <-> verity must match
         if let (Some(root), Some(verity)) = (&self.root, &self.verity) {
             ensure!(
@@ -215,6 +217,7 @@ impl SlotGroup {
     }
 
     /// Classify slot state based on runtime kernel parameters.
+    #[must_use]
     pub fn classify(&self, kernel: &KernelParams) -> SlotClass {
         // Structural validation always comes first
         if self.validate().is_err() {
@@ -235,7 +238,7 @@ impl SlotGroup {
         SlotClass::Inactive
     }
 
-    pub fn attach_uki(&self, uki: UkiEntry) -> Result<SlotGroup> {
+    pub(crate) fn attach_uki(&self, uki: UkiEntry) -> Result<SlotGroup> {
         ensure!(self.boot.is_none(), "Already have UKI (state error)");
         Ok(Self {
             boot: Some(uki.into()),

@@ -49,7 +49,7 @@ impl fmt::Display for UkiEntry {
         if let Some(counter) = &self.boot_counter {
             write!(f, "+{}", counter.remaining)?;
             if let Some(used) = counter.used {
-                write!(f, "-{}", used)?;
+                write!(f, "-{used}")?;
             }
         }
 
@@ -113,7 +113,6 @@ impl FromStr for UkiEntry {
 }
 
 impl BootEntry {
-    #[must_use]
     pub fn from_bootctl(items: Vec<BootctlItem>) -> impl Iterator<Item = Self> {
         items.into_iter().filter_map(|item| {
             let id = item.id;
@@ -149,7 +148,7 @@ impl BootEntry {
     #[must_use]
     pub fn uki(&self) -> Option<&UkiEntry> {
         match &self.kind {
-            BootEntryKind::Managed(uki) => Some(&uki),
+            BootEntryKind::Managed(uki) => Some(uki),
             _ => None,
         }
     }
@@ -183,10 +182,12 @@ impl From<UkiEntry> for BootEntry {
 }
 
 impl UkiEntry {
+    #[must_use]
     pub fn full_name<P: AsRef<Path>>(&self, base_dir: P) -> PathBuf {
-        base_dir.as_ref().join(&self.to_string())
+        base_dir.as_ref().join(self.to_string())
     }
 
+    #[must_use]
     pub fn matches(&self, slot: &Slot) -> bool {
         slot.version() == Some(&self.version)
     }

@@ -13,7 +13,7 @@ impl fmt::Display for Version {
         let version = &self.revision;
         write!(f, "{version}")?;
         if let Some(hash) = &self.hash {
-            write!(f, "-{}", hash)?;
+            write!(f, "-{hash}")?;
         }
         Ok(())
     }
@@ -26,7 +26,7 @@ impl Version {
     }
 
     #[must_use]
-    pub fn as_ref(&self) -> &str {
+    pub fn as_revision(&self) -> &str {
         &self.revision
     }
 

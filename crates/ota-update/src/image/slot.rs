@@ -68,7 +68,7 @@ impl Slot {
         } else {
             Status::Used(Version::new(
                 version_raw.to_string(),
-                hash_or_id.map(|x| x.to_string()),
+                hash_or_id.map(ToString::to_string),
             ))
         };
 
@@ -178,6 +178,7 @@ impl Slot {
     #[must_use]
     pub fn empty_id(&self) -> Option<&str> {
         match &self.status {
+            #[allow(clippy::match_wildcard_for_single_variants)]
             Status::Empty(EmptyId::Known(known)) => Some(known),
             _ => None,
         }
@@ -185,13 +186,13 @@ impl Slot {
 
     #[must_use]
     pub fn version(&self) -> Option<&Version> {
+        #[allow(clippy::match_wildcard_for_single_variants)]
         match &self.status {
             Status::Used(version) => Some(version),
             _ => None,
         }
     }
 
-    #[must_use]
     pub(crate) fn into_version(self, version: Version) -> Result<Self> {
         ensure!(!self.is_used(), "Can't assign version to already used slot");
         Ok(Self {

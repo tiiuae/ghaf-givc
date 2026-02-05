@@ -7,12 +7,12 @@ use super::pipeline::Pipeline;
 use super::plan::Plan;
 
 #[async_trait]
-pub trait Executor {
+pub(crate) trait Executor {
     async fn run_pipeline(&self, pipeline: &Pipeline) -> Result<()>;
 
     async fn run_plan(&self, plan: &Plan) -> Result<()> {
         for pipeline in &plan.steps {
-            self.run_pipeline(&pipeline).await?;
+            self.run_pipeline(pipeline).await?;
         }
         Ok(())
     }

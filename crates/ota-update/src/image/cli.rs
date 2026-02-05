@@ -50,6 +50,7 @@ pub enum ImageAction {
 }
 
 impl ImageUpdate {
+    #[allow(clippy::missing_errors_doc)]
     pub async fn handle(self) -> anyhow::Result<()> {
         let rt = populate_runtime().await?;
         match self.action {
@@ -60,7 +61,7 @@ impl ImageUpdate {
                     .context("manifest path has no parent directory")?;
 
                 let manifest = Manifest::from_file(manifest_path)?;
-                let plan = Plan::install(&rt, &manifest, &source_dir)?;
+                let plan = Plan::install(&rt, &manifest, source_dir)?;
 
                 execute_plan(plan, self.dry_run).await
             }
@@ -86,7 +87,7 @@ async fn populate_runtime() -> anyhow::Result<Runtime> {
         .context("while reading /proc/cmdline")?;
     let bootctl = get_bootctl_info().await?;
     let lvs = read_lvs_output().await.context("while invoking lvs")?;
-    Ok(Runtime::new(lvs, &cmdline, bootctl)?)
+    Runtime::new(lvs, &cmdline, bootctl)
 }
 
 async fn execute_plan(plan: Plan, dry_run: bool) -> anyhow::Result<()> {
@@ -114,10 +115,11 @@ impl UpdateLock {
         let path = path.as_ref().to_path_buf();
         let file = OpenOptions::new()
             .create(true)
+            .truncate(true)
             .read(true)
             .write(true)
             .open(&path)
-            .with_context(|| format!("opening lock file {:?}", path))?;
+            .with_context(|| format!("opening lock file {}", path.display()))?;
 
         file.try_lock_exclusive()
             .context("another ota-update instance is already running")?;

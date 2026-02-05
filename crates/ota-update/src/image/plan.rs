@@ -13,7 +13,7 @@ pub struct Plan {
 }
 
 impl Plan {
-    pub fn install(rt: &Runtime, m: &Manifest, source: &Path) -> anyhow::Result<Self> {
+    pub(crate) fn install(rt: &Runtime, m: &Manifest, source: &Path) -> anyhow::Result<Self> {
         let selection = rt.select_update_slot(m)?;
 
         match selection {
@@ -47,7 +47,7 @@ impl Plan {
         steps.push(verity.clone().into_version(m.to_version())?.rename());
         steps.push(Self::install_uki(slot, &m.kernel, &rt.boot, source)?);
         if rt.active_slot()?.is_legacy() {
-            steps.extend(Self::legacy_bootloader_migration(rt))
+            steps.extend(Self::legacy_bootloader_migration(rt));
         }
 
         Ok(Plan { steps })
@@ -57,7 +57,7 @@ impl Plan {
         let target = volume.device_file_string();
         let input = file.full_name(source);
 
-        let pipeline = if file.is_compressed() {
+        if file.is_compressed() {
             Pipeline::new(CommandSpec::new("zstdcat").arg_path(input)).pipe(
                 CommandSpec::new("dd")
                     .arg(format!("of={target}"))
@@ -72,9 +72,7 @@ impl Plan {
                     .arg("bs=4M")
                     .arg("status=progress"),
             )
-        };
-
-        pipeline
+        }
     }
 
     fn install_uki(
@@ -87,7 +85,7 @@ impl Plan {
             .boot
             .as_ref()
             .and_then(|x| x.uki())
-            .map(|x| x.to_string())
+            .map(ToString::to_string)
             .context("cannot determine UKI name for slot")?;
 
         Ok(Pipeline::new(
@@ -128,7 +126,7 @@ impl Plan {
 }
 
 impl Plan {
-    pub fn remove(rt: &Runtime, version: &Version) -> anyhow::Result<Self> {
+    pub(crate) fn remove(rt: &Runtime, version: &Version) -> anyhow::Result<Self> {
         let slot = rt.find_slot_group(version)?;
 
         if slot.is_active(&rt.kernel) {
@@ -151,11 +149,11 @@ impl Plan {
         // Remove legacy boot entries, if any
         if slot.is_legacy() {
             for boot in rt.boot_entries.iter().filter(|boot| boot.is_legacy()) {
-                steps.push(boot.to_remove())
+                steps.push(boot.to_remove());
             }
         }
 
-        steps.extend(Self::rename_slot_to_empty(&slot, &empty_id));
+        steps.extend(Self::rename_slot_to_empty(slot, &empty_id));
 
         Ok(Plan { steps })
     }
