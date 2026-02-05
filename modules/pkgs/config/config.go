@@ -1,380 +1,159 @@
 // SPDX-FileCopyrightText: 2024-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Configuration parsing and validation for the GIVC agent.
 package config
 
 import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strconv"
-	"strings"
-
 	givc_types "givc/modules/pkgs/types"
 	givc_util "givc/modules/pkgs/utility"
+	"os"
 )
 
-// Environment variable constants
-const (
-	EnvAgent          = "AGENT"
-	EnvType           = "TYPE"
-	EnvSubtype        = "SUBTYPE"
-	EnvParent         = "PARENT"
-	EnvAdminServer    = "ADMIN_SERVER"
-	EnvTlsConfig      = "TLS_CONFIG"
-	EnvServices       = "SERVICES"
-	EnvAdmvms         = "ADMVMS"
-	EnvSysvms         = "SYSVMS"
-	EnvAppvms         = "APPVMS"
-	EnvApplications   = "APPLICATIONS"
-	EnvEventProxy     = "EVENT_PROXY"
-	EnvSocketProxy    = "SOCKET_PROXY"
-	EnvDebug          = "DEBUG"
-	EnvExec           = "EXEC"
-	EnvWifi           = "WIFI"
-	EnvHwid           = "HWID"
-	EnvHwidIface      = "HWID_IFACE"
-	EnvNotifier       = "NOTIFIER"
-	EnvNotifierSocket = "NOTIFIER_SOCKET_DIR"
-	EnvCtap           = "CTAP"
-	EnvPolicyAdmin    = "POLICY_ADMIN"
-	EnvPolicyConfig   = "POLICY_CONFIG"
-	EnvPolicyStore    = "POLICY_STORE"
-)
-
-// AgentConfig holds the complete configuration for the GIVC agent
-// Restructured with domain-based organization for better maintainability
-type AgentConfig struct {
-	Identity     IdentityConfig
-	Network      NetworkConfig
-	Policy       PolicyConfig
-	Capabilities CapabilitiesConfig
-	Runtime      RuntimeConfig
-}
-
-// IdentityConfig
 type IdentityConfig struct {
-	Type        uint32 // Agent type (using existing UNIT_TYPE_* constants)
-	SubType     uint32 // Agent subtype
-	Parent      string // Parent agent name
-	Name        string // Agent name (derived from transport config)
-	ServiceName string // Systemd service name for this agent
+	Type        uint32 `json:"type"`
+	SubType     uint32 `json:"subType"`
+	Parent      string `json:"parent"`
+	Name        string `json:"name"`
+	ServiceName string
 }
 
-// PolicyConfig
-type PolicyConfig struct {
-	PolicyAdminEnabled bool              // Policy admin capability
-	PolicyStorePath    string            // Path to the policy configuration file
-	PoliciesJson       map[string]string // Policy Json
-}
-
-// NetworkConfig
 type NetworkConfig struct {
-	AdminEndpoint *givc_types.EndpointConfig // Admin server endpoint (complete, ready to use)
-	AgentEndpoint *givc_types.EndpointConfig // Agent endpoint (transport + TLS, services added later)
-	TlsConfig     *tls.Config                // TLS configuration (for bridge configs)
-	Bridge        BridgeConfig               // Inter-VM bridging services
+	AdminEndpoint *givc_types.EndpointConfig `json:"adminEndpoint"`
+	AgentEndpoint *givc_types.EndpointConfig `json:"agentEndpoint"`
+	Tls           givc_types.TlsConfigJson   `json:"tlsConfig"`
+	TlsConfig     *tls.Config
 }
 
-// CapabilitiesConfig
 type CapabilitiesConfig struct {
-	Units        map[string]uint32                // Systemd units this agent can manage
-	Applications []givc_types.ApplicationManifest // Applications this agent can run
-	Optional     OptionalCapabilities             // Optional service capabilities
+	Units      map[string]uint32
+	Services   []string `json:"services"`
+	VmServices struct {
+		AdminVm string   `json:"adminVm"`
+		SysVms  []string `json:"systemVms"`
+		AppVms  []string `json:"appVms"`
+	} `json:"vmServices"`
+
+	Applications []givc_types.ApplicationManifest `json:"applications"`
+
+	Exec struct {
+		Enabled bool `json:"enable"`
+	} `json:"exec"`
+
+	Wifi struct {
+		Enabled bool `json:"enable"`
+	} `json:"wifi"`
+
+	Ctap struct {
+		Enabled bool `json:"enable"`
+	} `json:"ctap"`
+
+	Hwid struct {
+		Enabled   bool   `json:"enable"`
+		Interface string `json:"interface"`
+	} `json:"hwid"`
+
+	Notifier struct {
+		Enabled bool   `json:"enable"`
+		Socket  string `json:"socket"`
+	} `json:"notifier"`
+
+	EventProxy struct {
+		Enabled bool                     `json:"enable"`
+		Events  []givc_types.EventConfig `json:"events"`
+	} `json:"eventProxy"`
+
+	SocketProxy struct {
+		Enabled bool                     `json:"enable"`
+		Sockets []givc_types.ProxyConfig `json:"sockets"`
+	} `json:"socketProxy"`
+
+	Policy givc_types.Policy `json:"policy"`
 }
 
-// RuntimeConfig
-type RuntimeConfig struct {
-	Debug bool // Debug mode flag
+type AgentConfig struct {
+	Identity     IdentityConfig     `json:"identity"`
+	Network      NetworkConfig      `json:"network"`
+	Capabilities CapabilitiesConfig `json:"capabilities"`
 }
 
-// BridgeConfig - Inter-VM bridging/proxy services
-type BridgeConfig struct {
-	Events  []givc_types.EventConfig // Event streaming bridges
-	Sockets []givc_types.ProxyConfig // Socket proxy bridges
-}
-
-// OptionalCapabilities - Feature flags for optional services
-type OptionalCapabilities struct {
-	ExecEnabled     bool   // Remote execution capability
-	WifiEnabled     bool   // WiFi management capability
-	HwidEnabled     bool   // Hardware ID capability
-	HwidInterface   string // Hardware interface for HWID
-	NotifierEnabled bool   // Notification service capability
-	NotifierSocket  string // Socket directory for notifications
-	CtapEnabled     bool   // Ctap interaction capability
-}
-
-// parseJSONEnv parses a JSON environment variable into a target struct
-func parseJSONEnv(envVar string, target any, required bool) error {
-	jsonString, present := os.LookupEnv(envVar)
-
-	if !present || jsonString == "" {
-		if required {
-			return fmt.Errorf("no '%s' environment variable present", envVar)
-		}
-		return nil
-	}
-
-	err := json.Unmarshal([]byte(jsonString), target)
+func LoadConfig(filePath string) (*AgentConfig, error) {
+	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("error parsing %s JSON: %w", envVar, err)
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	return nil
-}
-
-// parseAgentType parses and validates an agent type from environment variable
-func parseAgentType(envVar string) (uint32, error) {
-	parsedType, err := strconv.ParseUint(os.Getenv(envVar), 10, 32)
-	if err != nil || parsedType > givc_types.UNIT_TYPE_APPVM_APP {
-		return 0, fmt.Errorf("no or wrong '%s' environment variable present", envVar)
-	}
-	return uint32(parsedType), nil
-}
-
-// parseUnits parses systemd units from environment variables
-func parseUnits(agentSubType uint32) map[string]uint32 {
-	units := make(map[string]uint32)
-
-	unitTypes := []struct {
-		envVar   string
-		unitType uint32
-	}{
-		{EnvServices, agentSubType},
-		{EnvAdmvms, givc_types.UNIT_TYPE_ADMVM},
-		{EnvSysvms, givc_types.UNIT_TYPE_SYSVM},
-		{EnvAppvms, givc_types.UNIT_TYPE_APPVM},
+	var agentConfig AgentConfig
+	if err := json.Unmarshal(data, &agentConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
-	for _, unitType := range unitTypes {
-		unitsString := os.Getenv(unitType.envVar)
-		if unitsString != "" {
-			for unit := range strings.FieldsSeq(unitsString) {
-				units[unit] = unitType.unitType
-			}
-		}
-	}
-
-	return units
-}
-
-// parseTLSConfig parses TLS configuration from environment variables
-func parseTLSConfig() (*tls.Config, error) {
-	var tlsConfigJson givc_types.TlsConfigJson
-	err := parseJSONEnv(EnvTlsConfig, &tlsConfigJson, false)
+	err = populateAgentConfig(&agentConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", EnvTlsConfig, err)
+		return nil, fmt.Errorf("failed to convert config: %w", err)
 	}
 
-	if tlsConfigJson.Enable {
-		tlsConfig, err := givc_util.TlsServerConfig(tlsConfigJson.CaCertPath, tlsConfigJson.CertPath, tlsConfigJson.KeyPath, true)
+	return &agentConfig, nil
+}
+
+func populateAgentConfig(agentConfig *AgentConfig) error {
+	// Service name
+	agentConfig.Identity.ServiceName = fmt.Sprintf("givc-%s.service", agentConfig.Identity.Name)
+
+	// Polulate tls config
+	if agentConfig.Network.Tls.Enable == true {
+		var err error
+		agentConfig.Network.TlsConfig, err = givc_util.TlsServerConfig(
+			agentConfig.Network.Tls.CaCertPath,
+			agentConfig.Network.Tls.CertPath,
+			agentConfig.Network.Tls.KeyPath, true)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create TLS config: %w", err)
+			return fmt.Errorf("failed to create TLS config: %w", err)
 		}
-		return tlsConfig, nil
 	}
 
-	return nil, nil
-}
-
-// ParseConfig parses and validates the complete agent configuration from environment variables
-func ParseConfig() (*AgentConfig, error) {
-	config := &AgentConfig{}
-
-	// Parse identity configuration
-	if err := parseIdentityConfig(&config.Identity); err != nil {
-		return nil, fmt.Errorf("failed to parse identity config: %w", err)
-	}
-
-	// Parse policy configuration
-	if err := parsePolicyConfig(&config.Policy); err != nil {
-		return nil, fmt.Errorf("failed to parse policy config: %w", err)
-	}
-
-	// Parse capabilities configuration
-	if err := parseCapabilitiesConfig(&config.Capabilities, config.Identity.SubType); err != nil {
-		return nil, fmt.Errorf("failed to parse capabilities config: %w", err)
-	}
-
-	// Parse network configuration (needs identity and capabilities for endpoint services)
-	if err := parseNetworkConfig(&config.Network, &config.Identity, &config.Capabilities); err != nil {
-		return nil, fmt.Errorf("failed to parse network config: %w", err)
-	}
-
-	// Parse runtime configuration
-	parseRuntimeConfig(&config.Runtime)
-
-	return config, nil
-}
-
-// parseIdentityConfig parses agent identity information
-func parseIdentityConfig(identity *IdentityConfig) error {
-	// Parse agent transport to get name
-	var agentTransport givc_types.TransportConfig
-	if err := parseJSONEnv(EnvAgent, &agentTransport, true); err != nil {
-		return fmt.Errorf("failed to parse %s transport: %w", EnvAgent, err)
-	}
-	identity.Name = agentTransport.Name
-	identity.ServiceName = "givc-" + agentTransport.Name + ".service"
-
-	// Parse agent type
-	agentType, err := parseAgentType(EnvType)
-	if err != nil {
-		return fmt.Errorf("failed to parse agent type: %w", err)
-	}
-	identity.Type = agentType
-
-	// Parse agent subtype
-	agentSubType, err := parseAgentType(EnvSubtype)
-	if err != nil {
-		return fmt.Errorf("failed to parse agent subtype: %w", err)
-	}
-	identity.SubType = agentSubType
-
-	// Parse parent (optional)
-	identity.Parent = os.Getenv(EnvParent)
-
-	return nil
-}
-
-// parsePolicyConfig parses policy handling information
-func parsePolicyConfig(policy *PolicyConfig) error {
-	adminEnabled := os.Getenv(EnvPolicyAdmin)
-	if adminEnabled == "true" {
-		policy.PolicyAdminEnabled = true
-		policy.PolicyStorePath = os.Getenv(EnvPolicyStore)
-		policy.PoliciesJson = make(map[string]string)
-		if err := parseJSONEnv(EnvPolicyConfig, &policy.PoliciesJson, false); err != nil {
-			return fmt.Errorf("failed to parse %s: %w", EnvPolicyConfig, err)
+	// Populate units
+	agentConfig.Capabilities.Units = make(map[string]uint32)
+	// Services
+	if agentConfig.Capabilities.Services != nil {
+		for _, service := range agentConfig.Capabilities.Services {
+			agentConfig.Capabilities.Units[service] = agentConfig.Identity.SubType
 		}
-	} else {
-		policy.PolicyAdminEnabled = false
 	}
-	return nil
-}
-
-// parseNetworkConfig parses network and communication configuration
-func parseNetworkConfig(network *NetworkConfig, identity *IdentityConfig, capabilities *CapabilitiesConfig) error {
-	// Parse TLS configuration first
-	tlsConfig, err := parseTLSConfig()
-	if err != nil {
-		return fmt.Errorf("failed to parse TLS config: %w", err)
-	}
-	network.TlsConfig = tlsConfig
-
-	// Parse agent transport and create agent endpoint
-	var agentTransport givc_types.TransportConfig
-	if err := parseJSONEnv(EnvAgent, &agentTransport, true); err != nil {
-		return fmt.Errorf("failed to parse %s transport: %w", EnvAgent, err)
+	// Admin-vm service
+	if agentConfig.Capabilities.VmServices.AdminVm != "" {
+		agentConfig.Capabilities.Units[agentConfig.Capabilities.VmServices.AdminVm] = givc_types.UNIT_TYPE_ADMVM
 	}
 
-	// Parse admin server transport and create admin endpoint
-	var adminTransport givc_types.TransportConfig
-	if err := parseJSONEnv(EnvAdminServer, &adminTransport, true); err != nil {
-		return fmt.Errorf("failed to parse %s transport: %w", EnvAdminServer, err)
+	// Sys-vm services
+	if agentConfig.Capabilities.VmServices.SysVms != nil {
+		for _, vm := range agentConfig.Capabilities.VmServices.SysVms {
+			agentConfig.Capabilities.Units[vm] = givc_types.UNIT_TYPE_SYSVM
+		}
 	}
 
-	network.AdminEndpoint = &givc_types.EndpointConfig{
-		Transport: adminTransport,
-		TlsConfig: tlsConfig,
-		Services:  nil,
+	// App-vm services
+	if agentConfig.Capabilities.VmServices.AppVms != nil {
+		for _, vm := range agentConfig.Capabilities.VmServices.AppVms {
+			agentConfig.Capabilities.Units[vm] = givc_types.UNIT_TYPE_APPVM
+		}
 	}
 
-	// Create agent endpoint config with services
+	// Populate admin endpoint
+	agentConfig.Network.AdminEndpoint.Services = nil
+	agentConfig.Network.AdminEndpoint.TlsConfig = agentConfig.Network.TlsConfig
+
+	// Populate agent endpoint
 	var services []string
-	services = append(services, identity.ServiceName)
-	for unit := range capabilities.Units {
+	services = append(services, agentConfig.Identity.ServiceName)
+	for unit := range agentConfig.Capabilities.Units {
 		services = append(services, unit)
 	}
-
-	network.AgentEndpoint = &givc_types.EndpointConfig{
-		Transport: agentTransport,
-		TlsConfig: tlsConfig,
-		Services:  services,
-	}
-
-	// Parse bridge configuration
-	if err := parseBridgeConfig(&network.Bridge); err != nil {
-		return fmt.Errorf("failed to parse bridge config: %w", err)
-	}
+	agentConfig.Network.AgentEndpoint.TlsConfig = agentConfig.Network.TlsConfig
+	agentConfig.Network.AgentEndpoint.Services = services
 
 	return nil
-}
 
-// parseCapabilitiesConfig parses what the agent can do
-func parseCapabilitiesConfig(capabilities *CapabilitiesConfig, agentSubType uint32) error {
-	// Parse systemd units
-	capabilities.Units = parseUnits(agentSubType)
-
-	// Parse applications
-	if err := parseJSONEnv(EnvApplications, &capabilities.Applications, false); err != nil {
-		return fmt.Errorf("failed to parse applications: %w", err)
-	}
-
-	// Parse optional capabilities
-	parseOptionalCapabilities(&capabilities.Optional)
-
-	return nil
-}
-
-// parseRuntimeConfig parses runtime behavior configuration
-func parseRuntimeConfig(runtime *RuntimeConfig) {
-	runtime.Debug = os.Getenv(EnvDebug) == "true"
-}
-
-// parseBridgeConfig parses inter-VM bridge configuration
-func parseBridgeConfig(bridge *BridgeConfig) error {
-	// Parse event bridges
-	var eventConfigs []givc_types.EventConfig
-	if err := parseJSONEnv(EnvEventProxy, &eventConfigs, false); err != nil {
-		return fmt.Errorf("failed to parse %s: %w", EnvEventProxy, err)
-	}
-	bridge.Events = eventConfigs
-
-	// Parse socket bridges
-	var proxyConfigs []givc_types.ProxyConfig
-	if err := parseJSONEnv(EnvSocketProxy, &proxyConfigs, false); err != nil {
-		return fmt.Errorf("failed to parse %s: %w", EnvSocketProxy, err)
-	}
-	bridge.Sockets = proxyConfigs
-
-	return nil
-}
-
-// parseOptionalCapabilities parses optional service capabilities
-func parseOptionalCapabilities(optional *OptionalCapabilities) {
-	// Parse exec capability
-	if execService, execPresent := os.LookupEnv(EnvExec); execPresent {
-		optional.ExecEnabled = execService != "false"
-	}
-
-	// Parse wifi capability
-	if wifiService, wifiPresent := os.LookupEnv(EnvWifi); wifiPresent {
-		optional.WifiEnabled = wifiService != "false"
-	}
-
-	// Parse hwid capability
-	if hwidService, hwidPresent := os.LookupEnv(EnvHwid); hwidPresent {
-		optional.HwidEnabled = hwidService != "false"
-		if optional.HwidEnabled {
-			optional.HwidInterface = os.Getenv(EnvHwidIface)
-		}
-	}
-
-	// Parse notifier capability
-	if notifierService, notifierPresent := os.LookupEnv(EnvNotifier); notifierPresent {
-		if notifierSocket, notifierSocketPresent := os.LookupEnv(EnvNotifierSocket); notifierSocketPresent {
-			optional.NotifierEnabled = (notifierService != "false") && (notifierSocket != "")
-			if optional.NotifierEnabled {
-				optional.NotifierSocket = notifierSocket
-			}
-		}
-	}
-
-	if ctapService, ctapPresent := os.LookupEnv(EnvCtap); ctapPresent {
-		optional.CtapEnabled = ctapService != "false"
-	}
 }

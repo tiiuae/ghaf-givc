@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	cfg "givc/modules/pkgs/config"
+	givctypes "givc/modules/pkgs/types"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -37,7 +37,7 @@ type PolicyAdminController struct {
 }
 
 /* Constructor */
-func NewPolicyAdminController(policy cfg.PolicyConfig) (*PolicyAdminController, error) {
+func NewPolicyAdminController(policy givctypes.Policy) (*PolicyAdminController, error) {
 	log.Debugf("policy-admin:NewPolicyAdminController()")
 	self := &PolicyAdminController{}
 	self.storePath = policy.PolicyStorePath
@@ -149,10 +149,10 @@ func (self *PolicyAdminController) savePolicyMap() error {
 	return os.WriteFile(self.policiesInfoFile, jsonData, 0644)
 }
 
-func (self *PolicyAdminController) loadPolicyMap(policy cfg.PolicyConfig) error {
+func (self *PolicyAdminController) loadPolicyMap(policy givctypes.Policy) error {
 	if !PathExists(self.policiesInfoFile) {
 		self.policyMap = make(map[string]*PolicyDetail)
-		for name, dest := range policy.PoliciesJson {
+		for name, dest := range policy.Policies {
 			self.policyMap[name] = &PolicyDetail{
 				Destination: dest,
 				Sha:         "",

@@ -15,8 +15,6 @@ let
     mkEnableOption
     mkIf
     types
-    concatStringsSep
-    trivial
     literalExpression
     optionalString
     ;
@@ -26,6 +24,35 @@ let
     tlsSubmodule
     policyClientSubmodule
     ;
+  # GIVC agent JSON configuration for host
+  agentConfig =
+    let
+      cfgHost = config.givc.host;
+    in
+    {
+      identity = {
+        inherit (cfgHost.transport) name;
+        type = 0;
+        subType = 1;
+        parent = "microvm@${cfgHost.transport.name}.service";
+      };
+      network = {
+        agentEndpoint.transport = cfgHost.transport;
+        adminEndpoint.transport = cfgHost.admin;
+        tlsConfig = cfgHost.tls;
+      };
+      capabilities = {
+        inherit (cfgHost) services;
+        vmServices = {
+          inherit (cfgHost)
+            adminVm
+            systemVms
+            appVms
+            ;
+        };
+        exec.enable = cfgHost.enableExecModule;
+      };
+    };
 in
 {
   options.givc.host = {
@@ -191,6 +218,9 @@ in
       }
     ];
 
+    # JSON configuration for GIVC host agent
+    environment.etc."givc-agent/config.json".text = toJSON agentConfig;
+
     systemd.services."givc-${cfg.transport.name}" = {
       description = "GIVC remote service manager for the host.";
       enable = true;
@@ -205,7 +235,9 @@ in
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "exec";
-        ExecStart = "${givc-agent}/bin/givc-agent";
+        ExecStart =
+          "${givc-agent}/bin/givc-agent -config /etc/givc-agent/config.json"
+          + optionalString cfg.debug " -debug";
         Restart = "on-failure";
         TimeoutStopSec = 5;
         RestartSec = 1;
@@ -216,24 +248,6 @@ in
         pkgs.nixos-rebuild
         pkgs.openssh
       ];
-      environment = {
-        "AGENT" = "${toJSON cfg.transport}";
-        "DEBUG" = "${trivial.boolToString cfg.debug}";
-        "TYPE" = "0";
-        "SUBTYPE" = "1";
-        "SERVICES" = "${concatStringsSep " " cfg.services}";
-        "ADMVMS" = "${cfg.adminVm}";
-        "SYSVMS" = "${concatStringsSep " " cfg.systemVms}";
-        "APPVMS" = "${concatStringsSep " " cfg.appVms}";
-        "ADMIN_SERVER" = "${toJSON cfg.admin}";
-        "TLS_CONFIG" = "${toJSON cfg.tls}";
-        "EXEC" = "${trivial.boolToString cfg.enableExecModule}";
-        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyClient.enable}";
-        "POLICY_CONFIG" = "${optionalString cfg.policyClient.enable (
-          toJSON cfg.policyClient.policyConfig
-        )}";
-        "POLICY_STORE" = "${optionalString cfg.policyClient.enable cfg.policyClient.storePath}";
-      };
     };
     networking.firewall.allowedTCPPorts =
       let

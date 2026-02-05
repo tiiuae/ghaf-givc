@@ -15,7 +15,6 @@ let
     mkEnableOption
     mkIf
     types
-    trivial
     strings
     lists
     optionalString
@@ -35,6 +34,37 @@ let
     eventSubmodule
     policyClientSubmodule
     ;
+
+  # GIVC agent JSON configuration for appvm
+  agentConfig =
+    let
+      cfgAppvm = config.givc.appvm;
+    in
+    {
+      identity = {
+        inherit (cfgAppvm.transport) name;
+        type = 12;
+        subType = 13;
+        parent = "microvm@${cfgAppvm.transport.name}.service";
+      };
+      network = {
+        agentEndpoint.transport = cfgAppvm.transport;
+        adminEndpoint.transport = cfgAppvm.admin;
+        tlsConfig = cfgAppvm.tls;
+      };
+      capabilities = {
+        applications = if cfgAppvm.applications == null then [ ] else cfgAppvm.applications;
+        eventProxy = {
+          enable = cfgAppvm.eventProxy != null;
+          events = if cfgAppvm.eventProxy == null then [ ] else cfgAppvm.eventProxy;
+        };
+        socketProxy = {
+          enable = cfgAppvm.socketProxy != null;
+          sockets = if cfgAppvm.socketProxy == null then [ ] else cfgAppvm.socketProxy;
+        };
+        policy = cfgAppvm.policyClient;
+      };
+    };
 in
 {
   options.givc.appvm = {
@@ -275,6 +305,9 @@ in
     };
 
     # User agent
+    # JSON configuration for GIVC agent
+    environment.etc."givc-agent/config.json".text = toJSON agentConfig;
+
     systemd.user.services."givc-${cfg.transport.name}" = {
       description = "GIVC remote service manager for application VMs";
       enable = true;
@@ -284,27 +317,12 @@ in
       unitConfig.ConditionUser = "${toString cfg.uid}";
       serviceConfig = {
         Type = "exec";
-        ExecStart = "${givc-agent}/bin/givc-agent";
+        ExecStart =
+          "${givc-agent}/bin/givc-agent -config /etc/givc-agent/config.json"
+          + optionalString cfg.debug " -debug";
         Restart = "on-failure";
         TimeoutStopSec = 5;
         RestartSec = 1;
-      };
-      environment = {
-        "AGENT" = "${toJSON cfg.transport}";
-        "DEBUG" = "${trivial.boolToString cfg.debug}";
-        "TYPE" = "12";
-        "SUBTYPE" = "13";
-        "PARENT" = "microvm@${cfg.transport.name}.service";
-        "APPLICATIONS" = "${optionalString (cfg.applications != null) (toJSON cfg.applications)}";
-        "SOCKET_PROXY" = "${optionalString (cfg.socketProxy != null) (toJSON cfg.socketProxy)}";
-        "ADMIN_SERVER" = "${toJSON cfg.admin}";
-        "TLS_CONFIG" = "${toJSON cfg.tls}";
-        "EVENT_PROXY" = "${optionalString (cfg.eventProxy != null) (toJSON cfg.eventProxy)}";
-        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyClient.enable}";
-        "POLICY_CONFIG" = "${optionalString cfg.policyClient.enable (
-          toJSON cfg.policyClient.policyConfig
-        )}";
-        "POLICY_STORE" = "${optionalString cfg.policyClient.enable cfg.policyClient.storePath}";
       };
     };
     networking.firewall.allowedTCPPorts =

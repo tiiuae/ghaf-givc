@@ -11,7 +11,7 @@ import (
 
 	"givc/modules/api/policyadmin"
 	pb "givc/modules/api/policyadmin"
-	cfg "givc/modules/pkgs/config"
+	givctypes "givc/modules/pkgs/types"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -19,7 +19,7 @@ import (
 
 type PolicyAdminServer struct {
 	pb.UnimplementedPolicyAdminServer
-	policy     cfg.PolicyConfig
+	policy     givctypes.Policy
 	controller *PolicyAdminController
 }
 
@@ -31,7 +31,7 @@ func (s *PolicyAdminServer) RegisterGrpcService(srv *grpc.Server) {
 	pb.RegisterPolicyAdminServer(srv, s)
 }
 
-func NewPolicyAdminServer(policy cfg.PolicyConfig) (*PolicyAdminServer, error) {
+func NewPolicyAdminServer(policy givctypes.Policy) (*PolicyAdminServer, error) {
 	s := &PolicyAdminServer{
 		policy:     policy,
 		controller: nil,

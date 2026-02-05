@@ -15,16 +15,14 @@ let
     mkOption
     mkEnableOption
     types
-    trivial
     strings
     lists
-    concatStringsSep
     optionalString
     optionalAttrs
     optionals
     literalExpression
     ;
-  inherit (builtins) toJSON;
+  inherit (builtins) toJSON dirOf;
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
     proxySubmodule
@@ -32,6 +30,46 @@ let
     eventSubmodule
     policyClientSubmodule
     ;
+  # GIVC agent JSON configuration for sysvm
+  agentConfig =
+    let
+      cfgSys = config.givc.sysvm;
+    in
+    {
+      identity = {
+        inherit (cfgSys.transport) name;
+        type = 8;
+        subType = 9;
+        parent = "microvm@${cfgSys.transport.name}.service";
+      };
+      network = {
+        agentEndpoint.transport = cfgSys.transport;
+        adminEndpoint.transport = cfgSys.admin;
+        tlsConfig = cfgSys.tls;
+      };
+      capabilities = {
+        inherit (cfgSys) services;
+        wifi.enable = cfgSys.wifiManager;
+        ctap.enable = cfgSys.enableCtapModule;
+        hwid = {
+          enable = cfgSys.hwidService;
+          interface = cfgSys.hwidIface;
+        };
+        notifier = {
+          inherit (cfgSys.notifier) enable;
+          socket = dirOf cfgSys.notifier.socketPath;
+        };
+        eventProxy = {
+          enable = cfgSys.eventProxy != null;
+          events = if cfgSys.eventProxy == null then [ ] else cfgSys.eventProxy;
+        };
+        socketProxy = {
+          enable = cfgSys.socketProxy != null;
+          sockets = if cfgSys.socketProxy == null then [ ] else cfgSys.socketProxy;
+        };
+        policy = cfgSys.policyClient;
+      };
+    };
 in
 {
   imports = [
@@ -277,6 +315,9 @@ in
       };
     };
 
+    # JSON configuration for GIVC sysvm agent
+    environment.etc."givc-agent/config.json".text = toJSON agentConfig;
+
     systemd.services."givc-${cfg.transport.name}" = {
       description = "GIVC remote service manager for system VMs";
       enable = true;
@@ -285,36 +326,14 @@ in
       wantedBy = [ "givc-setup.target" ];
       serviceConfig = {
         Type = "exec";
-        ExecStart = "${givc-agent}/bin/givc-agent";
+        ExecStart =
+          "${givc-agent}/bin/givc-agent -config /etc/givc-agent/config.json"
+          + optionalString cfg.debug " -debug";
         Restart = "on-failure";
         TimeoutStopSec = 5;
         RestartSec = 1;
       };
       path = [ pkgs.dbus ];
-      environment = {
-        "AGENT" = "${toJSON cfg.transport}";
-        "DEBUG" = "${trivial.boolToString cfg.debug}";
-        "TYPE" = "8";
-        "SUBTYPE" = "9";
-        "WIFI" = "${trivial.boolToString cfg.wifiManager}";
-        "HWID" = "${trivial.boolToString cfg.hwidService}";
-        "HWID_IFACE" = "${cfg.hwidIface}";
-        "SOCKET_PROXY" = "${optionalString (cfg.socketProxy != null) (toJSON cfg.socketProxy)}";
-        "PARENT" = "microvm@${cfg.transport.name}.service";
-        "SERVICES" = "${concatStringsSep " " cfg.services}";
-        "ADMIN_SERVER" = "${toJSON cfg.admin}";
-        "TLS_CONFIG" = "${toJSON cfg.tls}";
-        "EVENT_PROXY" = "${optionalString (cfg.eventProxy != null) (toJSON cfg.eventProxy)}";
-        "NOTIFIER" = "${trivial.boolToString cfg.notifier.enable}";
-        "NOTIFIER_SOCKET_DIR" = "${optionalString cfg.notifier.enable (
-          builtins.dirOf cfg.notifier.socketPath
-        )}";
-        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyClient.enable}";
-        "POLICY_CONFIG" = "${optionalString cfg.policyClient.enable (
-          toJSON cfg.policyClient.policyConfig
-        )}";
-        "POLICY_STORE" = "${optionalString cfg.policyClient.enable cfg.policyClient.storePath}";
-      };
     };
     networking.firewall.allowedTCPPorts =
       let
