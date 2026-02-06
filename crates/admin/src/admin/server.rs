@@ -20,6 +20,8 @@ use tracing::{debug, error, info, trace};
 pub use pb::admin_service_server::AdminServiceServer;
 
 use crate::admin::registry::Registry;
+use crate::policyadmin_api::client::PolicyAdminClient;
+use crate::policyadmin_api::policy_manager::PolicyManager;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
 use crate::utils::naming::VmName;
@@ -47,6 +49,7 @@ pub struct AdminServiceImpl {
     tls_config: Option<TlsConfig>,
     locale_assigns: Mutex<Vec<pb::locale::LocaleAssignment>>,
     timezone: Mutex<String>,
+    policy_admin_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -72,8 +75,8 @@ impl Validator {
 
 impl AdminService {
     #[must_use]
-    pub fn new(use_tls: Option<TlsConfig>, monitoring: bool) -> Self {
-        let inner = Arc::new(AdminServiceImpl::new(use_tls));
+    pub fn new(use_tls: Option<TlsConfig>, monitoring: bool, enable_policy_admin: bool) -> Self {
+        let inner = Arc::new(AdminServiceImpl::new(use_tls, enable_policy_admin));
         let clone = inner.clone();
         if monitoring {
             tokio::task::spawn(async move {
@@ -82,11 +85,16 @@ impl AdminService {
         }
         Self { inner }
     }
+
+    #[must_use]
+    pub fn clone_inner(&self) -> Arc<AdminServiceImpl> {
+        self.inner.clone()
+    }
 }
 
 impl AdminServiceImpl {
     #[must_use]
-    pub fn new(use_tls: Option<TlsConfig>) -> Self {
+    pub fn new(use_tls: Option<TlsConfig>, enable_policy_admin: bool) -> Self {
         let timezone = std::fs::read_to_string(TIMEZONE_CONF)
             .ok()
             .and_then(|l| l.lines().next().map(ToOwned::to_owned))
@@ -112,6 +120,7 @@ impl AdminServiceImpl {
             tls_config: use_tls,
             timezone: Mutex::new(timezone),
             locale_assigns: Mutex::new(locale_assigns),
+            policy_admin_enabled: enable_policy_admin,
         }
     }
 
@@ -173,6 +182,41 @@ impl AdminServiceImpl {
         let client = SystemDClient::new(endpoint);
         client.start_remote(name).await?;
         Ok(())
+    }
+
+    pub async fn push_policy_update(
+        &self,
+        vm_name: &str,
+        policy_file_path: &std::path::Path,
+        policy_name: &str,
+    ) -> anyhow::Result<()> {
+        if !self.policy_admin_enabled {
+            return Ok(());
+        }
+
+        let agent_service_name = VmName::Vm(vm_name).agent_service();
+        info!(
+            "policy-admin: pushing policy update to vm '{}' via agent '{}'",
+            vm_name, agent_service_name
+        );
+
+        let endpoint = self.agent_endpoint(&agent_service_name).with_context(|| {
+            format!(
+                "policy-admin: failed to get endpoint for agent {}",
+                agent_service_name
+            )
+        })?;
+
+        let client = PolicyAdminClient::new(endpoint);
+
+        /* For safe streaming  */
+        let temp_path = policy_file_path.with_extension("tmp");
+        tokio::fs::copy(policy_file_path, &temp_path).await?;
+        let result = client
+            .upload_policy(policy_name.to_string(), temp_path.clone())
+            .await;
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        result
     }
 
     pub(crate) async fn start_unit_on_vm(
@@ -465,8 +509,18 @@ impl pb::admin_service_server::AdminService for AdminService {
         {
             let locale_assigns = self.inner.locale_assigns.lock().await.clone();
             let timezone = self.inner.timezone.lock().await.clone();
+            let inner_clone = self.inner.clone();
+            let vm_name = endpoint.transport.tls_name.clone();
+
             tokio::spawn(async move {
                 if let Ok(conn) = endpoint.connect().await {
+                    if inner_clone.policy_admin_enabled {
+                        debug!("policy-admin: sending policy updates to vm '{}'", vm_name);
+                        let policy_manager = PolicyManager::instance();
+                        let _ = policy_manager.send_all_policies(&vm_name);
+                    } else {
+                        debug!("policy-admin: disabled");
+                    }
                     let mut client =
                         pb::locale::locale_client_client::LocaleClientClient::new(conn);
                     let localemsg = pb::locale::LocaleMessage {
@@ -479,7 +533,7 @@ impl pb::admin_service_server::AdminService for AdminService {
                 }
             });
         }
-        info!("Responding with {res:?}");
+        debug!("Responding with {res:?}");
         Ok(Response::new(res))
     }
 

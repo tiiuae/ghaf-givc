@@ -18,11 +18,13 @@ let
     concatStringsSep
     trivial
     literalExpression
+    optionalString
     ;
   inherit (builtins) toJSON;
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
     tlsSubmodule
+    policyClientSubmodule
     ;
 in
 {
@@ -161,6 +163,12 @@ in
       '';
     };
 
+    policyClient = mkOption {
+      type = policyClientSubmodule;
+      default = { };
+      description = "Ghaf policy rules mapped to actions.";
+    };
+
     enableExecModule = mkEnableOption ''
       execution module for (arbitrary) commands on the host via the GIVC agent. Please be aware that this
       introduces significant security implications as currently, no protection measures are implemented.
@@ -220,6 +228,11 @@ in
         "ADMIN_SERVER" = "${toJSON cfg.admin}";
         "TLS_CONFIG" = "${toJSON cfg.tls}";
         "EXEC" = "${trivial.boolToString cfg.enableExecModule}";
+        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyClient.enable}";
+        "POLICY_CONFIG" = "${optionalString cfg.policyClient.enable (
+          toJSON cfg.policyClient.policyConfig
+        )}";
+        "POLICY_STORE" = "${optionalString cfg.policyClient.enable cfg.policyClient.storePath}";
       };
     };
     networking.firewall.allowedTCPPorts =
@@ -230,6 +243,9 @@ in
     environment.systemPackages = [
       self.packages.${pkgs.stdenv.hostPlatform.system}.ota-update
       pkgs.nixos-rebuild # Need for ota-update
+    ];
+    systemd.tmpfiles.rules = [
+      "d ${cfg.policyClient.storePath} 0755 1000 100 -"
     ];
   };
 }

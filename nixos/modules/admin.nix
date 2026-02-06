@@ -22,6 +22,7 @@ let
     attrsets
     literalExpression
     ;
+  inherit (builtins) toJSON;
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
     tlsSubmodule
@@ -29,6 +30,33 @@ let
   tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
   unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
   vsockAddresses = lib.filter (addr: addr.protocol == "vsock") cfg.addresses;
+  jsonPolicies =
+    if (cfg.policyAdmin.enable && cfg.policyAdmin.updater.gitURL.enable) then
+      {
+        source = {
+          type = "git-url";
+          inherit (cfg.policyAdmin.updater.gitURL) url;
+          inherit (cfg.policyAdmin.updater.gitURL) ref;
+          inherit (cfg.policyAdmin.updater.gitURL) poll_interval_secs;
+        };
+        inherit (cfg.policyAdmin) policies;
+      }
+    else if (cfg.policyAdmin.enable && cfg.policyAdmin.updater.perPolicy.enable) then
+      {
+        source = {
+          type = "per-policy";
+        };
+        inherit (cfg.policyAdmin) policies;
+      }
+    else if (cfg.policyAdmin.enable && cfg.policyAdmin.factoryPolicies.enable) then
+      {
+        source = {
+          type = "none";
+        };
+        inherit (cfg.policyAdmin) policies;
+      }
+    else
+      { };
 in
 {
   options.givc.admin = {
@@ -120,6 +148,85 @@ in
         > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
       '';
     };
+    policyAdmin = {
+      enable = mkEnableOption "policy admin";
+      storePath = mkOption {
+        type = types.str;
+        default = "/etc/policies";
+        description = "Directory path for policy storage.";
+      };
+
+      factoryPolicies = {
+        enable = mkEnableOption "Boot strap policies from default git URL";
+        url = mkOption {
+          type = types.nullOr types.str;
+          description = "Git URL of policy repository";
+          default = "";
+        };
+        rev = mkOption {
+          type = types.nullOr types.str;
+          description = "Rev of the  default policies in the policy repository";
+          default = null;
+        };
+        sha256 = mkOption {
+          type = types.nullOr types.str;
+          description = "SHA of the rev of the default policies in the policy repository";
+          default = null;
+        };
+      };
+
+      updater = {
+        gitURL = {
+          enable = mkEnableOption "updates from default git URL";
+          url = mkOption {
+            type = types.nullOr types.str;
+            description = "Git URL of policy repository";
+            default = "";
+          };
+          poll_interval_secs = mkOption {
+            type = types.int;
+            default = 30;
+            description = "Global polling interval for the centralized repo";
+          };
+          ref = mkOption {
+            type = types.str;
+            default = "master";
+            description = "Git reference (branch/tag)";
+          };
+        };
+        perPolicy = {
+          enable = mkEnableOption "updates per policy";
+        };
+      };
+
+      policies = mkOption {
+        description = "Map of distributed policies";
+        default = { };
+        type = types.attrsOf (
+          types.submodule {
+            options = {
+              vms = mkOption {
+                description = "List of VMs this policy applies to";
+                type = types.listOf types.str;
+                default = [ ];
+              };
+              perPolicyUpdater = {
+                url = mkOption {
+                  type = types.nullOr types.str;
+                  description = "URL for the specific policy artifact, ignored if perPolicy updater is disabled";
+                  default = "";
+                };
+                poll_interval_secs = mkOption {
+                  description = "Polling interval for the specific policy artifact";
+                  type = types.int;
+                  default = 30;
+                };
+              };
+            };
+          }
+        );
+      };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -128,6 +235,15 @@ in
         assertion =
           !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
+      }
+      {
+        assertion =
+          !(
+            cfg.policyAdmin.enable
+            && cfg.policyAdmin.updater.gitURL.enable
+            && cfg.policyAdmin.updater.perPolicy.enable
+          );
+        message = "Two policy updaters cannot be enabled at the same time.";
       }
     ];
 
@@ -138,6 +254,33 @@ in
           ++ (map (addr: "--listen ${addr.addr}") unixAddresses)
           ++ (map (addr: "--listen vsock:${addr.addr}:${addr.port}") vsockAddresses)
         );
+        initialPolicySrc = pkgs.fetchgit {
+          inherit (cfg.policyAdmin.factoryPolicies) url;
+          inherit (cfg.policyAdmin.factoryPolicies) rev;
+          inherit (cfg.policyAdmin.factoryPolicies) sha256;
+          leaveDotGit = true;
+        };
+
+        preStartScript = pkgs.writeShellApplication {
+          name = "policy_init";
+          runtimeInputs = with pkgs; [
+            rsync
+          ];
+          text = ''
+            policyDir=${cfg.policyAdmin.storePath}
+            if [ -d $policyDir/data ]; then
+              echo "Policy is up to date."
+              exit 0
+            fi
+
+            install -d -m 0755  "$policyDir/data"
+            rsync -ar "${initialPolicySrc}/.git" "$policyDir/data/"
+
+            if [ -d "${initialPolicySrc}/vm-policies" ]; then
+              rsync -ar "${initialPolicySrc}/vm-policies" "$policyDir/data/"
+            fi
+          '';
+        };
       in
       {
         description = "GIVC admin module.";
@@ -151,6 +294,9 @@ in
           Restart = "on-failure";
           TimeoutStopSec = 5;
           RestartSec = 1;
+          ExecStartPre = mkIf (
+            cfg.policyAdmin.enable && cfg.policyAdmin.factoryPolicies.enable
+          ) "-!${lib.getExe preStartScript}";
         };
         environment = {
           "NAME" = "${cfg.name}";
@@ -158,6 +304,9 @@ in
           "SUBTYPE" = "5";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
           "SERVICES" = "${concatStringsSep " " cfg.services}";
+          "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
+          "POLICY_CONFIG" = "${toJSON jsonPolicies}";
+          "POLICY_STORE" = "${cfg.policyAdmin.storePath}";
         }
         // attrsets.optionalAttrs cfg.tls.enable {
           "CA_CERT" = "${cfg.tls.caCertPath}";

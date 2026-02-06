@@ -61,6 +61,21 @@ in
         inherit (adminConfig) name;
         inherit (adminConfig) addresses;
         tls.enable = tls;
+        policyAdmin = {
+          enable = true;
+          factoryPolicies = {
+            enable = true;
+            url = "https://github.com/tiiuae/ghaf-policies.git";
+            rev = "a0d8002b5d304e846f18a466b4bfb1efdf571882";
+            sha256 = "sha256-Rpu9yudQOhvnGHVDWFOqrOPdiKS0z4SGaba6mRDrnCg=";
+          };
+
+          policies = {
+            "proxy-config" = {
+              vms = [ "app-vm" ];
+            };
+          };
+        };
       };
     };
     tests-hostvm = {
@@ -267,6 +282,10 @@ in
               command = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot";
             }
           ];
+          policyClient = {
+            enable = true;
+            policyConfig."proxy-config" = "";
+          };
         };
       };
     tests-updatevm = {
