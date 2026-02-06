@@ -30,11 +30,12 @@
           pkgs.gopls
           pkgs.gosec
           pkgs.gotests
+          pkgs.gotestsum
           pkgs.go-tools
           pkgs.golangci-lint
           pkgs.rustfmt
           pkgs.clippy
-          pkgs.stdenv.cc # Need for build rust components
+          pkgs.stdenv.cc
           pkgs.protobuf
           pkgs.protoc-gen-go
           pkgs.protoc-gen-go-grpc
@@ -62,7 +63,7 @@
           {
             help = "Run go tests";
             name = "go-tests";
-            command = "go test -v ./modules/...";
+            command = "gotestsum --format short-verbose -- ./modules/...";
           }
           {
             help = "Update go dependencies";
