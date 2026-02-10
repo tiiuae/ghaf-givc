@@ -288,7 +288,8 @@ fn format_size(size: Option<u64>) -> String {
 }
 
 /// The name of the kernel commandline argument
-const CMDLINE_ARG_NAME: &str = "storehash";
+// FIXME: make both names configurable at compile time
+const CMDLINE_ARG_NAME: &str = "ghaf.storehash";
 const GHAF_REVISION_NAME: &str = "ghaf.revision";
 
 impl KernelParams {
