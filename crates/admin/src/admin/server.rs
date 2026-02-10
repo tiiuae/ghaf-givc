@@ -4,6 +4,7 @@
 #![allow(clippy::similar_names)]
 
 use super::entry::{Placement, RegistryEntry};
+use super::policyclient::PolicyAdminClient;
 use crate::pb::{
     self, ApplicationRequest, ApplicationResponse, Empty, ListGenerationsResponse, LocaleRequest,
     QueryListResponse, RegistryRequest, RegistryResponse, SetGenerationRequest,
@@ -23,14 +24,14 @@ use tracing::{debug, error, info, trace};
 pub use pb::admin_service_server::AdminServiceServer;
 
 use crate::admin::registry::Registry;
-use crate::policyadmin_api::client::PolicyAdminClient;
-use crate::policyadmin_api::policy_manager::PolicyManager;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
 use crate::utils::naming::VmName;
 use crate::utils::tonic::{Stream, escalate};
 use givc_client::endpoint::{EndpointConfig, TlsConfig};
 use givc_common::query::QueryResult;
+use givc_policyadmin::policy::run_policy_admin;
+use givc_policyadmin::policy_manager::{PolicyManager, PolicyUpdateCallback};
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 const TIMEZONE_CONF: &str = "/etc/timezone.conf";
@@ -78,20 +79,26 @@ impl Validator {
 
 impl AdminService {
     #[must_use]
-    pub fn new(use_tls: Option<TlsConfig>, monitoring: bool, enable_policy_admin: bool) -> Self {
+    pub async fn new(
+        use_tls: Option<TlsConfig>,
+        monitoring: bool,
+        enable_policy_admin: bool,
+        policy_store: Option<std::path::PathBuf>,
+        policy_config: Option<String>,
+    ) -> anyhow::Result<Self> {
         let inner = Arc::new(AdminServiceImpl::new(use_tls, enable_policy_admin));
-        let clone = inner.clone();
         if monitoring {
+            let clone = inner.clone();
             tokio::task::spawn(async move {
                 clone.monitor().await;
             });
         }
-        Self { inner }
-    }
 
-    #[must_use]
-    pub fn clone_inner(&self) -> Arc<AdminServiceImpl> {
-        self.inner.clone()
+        inner
+            .clone()
+            .setup_policy_admin(policy_store, policy_config)
+            .await?;
+        Ok(Self { inner })
     }
 }
 
@@ -125,6 +132,25 @@ impl AdminServiceImpl {
             locale_assigns: Mutex::new(locale_assigns),
             policy_admin_enabled: enable_policy_admin,
         }
+    }
+
+    pub async fn setup_policy_admin(
+        self: &Arc<Self>,
+        policy_store: Option<std::path::PathBuf>,
+        policy_config: Option<String>,
+    ) -> anyhow::Result<()> {
+        if !self.policy_admin_enabled {
+            info!("policy-admin: disabled");
+            return Ok(());
+        }
+        let this = self.clone();
+        let callback: PolicyUpdateCallback = std::sync::Arc::new(move |vm, path, policy| {
+            let service = this.clone();
+            Box::pin(async move { service.push_policy_update(&vm, &path, &policy).await })
+        });
+
+        run_policy_admin(policy_store, policy_config, callback).await?;
+        Ok(())
     }
 
     fn host_endpoint(&self) -> anyhow::Result<EndpointConfig> {

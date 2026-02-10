@@ -10,8 +10,8 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
 
-use crate::admin::policy::PolicyConfig;
-use crate::policyadmin_api::policy_manager::PolicyManager;
+use crate::policy::PolicyConfig;
+use crate::policy_manager::PolicyManager;
 
 /*
  * RepoState
