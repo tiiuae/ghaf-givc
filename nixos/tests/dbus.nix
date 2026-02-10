@@ -138,50 +138,57 @@ in
 
               givc.sysvm = {
                 enable = true;
-                admin = lib.head adminConfig.addresses;
-                transport = {
-                  addr = addrs.guivm;
-                  name = "gui-vm";
+                network = {
+                  admin.transport = lib.head adminConfig.addresses;
+                  agent.transport = {
+                    addr = addrs.guivm;
+                    name = "gui-vm";
+                  };
+                  tls.enable = tls;
                 };
-                tls.enable = tls;
-                socketProxy = [
-                  {
-                    transport = {
-                      name = "net-vm";
-                      addr = addrs.netvm;
-                      port = "9010";
-                      protocol = "tcp";
-                    };
-                    socket = "/tmp/.dbusproxy_net.sock";
-                  }
-                  {
-                    transport = {
-                      name = "audio-vm";
-                      addr = addrs.audiovm;
-                      port = "9011";
-                      protocol = "tcp";
-                    };
-                    socket = "/tmp/.dbusproxy_snd.sock";
-                  }
-                  {
-                    transport = {
-                      name = "audio-vm";
-                      addr = addrs.audiovm;
-                      port = "9012";
-                      protocol = "tcp";
-                    };
-                    socket = "/tmp/.dbusproxy_app.sock";
-                  }
-                  {
-                    transport = {
-                      name = "app-vm";
-                      addr = addrs.appvm;
-                      port = "9013";
-                      protocol = "tcp";
-                    };
-                    socket = "/tmp/.dbusproxy_app2.sock";
-                  }
-                ];
+                capabilities = {
+                  socketProxy = {
+                    enable = true;
+                    sockets = [
+                      {
+                        transport = {
+                          name = "net-vm";
+                          addr = addrs.netvm;
+                          port = "9010";
+                          protocol = "tcp";
+                        };
+                        socket = "/tmp/.dbusproxy_net.sock";
+                      }
+                      {
+                        transport = {
+                          name = "audio-vm";
+                          addr = addrs.audiovm;
+                          port = "9011";
+                          protocol = "tcp";
+                        };
+                        socket = "/tmp/.dbusproxy_snd.sock";
+                      }
+                      {
+                        transport = {
+                          name = "audio-vm";
+                          addr = addrs.audiovm;
+                          port = "9012";
+                          protocol = "tcp";
+                        };
+                        socket = "/tmp/.dbusproxy_app.sock";
+                      }
+                      {
+                        transport = {
+                          name = "app-vm";
+                          addr = addrs.appvm;
+                          port = "9013";
+                          protocol = "tcp";
+                        };
+                        socket = "/tmp/.dbusproxy_app2.sock";
+                      }
+                    ];
+                  };
+                };
                 debug = true;
               };
             };
@@ -232,23 +239,30 @@ in
 
               givc.sysvm = {
                 enable = true;
-                admin = lib.head adminConfig.addresses;
-                transport = {
-                  addr = addrs.netvm;
-                  name = "net-vm";
+                network = {
+                  admin.transport = lib.head adminConfig.addresses;
+                  agent.transport = {
+                    addr = addrs.netvm;
+                    name = "net-vm";
+                  };
+                  tls.enable = tls;
                 };
-                tls.enable = tls;
-                socketProxy = [
-                  {
-                    transport = {
-                      name = "gui-vm";
-                      addr = addrs.guivm;
-                      port = "9010";
-                      protocol = "tcp";
-                    };
-                    socket = "/tmp/.dbusproxy_net.sock";
-                  }
-                ];
+                capabilities = {
+                  socketProxy = {
+                    enable = true;
+                    sockets = [
+                      {
+                        transport = {
+                          name = "gui-vm";
+                          addr = addrs.guivm;
+                          port = "9010";
+                          protocol = "tcp";
+                        };
+                        socket = "/tmp/.dbusproxy_net.sock";
+                      }
+                    ];
+                  };
+                };
                 debug = true;
               };
 
@@ -318,32 +332,39 @@ in
 
               givc.sysvm = {
                 enable = true;
-                admin = lib.head adminConfig.addresses;
-                transport = {
-                  addr = addrs.audiovm;
-                  name = "audio-vm";
+                network = {
+                  admin.transport = lib.head adminConfig.addresses;
+                  agent.transport = {
+                    addr = addrs.audiovm;
+                    name = "audio-vm";
+                  };
+                  tls.enable = tls;
                 };
-                tls.enable = tls;
-                socketProxy = [
-                  {
-                    transport = {
-                      name = "gui-vm";
-                      addr = addrs.guivm;
-                      port = "9011";
-                      protocol = "tcp";
-                    };
-                    socket = "/tmp/.dbusproxy_snd.sock";
-                  }
-                  {
-                    transport = {
-                      name = "gui-vm";
-                      addr = addrs.guivm;
-                      port = "9012";
-                      protocol = "tcp";
-                    };
-                    socket = "/tmp/.dbusproxy_app.sock";
-                  }
-                ];
+                capabilities = {
+                  socketProxy = {
+                    enable = true;
+                    sockets = [
+                      {
+                        transport = {
+                          name = "gui-vm";
+                          addr = addrs.guivm;
+                          port = "9011";
+                          protocol = "tcp";
+                        };
+                        socket = "/tmp/.dbusproxy_snd.sock";
+                      }
+                      {
+                        transport = {
+                          name = "gui-vm";
+                          addr = addrs.guivm;
+                          port = "9012";
+                          protocol = "tcp";
+                        };
+                        socket = "/tmp/.dbusproxy_app.sock";
+                      }
+                    ];
+                  };
+                };
                 debug = true;
               };
 
@@ -414,35 +435,42 @@ in
 
               givc.appvm = {
                 enable = true;
-                admin = lib.head adminConfig.addresses;
-                transport = {
-                  addr = addrs.appvm;
-                  name = "app-vm";
+                network = {
+                  admin.transport = lib.head adminConfig.addresses;
+                  agent.transport = {
+                    addr = addrs.appvm;
+                    name = "app-vm";
+                  };
+                  tls = {
+                    enable = tls;
+                    caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
+                    certPath = lib.mkForce "/etc/givc/cert.pem";
+                    keyPath = lib.mkForce "/etc/givc/key.pem";
+                  };
                 };
-                tls = {
-                  enable = tls;
-                  caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
-                  certPath = lib.mkForce "/etc/givc/cert.pem";
-                  keyPath = lib.mkForce "/etc/givc/key.pem";
+                capabilities = {
+                  socketProxy = {
+                    enable = true;
+                    sockets = [
+                      {
+                        transport = {
+                          name = "gui-vm";
+                          addr = addrs.guivm;
+                          port = "9013";
+                          protocol = "tcp";
+                        };
+                        socket = "/tmp/.dbusproxy_app2.sock";
+                      }
+                    ];
+                  };
+                  applications = [
+                    {
+                      name = "dummy";
+                      command = "/bin/bash";
+                      args = [ ];
+                    }
+                  ];
                 };
-                socketProxy = [
-                  {
-                    transport = {
-                      name = "gui-vm";
-                      addr = addrs.guivm;
-                      port = "9013";
-                      protocol = "tcp";
-                    };
-                    socket = "/tmp/.dbusproxy_app2.sock";
-                  }
-                ];
-                applications = [
-                  {
-                    name = "dummy";
-                    command = "/bin/bash";
-                    args = [ ];
-                  }
-                ];
                 debug = true;
               };
 

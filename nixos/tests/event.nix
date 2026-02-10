@@ -75,24 +75,31 @@ in
 
               givc.sysvm = {
                 enable = true;
-                admin = lib.head adminConfig.addresses;
-                transport = {
-                  addr = addrs.audiovm;
-                  name = "audio-vm";
+                network = {
+                  admin.transport = lib.head adminConfig.addresses;
+                  agent.transport = {
+                    addr = addrs.audiovm;
+                    name = "audio-vm";
+                  };
+                  tls.enable = tls;
                 };
-                tls.enable = tls;
-                eventProxy = [
-                  {
-                    transport = {
-                      name = "app-vm";
-                      addr = addrs.appvm;
-                      port = "9015";
-                      protocol = "tcp";
-                    };
-                    producer = true;
-                    device = "wireless controller";
-                  }
-                ];
+                capabilities = {
+                  eventProxy = {
+                    enable = true;
+                    events = [
+                      {
+                        transport = {
+                          name = "app-vm";
+                          addr = addrs.appvm;
+                          port = "9015";
+                          protocol = "tcp";
+                        };
+                        producer = true;
+                        device = "wireless controller";
+                      }
+                    ];
+                  };
+                };
                 debug = true;
               };
             };
@@ -151,29 +158,35 @@ in
 
               givc.appvm = {
                 enable = true;
-                admin = lib.head adminConfig.addresses;
-                transport = {
-                  addr = addrs.appvm;
-                  name = "app-vm";
+                network = {
+                  admin.transport = lib.head adminConfig.addresses;
+                  agent.transport = {
+                    addr = addrs.appvm;
+                    name = "app-vm";
+                  };
+                  tls = {
+                    enable = tls;
+                    caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
+                    certPath = lib.mkForce "/etc/givc/cert.pem";
+                    keyPath = lib.mkForce "/etc/givc/key.pem";
+                  };
                 };
-                tls = {
-                  enable = tls;
-                  caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
-                  certPath = lib.mkForce "/etc/givc/cert.pem";
-                  keyPath = lib.mkForce "/etc/givc/key.pem";
+                capabilities = {
+                  eventProxy = {
+                    enable = true;
+                    events = [
+                      {
+                        transport = {
+                          name = "app-vm";
+                          addr = addrs.appvm;
+                          port = "9015";
+                          protocol = "tcp";
+                        };
+                        producer = false;
+                      }
+                    ];
+                  };
                 };
-
-                eventProxy = [
-                  {
-                    transport = {
-                      name = "app-vm";
-                      addr = addrs.appvm;
-                      port = "9015";
-                      protocol = "tcp";
-                    };
-                    producer = false;
-                  }
-                ];
                 debug = true;
               };
             };
@@ -185,10 +198,10 @@ in
             grpcurl_cmd = "/run/current-system/sw/bin/grpcurl ";
             grpcurl_args =
               if tls then
-                "-cacert ${nodes.appvm.givc.appvm.tls.caCertPath} -cert ${nodes.appvm.givc.appvm.tls.certPath} -key ${nodes.appvm.givc.appvm.tls.keyPath}"
+                "-cacert ${nodes.appvm.givc.appvm.network.tls.caCertPath} -cert ${nodes.appvm.givc.appvm.network.tls.certPath} -key ${nodes.appvm.givc.appvm.network.tls.keyPath}"
               else
                 "-plaintext";
-            grpcurl_addr = "${(builtins.elemAt nodes.appvm.givc.appvm.eventProxy 0).transport.addr}:${(builtins.elemAt nodes.appvm.givc.appvm.eventProxy 0).transport.port}";
+            grpcurl_addr = "${(builtins.elemAt nodes.appvm.givc.appvm.capabilities.eventProxy.events 0).transport.addr}:${(builtins.elemAt nodes.appvm.givc.appvm.capabilities.eventProxy.events 0).transport.port}";
           in
           ''
 

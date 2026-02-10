@@ -20,7 +20,7 @@ func TestLoadConfig(t *testing.T) {
 			"parent": "test-parent"
 		},
 		"network": {
-			"adminEndpoint": {
+			"admin": {
 				"transport": {
 					"name": "admin-vm",
 					"addr": "192.168.0.2",
@@ -28,7 +28,7 @@ func TestLoadConfig(t *testing.T) {
 					"protocol": "tcp"
 				}
 			},
-			"agentEndpoint": {
+			"agent": {
 				"transport": {
 					"name": "test-agent",
 					"addr": "192.168.0.3",
@@ -36,7 +36,7 @@ func TestLoadConfig(t *testing.T) {
 					"protocol": "tcp"
 				}
 			},
-			"tlsConfig": {
+			"tls": {
 				"enable": false
 			}
 		},
@@ -63,7 +63,7 @@ func TestLoadConfig(t *testing.T) {
 			"policy": {
 				"enable": true,
 				"storePath": "/tmp/policy",
-				"policyConfig": {"k": "v"}
+				"policies": {"k": "v"}
 			}
 		}
 	}`

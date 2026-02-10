@@ -21,9 +21,9 @@ type IdentityConfig struct {
 }
 
 type NetworkConfig struct {
-	AdminEndpoint *givc_types.EndpointConfig `json:"adminEndpoint"`
-	AgentEndpoint *givc_types.EndpointConfig `json:"agentEndpoint"`
-	Tls           givc_types.TlsConfigJson   `json:"tlsConfig"`
+	AdminEndpoint *givc_types.EndpointConfig `json:"admin"`
+	AgentEndpoint *givc_types.EndpointConfig `json:"agent"`
+	Tls           givc_types.TlsConfigJson   `json:"tls"`
 	TlsConfig     *tls.Config
 }
 

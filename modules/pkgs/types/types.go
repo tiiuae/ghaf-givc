@@ -57,7 +57,7 @@ type EventConfig struct {
 type Policy struct {
 	PolicyAdminEnabled bool              `json:"enable"`
 	PolicyStorePath    string            `json:"storePath"`
-	Policies           map[string]string `json:"policyConfig"`
+	Policies           map[string]string `json:"policies"`
 }
 
 // RegistryEntry represents an entry in the registry, including its name,

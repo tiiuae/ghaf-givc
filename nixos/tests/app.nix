@@ -101,12 +101,12 @@ in
                 ];
                 givc.sysvm = {
                   enable = true;
-                  admin = lib.head adminConfig.addresses;
-                  transport = {
+                  network.admin.transport = lib.head adminConfig.addresses;
+                  network.agent.transport = {
                     addr = addrs.guivm;
                     name = "guivm";
                   };
-                  tls.enable = tls;
+                  network.tls.enable = tls;
                 };
               };
             hostvm = {
@@ -128,21 +128,25 @@ in
               ];
               givc.host = {
                 enable = true;
-                transport = {
-                  name = "ghaf-host";
-                  addr = addrs.host;
-                  port = "9000";
-                  protocol = "tcp";
+                network = {
+                  agent.transport = {
+                    name = "ghaf-host";
+                    addr = addrs.host;
+                    port = "9000";
+                    protocol = "tcp";
+                  };
+                  admin.transport = lib.head adminConfig.addresses;
+                  tls.enable = tls;
                 };
-                admin = lib.head adminConfig.addresses;
-                services = [
-                  "microvm@appvm.service"
-                  "poweroff.target"
-                  "reboot.target"
-                  "sleep.target"
-                  "suspend.target"
-                ];
-                tls.enable = tls;
+                capabilities = {
+                  services = [
+                    "microvm@appvm.service"
+                    "poweroff.target"
+                    "reboot.target"
+                    "sleep.target"
+                    "suspend.target"
+                  ];
+                };
               };
               systemd.services."microvm@appvm" = {
                 script = ''
@@ -186,28 +190,32 @@ in
                 givc.appvm = {
                   enable = true;
                   debug = true;
-                  transport = {
-                    name = "appvm";
-                    addr = addrs.appvm;
+                  network = {
+                    agent.transport = {
+                      name = "appvm";
+                      addr = addrs.appvm;
+                    };
+                    admin.transport = lib.head adminConfig.addresses;
+                    tls = {
+                      enable = tls;
+                      caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
+                      certPath = lib.mkForce "/etc/givc/cert.pem";
+                      keyPath = lib.mkForce "/etc/givc/key.pem";
+                    };
                   };
-                  admin = lib.head adminConfig.addresses;
-                  tls = {
-                    enable = tls;
-                    caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
-                    certPath = lib.mkForce "/etc/givc/cert.pem";
-                    keyPath = lib.mkForce "/etc/givc/key.pem";
+                  capabilities = {
+                    applications = [
+                      {
+                        name = "cat";
+                        command = "/run/current-system/sw/bin/cat";
+                        args = [ "file" ];
+                        directories = [
+                          "/etc"
+                          "/tmp"
+                        ];
+                      }
+                    ];
                   };
-                  applications = [
-                    {
-                      name = "cat";
-                      command = "/run/current-system/sw/bin/cat";
-                      args = [ "file" ];
-                      directories = [
-                        "/etc"
-                        "/tmp"
-                      ];
-                    }
-                  ];
                 };
               };
           };

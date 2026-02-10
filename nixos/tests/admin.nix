@@ -21,12 +21,14 @@
               ];
 
               givc.appvm = {
-                applications = [
-                  {
-                    name = "clearexit";
-                    command = "/run/current-system/sw/bin/sleep 5";
-                  }
-                ];
+                capabilities = {
+                  applications = [
+                    {
+                      name = "clearexit";
+                      command = "/run/current-system/sw/bin/sleep 5";
+                    }
+                  ];
+                };
               };
             };
             badvm = self.nixosModules.tests-badvm;
@@ -39,7 +41,7 @@
               addrs = {
                 appvm = (builtins.head nodes.appvm.networking.interfaces.eth1.ipv4.addresses).address;
               };
-              host = nodes.hostvm.givc.host.transport;
+              host = nodes.hostvm.givc.host.network.agent.transport;
               cli = "${self'.packages.givc-admin.cli}/bin/givc-cli";
               expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
               cliArgs =
