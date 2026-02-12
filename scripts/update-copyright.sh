@@ -65,7 +65,7 @@ cd "$PROJECT_ROOT" || {
 }
 
 # File patterns to include
-FILE_PATTERNS=(-name "*.nix" -o -name "*.go" -o -name "*.proto" -o -name "*.md" -o -name "*.yml" -o -name "*.sh" -o -name "*.envrc")
+FILE_PATTERNS=(-name "*.nix" -o -name "*.go" -o -name "*.proto" -o -name "*.rs" -o -name "*.md" -o -name "*.yml" -o -name "*.sh" -o -name "*.envrc")
 
 # Function to get appropriate copyright header for file type
 get_copyright_header() {
@@ -85,7 +85,7 @@ get_copyright_header() {
             echo "# SPDX-FileCopyrightText: $year_range TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0"
             ;;
-        "go"|"proto")
+        "go"|"proto"|"rs")
             echo "// SPDX-FileCopyrightText: $year_range TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0"
             ;;
@@ -177,7 +177,9 @@ process_file() {
         # No header found - add new SPDX header
         echo "  $file: Adding copyright header"
         local new_header
-        new_header=$(get_copyright_header "$file" "$TARGET_YEAR")
+        local start_year
+        start_year=$(git log --date=format:%Y --pretty=format:%ad -- "$file" | tail -n 1)
+        new_header=$(get_copyright_header "$file" "${start_year:-$TARGET_YEAR}")
 
         # Handle shell scripts with shebang specially
         if [[ "${file##*.}" == "sh" ]] && head -1 "$file" 2>/dev/null | grep -q "^#!"; then
@@ -214,7 +216,7 @@ process_file() {
 
         local file_ext="${file##*.}"
         case "$file_ext" in
-            "go"|"proto")
+            "go"|"proto"|"rs")
                 sed -i -E "s|^([[:space:]]*)// Copyright ([0-9]{4}(-[0-9]{4})?) TII.*|\\1// SPDX-FileCopyrightText: $year_range TII (SSRC) and the Ghaf contributors|" "$file"
                 ;;
             "sh"|"nix"|"envrc"|"yml"|"yaml")
