@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+
 use anyhow::bail;
 use tokio_vsock::{VMADDR_CID_HOST, VMADDR_CID_LOCAL, VsockAddr};
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+
 use anyhow::{Context, Result, anyhow};
 use gix::bstr::{BStr, ByteSlice};
 use gix::object::tree::diff::{Action, Change};
