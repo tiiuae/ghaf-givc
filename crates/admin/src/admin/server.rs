@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+
 #![allow(clippy::similar_names)]
 
 use super::entry::{Placement, RegistryEntry};

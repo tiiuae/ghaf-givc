@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+
 use super::error::rewrap_error;
 use anyhow::{Context, anyhow, bail};
 use tokio_stream::StreamExt;

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+
 // This module contain literal translations of types from internal/pkgs/types/types.go
 // Some of them would be rewritten, replaced, or even removed
 use crate::pb;
