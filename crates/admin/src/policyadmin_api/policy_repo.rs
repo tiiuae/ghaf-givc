@@ -235,7 +235,7 @@ impl PolicyRepoMonitor {
                     _ => String::new(),
                 };
                 changes_str.push_str(&line);
-                Ok::<_, std::convert::Infallible>(Action::Continue)
+                Ok::<_, std::convert::Infallible>(Action::Continue(()))
             })?;
 
         Ok(changes_str)
