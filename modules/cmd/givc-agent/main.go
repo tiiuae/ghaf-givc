@@ -70,7 +70,7 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 		log.Infof("policy-admin: service starting... ")
 		policyAdminServer, err := givc_policyadmin.NewPolicyAdminServer(config.Capabilities.Policy)
 		if err != nil {
-			log.Fatalf("policy-admin: cannot create policy admin service: %v", err)
+			log.Errorf("policy-admin: cannot create policy admin service: %v", err)
 		} else {
 			log.Infof("policy-admin: service started.")
 		}
