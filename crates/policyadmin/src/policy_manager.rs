@@ -30,11 +30,10 @@ pub struct Policy {
     pub file: String,
 }
 
-pub type PolicyUpdateCallback = Arc<
-    dyn Fn(String, PathBuf, String) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
-        + Send
-        + Sync,
->;
+pub type PolicyUpdateFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
+
+pub type PolicyUpdateCallback =
+    Arc<dyn Fn(String, PathBuf, String) -> PolicyUpdateFuture + Send + Sync>;
 
 /*
  * PolicyManager
