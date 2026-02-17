@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use anyhow::Result;
-use std::{collections::HashMap, path::Path, sync::Arc};
-use tracing::{debug, info};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tracing::{debug, error, info};
 
-use crate::policyadmin_api::policy_manager::PolicyManager;
-use crate::policyadmin_api::policy_repo::PolicyRepoMonitor;
-use crate::policyadmin_api::policy_urls::PolicyUrlMonitor;
+use crate::policy_manager::{PolicyManager, PolicyUpdateCallback};
+use crate::policy_repo::PolicyRepoMonitor;
+use crate::policy_urls::PolicyUrlMonitor;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Copy, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -77,42 +77,70 @@ impl PolicyMonitor for PolicyUrlMonitor {
     }
 }
 
-/* * init_policy_manager
+/* * run_policy_admin
  *
  * Spawns a background thread that initializes the PolicyManager and
  * starts the appropriate monitor based on the config source type.
  */
-pub async fn init_policy_manager(
-    admin_service: Arc<super::server::AdminServiceImpl>,
-    policy_root: &Path,
-    configs: &str,
-) -> Result<Option<tokio::task::JoinHandle<()>>> {
-    let policy_root = policy_root.to_path_buf();
+pub async fn run_policy_admin(
+    policy_store: Option<PathBuf>,
+    policy_config: Option<String>,
+    update_callback: PolicyUpdateCallback,
+) -> Result<()> {
+    let default_json = "{}".to_string();
+    let policy_root = policy_store.unwrap_or_else(|| PathBuf::from("/etc/policies"));
+    let config_json = policy_config.unwrap_or_else(|| default_json.clone());
 
-    /* Load config file inside the thread to ensure fresh state */
-    let config = serde_json::from_str(configs)?;
+    debug!("policy:admin: policy store: {:#?}", policy_root);
+    debug!("policy:admin: policy config: {:#?}", config_json);
+    debug!("policy-admin: initializing policy manager....");
 
-    /* Define the path where VM policies are stored */
+    let config = match serde_json::from_str(&config_json) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            error!("policy-admin: failed to parse policy config: {:?}", e);
+            return Err(e.into());
+        }
+    };
+
     let policy_path = policy_root.join("data").join("vm-policies");
     debug!("policy-monitor: starting policy monitor...");
 
-    PolicyManager::init(policy_path, &config, admin_service)?;
+    if let Err(e) = PolicyManager::init(policy_path, &config, update_callback) {
+        error!(
+            "policy-admin: policy manager initialization failed: {:?}",
+            e
+        );
+        return Err(e);
+    }
+
     debug!("policy-monitor: thread spawned successfully");
 
     let source_type = config.source.kind;
 
-    let handle = match source_type {
+    let _handle = match source_type {
         PolicySourceType::GitUrl => {
             info!("Monitoring git repo for Policy updates");
-            let r = PolicyRepoMonitor::new(policy_root, &config)?;
-            Some(Arc::new(r).start())
+            match PolicyRepoMonitor::new(&policy_root, &config) {
+                Ok(monitor) => Some(Arc::new(monitor).start()),
+                Err(e) => {
+                    error!("policy-admin: failed to create git monitor: {:?}", e);
+                    return Err(e.into());
+                }
+            }
         }
         PolicySourceType::PerPolicy => {
             info!("Monitoring URLs for Policy updates");
-            let r = PolicyUrlMonitor::new(policy_root, &config)?;
-            Some(r.start())
+            match PolicyUrlMonitor::new(&policy_root, &config) {
+                Ok(monitor) => Some(monitor.start()),
+                Err(e) => {
+                    error!("policy-admin: failed to create url monitor: {:?}", e);
+                    return Err(e.into());
+                }
+            }
         }
         PolicySourceType::None => None,
     };
-    Ok(handle)
+
+    Ok(())
 }

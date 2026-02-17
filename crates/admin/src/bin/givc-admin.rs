@@ -7,10 +7,9 @@ use givc::admin;
 use givc::endpoint::TlsConfig;
 use givc::utils::auth::{auth_interceptor, no_auth_interceptor};
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
-use std::path::Path;
 use std::path::PathBuf;
 use tonic::transport::Server;
-use tracing::{debug, error};
+use tracing::debug;
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "givc-admin")]
@@ -89,7 +88,14 @@ async fn main() -> anyhow::Result<()> {
         no_auth_interceptor
     };
 
-    let admin_service = admin::server::AdminService::new(tls, cli.monitoring, cli.policy_admin);
+    let admin_service = admin::server::AdminService::new(
+        tls,
+        cli.monitoring,
+        cli.policy_admin,
+        cli.policy_store,
+        cli.policy_config,
+    )
+    .await?;
     let admin_service_svc =
         admin::server::AdminServiceServer::with_interceptor(admin_service.clone(), interceptor);
 
@@ -99,60 +105,11 @@ async fn main() -> anyhow::Result<()> {
     let listener =
         tokio_listener::Listener::bind_multiple(&cli.listen, &sys_opts, &user_opts).await?;
 
-    debug!(
-        "policy-admin: enabled: {}",
-        if cli.policy_admin { "yes" } else { "no" }
-    );
-    let ttask = if cli.policy_admin {
-        let default_json = "{}".to_string();
-        debug!(
-            "policy:admin: policy store: {:#?}",
-            cli.policy_store
-                .as_deref()
-                .unwrap_or(Path::new("/etc/policies"))
-        );
-        debug!(
-            "policy:admin: policy config: {:#?}",
-            cli.policy_config.as_ref().unwrap_or(&default_json)
-        );
-        debug!("policy-admin: initializing policy manager....");
-        match admin::policy::init_policy_manager(
-            admin_service.clone_inner(),
-            cli.policy_store
-                .as_deref()
-                .unwrap_or(Path::new("/etc/policies")),
-            cli.policy_config.as_ref().unwrap_or(&default_json),
-        )
-        .await
-        {
-            Ok(handle) => Some(handle),
-            Err(e) => {
-                error!(
-                    "policy-admin: policy manager initialization failed: {:?}",
-                    e
-                );
-                return Err(e);
-            }
-        }
-    } else {
-        debug!("policy-admin disabled.");
-        None
-    };
-
     let _ = builder
         .add_service(reflect)
         .add_service(admin_service_svc)
         .serve_with_incoming(listener)
         .await?;
-
-    if let Some(Some(handle)) = ttask {
-        match handle.await {
-            Ok(result) => debug!("Policy manager task completed with result: {:?}", result),
-            Err(e) => error!("Policy manager task failed: {:?}", e),
-        }
-    } else {
-        debug!("Policy update not enabled.");
-    }
 
     Ok(())
 }

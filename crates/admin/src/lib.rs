@@ -4,7 +4,6 @@
 use anyhow::Context;
 
 pub mod admin;
-pub mod policyadmin_api;
 pub mod systemd_api;
 pub mod utils;
 

@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::admin::policy::PolicyConfig;
-use crate::policyadmin_api::policy_manager::PolicyManager;
+use crate::policy::PolicyConfig;
+use crate::policy_manager::PolicyManager;
 use anyhow::{Context, Result, anyhow, bail};
 use reqwest::{
     Client,

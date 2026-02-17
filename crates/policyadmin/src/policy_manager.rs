@@ -1,13 +1,14 @@
 // SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::admin::policy::PolicyConfig;
-use crate::admin::server;
+use crate::policy::PolicyConfig;
 use anyhow::{Result, anyhow};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::collections::HashMap;
 use std::fs;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 use tracing::{debug, error, info, warn};
@@ -29,6 +30,11 @@ pub struct Policy {
     pub file: String,
 }
 
+pub type PolicyUpdateFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
+
+pub type PolicyUpdateCallback =
+    Arc<dyn Fn(String, PathBuf, String) -> PolicyUpdateFuture + Send + Sync>;
+
 /*
  * PolicyManager
  *
@@ -40,7 +46,7 @@ pub struct Policy {
 pub struct PolicyManager {
     policy_dir: PathBuf,
     configs: PolicyConfig,
-    admin_service: Arc<server::AdminServiceImpl>,
+    update_callback: PolicyUpdateCallback,
     workers: HashMap<String, (Sender<Policy>, JoinHandle<()>)>,
 }
 
@@ -53,9 +59,9 @@ impl PolicyManager {
     pub fn init(
         store_dir: PathBuf,
         configs: &PolicyConfig,
-        admin_service: Arc<server::AdminServiceImpl>,
+        update_callback: PolicyUpdateCallback,
     ) -> Result<()> {
-        let manager = Self::new(store_dir, configs, admin_service)?;
+        let manager = Self::new(store_dir, configs, update_callback)?;
         INSTANCE
             .set(Arc::new(manager))
             .map_err(|_| anyhow!("policy-admin:PolicyManager singleton already initialized"))?;
@@ -86,7 +92,7 @@ impl PolicyManager {
     fn new(
         store_dir: PathBuf,
         configs: &PolicyConfig,
-        admin_service: Arc<server::AdminServiceImpl>,
+        update_callback: PolicyUpdateCallback,
     ) -> Result<Self> {
         let vm_names = configs
             .policies
@@ -99,7 +105,7 @@ impl PolicyManager {
         let mut manager = Self {
             policy_dir: store_dir.to_path_buf(),
             configs: configs.clone(),
-            admin_service: Arc::clone(&admin_service),
+            update_callback,
             workers: HashMap::new(),
         };
 
@@ -128,10 +134,10 @@ impl PolicyManager {
 
         /* Clone Arcs to pass shared ownership to the thread */
         let rt_share = tokio::runtime::Handle::current();
-        let service_share = Arc::clone(&self.admin_service);
+        let callback_share = Arc::clone(&self.update_callback);
 
         let handle = thread::spawn(move || {
-            Self::worker_loop(vm_name, rx, rt_share, service_share);
+            Self::worker_loop(vm_name, rx, rt_share, callback_share);
         });
 
         self.workers.insert(vm.to_string(), (tx, handle));
@@ -148,16 +154,19 @@ impl PolicyManager {
         vm: String,
         rx: Receiver<Policy>,
         rt: tokio::runtime::Handle,
-        admin_service: Arc<server::AdminServiceImpl>,
+        update_callback: PolicyUpdateCallback,
     ) {
         debug!("policy-admin: Worker [{}] started.", vm);
 
         while let Ok(msg) = rx.recv() {
             /* Execute async code synchronously within this thread */
             let result = rt.block_on(async {
-                admin_service
-                    .push_policy_update(&vm, Path::new(&msg.file), &msg.policy_name)
-                    .await
+                update_callback(
+                    vm.clone(),
+                    PathBuf::from(&msg.file),
+                    msg.policy_name.clone(),
+                )
+                .await
             });
 
             if let Err(e) = result {
