@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
+use anyhow::{Context, ensure};
 use serde::Deserialize;
 use serde_with::serde_as;
 
@@ -93,14 +93,13 @@ impl File {
         }
         if checksum {
             let actual = read_sha256(&full_name).await?;
-            if actual != self.sha256sum {
-                anyhow::bail!(
-                    "Checksum mismatch for {name}: expected {expected}, got {actual}",
-                    name = full_name.display(),
-                    expected = hex::encode(self.sha256sum),
-                    actual = hex::encode(actual),
-                );
-            }
+            ensure!(
+                actual == self.sha256sum,
+                "Checksum mismatch for {name}: expected {expected}, got {actual}",
+                name = full_name.display(),
+                expected = hex::encode(self.sha256sum),
+                actual = hex::encode(actual),
+            );
         }
         Ok(())
     }

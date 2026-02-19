@@ -12,7 +12,9 @@ impl fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let version = &self.revision;
         write!(f, "{version}")?;
-        if let Some(hash) = &self.hash {
+        if f.alternate()
+            && let Some(hash) = &self.hash
+        {
             write!(f, "-{hash}")?;
         }
         Ok(())

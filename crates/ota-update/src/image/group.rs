@@ -4,7 +4,7 @@ use super::slot::{Kind, Slot, SlotClass};
 use super::uki::{BootEntry, UkiEntry};
 use anyhow::{Result, ensure};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct SlotGroup {
     pub root: Option<Slot>,
     pub verity: Option<Slot>,
@@ -23,9 +23,17 @@ impl SlotGroup {
             r.version() == bv || self.verity.as_ref().is_some_and(|v| v.version() == bv)
         })
     }
-}
 
-impl SlotGroup {
+    fn attach_slot(&mut self, slot: Slot) -> anyhow::Result<()> {
+        let (kind, opt) = match slot.kind() {
+            Kind::Root => ("root", &mut self.root),
+            Kind::Verity => ("verity", &mut self.verity),
+        };
+        anyhow::ensure!(opt.is_none(), "Duplicate {kind} slot in group");
+        opt.replace(slot);
+        Ok(())
+    }
+
     // NOTE: This algoritm intentionally avoid HashMap/HashSet, because we have only 2-3 slot pairs.
     pub(crate) fn group_volumes(
         slots: Vec<Slot>,
@@ -36,35 +44,14 @@ impl SlotGroup {
         // 1. Group LVM slots (root / verity)
         for slot in slots {
             if let Some(group) = groups.iter_mut().find(|g| g.matches_slot(&slot)) {
-                match slot.kind() {
-                    Kind::Root => {
-                        if group.root.is_some() {
-                            anyhow::bail!("duplicate root slot in group");
-                        }
-                        group.root = Some(slot);
-                    }
-                    Kind::Verity => {
-                        if group.verity.is_some() {
-                            anyhow::bail!("duplicate verity slot in group");
-                        }
-                        group.verity = Some(slot);
-                    }
-                }
+                group
             } else {
-                // Create new group
-                let mut group = SlotGroup {
-                    root: None,
-                    verity: None,
-                    boot: None,
-                };
-
-                match slot.kind() {
-                    Kind::Root => group.root = Some(slot),
-                    Kind::Verity => group.verity = Some(slot),
-                }
-
-                groups.push(group);
+                // Vec::push_mut() when it stabilises
+                groups.push(SlotGroup::default());
+                // safety: unwrap safe, as new item was just pushed
+                groups.last_mut().unwrap()
             }
+            .attach_slot(slot)?;
         }
 
         // 2. Attach UKIs to existing groups or create new ones
@@ -89,9 +76,7 @@ impl SlotGroup {
 
         Ok(groups)
     }
-}
 
-impl SlotGroup {
     /// Returns version of this slot group, if any.
     ///
     /// Source priority:

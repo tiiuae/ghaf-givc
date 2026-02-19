@@ -121,6 +121,7 @@ impl fmt::Display for Slot {
     }
 }
 
+#[allow(clippy::match_wildcard_for_single_variants)]
 impl Slot {
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -145,6 +146,7 @@ impl Slot {
     }
 
     // Create new `Used` slot
+    #[cfg(test)]
     #[must_use]
     pub fn new_used(kind: Kind, version: Version, volume: Volume) -> Self {
         Self {
@@ -156,6 +158,7 @@ impl Slot {
 
     // Create new `Empty` slot with known id.
     // Unknown ids is disallowed here
+    #[cfg(test)]
     #[must_use]
     pub fn new_empty(kind: Kind, id: impl AsRef<str>, volume: Volume) -> Self {
         Self {
@@ -178,7 +181,6 @@ impl Slot {
     #[must_use]
     pub fn empty_id(&self) -> Option<&str> {
         match &self.status {
-            #[allow(clippy::match_wildcard_for_single_variants)]
             Status::Empty(EmptyId::Known(known)) => Some(known),
             _ => None,
         }
@@ -186,7 +188,6 @@ impl Slot {
 
     #[must_use]
     pub fn version(&self) -> Option<&Version> {
-        #[allow(clippy::match_wildcard_for_single_variants)]
         match &self.status {
             Status::Used(version) => Some(version),
             _ => None,

@@ -2,7 +2,7 @@ use super::pipeline::{CommandSpec, Pipeline};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_with::{DisplayFromStr, serde_as};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 #[serde_as]
@@ -33,23 +33,21 @@ struct LvsReport {
 impl Volume {
     #[must_use]
     pub fn device_file(&self) -> PathBuf {
-        let mut path = PathBuf::from("/dev/mapper");
-        path.push(format!("{}-{}", self.vg_name, self.lv_name));
-        path
+        Path::new("/dev/mapper").join(format!("{}-{}", self.vg_name, self.lv_name))
     }
 
     #[must_use]
     pub fn device_file_string(&self) -> String {
-        self.device_file().as_path().to_string_lossy().into_owned()
+        self.device_file()
+            .into_os_string()
+            .into_string()
+            .unwrap_or_else(|e| e.to_string_lossy().into_owned())
     }
 
     pub fn rename_to(&self, new_name: impl AsRef<str>) -> Pipeline {
-        Pipeline::new(
-            CommandSpec::new("lvrename")
-                .arg(&self.vg_name)
-                .arg(&self.lv_name)
-                .arg(new_name.as_ref()),
-        )
+        CommandSpec::new("lvrename")
+            .args([&self.vg_name, &self.lv_name, new_name.as_ref()])
+            .into()
     }
 
     #[cfg(test)]
@@ -58,7 +56,7 @@ impl Volume {
             lv_name: name.to_string(),
             vg_name: "vg0".into(),
             lv_attr: None,
-            lv_size_bytes: Some(1_1000_1000_1000),
+            lv_size_bytes: Some(1_0000_0000_0000),
         }
     }
 }

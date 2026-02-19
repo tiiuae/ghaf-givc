@@ -44,7 +44,7 @@ pub struct BootCounter {
 
 impl fmt::Display for UkiEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ghaf-{}", self.version)?;
+        write!(f, "ghaf-{:#}", self.version)?;
 
         if let Some(counter) = &self.boot_counter {
             write!(f, "+{}", counter.remaining)?;
