@@ -41,14 +41,14 @@ pub struct PolicyRepoMonitor {
 }
 
 impl PolicyRepoMonitor {
-    pub fn new(policy_root: impl AsRef<Path>, configs: &PolicyConfig) -> Result<Self> {
+    pub(crate) fn new(policy_root: impl AsRef<Path>, configs: &PolicyConfig) -> Result<Arc<Self>> {
         let url = configs.source.url.clone().unwrap_or_default();
         let branch = configs.source.branch.clone().unwrap_or("master".into());
         let destination = policy_root.as_ref().join("data");
 
         let interval_secs = configs.source.poll_interval_secs.unwrap_or(300);
 
-        let monitor = Self {
+        let monitor = Arc::new(Self {
             url,
             branch,
             destination: destination.clone(),
@@ -58,7 +58,7 @@ impl PolicyRepoMonitor {
                 new_head: None,
                 old_head: None,
             })),
-        };
+        });
 
         /* Attempt to load existing repository */
         if destination.exists() {
@@ -78,9 +78,8 @@ impl PolicyRepoMonitor {
                         state.old_head = Some(head.detach());
                         drop(state);
                         return Ok(monitor);
-                    } else {
-                        info!("policy-repo: Remote URL mismatch, will be cloned during update.");
                     }
+                    info!("policy-repo: Remote URL mismatch, will be cloned during update.");
                 }
                 Err(_) => {
                     info!(
@@ -137,7 +136,7 @@ impl PolicyRepoMonitor {
         Ok(())
     }
 
-    pub async fn ensure_clone(&self) -> Result<()> {
+    async fn ensure_clone(&self) -> Result<()> {
         let mut retries = 0;
         loop {
             match self.clone_repo() {
@@ -164,7 +163,10 @@ impl PolicyRepoMonitor {
         /* 1. Fetch */
         let remote = repo.find_remote(self.remote_name.as_bytes().as_bstr())?;
         let connection = remote.connect(gix::remote::Direction::Fetch)?;
-        let prepare = connection.prepare_fetch(&mut gix::progress::Discard, Default::default())?;
+        let prepare = connection.prepare_fetch(
+            &mut gix::progress::Discard,
+            gix::remote::ref_map::Options::default(),
+        )?;
         prepare.receive(&mut gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;
 
         /* 2. Check Remote HEAD */
@@ -174,7 +176,9 @@ impl PolicyRepoMonitor {
         /* 3. Checkout if changed */
         let mut state = self.state.lock().unwrap();
         // Note: Using unwrap_or to force update if local head is missing
-        if Some(remote_id) != state.new_head {
+        if Some(remote_id) == state.new_head {
+            Ok(false)
+        } else {
             debug!("policy-repo: Update detected. Moving to {}", remote_id);
 
             // Perform Checkout
@@ -205,12 +209,12 @@ impl PolicyRepoMonitor {
             state.old_head = state.new_head;
             state.new_head = Some(remote_id);
             Ok(true)
-        } else {
-            Ok(false)
         }
     }
 
     fn get_change_set(&self) -> Result<String> {
+        use std::fmt::Write;
+
         let repo = gix::open(&self.destination).context("Repo not initialized")?;
         let state = self.state.lock().unwrap();
 
@@ -229,15 +233,14 @@ impl PolicyRepoMonitor {
         old_tree
             .changes()?
             .for_each_to_obtain_tree(&new_tree, |change| {
-                let line = match change {
-                    Change::Modification { location, .. } => {
-                        format!("M {}\n", location.to_str_lossy())
-                    }
-                    Change::Addition { location, .. } => format!("A {}\n", location.to_str_lossy()),
-                    Change::Deletion { location, .. } => format!("D {}\n", location.to_str_lossy()),
-                    _ => String::new(),
-                };
-                changes_str.push_str(&line);
+                if let Some((kind, subject)) = match change {
+                    Change::Modification { location, .. } => Some(('M', location)),
+                    Change::Addition { location, .. } => Some(('A', location)),
+                    Change::Deletion { location, .. } => Some(('D', location)),
+                    Change::Rewrite { .. } => None,
+                } {
+                    let _ = write!(changes_str, "{kind} {}", subject.to_str_lossy());
+                }
                 Ok::<_, std::convert::Infallible>(Action::Continue(()))
             })?;
 
@@ -248,9 +251,10 @@ impl PolicyRepoMonitor {
      * start
      * Spawns the background Tokio task.
      */
+    #[must_use]
     pub fn start(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            let wait_time = if self.poll_interval.clone() == Duration::ZERO {
+            let wait_time = if self.poll_interval == Duration::ZERO {
                 Duration::from_secs(300)
             } else {
                 self.poll_interval

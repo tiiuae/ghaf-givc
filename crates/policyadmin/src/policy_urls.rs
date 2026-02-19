@@ -33,7 +33,7 @@ const DEFAULT_POLL_INTERVAL: u64 = 60;
  * - Dispatches updates to the PolicyManager.
  * -------------------------------------------------------------------------- */
 #[derive(Clone)]
-pub struct PolicyUrlMonitor {
+pub(crate) struct PolicyUrlMonitor {
     client: Client,
     /* Shared Mutable State: The config JSON that holds URLs, VMs, and current HEADs */
     config_state: Arc<Mutex<PolicyConfig>>,
@@ -55,28 +55,29 @@ impl PolicyUrlMonitor {
         let root = policy_root.as_ref();
         let destination = root.join("data").join("vm-policies");
         let cfgpath = root.join(CONFIG_FILE_NAME);
+        let cfg_path = cfgpath.display();
 
         /* Ensure output directory exists */
         fs::create_dir_all(&destination).with_context(|| {
-            format!("Failed to create local policy directory {:?}", destination)
+            format!(
+                "Failed to create local policy directory {destination}",
+                destination = destination.display()
+            )
         })?;
 
         let configs_json = if cfgpath.exists() {
             debug!("policy-url-monitor: Loading existing local config.");
             serde_json::from_slice(
                 &fs::read(&cfgpath)
-                    .with_context(|| format!("Failed to load config from {}", cfgpath.display()))?,
+                    .with_context(|| format!("Failed to load config from {cfg_path}"))?,
             )
-            .with_context(|| format!("Failed to parse config {}", cfgpath.display()))?
+            .with_context(|| format!("Failed to parse config {cfg_path}"))?
         } else {
             if let Err(e) = serde_json::to_vec(&configs)
                 .context("Serializing data")
                 .and_then(|json| fs::write(&cfgpath, json).context("Writing config file"))
             {
-                warn!(
-                    "policy-url-monitor: Failed to persist initial config: {}",
-                    e
-                );
+                warn!("policy-url-monitor: Failed to persist initial config: {e}",);
             }
             configs.clone()
         };
@@ -89,12 +90,14 @@ impl PolicyUrlMonitor {
         })
     }
 
-    /* -------------------------------------------------------------------------
-     * start
-     *
+    /**
      * Spawns independent background tasks for every policy defined in the config.
      * This function returns immediately (it spawns tasks).
-     * ---------------------------------------------------------------------- */
+     *
+     * # Panics
+     * Spawned task will panic if any of the worker tasks panic
+     */
+    #[must_use]
     pub fn start(self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             debug!("policy-url-monitor: Starting monitor tasks...");
@@ -177,7 +180,7 @@ impl PolicyUrlMonitor {
                     }
 
                     /* 2. Update State & Persist Config */
-                    current_head = new_head.clone();
+                    current_head.clone_from(&new_head);
                     if let Err(e) = self.update_head(&policy_name, new_head).await {
                         warn!("Failed to update head for {policy_name}: {e}");
                     }
@@ -229,29 +232,27 @@ impl PolicyUrlMonitor {
         let headers = head_resp.headers();
         let mut remote_head: Option<String> = None;
 
-        if let Some(etag) = headers.get(ETAG) {
-            if let Ok(s) = etag.to_str() {
-                remote_head = Some(format!("etag:{}", s));
-            }
+        if let Some(etag) = headers.get(ETAG)
+            && let Ok(s) = etag.to_str()
+        {
+            remote_head = Some(format!("etag:{s}"));
         }
 
         /* Fallback to Last-Modified if ETag is missing */
-        if remote_head.is_none() {
-            if let Some(lm) = headers.get(LAST_MODIFIED) {
-                if let Ok(s) = lm.to_str() {
-                    remote_head = Some(format!("last-modified:{}", s));
-                }
-            }
+        if remote_head.is_none()
+            && let Some(lm) = headers.get(LAST_MODIFIED)
+            && let Ok(s) = lm.to_str()
+        {
+            remote_head = Some(format!("last-modified:{s}"));
         }
 
         /* Optimization: If headers match current state, stop here. */
         let force_hash_check = remote_head.is_none();
-        if !force_hash_check {
-            if let Some(rh) = &remote_head {
-                if rh == current_head {
-                    return Ok(None); // No change
-                }
-            }
+        if !force_hash_check
+            && let Some(rh) = &remote_head
+            && rh == current_head
+        {
+            return Ok(None); // No change
         }
 
         /* Step 2: Download the file (GET) */
@@ -280,7 +281,7 @@ impl PolicyUrlMonitor {
         };
 
         /* Step 4: Write to Disk */
-        let file_name = url.split('/').last().unwrap_or("policy.bin");
+        let file_name = url.split('/').next_back().unwrap_or("policy.bin");
         let policy_dir = self.output_dir.join(name);
         let file_path = policy_dir.join(file_name);
 

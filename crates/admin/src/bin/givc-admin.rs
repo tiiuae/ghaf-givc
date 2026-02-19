@@ -94,8 +94,7 @@ async fn main() -> anyhow::Result<()> {
         cli.policy_admin,
         cli.policy_store,
         cli.policy_config,
-    )
-    .await?;
+    )?;
     let admin_service_svc =
         admin::server::AdminServiceServer::with_interceptor(admin_service.clone(), interceptor);
 
@@ -105,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
     let listener =
         tokio_listener::Listener::bind_multiple(&cli.listen, &sys_opts, &user_opts).await?;
 
-    let _ = builder
+    let () = builder
         .add_service(reflect)
         .add_service(admin_service_svc)
         .serve_with_incoming(listener)

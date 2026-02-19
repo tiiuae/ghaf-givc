@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use anyhow::Result;
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf};
 use tracing::{debug, error, info};
 
 use crate::policy_manager::{PolicyManager, PolicyUpdateCallback};
@@ -55,34 +55,14 @@ pub struct PolicyConfig {
     pub policies: HashMap<String, PolicyConfigPolicy>,
 }
 
-/*
- * PolicyMonitor
- *
- * A trait to allow different monitor types (Git, URL) to be
- * handled polymorphically.
- */
-pub trait PolicyMonitor {
-    fn start(&self) -> tokio::task::JoinHandle<()>;
-}
-
-impl PolicyMonitor for Arc<PolicyRepoMonitor> {
-    fn start(&self) -> tokio::task::JoinHandle<()> {
-        self.clone().start()
-    }
-}
-
-impl PolicyMonitor for PolicyUrlMonitor {
-    fn start(&self) -> tokio::task::JoinHandle<()> {
-        self.clone().start()
-    }
-}
-
-/* * run_policy_admin
- *
- * Spawns a background thread that initializes the PolicyManager and
+/**
+ * Spawns a background thread that initializes the `PolicyManager` and
  * starts the appropriate monitor based on the config source type.
+ *
+ * # Errors
+ * Retuns error if starting the service fails.
  */
-pub async fn run_policy_admin(
+pub fn run_policy_admin(
     policy_store: Option<PathBuf>,
     policy_config: Option<String>,
     update_callback: PolicyUpdateCallback,
@@ -95,13 +75,9 @@ pub async fn run_policy_admin(
     debug!("policy:admin: policy config: {:#?}", config_json);
     debug!("policy-admin: initializing policy manager....");
 
-    let config = match serde_json::from_str(&config_json) {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            error!("policy-admin: failed to parse policy config: {:?}", e);
-            return Err(e.into());
-        }
-    };
+    let config = serde_json::from_str(&config_json).inspect_err(|e| {
+        error!("policy-admin: failed to parse policy config: {e}");
+    })?;
 
     let policy_path = policy_root.join("data").join("vm-policies");
     debug!("policy-monitor: starting policy monitor...");
@@ -122,10 +98,10 @@ pub async fn run_policy_admin(
         PolicySourceType::GitUrl => {
             info!("Monitoring git repo for Policy updates");
             match PolicyRepoMonitor::new(&policy_root, &config) {
-                Ok(monitor) => Some(Arc::new(monitor).start()),
+                Ok(monitor) => Some(monitor.start()),
                 Err(e) => {
                     error!("policy-admin: failed to create git monitor: {:?}", e);
-                    return Err(e.into());
+                    return Err(e);
                 }
             }
         }
@@ -135,7 +111,7 @@ pub async fn run_policy_admin(
                 Ok(monitor) => Some(monitor.start()),
                 Err(e) => {
                     error!("policy-admin: failed to create url monitor: {:?}", e);
-                    return Err(e.into());
+                    return Err(e);
                 }
             }
         }

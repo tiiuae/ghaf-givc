@@ -20,6 +20,7 @@ pub struct PolicyAdminClient {
 }
 
 impl PolicyAdminClient {
+    #[must_use]
     pub fn new(endpoint: EndpointConfig) -> Self {
         Self { endpoint }
     }
@@ -29,7 +30,7 @@ impl PolicyAdminClient {
         Ok(GrpcPolicyAdminClient::new(client))
     }
 
-    pub async fn stream_policy(
+    async fn stream_policy(
         &self,
         updates: impl Stream<Item = StreamPolicyRequest> + Send + 'static,
     ) -> Result<()> {
@@ -47,8 +48,10 @@ impl PolicyAdminClient {
      *
      * This function initiates a client-side streaming RPC. It constructs a stream that
      * sends a sequence of `StreamPolicyRequest` messages:
+     *
+     * # Errors
+     * Fails if policy file is inaccessible or sending fails
      */
-
     pub async fn upload_policy(&self, name: String, path: PathBuf) -> Result<()> {
         debug!("Uploading policy: {}", name);
         let outbound_stream = stream! {
