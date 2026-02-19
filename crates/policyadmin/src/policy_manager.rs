@@ -3,14 +3,14 @@
 
 use crate::policy::PolicyConfig;
 use anyhow::{Result, anyhow};
-use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
-use std::thread::{self, JoinHandle};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
 /*
@@ -47,7 +47,7 @@ pub struct PolicyManager {
     policy_dir: PathBuf,
     configs: PolicyConfig,
     update_callback: PolicyUpdateCallback,
-    workers: HashMap<String, (Sender<Policy>, JoinHandle<()>)>,
+    workers: HashMap<String, (UnboundedSender<Policy>, JoinHandle<()>)>,
 }
 
 impl PolicyManager {
@@ -127,16 +127,12 @@ impl PolicyManager {
         }
         debug!("policy-admin:Adding worker for vm [{}].", vm);
 
-        let (tx, rx) = unbounded::<Policy>();
+        let (tx, rx) = unbounded_channel();
         let vm_name = vm.to_string();
 
-        /* Clone Arcs to pass shared ownership to the thread */
-        let rt_share = tokio::runtime::Handle::current();
         let callback_share = Arc::clone(&self.update_callback);
 
-        let handle = thread::spawn(move || {
-            Self::worker_loop(&vm_name, &rx, &rt_share, &callback_share);
-        });
+        let handle = tokio::spawn(Self::worker_loop(vm_name, rx, callback_share));
 
         self.workers.insert(vm.to_string(), (tx, handle));
     }
@@ -148,19 +144,16 @@ impl PolicyManager {
      * Blocks on rx.recv() until a message arrives, then uses the Runtime to
      * execute the async push_policy_update call.
      */
-    fn worker_loop(
-        vm: &str,
-        rx: &Receiver<Policy>,
-        rt: &tokio::runtime::Handle,
-        update_callback: &PolicyUpdateCallback,
+    async fn worker_loop(
+        vm: String,
+        mut rx: UnboundedReceiver<Policy>,
+        update_callback: PolicyUpdateCallback,
     ) {
         debug!("policy-admin: Worker [{}] started.", vm);
 
-        while let Ok(msg) = rx.recv() {
+        while let Some(msg) = rx.recv().await {
             /* Execute async code synchronously within this thread */
-            let result = rt.block_on(async {
-                update_callback(vm.to_owned(), msg.file.into(), msg.policy_name).await
-            });
+            let result = update_callback(vm.clone(), msg.file.into(), msg.policy_name).await;
 
             if let Err(e) = result {
                 error!("policy-admin:Worker [{}]: Failed to push update: {}", vm, e);
