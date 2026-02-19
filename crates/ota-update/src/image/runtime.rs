@@ -11,7 +11,7 @@ use std::fmt::Write;
 #[derive(Debug)]
 pub struct Runtime {
     // Managed slots
-    pub slots: Vec<SlotGroup>,
+    slotgroups: Vec<SlotGroup>,
     // Unmanaged volumes (boot, swap, etc)
     pub volumes: Vec<Volume>,
     pub kernel: KernelParams,
@@ -50,9 +50,9 @@ impl Runtime {
         let (slots, volumes) = Slot::from_volumes(volumes);
         let boot_entries = BootEntry::from_bootctl(bootctl);
         let (managed, unmanaged) = boot_entries.into_iter().partition(BootEntry::is_managed);
-        let slots = SlotGroup::group_volumes(slots, managed)?;
+        let slotgroups = SlotGroup::group_volumes(slots, managed)?;
         Ok(Self {
-            slots,
+            slotgroups,
             volumes,
             kernel: KernelParams::from_cmdline(cmdline)?,
             boot_entries: unmanaged,
@@ -72,7 +72,7 @@ impl Runtime {
 
     #[must_use]
     pub fn slot_groups(&self) -> &Vec<SlotGroup> {
-        &self.slots
+        &self.slotgroups
     }
 
     pub(crate) fn select_update_slot(&self, manifest: &Manifest) -> Result<SlotSelection> {
@@ -102,29 +102,40 @@ impl Runtime {
         Ok(SlotSelection::Selected(slot))
     }
 
-    pub(crate) fn find_slot_group<'a>(&'a self, version: &Version) -> Result<&'a SlotGroup> {
-        let groups = self.slot_groups();
-
-        // 1. exact match
-        let mut exact = groups.iter().filter(|g| g.version() == Some(version));
-
+    fn find_exact_one_group<'a>(
+        &'a self,
+        mut predicate: impl FnMut(&SlotGroup) -> bool,
+        reason: impl std::fmt::Display,
+    ) -> Result<Option<&'a SlotGroup>> {
+        let mut exact = self.slot_groups().iter().filter(|g| predicate(g));
         if let Some(slot) = exact.next() {
-            if exact.next().is_some() {
-                bail!("ambiguous slot selection for version={version}");
-            }
+            ensure!(
+                exact.next().is_none(),
+                "ambiguous slot selection for {reason}"
+            );
+            return Ok(Some(slot));
+        }
+        Ok(None)
+    }
+
+    pub(crate) fn find_slot_group<'a>(&'a self, version: &Version) -> Result<&'a SlotGroup> {
+        // 1. exact match
+        if let Some(slot) = self.find_exact_one_group(
+            |g| g.version() == Some(version),
+            format_args!("version={version}"),
+        )? {
             return Ok(slot);
         }
 
         // 2. Fallback: version without hash, but we have exact one candidate that match
         if !version.has_hash() {
-            let mut candidates = groups.iter().filter(|g| {
-                g.version()
-                    .is_some_and(|v| v.revision == version.revision && v.has_hash())
-            });
-
-            if let Some(slot) = candidates.next()
-                && candidates.next().is_none()
-            {
+            if let Some(slot) = self.find_exact_one_group(
+                |g| {
+                    g.version()
+                        .is_some_and(|v| v.revision == version.revision && v.has_hash())
+                },
+                format_args!("version={version} (fallback by revision)"),
+            )? {
                 return Ok(slot);
             }
         }
@@ -133,18 +144,9 @@ impl Runtime {
     }
 
     pub(crate) fn active_slot(&self) -> Result<&SlotGroup> {
-        let mut active = self
-            .slot_groups()
-            .iter()
-            .filter(|slot| slot.is_active(&self.kernel));
-
-        let first = active.next().context("no active slot detected")?;
-
-        if let Some(second) = active.next() {
-            bail!("multiple active slots detected: {first:?} and {second:?}",);
-        }
-
-        Ok(first)
+        let kernel = &self.kernel;
+        self.find_exact_one_group(|slot| slot.is_active(kernel), "active slot")?
+            .context("no active slot detected")
     }
 
     #[must_use]
@@ -346,7 +348,7 @@ impl Default for KernelParams {
 impl Default for Runtime {
     fn default() -> Self {
         Self {
-            slots: Vec::new(),
+            slotgroups: Vec::new(),
             volumes: Vec::new(),
             kernel: KernelParams::default(),
             boot: "/boot".into(),
@@ -365,7 +367,7 @@ mod tests {
     #[test]
     fn groups_root_and_verity_into_single_slot() {
         let rt = Runtime {
-            slots: groups(&vec![
+            slotgroups: groups(&vec![
                 "root_1.2.3_deadbeefdeadbeef",
                 "verity_1.2.3_deadbeefdeadbeef",
             ]),
@@ -391,7 +393,7 @@ mod tests {
     #[test]
     fn empty_slot_is_grouped() {
         let rt = Runtime {
-            slots: groups(&vec!["root_empty_01", "verity_empty_01"]),
+            slotgroups: groups(&vec!["root_empty_01", "verity_empty_01"]),
             ..Runtime::default()
         };
 
@@ -407,7 +409,7 @@ mod tests {
     #[test]
     fn broken_slot_with_only_root_is_preserved() {
         let rt = Runtime {
-            slots: groups(&vec!["root_2.0.0_abcdabcdabcdabcd"]),
+            slotgroups: groups(&vec!["root_2.0.0_abcdabcdabcdabcd"]),
             ..Runtime::default()
         };
 
@@ -423,7 +425,7 @@ mod tests {
     fn non_slot_volumes_are_ignored() {
         let rt = Runtime {
             volumes: vec![Volume::new("swap"), Volume::new("home")],
-            slots: groups(&vec!["root_1.0.0_aaaaaaaaaaaaaaaa"]),
+            slotgroups: groups(&vec!["root_1.0.0_aaaaaaaaaaaaaaaa"]),
             ..Runtime::default()
         };
 
@@ -434,7 +436,7 @@ mod tests {
     #[test]
     fn multiple_slots_are_grouped_separately() {
         let rt = Runtime {
-            slots: groups(&vec![
+            slotgroups: groups(&vec![
                 "root_1.0.0_aaaaaaaaaaaaaaaa",
                 "verity_1.0.0_aaaaaaaaaaaaaaaa",
                 "root_2.0.0_bbbbbbbbbbbbbbbb",
@@ -467,7 +469,7 @@ mod tests {
     #[test]
     fn legacy_slot_is_grouped_correctly() {
         let rt = Runtime {
-            slots: groups(&vec!["root_0"]),
+            slotgroups: groups(&vec!["root_0"]),
             ..Runtime::default()
         };
 
@@ -481,7 +483,7 @@ mod tests {
     #[test]
     fn select_slot_noop_if_version_already_installed() {
         let rt = Runtime {
-            slots: groups(&vec![
+            slotgroups: groups(&vec![
                 "root_1.2.3_deadbeefdeadbeef",
                 "verity_1.2.3_deadbeefdeadbeef",
             ]),
@@ -501,7 +503,7 @@ mod tests {
     #[test]
     fn select_empty_slot_pair() {
         let rt = Runtime {
-            slots: groups(&vec![
+            slotgroups: groups(&vec![
                 "root_1.0.0_aaaaaaaaaaaaaaaa",
                 "verity_1.0.0_aaaaaaaaaaaaaaaa",
                 "root_empty_01",
@@ -526,7 +528,7 @@ mod tests {
     #[test]
     fn incomplete_empty_slot_is_not_selected() {
         let rt = Runtime {
-            slots: groups(&vec!["root_empty_01"]),
+            slotgroups: groups(&vec!["root_empty_01"]),
             ..Runtime::default()
         };
 
@@ -541,7 +543,7 @@ mod tests {
     #[test]
     fn one_of_multiple_empty_slots_is_selected() {
         let rt = Runtime {
-            slots: groups(&vec![
+            slotgroups: groups(&vec![
                 "root_empty_01",
                 "verity_empty_01",
                 "root_empty_02",
@@ -563,7 +565,7 @@ mod tests {
     #[test]
     fn find_slot() {
         let rt = Runtime {
-            slots: groups(&vec![
+            slotgroups: groups(&vec![
                 "root_1.0.0_aaaaaaaaaaaaaaaa",
                 "verity_1.0.0_aaaaaaaaaaaaaaaa",
                 "root_empty_01",
@@ -579,7 +581,7 @@ mod tests {
     #[test]
     fn detects_legacy_active_slot() {
         let rt = Runtime {
-            slots: groups(&vec!["root_1.0.0", "verity_1.0.0"]),
+            slotgroups: groups(&vec!["root_1.0.0", "verity_1.0.0"]),
             ..Runtime::default()
         };
 
