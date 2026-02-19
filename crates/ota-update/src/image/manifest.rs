@@ -3,20 +3,27 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use serde::Deserialize;
+use serde_with::serde_as;
 
 use super::Version;
+use super::checksum::read_sha256;
 
+#[serde_as]
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct File {
     #[serde(rename = "file")]
     pub name: String,
     #[serde(rename = "sha256")]
-    pub sha256sum: String,
+    #[serde_as(as = "serde_with::hex::Hex")]
+    pub sha256sum: [u8; 32],
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Manifest {
     pub meta: HashMap<String, String>,
+    #[serde(default)]
+    pub manifest_version: u32,
+    pub system: Option<String>,
     pub version: String,
     pub root_verity_hash: String,
     pub kernel: File,
@@ -43,16 +50,18 @@ impl Manifest {
     }
 
     // Validate, if all files mentioned in manifest exists (and have matching hash)
-    #[allow(dead_code)] // FIXME: validation would be used later
-    pub(crate) fn validate(&self, base_dir: &Path, checksum: bool) -> anyhow::Result<()> {
+    pub(crate) async fn validate(&self, base_dir: &Path, checksum: bool) -> anyhow::Result<()> {
         self.kernel
             .validate(base_dir, checksum)
+            .await
             .context("while validating kernel")?;
         self.store
             .validate(base_dir, checksum)
+            .await
             .context("while validating store image")?;
         self.verity
             .validate(base_dir, checksum)
+            .await
             .context("while validating verity image")?;
         Ok(())
     }
@@ -71,13 +80,28 @@ impl File {
             .is_some_and(|ext| ext.eq_ignore_ascii_case("zst"))
     }
 
-    #[allow(dead_code)]
-    fn validate(&self, base_dir: &Path, _checksum: bool) -> anyhow::Result<()> {
+    async fn validate(&self, base_dir: &Path, checksum: bool) -> anyhow::Result<()> {
         let full_name = self.full_name(base_dir);
-        if !std::fs::exists(&full_name)? {
+        if !tokio::fs::try_exists(&full_name).await? {
             anyhow::bail!("Missing file {full_name}", full_name = full_name.display())
         }
-        // FIXME: Add checksum validation as well
+        let metadata = tokio::fs::metadata(&full_name)
+            .await
+            .with_context(|| format!("reading metadata for {}", full_name.display()))?;
+        if !metadata.is_file() {
+            anyhow::bail!("Not a regular file {}", full_name.display());
+        }
+        if checksum {
+            let actual = read_sha256(&full_name).await?;
+            if actual != self.sha256sum {
+                anyhow::bail!(
+                    "Checksum mismatch for {name}: expected {expected}, got {actual}",
+                    name = full_name.display(),
+                    expected = hex::encode(self.sha256sum),
+                    actual = hex::encode(actual),
+                );
+            }
+        }
         Ok(())
     }
 }
