@@ -1,3 +1,4 @@
+pub(crate) mod checksum;
 pub mod cli;
 pub mod executor;
 pub mod group;

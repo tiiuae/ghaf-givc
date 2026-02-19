@@ -12,19 +12,21 @@ pub fn slots(names: &[&str]) -> Vec<Slot> {
 pub fn manifest(version: &str, hash: &str) -> Manifest {
     Manifest {
         meta: Default::default(),
+        manifest_version: 0,
+        system: None,
         version: version.into(),
         root_verity_hash: hash.into(),
         kernel: File {
             name: "k".into(),
-            sha256sum: "x".into(),
+            sha256sum: [0; 32],
         },
         store: File {
             name: "s".into(),
-            sha256sum: "x".into(),
+            sha256sum: [0; 32],
         },
         verity: File {
             name: "v".into(),
-            sha256sum: "x".into(),
+            sha256sum: [0; 32],
         },
     }
 }

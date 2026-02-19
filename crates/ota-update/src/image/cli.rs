@@ -34,6 +34,21 @@ pub enum ImageAction {
         /// Path to manifest.json
         #[arg(long)]
         manifest: String,
+
+        /// Validate manifest checksums before install
+        #[arg(long, conflicts_with = "no_validate")]
+        validate: bool,
+
+        /// Skip manifest checksum validation (default)
+        #[arg(long, conflicts_with = "validate")]
+        no_validate: bool,
+    },
+
+    /// Validate image manifest content only
+    Validate {
+        /// Path to manifest.json
+        #[arg(long)]
+        manifest: String,
     },
 
     /// Remove installed image slot
@@ -52,27 +67,52 @@ pub enum ImageAction {
 impl ImageUpdate {
     #[allow(clippy::missing_errors_doc)]
     pub async fn handle(self) -> anyhow::Result<()> {
-        let rt = populate_runtime().await?;
         match self.action {
-            ImageAction::Install { manifest } => {
+            ImageAction::Install {
+                manifest,
+                validate,
+                no_validate,
+            } => {
+                let rt = populate_runtime().await?;
                 let manifest_path = Path::new(&manifest);
                 let source_dir = manifest_path
                     .parent()
                     .context("manifest path has no parent directory")?;
 
                 let manifest = Manifest::from_file(manifest_path)?;
+                manifest
+                    .validate(source_dir, validate && !no_validate)
+                    .await
+                    .context("while validating manifest content")?;
                 let plan = Plan::install(&rt, &manifest, source_dir)?;
 
                 execute_plan(plan, self.dry_run).await
             }
 
+            ImageAction::Validate { manifest } => {
+                let manifest_path = Path::new(&manifest);
+                let source_dir = manifest_path
+                    .parent()
+                    .context("manifest path has no parent directory")?;
+
+                let manifest = Manifest::from_file(manifest_path)?;
+                manifest
+                    .validate(source_dir, true)
+                    .await
+                    .context("while validating manifest content")?;
+                println!("Manifest validation successful.");
+                Ok(())
+            }
+
             ImageAction::Remove { version, hash } => {
+                let rt = populate_runtime().await?;
                 let version = Version::new(version, hash);
                 let plan = Plan::remove(&rt, &version)?;
 
                 execute_plan(plan, self.dry_run).await
             }
             ImageAction::Status => {
+                let rt = populate_runtime().await?;
                 let status = rt.inspect();
                 println!("{status}");
                 Ok(())

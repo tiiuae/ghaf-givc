@@ -2703,11 +2703,14 @@ dependencies = [
  "cachix-client",
  "clap",
  "fs2",
+ "hex",
+ "memmap2",
  "regex",
  "reqwest",
  "serde",
  "serde_json",
  "serde_with",
+ "sha2",
  "shell-escape",
  "strum",
  "thiserror 2.0.18",
@@ -3494,6 +3497,16 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+ "sha2-asm",
+]
+
+[[package]]
+name = "sha2-asm"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b845214d6175804686b2bd482bcffe96651bb2d1200742b712003504a2dac1ab"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
