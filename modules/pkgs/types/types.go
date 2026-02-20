@@ -32,7 +32,7 @@ type TransportConfig struct {
 // EndpointConfig represents the configuration for an endpoint, including
 // transport settings, services, and TLS configuration.
 type EndpointConfig struct {
-	Transport TransportConfig
+	Transport TransportConfig `json:"transport"`
 	Services  []string
 	TlsConfig *tls.Config
 }
@@ -43,7 +43,6 @@ type ProxyConfig struct {
 	Transport TransportConfig
 	Server    bool   `json:"server"`
 	Socket    string `json:"socket"`
-	TlsConfig *tls.Config
 }
 
 // EventConfig represents the configuration for a proxy, including transport settings,
@@ -52,7 +51,13 @@ type EventConfig struct {
 	Transport TransportConfig
 	Producer  bool `json:"producer"`
 	Device    string
-	TlsConfig *tls.Config
+}
+
+// Policy configuration
+type Policy struct {
+	PolicyAdminEnabled bool              `json:"enable"`
+	PolicyStorePath    string            `json:"storePath"`
+	Policies           map[string]string `json:"policies"`
 }
 
 // RegistryEntry represents an entry in the registry, including its name,

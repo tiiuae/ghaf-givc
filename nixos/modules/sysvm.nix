@@ -15,16 +15,14 @@ let
     mkOption
     mkEnableOption
     types
-    trivial
     strings
     lists
-    concatStringsSep
     optionalString
     optionalAttrs
     optionals
     literalExpression
     ;
-  inherit (builtins) toJSON;
+  inherit (builtins) toJSON dirOf;
   inherit (import ./definitions.nix { inherit config lib; })
     transportSubmodule
     proxySubmodule
@@ -32,6 +30,22 @@ let
     eventSubmodule
     policyClientSubmodule
     ;
+  # GIVC agent JSON configuration for sysvm
+  agentConfig = {
+    identity = {
+      inherit (cfg.network.agent.transport) name;
+      type = 8;
+      subType = 9;
+      parent = "microvm@${cfg.network.agent.transport.name}.service";
+    };
+    inherit (cfg) network;
+    capabilities = cfg.capabilities // {
+      notifier = {
+        inherit (cfg.notifier) enable;
+        socket = dirOf cfg.notifier.socketPath;
+      };
+    };
+  };
 in
 {
   imports = [
@@ -45,35 +59,179 @@ in
       `users` (default for regular users in NixOS).
     '';
 
-    transport = mkOption {
-      type = transportSubmodule;
-      default = { };
-      example = literalExpression ''
-        transport =
-          {
-            name = "net-vm";
-            addr = "192.168.100.4";
-            protocol = "tcp";
-            port = "9000";
+    network = {
+      agent = {
+        transport = mkOption {
+          type = transportSubmodule;
+          default = { };
+          example = literalExpression ''
+            transport =
+              {
+                name = "net-vm";
+                addr = "192.168.100.4";
+                protocol = "tcp";
+                port = "9000";
+              };'';
+          description = ''
+            Transport configuration of the GIVC agent of type `transportSubmodule`.
+
+            > **Caution**
+            > This parameter is used to generate and validate the TLS host name.
+          '';
+        };
+      };
+      admin = {
+        transport = mkOption {
+          type = transportSubmodule;
+          default = { };
+          defaultText = literalExpression ''
+            {
+              name = "localhost";
+              addr = "127.0.0.1";
+              protocol = "tcp";
+              port = "9000";
+            };'';
+          example = literalExpression ''
+            admin = {
+              {
+                name = "admin-vm";
+                addr = "192.168.100.3";
+                protocol = "tcp";
+                port = "9001";
+              };'';
+          description = ''Admin server transport configuration. This configuration tells the agent how to reach the admin server.'';
+        };
+      };
+      tls = mkOption {
+        type = tlsSubmodule;
+        default = { };
+        defaultText = literalExpression ''
+          tls = {
+            enable = true;
+            caCertPath = "/etc/givc/ca-cert.pem";
+            certPath = /etc/givc/cert.pem";
+            keyPath = "/etc/givc/key.pem";
           };'';
-      description = ''
-        Transport configuration of the GIVC agent of type `transportSubmodule`.
+        example = literalExpression ''
+          tls = {
+            enable = true;
+            caCertPath = "/etc/ssl/certs/ca-certificates.crt";
+            certPath = "/etc/ssl/certs/server.crt";
+            keyPath = "/etc/ssl/private/server.key";
+          };'';
+        description = ''
+          TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
+          and requires paths to certificates and key being set. To disable it use `tls.enable = false;`.
 
-        > **Caution**
-        > This parameter is used to generate and validate the TLS host name.
-      '';
+          > **Caution**
+          > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
+        '';
+      };
     };
-
-    services = mkOption {
-      type = types.listOf types.str;
-      default = [
-        "reboot.target"
-        "poweroff.target"
-      ];
-      description = ''
-        List of systemd services for the manager to administrate. Expects a space separated list.
-        Should be a unit file of type 'service' or 'target'.
+    capabilities = {
+      services = mkOption {
+        type = types.listOf types.str;
+        default = [
+          "reboot.target"
+          "poweroff.target"
+        ];
+        description = ''
+          List of systemd services for the manager to administrate. Expects a space separated list.
+          Should be a unit file of type 'service' or 'target'.
+        '';
+      };
+      wifi.enable = mkEnableOption ''
+        Wifi manager to handle wifi related queries with a defined interface. Deprecated in favor of DBUS proxy.
       '';
+      hwid = {
+        enable = mkEnableOption ''
+          Hardware identifier service that fetches the MAC address from a network interface.
+          > **Note**
+          > This module is can be used to generate a (somewhat) reproducible hardware id. It is
+          > currently unused in the Ghaf project for privacy reasons.
+        '';
+        interface = mkOption {
+          type = types.str;
+          default = "";
+          description = ''
+            Hardware identifier to be used with `hwidService`.
+          '';
+        };
+      };
+
+      socketProxy = {
+        enable = mkEnableOption ''Socket proxy module to provide a VM-to-VM streaming mechanism with socket endpoints.'';
+        sockets = mkOption {
+          type = types.nullOr (types.listOf proxySubmodule);
+          default = null;
+          example = literalExpression ''
+            givc.appvm.capabilities.socketProxy.sockets = [
+              {
+                # Configure the remote endpoint
+                transport = {
+                  name = "gui-vm";
+                  addr = "192.168.100.5;
+                  port = "9013";
+                  protocol = "tcp";
+                };
+                # Socket path
+                socket = "/tmp/.dbusproxy_app.sock";
+              }
+            ];
+          '';
+          description = ''
+            Optional socket proxy module. The socket proxy provides a VM-to-VM streaming mechanism with socket enpoints, and can be used
+            to remote DBUS functionality across VMs. Hereby, the side running the dbusproxy (e.g., a network VM running NetworkManager) is
+            considered the 'server', and the receiving end (e.g., the GUI VM) is considered the 'client'.
+
+            The socket proxy module must be configured on both ends with explicit transport information, and must run on a dedicated TCP port.
+            The detailed socket proxy options are described in the respective `.socketProxy.*` options.
+
+            > **Note**
+            > The socket proxy module is a possible transport mechanism for the DBUS proxy module, and must be appropriately configured on both
+            > ends if used. In this use case, the `server` option is configured automatically and does not need to be set.
+          '';
+        };
+      };
+
+      eventProxy = {
+        enable = mkEnableOption ''
+          Event proxy module to provide a VM-to-VM streaming mechanism for input devices like joystick.
+        '';
+        events = mkOption {
+          type = types.nullOr (types.listOf eventSubmodule);
+          default = null;
+          example = literalExpression ''
+            givc.appvm.eventProxy.events = [
+              {
+                # Configure the remote endpoint
+                transport = {
+                  name = "gui-vm";
+                  addr = "192.168.100.5;
+                  port = "9014";
+                  protocol = "tcp";
+                };
+                # producer of input events
+                producer = true;
+                device = "wireless controller";
+              }
+            ];
+          '';
+          description = ''
+            The event proxy provides a VM-to-VM streaming mechanism for input devices like joystick
+          '';
+        };
+      };
+
+      ctap.enable = mkEnableOption ''
+        CTAP interaction module for security token proxy host
+      '';
+
+      policy = mkOption {
+        type = policyClientSubmodule;
+        default = { };
+        description = "Ghaf policy rules mapped to actions.";
+      };
     };
 
     debug = mkEnableOption ''
@@ -82,158 +240,23 @@ in
       > **Caution**
       > Enabling debug logging may expose sensitive information in the logs, especially if the appvm uses the DBUS submodule.
     '';
-
-    admin = mkOption {
-      type = transportSubmodule;
-      default = { };
-      defaultText = literalExpression ''
-        {
-          name = "localhost";
-          addr = "127.0.0.1";
-          protocol = "tcp";
-          port = "9000";
-        };'';
-      example = literalExpression ''
-        admin = {
-          {
-            name = "admin-vm";
-            addr = "192.168.100.3";
-            protocol = "tcp";
-            port = "9001";
-          };'';
-      description = ''Admin server transport configuration. This configuration tells the agent how to reach the admin server.'';
-    };
-
-    wifiManager = mkOption {
-      type = types.bool;
-      default = false;
-      description = ''
-        Wifi manager to handle wifi related queries with a defined interface. Deprecated in favor of DBUS proxy.
-      '';
-    };
-
-    hwidService = mkOption {
-      type = types.bool;
-      default = false;
-      description = ''
-        Hardware identifier service that fetches the MAC address from a network interface.
-        > **Note**
-        > This module is can be used to generate a (somewhat) reproducible hardware id. It is
-        > currently unused in the Ghaf project for privacy reasons.
-      '';
-    };
-
-    hwidIface = mkOption {
-      type = types.str;
-      default = "";
-      description = ''
-        Hardware identifier to be used with `hwidService`.
-      '';
-    };
-
-    socketProxy = mkOption {
-      type = types.nullOr (types.listOf proxySubmodule);
-      default = null;
-      example = literalExpression ''
-        givc.appvm.socketProxy = [
-          {
-            # Configure the remote endpoint
-            transport = {
-              name = "gui-vm";
-              addr = "192.168.100.5;
-              port = "9013";
-              protocol = "tcp";
-            };
-            # Socket path
-            socket = "/tmp/.dbusproxy_app.sock";
-          }
-        ];
-      '';
-      description = ''
-        Optional socket proxy module. The socket proxy provides a VM-to-VM streaming mechanism with socket enpoints, and can be used
-        to remote DBUS functionality across VMs. Hereby, the side running the dbusproxy (e.g., a network VM running NetworkManager) is
-        considered the 'server', and the receiving end (e.g., the GUI VM) is considered the 'client'.
-
-        The socket proxy module must be configured on both ends with explicit transport information, and must run on a dedicated TCP port.
-        The detailed socket proxy options are described in the respective `.socketProxy.*` options.
-
-        > **Note**
-        > The socket proxy module is a possible transport mechanism for the DBUS proxy module, and must be appropriately configured on both
-        > ends if used. In this use case, the `server` option is configured automatically and does not need to be set.
-      '';
-    };
-
-    eventProxy = mkOption {
-      type = types.nullOr (types.listOf eventSubmodule);
-      default = null;
-      example = literalExpression ''
-        givc.appvm.eventProxy = [
-          {
-            # Configure the remote endpoint
-            transport = {
-              name = "gui-vm";
-              addr = "192.168.100.5;
-              port = "9014";
-              protocol = "tcp";
-            };
-            # producer of input events
-            producer = true;
-            device = "wireless controller";
-          }
-        ];
-      '';
-      description = ''
-        Optional event proxy module. The event proxy provides a VM-to-VM streaming mechanism for input devices like joystick
-      '';
-    };
-
-    tls = mkOption {
-      type = tlsSubmodule;
-      default = { };
-      defaultText = literalExpression ''
-        tls = {
-          enable = true;
-          caCertPath = "/etc/givc/ca-cert.pem";
-          certPath = /etc/givc/cert.pem";
-          keyPath = "/etc/givc/key.pem";
-        };'';
-      example = literalExpression ''
-        tls = {
-          enable = true;
-          caCertPath = "/etc/ssl/certs/ca-certificates.crt";
-          certPath = "/etc/ssl/certs/server.crt";
-          keyPath = "/etc/ssl/private/server.key";
-        };'';
-      description = ''
-        TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
-        and requires paths to certificates and key being set. To disable it use `tls.enable = false;`.
-
-        > **Caution**
-        > It is recommended to use a global TLS flag to avoid inconsistent configurations that will result in connection errors.
-      '';
-    };
-
-    enableCtapModule = mkEnableOption ''
-      CTAP interaction module for security token proxy host
-    '';
-
-    policyClient = mkOption {
-      type = policyClientSubmodule;
-      default = { };
-      description = "Ghaf policy rules mapped to actions.";
-    };
   };
 
   config = mkIf cfg.enable {
 
     assertions = [
       {
-        assertion = cfg.services != [ ];
+        assertion = cfg.capabilities.services != [ ];
         message = "A list of services (or targets) is required for this module to run.";
       }
       {
         assertion =
-          !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
+          !(
+            cfg.network.tls.enable
+            && (
+              cfg.network.tls.caCertPath == "" || cfg.network.tls.certPath == "" || cfg.network.tls.keyPath == ""
+            )
+          );
         message = ''
           The TLS configuration requires paths' to CA certificate, service certificate, and service key.
           To disable TLS, set 'tls.enable = false;'.
@@ -241,18 +264,20 @@ in
       }
       {
         assertion =
-          cfg.socketProxy == null
-          || lists.allUnique (map (p: (strings.toInt p.transport.port)) cfg.socketProxy);
+          !cfg.capabilities.socketProxy.enable
+          || lists.allUnique (map (p: (strings.toInt p.transport.port)) cfg.capabilities.socketProxy.sockets);
         message = "SocketProxy: Each socket proxy instance requires a unique port number.";
       }
       {
-        assertion = cfg.socketProxy == null || lists.allUnique (map (p: p.socket) cfg.socketProxy);
+        assertion =
+          !cfg.capabilities.socketProxy.enable
+          || lists.allUnique (map (p: p.socket) cfg.capabilities.socketProxy.sockets);
         message = "SocketProxy: Each socket proxy instance requires a unique socket.";
       }
       {
         assertion =
-          cfg.eventProxy == null
-          || lists.allUnique (map (p: (strings.toInt p.transport.port)) cfg.eventProxy);
+          !cfg.capabilities.eventProxy.enable
+          || lists.allUnique (map (p: (strings.toInt p.transport.port)) cfg.capabilities.eventProxy.events);
         message = "EventProxy: Each event proxy instance requires a unique port number.";
       }
     ];
@@ -277,7 +302,10 @@ in
       };
     };
 
-    systemd.services."givc-${cfg.transport.name}" = {
+    # JSON configuration for GIVC sysvm agent
+    environment.etc."givc-agent/config.json".text = toJSON agentConfig;
+
+    systemd.services."givc-${cfg.network.agent.transport.name}" = {
       description = "GIVC remote service manager for system VMs";
       enable = true;
       after = [ "givc-setup.target" ];
@@ -285,50 +313,28 @@ in
       wantedBy = [ "givc-setup.target" ];
       serviceConfig = {
         Type = "exec";
-        ExecStart = "${givc-agent}/bin/givc-agent";
+        ExecStart =
+          "${givc-agent}/bin/givc-agent -config /etc/givc-agent/config.json"
+          + optionalString cfg.debug " -debug";
         Restart = "on-failure";
         TimeoutStopSec = 5;
         RestartSec = 1;
       };
       path = [ pkgs.dbus ];
-      environment = {
-        "AGENT" = "${toJSON cfg.transport}";
-        "DEBUG" = "${trivial.boolToString cfg.debug}";
-        "TYPE" = "8";
-        "SUBTYPE" = "9";
-        "WIFI" = "${trivial.boolToString cfg.wifiManager}";
-        "HWID" = "${trivial.boolToString cfg.hwidService}";
-        "HWID_IFACE" = "${cfg.hwidIface}";
-        "SOCKET_PROXY" = "${optionalString (cfg.socketProxy != null) (toJSON cfg.socketProxy)}";
-        "PARENT" = "microvm@${cfg.transport.name}.service";
-        "SERVICES" = "${concatStringsSep " " cfg.services}";
-        "ADMIN_SERVER" = "${toJSON cfg.admin}";
-        "TLS_CONFIG" = "${toJSON cfg.tls}";
-        "EVENT_PROXY" = "${optionalString (cfg.eventProxy != null) (toJSON cfg.eventProxy)}";
-        "NOTIFIER" = "${trivial.boolToString cfg.notifier.enable}";
-        "NOTIFIER_SOCKET_DIR" = "${optionalString cfg.notifier.enable (
-          builtins.dirOf cfg.notifier.socketPath
-        )}";
-        "POLICY_ADMIN" = "${trivial.boolToString cfg.policyClient.enable}";
-        "POLICY_CONFIG" = "${optionalString cfg.policyClient.enable (
-          toJSON cfg.policyClient.policyConfig
-        )}";
-        "POLICY_STORE" = "${optionalString cfg.policyClient.enable cfg.policyClient.storePath}";
-      };
     };
     networking.firewall.allowedTCPPorts =
       let
-        agentPort = strings.toInt cfg.transport.port;
-        proxyPorts = optionals (cfg.socketProxy != null) (
-          map (p: (strings.toInt p.transport.port)) cfg.socketProxy
+        agentPort = strings.toInt cfg.network.agent.transport.port;
+        proxyPorts = optionals cfg.capabilities.socketProxy.enable (
+          map (p: (strings.toInt p.transport.port)) cfg.capabilities.socketProxy.sockets
         );
-        eventPorts = optionals (cfg.eventProxy != null) (
-          map (p: (strings.toInt p.transport.port)) cfg.eventProxy
+        eventPorts = optionals cfg.capabilities.eventProxy.enable (
+          map (p: (strings.toInt p.transport.port)) cfg.capabilities.eventProxy.events
         );
       in
       [ agentPort ] ++ proxyPorts ++ eventPorts;
     systemd.tmpfiles.rules = [
-      "d ${cfg.policyClient.storePath} 0755 1000 100 -"
+      "d ${cfg.capabilities.policy.storePath} 0755 1000 100 -"
     ];
   };
 }

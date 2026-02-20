@@ -171,15 +171,21 @@ in
 
               givc.sysvm = {
                 enable = true;
-                inherit admin;
-                agent = {
-                  addr = addrs.netvm;
-                  name = "net-vm";
+                network = {
+                  admin.transport = admin;
+                  agent.transport = {
+                    addr = addrs.netvm;
+                    name = "net-vm";
+                  };
+                  tls = mkTls "net-vm";
                 };
-                tls = mkTls "net-vm";
-                wifiManager = true;
-                hwidService = true;
-                hwidIface = "wlan1";
+                capabilities = {
+                  wifi.enable = true;
+                  hwid = {
+                    enable = true;
+                    interface = "wlan1";
+                  };
+                };
                 debug = true;
               };
             };

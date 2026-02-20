@@ -20,8 +20,7 @@ import (
 
 func StartSocketService(ctx context.Context, wg *sync.WaitGroup, agentConfig *givc_config.AgentConfig) {
 
-	for _, proxyConfig := range agentConfig.Network.Bridge.Sockets {
-
+	for _, proxyConfig := range agentConfig.Capabilities.SocketProxy.Sockets {
 		// Create socket proxy server
 		socketProxyServer, err := givc_socketproxy.NewSocketProxyServer(proxyConfig.Socket, proxyConfig.Server)
 		if err != nil {

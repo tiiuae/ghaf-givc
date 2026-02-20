@@ -98,23 +98,29 @@ in
       ];
       givc.host = {
         enable = true;
-        transport = {
-          name = "ghaf-host";
-          addr = addrs.host;
-          port = "9000";
-          protocol = "tcp";
+        network = {
+          agent.transport = {
+            name = "ghaf-host";
+            addr = addrs.host;
+            port = "9000";
+            protocol = "tcp";
+          };
+          admin.transport = lib.head adminConfig.addresses;
+          tls.enable = tls;
         };
-        admin = lib.head adminConfig.addresses;
-        services = [
-          "poweroff.target"
-          "reboot.target"
-          "sleep.target"
-          "suspend.target"
-        ];
-        appVms = [
-          "microvm@app-vm.service"
-        ];
-        tls.enable = tls;
+        capabilities = {
+          services = [
+            "poweroff.target"
+            "reboot.target"
+            "sleep.target"
+            "suspend.target"
+          ];
+          vmServices = {
+            appVms = [
+              "microvm@app-vm.service"
+            ];
+          };
+        };
       };
       systemd.services."microvm@app-vm" = {
         script = ''
@@ -199,20 +205,24 @@ in
         '';
         givc.sysvm = {
           enable = true;
-          admin = lib.head adminConfig.addresses;
-          transport = {
-            addr = addrs.guivm;
-            name = "gui-vm";
-          };
-          tls.enable = tls;
           notifier.enable = true;
-          services = [
-            "poweroff.target"
-            "reboot.target"
-            "sleep.target"
-            "suspend.target"
-            "multi-user.target"
-          ];
+          network = {
+            admin.transport = lib.head adminConfig.addresses;
+            agent.transport = {
+              addr = addrs.guivm;
+              name = "gui-vm";
+            };
+            tls.enable = tls;
+          };
+          capabilities = {
+            services = [
+              "poweroff.target"
+              "reboot.target"
+              "sleep.target"
+              "suspend.target"
+              "multi-user.target"
+            ];
+          };
         };
 
         # Need to switch to a different GPU driver than the default one (-vga std) so that Sway can launch:
@@ -265,26 +275,30 @@ in
         givc.appvm = {
           enable = true;
           debug = true;
-          transport = {
-            name = "app-vm";
-            addr = addrs.appvm;
+          network = {
+            agent.transport = {
+              name = "app-vm";
+              addr = addrs.appvm;
+            };
+            admin.transport = lib.head adminConfig.addresses;
+            tls = {
+              enable = tls;
+              caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
+              certPath = lib.mkForce "/etc/givc/cert.pem";
+              keyPath = lib.mkForce "/etc/givc/key.pem";
+            };
           };
-          admin = lib.head adminConfig.addresses;
-          tls = {
-            enable = tls;
-            caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
-            certPath = lib.mkForce "/etc/givc/cert.pem";
-            keyPath = lib.mkForce "/etc/givc/key.pem";
-          };
-          applications = [
-            {
-              name = "foot";
-              command = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot";
-            }
-          ];
-          policyClient = {
-            enable = true;
-            policyConfig."proxy-config" = "";
+          capabilities = {
+            applications = [
+              {
+                name = "foot";
+                command = "/run/current-system/sw/bin/run-waypipe ${pkgs.foot}/bin/foot";
+              }
+            ];
+            policy = {
+              enable = true;
+              policies."proxy-config" = "";
+            };
           };
         };
       };

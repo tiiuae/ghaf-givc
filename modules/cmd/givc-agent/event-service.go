@@ -21,7 +21,7 @@ import (
 
 func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_config.AgentConfig) {
 
-	for _, eventConfig := range config.Network.Bridge.Events {
+	for _, eventConfig := range config.Capabilities.EventProxy.Events {
 
 		eventProxyServer, err := givc_eventproxy.NewEventProxyServer(eventConfig.Transport)
 		if err != nil {

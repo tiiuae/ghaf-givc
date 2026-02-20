@@ -198,7 +198,7 @@ in
         default = "/etc/policies";
         description = "Directory path for policy storage.";
       };
-      policyConfig = lib.mkOption {
+      policies = lib.mkOption {
         type = lib.types.attrsOf lib.types.str;
         default = { };
         description = "A set of policy name and it's destination file path.";

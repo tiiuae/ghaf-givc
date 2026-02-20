@@ -21,12 +21,14 @@
               ];
 
               givc.appvm = {
-                applications = [
-                  {
-                    name = "clearexit";
-                    command = "/run/current-system/sw/bin/sleep 5";
-                  }
-                ];
+                capabilities = {
+                  applications = [
+                    {
+                      name = "clearexit";
+                      command = "/run/current-system/sw/bin/sleep 5";
+                    }
+                  ];
+                };
               };
             };
             badvm = self.nixosModules.tests-badvm;
@@ -39,7 +41,7 @@
               addrs = {
                 appvm = (builtins.head nodes.appvm.networking.interfaces.eth1.ipv4.addresses).address;
               };
-              host = nodes.hostvm.givc.host.transport;
+              host = nodes.hostvm.givc.host.network.agent.transport;
               cli = "${self'.packages.givc-admin.cli}/bin/givc-cli";
               expected = "givc-ghaf-host.service"; # Name which we _expect_ to see registered in admin server's registry
               cliArgs =
@@ -196,11 +198,11 @@
 
               with subtest("test user notification (remote)"):
                 guivm.succeed("(timeout 5 busctl --user --machine=ghaf@ monitor org.freedesktop.Notifications > /tmp/notification.log 2>&1 &)")
-                time.sleep(1)
+                time.sleep(4)
 
                 # Send test notification from APP VM to GUI VM
                 appvm.succeed("${cli} ${cliArgs} notify-user gui-vm --event vm-alert --title 'VM Test Alert' --urgency 'critical' --message 'This is a VM test notification' ")
-                time.sleep(4)
+                time.sleep(8)
 
                 # Verify notification received
                 guivm.succeed("grep -q 'VM Test Alert' /tmp/notification.log")
