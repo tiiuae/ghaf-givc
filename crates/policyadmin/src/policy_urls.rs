@@ -38,9 +38,10 @@ pub(crate) struct PolicyUrlMonitor {
     /* Shared Mutable State: The config JSON that holds URLs, VMs, and current HEADs */
     config_state: Arc<Mutex<PolicyConfig>>,
     /* The writable path where the updated config.json is saved */
-    config_file_path: PathBuf,
+    config_file: PathBuf,
     /* The root directory where downloaded policy files are stored */
     output_dir: PathBuf,
+    manager: Arc<PolicyManager>,
 }
 
 impl PolicyUrlMonitor {
@@ -51,11 +52,15 @@ impl PolicyUrlMonitor {
      * 1. Sets up the destination directory.
      * 2. Loads the initial configuration (preferring the local writable copy).
      * ---------------------------------------------------------------------- */
-    pub fn new(policy_root: impl AsRef<Path>, configs: &PolicyConfig) -> Result<Self> {
+    pub fn new(
+        policy_root: impl AsRef<Path>,
+        configs: &PolicyConfig,
+        manager: Arc<PolicyManager>,
+    ) -> Result<Self> {
         let root = policy_root.as_ref();
         let destination = root.join("data").join("vm-policies");
-        let cfgpath = root.join(CONFIG_FILE_NAME);
-        let cfg_path = cfgpath.display();
+        let config_file = root.join(CONFIG_FILE_NAME);
+        let cfgpath = config_file.display();
 
         /* Ensure output directory exists */
         fs::create_dir_all(&destination).with_context(|| {
@@ -65,17 +70,17 @@ impl PolicyUrlMonitor {
             )
         })?;
 
-        let configs_json = if cfgpath.exists() {
+        let configs_json = if config_file.exists() {
             debug!("policy-url-monitor: Loading existing local config.");
             serde_json::from_slice(
-                &fs::read(&cfgpath)
-                    .with_context(|| format!("Failed to load config from {cfg_path}"))?,
+                &fs::read(&config_file)
+                    .with_context(|| format!("Failed to load config from {cfgpath}"))?,
             )
-            .with_context(|| format!("Failed to parse config {cfg_path}"))?
+            .with_context(|| format!("Failed to parse config {cfgpath}"))?
         } else {
             if let Err(e) = serde_json::to_vec(&configs)
                 .context("Serializing data")
-                .and_then(|json| fs::write(&cfgpath, json).context("Writing config file"))
+                .and_then(|json| fs::write(&config_file, json).context("Writing config file"))
             {
                 warn!("policy-url-monitor: Failed to persist initial config: {e}",);
             }
@@ -85,8 +90,9 @@ impl PolicyUrlMonitor {
         Ok(Self {
             client: Client::new(),
             config_state: Arc::new(Mutex::new(configs_json)),
-            config_file_path: cfgpath,
+            config_file,
             output_dir: destination,
+            manager,
         })
     }
 
@@ -151,7 +157,6 @@ impl PolicyUrlMonitor {
             return Ok(());
         }
 
-        let policy_manager = PolicyManager::instance();
         debug!(
             "policy-url-monitor: [{}] Started. Polling every {}s",
             policy_name, interval
@@ -170,7 +175,8 @@ impl PolicyUrlMonitor {
 
                     for vm in &vms {
                         if let Err(e) =
-                            policy_manager.send_to_vm(vm, policy_name.as_str(), &full_path)
+                            self.manager
+                                .send_to_vm(vm, policy_name.as_str(), &full_path)
                         {
                             error!(
                                 "policy-url-monitor: [{}] Failed to send to VM {}: {}",
@@ -330,7 +336,7 @@ impl PolicyUrlMonitor {
 
         /* Write to disk */
         fs::write(
-            &self.config_file_path,
+            &self.config_file,
             &serde_json::to_vec(&*guard).context("Failed to serialize config for saving")?,
         )
         .context("Failed to write config")

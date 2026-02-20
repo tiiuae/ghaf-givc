@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 use tracing::{debug, error, info};
 
-use crate::policy_manager::{PolicyManager, PolicyUpdateCallback};
+use crate::policy_manager::{PolicyManager, UpdateReceiver};
 use crate::policy_repo::PolicyRepoMonitor;
 use crate::policy_urls::PolicyUrlMonitor;
 
@@ -65,8 +66,7 @@ pub struct PolicyConfig {
 pub fn run_policy_admin(
     policy_store: Option<PathBuf>,
     policy_config: Option<String>,
-    update_callback: PolicyUpdateCallback,
-) -> Result<()> {
+) -> Result<(Arc<PolicyManager>, UpdateReceiver)> {
     let default_json = "{}".to_string();
     let policy_root = policy_store.unwrap_or_else(|| PathBuf::from("/etc/policies"));
     let config_json = policy_config.unwrap_or_else(|| default_json.clone());
@@ -82,13 +82,8 @@ pub fn run_policy_admin(
     let policy_path = policy_root.join("data").join("vm-policies");
     debug!("policy-monitor: starting policy monitor...");
 
-    if let Err(e) = PolicyManager::init(policy_path, &config, update_callback) {
-        error!(
-            "policy-admin: policy manager initialization failed: {:?}",
-            e
-        );
-        return Err(e);
-    }
+    let (manager, updates) =
+        PolicyManager::new(policy_path, &config).context("Policy manager initialization failed")?;
 
     debug!("policy-monitor: thread spawned successfully");
 
@@ -97,7 +92,7 @@ pub fn run_policy_admin(
     let _handle = match source_type {
         PolicySourceType::GitUrl => {
             info!("Monitoring git repo for Policy updates");
-            match PolicyRepoMonitor::new(&policy_root, &config) {
+            match PolicyRepoMonitor::new(&policy_root, &config, manager.clone()) {
                 Ok(monitor) => Some(monitor.start()),
                 Err(e) => {
                     error!("policy-admin: failed to create git monitor: {:?}", e);
@@ -107,7 +102,7 @@ pub fn run_policy_admin(
         }
         PolicySourceType::PerPolicy => {
             info!("Monitoring URLs for Policy updates");
-            match PolicyUrlMonitor::new(&policy_root, &config) {
+            match PolicyUrlMonitor::new(&policy_root, &config, manager.clone()) {
                 Ok(monitor) => Some(monitor.start()),
                 Err(e) => {
                     error!("policy-admin: failed to create url monitor: {:?}", e);
@@ -118,5 +113,5 @@ pub fn run_policy_admin(
         PolicySourceType::None => None,
     };
 
-    Ok(())
+    Ok((manager, updates))
 }

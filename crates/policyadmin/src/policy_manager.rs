@@ -5,19 +5,20 @@ use crate::policy::PolicyConfig;
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::fs;
-use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::oneshot::{self, Sender};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
-/*
- * Static storage for the Singleton instance of PolicyManager.
- * usage: PolicyManager::instance()
- */
-static INSTANCE: OnceLock<Arc<PolicyManager>> = OnceLock::new();
+pub struct Update {
+    pub vm_name: String,
+    pub file: PathBuf,
+    pub policy: String,
+}
+
+pub type UpdateReceiver = UnboundedReceiver<(Update, Sender<Result<()>>)>;
 
 /*
  * Policy
@@ -30,11 +31,6 @@ pub struct Policy {
     pub file: String,
 }
 
-pub type PolicyUpdateFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
-
-pub type PolicyUpdateCallback =
-    Arc<dyn Fn(String, PathBuf, String) -> PolicyUpdateFuture + Send + Sync>;
-
 /*
  * PolicyManager
  *
@@ -46,64 +42,34 @@ pub type PolicyUpdateCallback =
 pub struct PolicyManager {
     policy_dir: PathBuf,
     configs: PolicyConfig,
-    update_callback: PolicyUpdateCallback,
+    update_channel: UnboundedSender<(Update, Sender<Result<()>>)>,
     workers: HashMap<String, (UnboundedSender<Policy>, JoinHandle<()>)>,
 }
 
 impl PolicyManager {
     /*
-     * init
-     *
-     * Initializes the singleton. Must be called once at startup.
-     */
-    pub(crate) fn init(
-        store_dir: PathBuf,
-        configs: &PolicyConfig,
-        update_callback: PolicyUpdateCallback,
-    ) -> Result<()> {
-        let manager = Self::new(store_dir, configs, update_callback)?;
-        INSTANCE
-            .set(Arc::new(manager))
-            .map_err(|_| anyhow!("policy-admin:PolicyManager singleton already initialized"))?;
-        Ok(())
-    }
-
-    /**
-     * Returns a thread-safe reference to the singleton instance.
-     * # Panics
-     * if `init()` has not been called yet.
-     */
-    pub fn instance() -> Arc<Self> {
-        INSTANCE
-            .get()
-            .expect("policy-admin:PolicyManager must be initialized before use")
-            .clone()
-    }
-
-    /*
-     * Private constructor.
      * 1. Loads config.
      * 2. Creates a shared Tokio Runtime.
      * 3. Spawns initial workers for VMs defined in the config.
      */
     #[allow(clippy::unnecessary_wraps)]
-    fn new(
+    pub(crate) fn new(
         store_dir: PathBuf,
         configs: &PolicyConfig,
-        update_callback: PolicyUpdateCallback,
-    ) -> Result<Self> {
+    ) -> Result<(Arc<Self>, UpdateReceiver)> {
         let vm_names = configs
             .policies
             .values()
             .flat_map(|policy| &policy.vms)
             .collect::<std::collections::HashSet<_>>();
+        let (update_channel, updates) = unbounded_channel();
 
         debug!("policy-admin:PolicyManager policies: {:?}.", configs);
 
         let mut manager = Self {
             policy_dir: store_dir,
             configs: configs.clone(),
-            update_callback,
+            update_channel,
             workers: HashMap::new(),
         };
 
@@ -112,7 +78,7 @@ impl PolicyManager {
         }
 
         info!("policy-admin:PolicyManager initialized.");
-        Ok(manager)
+        Ok((Arc::new(manager), updates))
     }
 
     /*
@@ -130,9 +96,7 @@ impl PolicyManager {
         let (tx, rx) = unbounded_channel();
         let vm_name = vm.to_string();
 
-        let callback_share = Arc::clone(&self.update_callback);
-
-        let handle = tokio::spawn(Self::worker_loop(vm_name, rx, callback_share));
+        let handle = tokio::spawn(Self::worker_loop(vm_name, rx, self.update_channel.clone()));
 
         self.workers.insert(vm.to_string(), (tx, handle));
     }
@@ -147,13 +111,22 @@ impl PolicyManager {
     async fn worker_loop(
         vm: String,
         mut rx: UnboundedReceiver<Policy>,
-        update_callback: PolicyUpdateCallback,
+        update_channel: UnboundedSender<(Update, Sender<Result<()>>)>,
     ) {
         debug!("policy-admin: Worker [{}] started.", vm);
 
         while let Some(msg) = rx.recv().await {
             /* Execute async code synchronously within this thread */
-            let result = update_callback(vm.clone(), msg.file.into(), msg.policy_name).await;
+            let (tx, rx) = oneshot::channel();
+            let _ = update_channel.send((
+                Update {
+                    vm_name: vm.clone(),
+                    file: msg.file.into(),
+                    policy: msg.policy_name,
+                },
+                tx,
+            ));
+            let result = rx.await;
 
             if let Err(e) = result {
                 error!("policy-admin:Worker [{}]: Failed to push update: {}", vm, e);

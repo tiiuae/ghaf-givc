@@ -35,13 +35,18 @@ pub struct PolicyRepoMonitor {
     destination: PathBuf,
     remote_name: String,
     poll_interval: Duration,
+    manager: Arc<PolicyManager>,
 
     // Mutable State (Thread-Safe)
     state: Arc<Mutex<RepoState>>,
 }
 
 impl PolicyRepoMonitor {
-    pub(crate) fn new(policy_root: impl AsRef<Path>, configs: &PolicyConfig) -> Result<Arc<Self>> {
+    pub(crate) fn new(
+        policy_root: impl AsRef<Path>,
+        configs: &PolicyConfig,
+        manager: Arc<PolicyManager>,
+    ) -> Result<Arc<Self>> {
         let url = configs.source.url.clone().unwrap_or_default();
         let branch = configs.source.branch.clone().unwrap_or("master".into());
         let destination = policy_root.as_ref().join("data");
@@ -54,6 +59,7 @@ impl PolicyRepoMonitor {
             destination: destination.clone(),
             remote_name: "origin".to_string(),
             poll_interval: Duration::from_secs(interval_secs),
+            manager,
             state: Arc::new(Mutex::new(RepoState {
                 new_head: None,
                 old_head: None,
@@ -260,7 +266,6 @@ impl PolicyRepoMonitor {
                 self.poll_interval
             };
 
-            let policy_manager = PolicyManager::instance();
             let mut update_err = false;
 
             loop {
@@ -268,13 +273,13 @@ impl PolicyRepoMonitor {
                 match self.get_update() {
                     Ok(true) => match self.get_change_set() {
                         Ok(changes) if !changes.is_empty() => {
-                            if let Err(e) = policy_manager.process_changeset(&changes) {
+                            if let Err(e) = self.manager.process_changeset(&changes) {
                                 error!("policy-repo: failed to apply changeset: {}", e);
                                 update_err = true;
                             }
                         }
                         Ok(_) => {
-                            if let Err(e) = policy_manager.force_update_all_vms() {
+                            if let Err(e) = self.manager.force_update_all_vms() {
                                 error!("policy-repo: failed to force update: {}", e);
                                 update_err = true;
                             }
@@ -298,7 +303,7 @@ impl PolicyRepoMonitor {
 
                 if update_err {
                     let _ = self.ensure_clone().await;
-                    let _ = policy_manager.force_update_all_vms();
+                    let _ = self.manager.force_update_all_vms();
                     update_err = false;
                 }
                 if self.poll_interval == Duration::ZERO {
