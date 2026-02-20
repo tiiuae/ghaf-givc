@@ -1,12 +1,18 @@
 // SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+
 use anyhow::{Context, Result, anyhow};
-use gix::bstr::{BStr, ByteSlice};
-use gix::object::tree::diff::{Action, Change};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use gix::{
+    bstr::{BStr, ByteSlice},
+    hash::ObjectId,
+    object::tree::diff::{Action, Change},
+};
 use tokio::time::sleep;
 use tracing::{debug, error, info};
 
@@ -19,8 +25,8 @@ use crate::policy_manager::PolicyManager;
  * Protected by a Mutex to allow safe access across threads.
  */
 struct RepoState {
-    new_head: Option<gix::hash::ObjectId>,
-    old_head: Option<gix::hash::ObjectId>,
+    new_head: Option<ObjectId>,
+    old_head: Option<ObjectId>,
 }
 
 /*

@@ -1,16 +1,20 @@
 // SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::policy::PolicyConfig;
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 use anyhow::{Result, anyhow};
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::oneshot::{self, Sender};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
+
+use crate::policy::PolicyConfig;
 
 pub struct Update {
     pub vm_name: String,

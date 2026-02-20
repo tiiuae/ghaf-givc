@@ -3,36 +3,36 @@
 
 #![allow(clippy::similar_names)]
 
-use super::entry::{Placement, RegistryEntry};
-use super::policyclient::PolicyAdminClient;
+use std::{path::PathBuf, sync::Arc, time::Duration};
+
+use anyhow::{Context, Result, anyhow, bail};
+use async_stream::try_stream;
+use givc_common::query::Event;
+use regex::Regex;
+use tokio::sync::Mutex;
+use tonic::{Code, Response, Status};
+use tracing::{debug, error, info, trace};
+
+use givc_client::endpoint::{EndpointConfig, TlsConfig};
+use givc_common::query::QueryResult;
+use givc_policyadmin::policy::run_policy_admin;
+use givc_policyadmin::policy_manager::{PolicyManager, Update, UpdateReceiver};
+
+use crate::admin::entry::{Placement, RegistryEntry};
+use crate::admin::policyclient::PolicyAdminClient;
+use crate::admin::registry::Registry;
 use crate::pb::{
     self, ApplicationRequest, ApplicationResponse, Empty, ListGenerationsResponse, LocaleRequest,
     QueryListResponse, RegistryRequest, RegistryResponse, SetGenerationRequest,
     SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest, UnitStatusRequest,
     WatchItem, ctap::CtapRequest, ctap::CtapResponse,
 };
-use anyhow::{Context, Result, anyhow, bail};
-use async_stream::try_stream;
-use givc_common::query::Event;
-use regex::Regex;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::Mutex;
-use tonic::{Code, Response, Status};
-use tracing::{debug, error, info, trace};
-
-pub use pb::admin_service_server::AdminServiceServer;
-
-use crate::admin::registry::Registry;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
 use crate::utils::naming::VmName;
 use crate::utils::tonic::{Stream, escalate};
-use givc_client::endpoint::{EndpointConfig, TlsConfig};
-use givc_common::query::QueryResult;
-use givc_policyadmin::policy::run_policy_admin;
-use givc_policyadmin::policy_manager::{PolicyManager, Update, UpdateReceiver};
+
+pub use pb::admin_service_server::AdminServiceServer;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 const TIMEZONE_CONF: &str = "/etc/timezone.conf";

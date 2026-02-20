@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+
 use anyhow::{Context, Result};
-use std::sync::Arc;
-use std::{collections::HashMap, path::PathBuf};
 use tracing::{debug, error, info};
 
 use crate::policy_manager::{PolicyManager, UpdateReceiver};
