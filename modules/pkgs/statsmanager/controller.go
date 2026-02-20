@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"iter"
 	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -298,4 +299,73 @@ outer:
 	}
 
 	return &stats_api.ProcessStats{CpuProcesses: cpuProcs, MemProcesses: memProcs, UserCycles: usercycles, SysCycles: syscycles, TotalCycles: djiffies, Total: 0, Running: 0}, nil
+}
+
+// GetSysinfo retrieves host sysinfo in typed form.
+func (c *StatsController) GetSysinfo(ctx context.Context) (*stats_api.SysinfoResponse, error) {
+	// Input validation
+	if ctx == nil {
+		return nil, fmt.Errorf("context cannot be nil")
+	}
+
+	return &stats_api.SysinfoResponse{
+		GhafVersion:   detectGhafVersion(),
+		SecureBoot:    detectSecureBoot(),
+		DiskEncrypted: detectDiskEncryption(),
+	}, nil
+}
+
+func runSystemCommandOutput(name string, args ...string) ([]byte, error) {
+	if path, err := exec.LookPath(name); err == nil {
+		return exec.Command(path, args...).Output()
+	}
+	return nil, fmt.Errorf("binary %q not found in PATH", name)
+}
+
+func detectGhafVersion() string {
+	if out, err := runSystemCommandOutput("ghaf-version"); err == nil {
+		if version := strings.TrimSpace(string(out)); version != "" {
+			return version
+		}
+	}
+	return "Unknown"
+}
+
+func detectSecureBoot() *bool {
+	// Use bootctl output only (no direct /sys access).
+	if out, err := runSystemCommandOutput("bootctl", "status"); err == nil {
+		for line := range strings.Lines(string(out)) {
+			line = strings.TrimSpace(line)
+			key, value, found := strings.Cut(line, ":")
+			if !found || !strings.EqualFold(strings.TrimSpace(key), "Secure Boot") {
+				continue
+			}
+			switch strings.ToLower(strings.TrimSpace(value)) {
+			case "enabled":
+				b := true
+				return &b
+			case "disabled":
+				b := false
+				return &b
+			}
+		}
+	}
+	return nil
+}
+
+func detectDiskEncryption() *bool {
+	// Use lsblk output: if any device has TYPE=crypt, encryption is active.
+	out, err := runSystemCommandOutput("lsblk", "-rno", "TYPE")
+	if err != nil {
+		return nil
+	}
+
+	for line := range strings.Lines(string(out)) {
+		if strings.EqualFold(strings.TrimSpace(line), "crypt") {
+			v := true
+			return &v
+		}
+	}
+	v := false
+	return &v
 }

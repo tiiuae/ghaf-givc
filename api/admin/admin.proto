@@ -196,4 +196,7 @@ service AdminService {
 
     // Perform CTAP action
     rpc Ctap(ctap.CtapRequest) returns (ctap.CtapResponse) {}
+
+    // Get host sysinfo values in one call
+    rpc Sysinfo(Empty) returns (stats.SysinfoResponse) {}
 }

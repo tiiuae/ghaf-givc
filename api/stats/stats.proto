@@ -49,7 +49,15 @@ message StatsResponse {
     ProcessStats Process = 3;
 }
 
+message SysinfoResponse {
+    string GhafVersion = 1;
+    optional bool SecureBoot = 2;
+    optional bool DiskEncrypted = 3;
+}
+
 service StatsService {
     // Get process statistics
     rpc GetStats(StatsRequest) returns (StatsResponse) {}
+    // Get host system information
+    rpc GetSysinfo(StatsRequest) returns (SysinfoResponse) {}
 }

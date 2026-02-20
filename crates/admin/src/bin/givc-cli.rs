@@ -108,6 +108,7 @@ enum Commands {
     Poweroff {},
     Suspend {},
     Wakeup {},
+    Sysinfo {},
     Query {
         #[arg(long, default_value_t = false)]
         as_json: bool, // Would it useful for scripts?
@@ -162,6 +163,14 @@ enum Commands {
 
 fn unit_type_parse(s: &str) -> anyhow::Result<UnitType> {
     s.parse::<u32>()?.try_into()
+}
+
+fn optional_bool_to_display(state: Option<bool>) -> &'static str {
+    match state {
+        Some(true) => "enabled",
+        Some(false) => "disabled",
+        None => "unknown",
+    }
 }
 
 fn parse_locales(locale_assigns: Vec<String>) -> anyhow::Result<Vec<pb::locale::LocaleAssignment>> {
@@ -362,6 +371,18 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         Commands::Poweroff {} => admin.poweroff().await?,
         Commands::Suspend {} => admin.suspend().await?,
         Commands::Wakeup {} => admin.wakeup().await?,
+        Commands::Sysinfo {} => {
+            let status = admin.sysinfo().await?;
+            println!("Ghaf Version: {}", status.ghaf_version);
+            println!(
+                "Secure Boot: {}",
+                optional_bool_to_display(status.secure_boot)
+            );
+            println!(
+                "Disk Encryption: {}",
+                optional_bool_to_display(status.disk_encrypted)
+            );
+        }
 
         Commands::Query {
             by_type,

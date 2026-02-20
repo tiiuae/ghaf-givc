@@ -235,6 +235,7 @@ in
         RestartSec = 1;
       };
       path = [
+        config.system.path
         ota-update
         pkgs.nix
         pkgs.nixos-rebuild

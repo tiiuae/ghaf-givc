@@ -13,6 +13,7 @@ use givc_common::address::EndpointAddress;
 use givc_common::pb;
 use givc_common::pb::Generation;
 pub use givc_common::pb::stats::StatsResponse;
+pub use givc_common::pb::stats::SysinfoResponse as Sysinfo;
 pub use givc_common::query::{Event, QueryResult};
 use givc_common::types::{EndpointEntry, TransportConfig, UnitStatus, UnitType};
 
@@ -268,6 +269,19 @@ impl AdminClient {
             .await
             .rewrap_err()?;
         Ok(())
+    }
+
+    /// Get host system info via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
+    pub async fn sysinfo(&self) -> anyhow::Result<Sysinfo> {
+        Ok(self
+            .connect_to()
+            .await?
+            .sysinfo(pb::admin::Empty {})
+            .await
+            .rewrap_err()?
+            .into_inner())
     }
 
     /// Issue wakeup command via admin server
