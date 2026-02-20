@@ -36,7 +36,7 @@ tracing-journald = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 walkdir = "2.5.0"
 x509-parser = "0.18"
-lazy-regex = "3.5.1"
+lazy-regex = "3.6.0"
 
 # GIVC subparts
 givc-policyadmin = { path = "../policyadmin" }
