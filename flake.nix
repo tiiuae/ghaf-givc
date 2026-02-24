@@ -97,15 +97,28 @@
         };
       flake = {
         # NixOS Modules
-        nixosModules = {
-          admin = import ./nixos/modules/admin.nix { inherit self; };
-          host = import ./nixos/modules/host.nix { inherit self; };
-          sysvm = import ./nixos/modules/sysvm.nix { inherit self; };
-          appvm = import ./nixos/modules/appvm.nix { inherit self; };
-          dbus = import ./nixos/modules/dbus.nix { inherit self; };
-          tls = import ./nixos/modules/tls.nix { inherit self; };
-          ota-update-server = import ./nixos/modules/update-server.nix { inherit self; };
-        };
+        nixosModules =
+          let
+            packages = inputs.nixpkgs.lib.modules.importApply ./nixos/modules/packages.nix { inherit self; };
+            # Modules that reference config.givc.packages automatically
+            # pull in the packages module so consumers don't have to.
+            withPkgs = mod: {
+              imports = [
+                packages
+                mod
+              ];
+            };
+          in
+          {
+            inherit packages;
+            admin = withPkgs ./nixos/modules/admin.nix;
+            host = withPkgs ./nixos/modules/host.nix;
+            sysvm = withPkgs ./nixos/modules/sysvm.nix;
+            appvm = withPkgs ./nixos/modules/appvm.nix;
+            dbus = ./nixos/modules/dbus.nix;
+            tls = ./nixos/modules/tls.nix;
+            ota-update-server = withPkgs ./nixos/modules/update-server.nix;
+          };
 
         # Overlays
         overlays.default = _final: prev: {
