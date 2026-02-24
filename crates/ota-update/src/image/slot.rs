@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+
 use super::Version;
 use super::lvm::Volume;
 use super::pipeline::{CommandSpec, Pipeline};

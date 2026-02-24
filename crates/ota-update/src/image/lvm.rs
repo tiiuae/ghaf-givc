@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+
 use super::pipeline::{CommandSpec, Pipeline};
 use anyhow::{Context, Result};
 use serde::Deserialize;

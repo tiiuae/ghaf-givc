@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::image::group::SlotGroup;
 use crate::image::lvm::Volume;
 use crate::image::manifest::{File, Manifest};
