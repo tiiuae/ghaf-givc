@@ -22,14 +22,17 @@ pub fn manifest(version: &str, hash: &str) -> Manifest {
         kernel: File {
             name: "k".into(),
             sha256sum: [0; 32],
+            unpacked_size: None,
         },
         store: File {
             name: "s".into(),
             sha256sum: [0; 32],
+            unpacked_size: Some(6_000_000_000), // ~5.6 GiB
         },
         verity: File {
             name: "v".into(),
             sha256sum: [0; 32],
+            unpacked_size: Some(60_000_000), // ~57 MiB
         },
     }
 }
