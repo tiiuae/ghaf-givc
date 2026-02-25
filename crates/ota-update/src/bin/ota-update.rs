@@ -9,6 +9,7 @@ use anyhow::Context;
 use cachix_client::{CachixClientConfig, nixos::filter_valid_systems};
 use clap::{ArgAction, Parser, Subcommand};
 use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
+use ota_update::image::cli::ImageUpdate;
 use ota_update::profile;
 use ota_update::query::query_available_updates;
 use regex::Regex;
@@ -49,6 +50,7 @@ enum Commands {
     Query(QueryUpdates),
 
     Cachix(CachixOptions),
+    Image(ImageUpdate),
 }
 
 async fn get_generations() -> anyhow::Result<()> {
@@ -206,6 +208,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cachix_host,
             cache,
         }) => perform_cachix_update(&pin_name, token, cachix_host, cache).await?,
+        Commands::Image(image) => image.handle().await?,
     }
     Ok(())
 }

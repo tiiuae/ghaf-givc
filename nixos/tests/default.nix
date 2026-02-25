@@ -7,6 +7,7 @@
     ./dbus.nix
     ./app.nix
     ./ota-update.nix
+    ./ota-update-image.nix
     ./event.nix
   ];
 }
