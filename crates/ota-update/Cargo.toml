@@ -11,7 +11,7 @@ anyhow = "1.0.101"
 async-trait = "*"
 axum = "*"
 bootspec = "*"
-clap = { version = "4.5.57", features = ["derive", "env"] }
+clap = { version = "4.5.60", features = ["derive", "env"] }
 fs2 = "*" # For locking
 regex = "*"
 reqwest = { version = "0.13", default-features = false, features = [
