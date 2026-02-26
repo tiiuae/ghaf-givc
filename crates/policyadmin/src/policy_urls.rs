@@ -1,22 +1,24 @@
 // SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::policy::PolicyConfig;
-use crate::policy_manager::PolicyManager;
-use anyhow::{Context, Result, anyhow, bail};
-use reqwest::{
-    Client,
-    header::{ETAG, LAST_MODIFIED},
-};
-use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
+
+use anyhow::{Context, Result, anyhow, bail};
+use reqwest::{
+    Client,
+    header::{ETAG, LAST_MODIFIED},
+};
+use sha2::{Digest, Sha256};
 use tokio::{sync::Mutex, time::sleep};
 use tracing::{debug, error, info, warn};
+
+use crate::policy::PolicyConfig;
+use crate::policy_manager::PolicyManager;
 
 /* -----------------------------------------------------------------------------
  * Constants
@@ -33,14 +35,15 @@ const DEFAULT_POLL_INTERVAL: u64 = 60;
  * - Dispatches updates to the PolicyManager.
  * -------------------------------------------------------------------------- */
 #[derive(Clone)]
-pub struct PolicyUrlMonitor {
+pub(crate) struct PolicyUrlMonitor {
     client: Client,
     /* Shared Mutable State: The config JSON that holds URLs, VMs, and current HEADs */
     config_state: Arc<Mutex<PolicyConfig>>,
     /* The writable path where the updated config.json is saved */
-    config_file_path: PathBuf,
+    config_file: PathBuf,
     /* The root directory where downloaded policy files are stored */
     output_dir: PathBuf,
+    manager: Arc<PolicyManager>,
 }
 
 impl PolicyUrlMonitor {
@@ -51,32 +54,37 @@ impl PolicyUrlMonitor {
      * 1. Sets up the destination directory.
      * 2. Loads the initial configuration (preferring the local writable copy).
      * ---------------------------------------------------------------------- */
-    pub fn new(policy_root: impl AsRef<Path>, configs: &PolicyConfig) -> Result<Self> {
+    pub fn new(
+        policy_root: impl AsRef<Path>,
+        configs: &PolicyConfig,
+        manager: Arc<PolicyManager>,
+    ) -> Result<Self> {
         let root = policy_root.as_ref();
         let destination = root.join("data").join("vm-policies");
-        let cfgpath = root.join(CONFIG_FILE_NAME);
+        let config_file = root.join(CONFIG_FILE_NAME);
+        let cfgpath = config_file.display();
 
         /* Ensure output directory exists */
         fs::create_dir_all(&destination).with_context(|| {
-            format!("Failed to create local policy directory {:?}", destination)
+            format!(
+                "Failed to create local policy directory {destination}",
+                destination = destination.display()
+            )
         })?;
 
-        let configs_json = if cfgpath.exists() {
+        let configs_json = if config_file.exists() {
             debug!("policy-url-monitor: Loading existing local config.");
             serde_json::from_slice(
-                &fs::read(&cfgpath)
-                    .with_context(|| format!("Failed to load config from {}", cfgpath.display()))?,
+                &fs::read(&config_file)
+                    .with_context(|| format!("Failed to load config from {cfgpath}"))?,
             )
-            .with_context(|| format!("Failed to parse config {}", cfgpath.display()))?
+            .with_context(|| format!("Failed to parse config {cfgpath}"))?
         } else {
             if let Err(e) = serde_json::to_vec(&configs)
                 .context("Serializing data")
-                .and_then(|json| fs::write(&cfgpath, json).context("Writing config file"))
+                .and_then(|json| fs::write(&config_file, json).context("Writing config file"))
             {
-                warn!(
-                    "policy-url-monitor: Failed to persist initial config: {}",
-                    e
-                );
+                warn!("policy-url-monitor: Failed to persist initial config: {e}",);
             }
             configs.clone()
         };
@@ -84,17 +92,20 @@ impl PolicyUrlMonitor {
         Ok(Self {
             client: Client::new(),
             config_state: Arc::new(Mutex::new(configs_json)),
-            config_file_path: cfgpath,
+            config_file,
             output_dir: destination,
+            manager,
         })
     }
 
-    /* -------------------------------------------------------------------------
-     * start
-     *
+    /**
      * Spawns independent background tasks for every policy defined in the config.
      * This function returns immediately (it spawns tasks).
-     * ---------------------------------------------------------------------- */
+     *
+     * # Panics
+     * Spawned task will panic if any of the worker tasks panic
+     */
+    #[must_use]
     pub fn start(self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             debug!("policy-url-monitor: Starting monitor tasks...");
@@ -148,7 +159,6 @@ impl PolicyUrlMonitor {
             return Ok(());
         }
 
-        let policy_manager = PolicyManager::instance();
         debug!(
             "policy-url-monitor: [{}] Started. Polling every {}s",
             policy_name, interval
@@ -167,7 +177,8 @@ impl PolicyUrlMonitor {
 
                     for vm in &vms {
                         if let Err(e) =
-                            policy_manager.send_to_vm(vm, policy_name.as_str(), &full_path)
+                            self.manager
+                                .send_to_vm(vm, policy_name.as_str(), &full_path)
                         {
                             error!(
                                 "policy-url-monitor: [{}] Failed to send to VM {}: {}",
@@ -177,7 +188,7 @@ impl PolicyUrlMonitor {
                     }
 
                     /* 2. Update State & Persist Config */
-                    current_head = new_head.clone();
+                    current_head.clone_from(&new_head);
                     if let Err(e) = self.update_head(&policy_name, new_head).await {
                         warn!("Failed to update head for {policy_name}: {e}");
                     }
@@ -229,29 +240,27 @@ impl PolicyUrlMonitor {
         let headers = head_resp.headers();
         let mut remote_head: Option<String> = None;
 
-        if let Some(etag) = headers.get(ETAG) {
-            if let Ok(s) = etag.to_str() {
-                remote_head = Some(format!("etag:{}", s));
-            }
+        if let Some(etag) = headers.get(ETAG)
+            && let Ok(s) = etag.to_str()
+        {
+            remote_head = Some(format!("etag:{s}"));
         }
 
         /* Fallback to Last-Modified if ETag is missing */
-        if remote_head.is_none() {
-            if let Some(lm) = headers.get(LAST_MODIFIED) {
-                if let Ok(s) = lm.to_str() {
-                    remote_head = Some(format!("last-modified:{}", s));
-                }
-            }
+        if remote_head.is_none()
+            && let Some(lm) = headers.get(LAST_MODIFIED)
+            && let Ok(s) = lm.to_str()
+        {
+            remote_head = Some(format!("last-modified:{s}"));
         }
 
         /* Optimization: If headers match current state, stop here. */
         let force_hash_check = remote_head.is_none();
-        if !force_hash_check {
-            if let Some(rh) = &remote_head {
-                if rh == current_head {
-                    return Ok(None); // No change
-                }
-            }
+        if !force_hash_check
+            && let Some(rh) = &remote_head
+            && rh == current_head
+        {
+            return Ok(None); // No change
         }
 
         /* Step 2: Download the file (GET) */
@@ -280,7 +289,7 @@ impl PolicyUrlMonitor {
         };
 
         /* Step 4: Write to Disk */
-        let file_name = url.split('/').last().unwrap_or("policy.bin");
+        let file_name = url.split('/').next_back().unwrap_or("policy.bin");
         let policy_dir = self.output_dir.join(name);
         let file_path = policy_dir.join(file_name);
 
@@ -329,7 +338,7 @@ impl PolicyUrlMonitor {
 
         /* Write to disk */
         fs::write(
-            &self.config_file_path,
+            &self.config_file,
             &serde_json::to_vec(&*guard).context("Failed to serialize config for saving")?,
         )
         .context("Failed to write config")

@@ -1,23 +1,28 @@
 // SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::policy::PolicyConfig;
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 use anyhow::{Result, anyhow};
-use crossbeam_channel::{Receiver, Sender, unbounded};
-use std::collections::HashMap;
-use std::fs;
-use std::future::Future;
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::sync::{Arc, OnceLock};
-use std::thread::{self, JoinHandle};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::oneshot::{self, Sender};
+use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
-/*
- * Static storage for the Singleton instance of PolicyManager.
- * usage: PolicyManager::instance()
- */
-static INSTANCE: OnceLock<Arc<PolicyManager>> = OnceLock::new();
+use crate::policy::PolicyConfig;
+
+pub struct Update {
+    pub vm_name: String,
+    pub file: PathBuf,
+    pub policy: String,
+}
+
+pub type UpdateReceiver = UnboundedReceiver<(Update, Sender<Result<()>>)>;
 
 /*
  * Policy
@@ -30,11 +35,6 @@ pub struct Policy {
     pub file: String,
 }
 
-pub type PolicyUpdateFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
-
-pub type PolicyUpdateCallback =
-    Arc<dyn Fn(String, PathBuf, String) -> PolicyUpdateFuture + Send + Sync>;
-
 /*
  * PolicyManager
  *
@@ -46,66 +46,34 @@ pub type PolicyUpdateCallback =
 pub struct PolicyManager {
     policy_dir: PathBuf,
     configs: PolicyConfig,
-    update_callback: PolicyUpdateCallback,
-    workers: HashMap<String, (Sender<Policy>, JoinHandle<()>)>,
+    update_channel: UnboundedSender<(Update, Sender<Result<()>>)>,
+    workers: HashMap<String, (UnboundedSender<Policy>, JoinHandle<()>)>,
 }
 
 impl PolicyManager {
     /*
-     * init
-     *
-     * Initializes the singleton. Must be called once at startup.
-     */
-    pub fn init(
-        store_dir: PathBuf,
-        configs: &PolicyConfig,
-        update_callback: PolicyUpdateCallback,
-    ) -> Result<()> {
-        let manager = Self::new(store_dir, configs, update_callback)?;
-        INSTANCE
-            .set(Arc::new(manager))
-            .map_err(|_| anyhow!("policy-admin:PolicyManager singleton already initialized"))?;
-        Ok(())
-    }
-
-    /*
-     * instance
-     *
-     * Returns a thread-safe reference to the singleton instance.
-     * Panics if init() has not been called yet.
-     */
-    pub fn instance() -> Arc<Self> {
-        INSTANCE
-            .get()
-            .expect("policy-admin:PolicyManager must be initialized before use")
-            .clone()
-    }
-
-    /*
-     * new
-     *
-     * Private constructor.
      * 1. Loads config.
      * 2. Creates a shared Tokio Runtime.
      * 3. Spawns initial workers for VMs defined in the config.
      */
-    fn new(
+    #[allow(clippy::unnecessary_wraps)]
+    pub(crate) fn new(
         store_dir: PathBuf,
         configs: &PolicyConfig,
-        update_callback: PolicyUpdateCallback,
-    ) -> Result<Self> {
+    ) -> Result<(Arc<Self>, UpdateReceiver)> {
         let vm_names = configs
             .policies
             .values()
             .flat_map(|policy| &policy.vms)
             .collect::<std::collections::HashSet<_>>();
+        let (update_channel, updates) = unbounded_channel();
 
         debug!("policy-admin:PolicyManager policies: {:?}.", configs);
 
         let mut manager = Self {
-            policy_dir: store_dir.to_path_buf(),
+            policy_dir: store_dir,
             configs: configs.clone(),
-            update_callback,
+            update_channel,
             workers: HashMap::new(),
         };
 
@@ -114,7 +82,7 @@ impl PolicyManager {
         }
 
         info!("policy-admin:PolicyManager initialized.");
-        Ok(manager)
+        Ok((Arc::new(manager), updates))
     }
 
     /*
@@ -129,16 +97,10 @@ impl PolicyManager {
         }
         debug!("policy-admin:Adding worker for vm [{}].", vm);
 
-        let (tx, rx) = unbounded::<Policy>();
+        let (tx, rx) = unbounded_channel();
         let vm_name = vm.to_string();
 
-        /* Clone Arcs to pass shared ownership to the thread */
-        let rt_share = tokio::runtime::Handle::current();
-        let callback_share = Arc::clone(&self.update_callback);
-
-        let handle = thread::spawn(move || {
-            Self::worker_loop(vm_name, rx, rt_share, callback_share);
-        });
+        let handle = tokio::spawn(Self::worker_loop(vm_name, rx, self.update_channel.clone()));
 
         self.workers.insert(vm.to_string(), (tx, handle));
     }
@@ -150,24 +112,25 @@ impl PolicyManager {
      * Blocks on rx.recv() until a message arrives, then uses the Runtime to
      * execute the async push_policy_update call.
      */
-    fn worker_loop(
+    async fn worker_loop(
         vm: String,
-        rx: Receiver<Policy>,
-        rt: tokio::runtime::Handle,
-        update_callback: PolicyUpdateCallback,
+        mut rx: UnboundedReceiver<Policy>,
+        update_channel: UnboundedSender<(Update, Sender<Result<()>>)>,
     ) {
         debug!("policy-admin: Worker [{}] started.", vm);
 
-        while let Ok(msg) = rx.recv() {
+        while let Some(msg) = rx.recv().await {
             /* Execute async code synchronously within this thread */
-            let result = rt.block_on(async {
-                update_callback(
-                    vm.clone(),
-                    PathBuf::from(&msg.file),
-                    msg.policy_name.clone(),
-                )
-                .await
-            });
+            let (tx, rx) = oneshot::channel();
+            let _ = update_channel.send((
+                Update {
+                    vm_name: vm.clone(),
+                    file: msg.file.into(),
+                    policy: msg.policy_name,
+                },
+                tx,
+            ));
+            let result = rx.await;
 
             if let Err(e) = result {
                 error!("policy-admin:Worker [{}]: Failed to push update: {}", vm, e);
@@ -182,7 +145,7 @@ impl PolicyManager {
      *
      * Helper to construct metadata JSON and send the policy task to the worker.
      */
-    pub fn send_to_vm(&self, vm: &str, policy_name: &str, file_path: &Path) -> Result<()> {
+    pub(crate) fn send_to_vm(&self, vm: &str, policy_name: &str, file_path: &Path) -> Result<()> {
         debug!(
             "policy-admin:send_to_vm() sending policy {} to vm {}.",
             policy_name, vm
@@ -196,15 +159,16 @@ impl PolicyManager {
             .map_err(|_| anyhow!("Worker channel disconnected"))?;
             Ok(())
         } else {
-            Err(anyhow!("No worker found for VM: {}", vm))
+            Err(anyhow!("No worker found for VM: {vm}"))
         }
     }
 
-    /*
-     * send_all_policies
-     *
+    /**
      * Iterates through all policies. If the VM is subscribed to a policy,
      * sends all files in that policy directory to the VM.
+     *
+     * # Errors
+     *
      */
     pub fn send_all_policies(&self, vm_name: &str) -> Result<()> {
         for policy in self.configs.policies.keys() {
@@ -216,30 +180,27 @@ impl PolicyManager {
                     .configs
                     .policies
                     .get(policy)
-                    .map(|p| p.vms.iter().any(|v| v == vm_name))
-                    .unwrap_or(false);
+                    .is_some_and(|p| p.vms.iter().any(|v| v == vm_name));
 
                 if should_process {
                     /* Read directory and send every file */
                     match fs::read_dir(&policy_dir) {
                         Ok(entries) => {
-                            for entry in entries {
-                                if let Ok(entry) = entry {
-                                    let path = entry.path();
+                            for entry in entries.flatten() {
+                                let path = entry.path();
 
-                                    if path.is_file() {
-                                        if let Err(e) = self.send_to_vm(vm_name, policy, &path) {
-                                            error!(
-                                                "policy-admin:Failed to send policy update for {}: {}",
-                                                vm_name, e
-                                            );
-                                        } else {
-                                            debug!(
-                                                "policy-admin:Sent policy update for {}: {}",
-                                                vm_name,
-                                                path.display()
-                                            );
-                                        }
+                                if path.is_file() {
+                                    if let Err(e) = self.send_to_vm(vm_name, policy, &path) {
+                                        error!(
+                                            "policy-admin:Failed to send policy update for {}: {}",
+                                            vm_name, e
+                                        );
+                                    } else {
+                                        debug!(
+                                            "policy-admin:Sent policy update for {}: {}",
+                                            vm_name,
+                                            path.display()
+                                        );
                                     }
                                 }
                             }
@@ -264,8 +225,9 @@ impl PolicyManager {
      *
      * Triggers a full policy refresh for every registered VM worker.
      */
-    pub fn force_update_all_vms(&self) -> Result<()> {
-        for (vm, _) in self.workers.iter() {
+    #[allow(clippy::unnecessary_wraps)]
+    pub(crate) fn force_update_all_vms(&self) -> Result<()> {
+        for vm in self.workers.keys() {
             if let Err(e) = self.send_all_policies(vm) {
                 error!("Failed to force update for VM {}: {}", vm, e);
             }
@@ -279,7 +241,8 @@ impl PolicyManager {
      * Parses a git-style changeset string (e.g., "M vm-policies/policyA/file.json")
      * and dispatches updates to relevant VMs.
      */
-    pub fn process_changeset(&self, changeset: &str) -> Result<()> {
+    #[allow(clippy::unnecessary_wraps)]
+    pub(crate) fn process_changeset(&self, changeset: &str) -> Result<()> {
         for line in changeset.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -292,30 +255,28 @@ impl PolicyManager {
                 continue;
             };
 
-            const PREFIX: &str = "vm-policies/";
-            if !relative_path.starts_with(PREFIX) {
+            let Some(rest) = relative_path.strip_prefix("vm-policies/") else {
                 continue;
-            }
+            };
 
-            /* Extract policy name and file name */
-            let rest = &relative_path[PREFIX.len()..];
-            let path_parts: Vec<&str> = rest.split('/').collect();
+            let Some((policy_name, file_name)) = ({
+                let mut parts = rest.split('/');
+                parts.next().zip(parts.next())
+            }) else {
+                continue;
+            };
 
-            if path_parts.len() >= 2 {
-                let policy_name = path_parts[0];
-                let file_name = path_parts[1];
-                let full_path = self.policy_dir.join(policy_name).join(file_name);
+            let full_path = self.policy_dir.join(policy_name).join(file_name);
 
-                if fs::metadata(&full_path).is_ok() {
-                    let vms = self
-                        .configs
-                        .policies
-                        .get(policy_name)
-                        .into_iter()
-                        .flat_map(|p| &p.vms);
-                    for vm in vms {
-                        let _ = self.send_to_vm(&vm, &policy_name, &full_path);
-                    }
+            if full_path.exists() {
+                let vms = self
+                    .configs
+                    .policies
+                    .get(policy_name)
+                    .into_iter()
+                    .flat_map(|p| &p.vms);
+                for vm in vms {
+                    let _ = self.send_to_vm(vm, policy_name, &full_path);
                 }
             }
         }

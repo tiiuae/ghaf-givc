@@ -3,35 +3,36 @@
 
 #![allow(clippy::similar_names)]
 
-use super::entry::{Placement, RegistryEntry};
-use super::policyclient::PolicyAdminClient;
+use std::{path::PathBuf, sync::Arc, time::Duration};
+
+use anyhow::{Context, Result, anyhow, bail};
+use async_stream::try_stream;
+use givc_common::query::Event;
+use regex::Regex;
+use tokio::sync::Mutex;
+use tonic::{Code, Response, Status};
+use tracing::{debug, error, info, trace};
+
+use givc_client::endpoint::{EndpointConfig, TlsConfig};
+use givc_common::query::QueryResult;
+use givc_policyadmin::policy::run_policy_admin;
+use givc_policyadmin::policy_manager::{PolicyManager, Update, UpdateReceiver};
+
+use crate::admin::entry::{Placement, RegistryEntry};
+use crate::admin::policyclient::PolicyAdminClient;
+use crate::admin::registry::Registry;
 use crate::pb::{
     self, ApplicationRequest, ApplicationResponse, Empty, ListGenerationsResponse, LocaleRequest,
     QueryListResponse, RegistryRequest, RegistryResponse, SetGenerationRequest,
     SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest, UnitStatusRequest,
     WatchItem, ctap::CtapRequest, ctap::CtapResponse,
 };
-use anyhow::{Context, anyhow, bail};
-use async_stream::try_stream;
-use givc_common::query::Event;
-use regex::Regex;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::Mutex;
-use tonic::{Code, Response, Status};
-use tracing::{debug, error, info, trace};
-
-pub use pb::admin_service_server::AdminServiceServer;
-
-use crate::admin::registry::Registry;
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
 use crate::utils::naming::VmName;
 use crate::utils::tonic::{Stream, escalate};
-use givc_client::endpoint::{EndpointConfig, TlsConfig};
-use givc_common::query::QueryResult;
-use givc_policyadmin::policy::run_policy_admin;
-use givc_policyadmin::policy_manager::{PolicyManager, PolicyUpdateCallback};
+
+pub use pb::admin_service_server::AdminServiceServer;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
 const TIMEZONE_CONF: &str = "/etc/timezone.conf";
@@ -46,17 +47,16 @@ pub enum State {
     VmsRegistered,
 }
 
-#[derive(Debug)]
-pub struct AdminServiceImpl {
+struct AdminServiceImpl {
     registry: Registry,
     state: State, // FIXME: use sysfsm statemachine
     tls_config: Option<TlsConfig>,
     locale_assigns: Mutex<Vec<pb::locale::LocaleAssignment>>,
     timezone: Mutex<String>,
-    policy_admin_enabled: bool,
+    policy_manager: Option<Arc<PolicyManager>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AdminService {
     inner: Arc<AdminServiceImpl>,
 }
@@ -78,15 +78,29 @@ impl Validator {
 }
 
 impl AdminService {
-    #[must_use]
-    pub async fn new(
+    /**
+     * Create new `AdminService` instance
+     *
+     * # Errors
+     * Fails if policy setup fails.
+     */
+    pub fn new(
         use_tls: Option<TlsConfig>,
         monitoring: bool,
         enable_policy_admin: bool,
-        policy_store: Option<std::path::PathBuf>,
+        policy_store: Option<PathBuf>,
         policy_config: Option<String>,
     ) -> anyhow::Result<Self> {
-        let inner = Arc::new(AdminServiceImpl::new(use_tls, enable_policy_admin));
+        let (manager, updates) = if enable_policy_admin {
+            Some(AdminServiceImpl::setup_policy_admin(
+                policy_store,
+                policy_config,
+            )?)
+        } else {
+            None
+        }
+        .unzip();
+        let inner = Arc::new(AdminServiceImpl::new(use_tls, manager));
         if monitoring {
             let clone = inner.clone();
             tokio::task::spawn(async move {
@@ -94,17 +108,30 @@ impl AdminService {
             });
         }
 
-        inner
-            .clone()
-            .setup_policy_admin(policy_store, policy_config)
-            .await?;
+        if let Some(mut updates) = updates {
+            let inner = inner.clone();
+            tokio::spawn(async move {
+                while let Some((
+                    Update {
+                        vm_name,
+                        file,
+                        policy,
+                    },
+                    tx,
+                )) = updates.recv().await
+                {
+                    let _ = tx.send(inner.push_policy_update(&vm_name, &file, &policy).await);
+                }
+            });
+        }
+
         Ok(Self { inner })
     }
 }
 
 impl AdminServiceImpl {
     #[must_use]
-    pub fn new(use_tls: Option<TlsConfig>, enable_policy_admin: bool) -> Self {
+    fn new(use_tls: Option<TlsConfig>, policy_manager: Option<Arc<PolicyManager>>) -> Self {
         let timezone = std::fs::read_to_string(TIMEZONE_CONF)
             .ok()
             .and_then(|l| l.lines().next().map(ToOwned::to_owned))
@@ -130,27 +157,15 @@ impl AdminServiceImpl {
             tls_config: use_tls,
             timezone: Mutex::new(timezone),
             locale_assigns: Mutex::new(locale_assigns),
-            policy_admin_enabled: enable_policy_admin,
+            policy_manager,
         }
     }
 
-    pub async fn setup_policy_admin(
-        self: &Arc<Self>,
-        policy_store: Option<std::path::PathBuf>,
+    fn setup_policy_admin(
+        policy_store: Option<PathBuf>,
         policy_config: Option<String>,
-    ) -> anyhow::Result<()> {
-        if !self.policy_admin_enabled {
-            info!("policy-admin: disabled");
-            return Ok(());
-        }
-        let this = self.clone();
-        let callback: PolicyUpdateCallback = std::sync::Arc::new(move |vm, path, policy| {
-            let service = this.clone();
-            Box::pin(async move { service.push_policy_update(&vm, &path, &policy).await })
-        });
-
-        run_policy_admin(policy_store, policy_config, callback).await?;
-        Ok(())
+    ) -> anyhow::Result<(Arc<PolicyManager>, UpdateReceiver)> {
+        run_policy_admin(policy_store, policy_config)
     }
 
     fn host_endpoint(&self) -> anyhow::Result<EndpointConfig> {
@@ -183,12 +198,12 @@ impl AdminServiceImpl {
         })
     }
 
-    pub(crate) fn agent_endpoint(&self, name: &str) -> anyhow::Result<EndpointConfig> {
+    fn agent_endpoint(&self, name: &str) -> anyhow::Result<EndpointConfig> {
         let reentry = self.registry.by_name(name)?;
         self.endpoint(&reentry)
     }
 
-    pub(crate) fn app_entries(&self, name: &str) -> anyhow::Result<Vec<String>> {
+    fn app_entries(&self, name: &str) -> anyhow::Result<Vec<String>> {
         if name.contains('@') {
             let list = self.registry.find_names(name)?;
             Ok(list)
@@ -197,7 +212,7 @@ impl AdminServiceImpl {
         }
     }
 
-    pub(crate) async fn get_remote_status(
+    async fn get_remote_status(
         &self,
         entry: &RegistryEntry,
     ) -> anyhow::Result<crate::types::UnitStatus> {
@@ -206,23 +221,19 @@ impl AdminServiceImpl {
         client.get_remote_status(entry.name.clone()).await
     }
 
-    pub(crate) async fn send_system_command(&self, name: String) -> anyhow::Result<()> {
+    async fn send_system_command(&self, name: String) -> anyhow::Result<()> {
         let endpoint = self.host_endpoint()?;
         let client = SystemDClient::new(endpoint);
         client.start_remote(name).await?;
         Ok(())
     }
 
-    pub async fn push_policy_update(
+    async fn push_policy_update(
         &self,
         vm_name: &str,
         policy_file_path: &std::path::Path,
         policy_name: &str,
     ) -> anyhow::Result<()> {
-        if !self.policy_admin_enabled {
-            return Ok(());
-        }
-
         let agent_service_name = VmName::Vm(vm_name).agent_service();
         info!(
             "policy-admin: pushing policy update to vm '{}' via agent '{}'",
@@ -230,10 +241,7 @@ impl AdminServiceImpl {
         );
 
         let endpoint = self.agent_endpoint(&agent_service_name).with_context(|| {
-            format!(
-                "policy-admin: failed to get endpoint for agent {}",
-                agent_service_name
-            )
+            format!("policy-admin: failed to get endpoint for agent {agent_service_name}")
         })?;
 
         let client = PolicyAdminClient::new(endpoint);
@@ -248,11 +256,7 @@ impl AdminServiceImpl {
         result
     }
 
-    pub(crate) async fn start_unit_on_vm(
-        &self,
-        unit: &str,
-        vmname: &str,
-    ) -> anyhow::Result<String> {
+    async fn start_unit_on_vm(&self, unit: &str, vmname: &str) -> anyhow::Result<String> {
         let vmservice = VmName::Vm(vmname).agent_service();
 
         /* Return error if the vm is not registered */
@@ -284,7 +288,7 @@ impl AdminServiceImpl {
         }
     }
 
-    pub(crate) async fn start_vm(&self, name: &str) -> anyhow::Result<()> {
+    async fn start_vm(&self, name: &str) -> anyhow::Result<()> {
         let endpoint = self.host_endpoint()?;
         let client = SystemDClient::new(endpoint);
 
@@ -317,7 +321,7 @@ impl AdminServiceImpl {
         Ok(())
     }
 
-    pub(crate) async fn get_unit_status(
+    async fn get_unit_status(
         &self,
         vm_service: String,
         unit_name: String,
@@ -337,7 +341,7 @@ impl AdminServiceImpl {
         }
     }
 
-    pub(crate) async fn handle_error(&self, entry: RegistryEntry) -> anyhow::Result<()> {
+    async fn handle_error(&self, entry: RegistryEntry) -> anyhow::Result<()> {
         info!(
             "Handling error for {} vm type {} service type {}",
             entry.name, entry.r#type.vm, entry.r#type.service
@@ -401,7 +405,7 @@ impl AdminServiceImpl {
         Ok(())
     }
 
-    pub async fn monitor(&self) {
+    async fn monitor(&self) {
         use tokio::time::{MissedTickBehavior, interval};
         let mut watch = interval(Duration::from_secs(5));
         watch.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -424,7 +428,7 @@ impl AdminServiceImpl {
         self.registry.register(entry);
     }
 
-    pub(crate) async fn start_app(&self, req: ApplicationRequest) -> anyhow::Result<String> {
+    async fn start_app(&self, req: ApplicationRequest) -> anyhow::Result<String> {
         if self.state != State::VmsRegistered {
             info!("not all required system-vms are registered");
         }
@@ -475,7 +479,7 @@ impl AdminServiceImpl {
         Ok(remote_name)
     }
 
-    pub(crate) async fn notify_user(
+    async fn notify_user(
         &self,
         vm_name: String,
         notification: pb::notify::UserNotification,
@@ -538,14 +542,13 @@ impl pb::admin_service_server::AdminService for AdminService {
         {
             let locale_assigns = self.inner.locale_assigns.lock().await.clone();
             let timezone = self.inner.timezone.lock().await.clone();
-            let inner_clone = self.inner.clone();
             let vm_name = endpoint.transport.tls_name.clone();
+            let policy_manager = self.inner.policy_manager.clone();
 
             tokio::spawn(async move {
                 if let Ok(conn) = endpoint.connect().await {
-                    if inner_clone.policy_admin_enabled {
+                    if let Some(policy_manager) = policy_manager {
                         debug!("policy-admin: sending policy updates to vm '{}'", vm_name);
-                        let policy_manager = PolicyManager::instance();
                         let _ = policy_manager.send_all_policies(&vm_name);
                     } else {
                         debug!("policy-admin: disabled");
