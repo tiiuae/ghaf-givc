@@ -115,6 +115,16 @@ let
         type = policySubmodule;
         default = { };
       };
+      filter = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Whether to enable filtering of D-Bus messages. When enabled (default), only messages
+          explicitly allowed by the policy (see/talk/own/call/broadcast) are passed through.
+          When set to `false`, all messages are passed through without filtering and policy
+          options are not required.
+        '';
+      };
       debug = mkEnableOption "monitoring of the underlying xdg-dbus-proxy";
     };
   };
@@ -218,7 +228,7 @@ in
       }
       {
         assertion =
-          cfg.system.enable
+          (cfg.system.enable && cfg.system.filter)
           -> (
             cfg.system.policy.see != null
             || cfg.system.policy.talk != null
@@ -227,13 +237,13 @@ in
             || cfg.system.policy.broadcast != null
           );
         message = ''
-          At least one policy value (see/talk/own/call/broadcast) for the system bus must be set. For more information, please
+          At least one policy value (see/talk/own/call/broadcast) for the system bus must be set when filtering is enabled. For more information, please
           refer to the xdg-dbus-proxy manual (e.g., https://www.systutorials.com/docs/linux/man/1-xdg-dbus-proxy/).
         '';
       }
       {
         assertion =
-          cfg.session.enable
+          (cfg.session.enable && cfg.session.filter)
           -> (
             cfg.session.policy.see != null
             || cfg.session.policy.talk != null
@@ -242,7 +252,7 @@ in
             || cfg.session.policy.broadcast != null
           );
         message = ''
-          At least one policy value (see/talk/own/call/broadcast) for the session bus must be set. For more information, please
+          At least one policy value (see/talk/own/call/broadcast) for the session bus must be set when filtering is enabled. For more information, please
           refer to the xdg-dbus-proxy manual (e.g., https://www.systutorials.com/docs/linux/man/1-xdg-dbus-proxy/).
         '';
       }
@@ -269,25 +279,27 @@ in
         services.givc-dbusproxy-system =
           let
             args =
-              "--filter "
-              + concatStringsSep " " [
-                "${optionalString (cfg.system.policy.see != null) (
-                  concatMapStringsSep " " (x: "--see=${x}") cfg.system.policy.see
-                )}"
-                "${optionalString (cfg.system.policy.talk != null) (
-                  concatMapStringsSep " " (x: "--talk=${x}") cfg.system.policy.talk
-                )}"
-                "${optionalString (cfg.system.policy.own != null) (
-                  concatMapStringsSep " " (x: "--own=${x}") cfg.system.policy.own
-                )}"
-                "${optionalString (cfg.system.policy.call != null) (
-                  concatMapStringsSep " " (x: "--call=${x}") cfg.system.policy.call
-                )}"
-                "${optionalString (cfg.system.policy.broadcast != null) (
-                  concatMapStringsSep " " (x: "--broadcast=${x}") cfg.system.policy.broadcast
-                )}"
-              ]
-              + optionalString cfg.system.debug "--log";
+              optionalString cfg.system.filter (
+                "--filter "
+                + concatStringsSep " " [
+                  "${optionalString (cfg.system.policy.see != null) (
+                    concatMapStringsSep " " (x: "--see=${x}") cfg.system.policy.see
+                  )}"
+                  "${optionalString (cfg.system.policy.talk != null) (
+                    concatMapStringsSep " " (x: "--talk=${x}") cfg.system.policy.talk
+                  )}"
+                  "${optionalString (cfg.system.policy.own != null) (
+                    concatMapStringsSep " " (x: "--own=${x}") cfg.system.policy.own
+                  )}"
+                  "${optionalString (cfg.system.policy.call != null) (
+                    concatMapStringsSep " " (x: "--call=${x}") cfg.system.policy.call
+                  )}"
+                  "${optionalString (cfg.system.policy.broadcast != null) (
+                    concatMapStringsSep " " (x: "--broadcast=${x}") cfg.system.policy.broadcast
+                  )}"
+                ]
+              )
+              + optionalString cfg.system.debug " --log";
           in
           {
             description = "GIVC local xdg-dbus-proxy system service";
@@ -308,25 +320,27 @@ in
         user.services.givc-dbusproxy-session =
           let
             args =
-              "--filter "
-              + concatStringsSep " " [
-                "${optionalString (cfg.session.policy.see != null) (
-                  concatMapStringsSep " " (x: "--see=${x}") cfg.session.policy.see
-                )}"
-                "${optionalString (cfg.session.policy.talk != null) (
-                  concatMapStringsSep " " (x: "--talk=${x}") cfg.session.policy.talk
-                )}"
-                "${optionalString (cfg.session.policy.own != null) (
-                  concatMapStringsSep " " (x: "--own=${x}") cfg.session.policy.own
-                )}"
-                "${optionalString (cfg.session.policy.call != null) (
-                  concatMapStringsSep " " (x: "--call=${x}") cfg.session.policy.call
-                )}"
-                "${optionalString (cfg.session.policy.broadcast != null) (
-                  concatMapStringsSep " " (x: "--broadcast=${x}") cfg.session.policy.broadcast
-                )}"
-              ]
-              + optionalString cfg.session.debug "--log";
+              optionalString cfg.session.filter (
+                "--filter "
+                + concatStringsSep " " [
+                  "${optionalString (cfg.session.policy.see != null) (
+                    concatMapStringsSep " " (x: "--see=${x}") cfg.session.policy.see
+                  )}"
+                  "${optionalString (cfg.session.policy.talk != null) (
+                    concatMapStringsSep " " (x: "--talk=${x}") cfg.session.policy.talk
+                  )}"
+                  "${optionalString (cfg.session.policy.own != null) (
+                    concatMapStringsSep " " (x: "--own=${x}") cfg.session.policy.own
+                  )}"
+                  "${optionalString (cfg.session.policy.call != null) (
+                    concatMapStringsSep " " (x: "--call=${x}") cfg.session.policy.call
+                  )}"
+                  "${optionalString (cfg.session.policy.broadcast != null) (
+                    concatMapStringsSep " " (x: "--broadcast=${x}") cfg.session.policy.broadcast
+                  )}"
+                ]
+              )
+              + optionalString cfg.session.debug " --log";
             uid = toString config.users.users.${cfg.session.user}.uid;
           in
           {
