@@ -250,11 +250,8 @@ impl PolicyRepoMonitor {
      */
     pub fn start(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            let wait_time = if self.poll_interval.clone() == Duration::ZERO {
-                Duration::from_secs(300)
-            } else {
-                self.poll_interval
-            };
+            /* Retry request every 30 seconds until the first successful response */
+            let mut wait_time = Duration::from_secs(30);
 
             let policy_manager = PolicyManager::instance();
             let mut update_err = false;
@@ -296,9 +293,11 @@ impl PolicyRepoMonitor {
                     let _ = self.ensure_clone().await;
                     let _ = policy_manager.force_update_all_vms();
                     update_err = false;
-                }
-                if self.poll_interval == Duration::ZERO {
-                    return;
+                } else {
+                    wait_time = self.poll_interval;
+                    if self.poll_interval == Duration::ZERO {
+                        return;
+                    }
                 }
                 sleep(wait_time).await;
             }

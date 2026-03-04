@@ -148,6 +148,9 @@ impl PolicyUrlMonitor {
             return Ok(());
         }
 
+        /* Retry request every 30 seconds until the first successful response */
+        let mut wait_time = Duration::from_secs(30);
+
         let policy_manager = PolicyManager::instance();
         debug!(
             "policy-url-monitor: [{}] Started. Polling every {}s",
@@ -184,6 +187,7 @@ impl PolicyUrlMonitor {
                     if interval == 0 {
                         return Ok(());
                     }
+                    wait_time = Duration::from_secs(interval);
                 }
                 Ok(None) => {
                     debug!("policy-url-monitor: policy is upto date");
@@ -191,17 +195,13 @@ impl PolicyUrlMonitor {
                     if interval == 0 {
                         return Ok(());
                     }
+                    wait_time = Duration::from_secs(interval);
                 }
                 Err(e) => {
                     error!("policy-url-monitor: [{}] Poll failed: {}", policy_name, e);
                 }
             }
-
-            if interval > 0 {
-                sleep(Duration::from_secs(interval)).await;
-            } else {
-                sleep(Duration::from_secs(30)).await;
-            }
+            sleep(wait_time).await;
         }
     }
 
