@@ -15,6 +15,9 @@ permissions:
 jobs:
   run-checks:
     runs-on: ${{ matrix.os }}
+    concurrency:
+      group: nix-checks-${{ matrix.arch }}
+      cancel-in-progress: false
     strategy:
       matrix:
         include:
