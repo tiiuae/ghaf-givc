@@ -213,6 +213,14 @@ impl AdminServiceImpl {
         Ok(())
     }
 
+    async fn get_sysinfo(&self) -> anyhow::Result<pb::stats::SysinfoResponse> {
+        let endpoint = self.host_endpoint()?;
+        let conn = endpoint.connect().await?;
+        let mut client = pb::stats::stats_service_client::StatsServiceClient::new(conn);
+        let response = client.get_sysinfo(pb::stats::StatsRequest {}).await?;
+        Ok(response.into_inner())
+    }
+
     pub async fn push_policy_update(
         &self,
         vm_name: &str,
@@ -709,6 +717,13 @@ impl pb::admin_service_server::AdminService for AdminService {
     ) -> std::result::Result<tonic::Response<Empty>, tonic::Status> {
         println!("Not supported");
         Err(Status::unimplemented("Not supported"))
+    }
+
+    async fn sysinfo(
+        &self,
+        request: tonic::Request<Empty>,
+    ) -> std::result::Result<tonic::Response<pb::stats::SysinfoResponse>, tonic::Status> {
+        escalate(request, |_| self.inner.get_sysinfo()).await
     }
 
     async fn query_list(

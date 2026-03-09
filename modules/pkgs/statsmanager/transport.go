@@ -71,3 +71,15 @@ func (s *StatsServer) GetStats(ctx context.Context, req *stats_api.StatsRequest)
 		Process: processstats,
 	}, nil
 }
+
+// GetSysinfo handles incoming requests for host sysinfo.
+func (s *StatsServer) GetSysinfo(ctx context.Context, req *stats_api.StatsRequest) (*stats_api.SysinfoResponse, error) {
+	log.Infof("Incoming request to get sysinfo\n")
+
+	sysinfo, err := s.Controller.GetSysinfo(context.Background())
+	if err != nil {
+		log.Infof("[GetSysinfo] Error getting sysinfo: %v\n", err)
+		return nil, fmt.Errorf("cannot get sysinfo")
+	}
+	return sysinfo, nil
+}
