@@ -91,13 +91,16 @@ _: {
                 verity_sha=$(sha256sum "$out/ghaf_verity_${version}_${hashFragment}.raw.zst" | cut -d' ' -f1)
                 kernel_sha=$(sha256sum "$out/ghaf_kernel_${version}_${hashFragment}.efi" | cut -d' ' -f1)
 
+                root_bytes=$(stat --format=%s root.raw)
+                verity_bytes=$(stat --format=%s verity.raw)
+
                 cat > "$out/manifest.json" <<EOF
                 {
                   "meta": {},
                   "version": "${version}",
                   "root_verity_hash": "${verityHash}",
-                  "root":   { "file": "ghaf_root_${version}_${hashFragment}.raw.zst",   "sha256": "$root_sha" },
-                  "verity": { "file": "ghaf_verity_${version}_${hashFragment}.raw.zst", "sha256": "$verity_sha" },
+                  "root":   { "file": "ghaf_root_${version}_${hashFragment}.raw.zst",   "sha256": "$root_sha", "unpacked_size": $root_bytes },
+                  "verity": { "file": "ghaf_verity_${version}_${hashFragment}.raw.zst", "sha256": "$verity_sha", "unpacked_size": $verity_bytes },
                   "kernel": { "file": "ghaf_kernel_${version}_${hashFragment}.efi",     "sha256": "$kernel_sha" }
                 }
                 EOF
@@ -180,6 +183,25 @@ _: {
               with subtest("status after remove"):
                   status = machine.succeed("${ota-update} image status")
                   print(f"Status after remove:\n{status}")
+
+              with subtest("remove empty slots and reinstall (auto-create)"):
+                  # Remove the empty B-slot LVs so ota-update must create them
+                  machine.succeed("lvremove -f pool/root_empty_0 pool/verity_empty_0")
+                  output = machine.succeed("lvs --noheadings -o lv_name pool | sort")
+                  print(f"LVs after removing empties:\n{output}")
+                  assert "root_empty" not in output, f"empty slots should be gone: {output}"
+
+                  # Install should auto-create LVs
+                  machine.succeed("${ota-update} image install --manifest ${suDir}/manifest.json")
+
+                  output = machine.succeed("lvs --noheadings -o lv_name pool | sort")
+                  print(f"LVs after auto-create install:\n{output}")
+                  assert "root_${version}_${hashFragment}" in output, f"Expected root slot: {output}"
+                  assert "verity_${version}_${hashFragment}" in output, f"Expected verity slot: {output}"
+
+                  status = machine.succeed("${ota-update} image status")
+                  print(f"Status after auto-create install:\n{status}")
+                  assert "${version}" in status
             '';
         };
       };

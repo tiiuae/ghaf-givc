@@ -18,7 +18,7 @@ pub struct Volume {
     pub lv_attr: Option<String>,
 
     /// Parsed from strings like "34359738368"
-    #[serde(default)]
+    #[serde(default, rename = "lv_size")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub lv_size_bytes: Option<u64>,
 }

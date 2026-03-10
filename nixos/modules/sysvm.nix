@@ -1,6 +1,5 @@
 # SPDX-FileCopyrightText: 2024-2026 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
-{ self }:
 {
   config,
   pkgs,
@@ -9,7 +8,7 @@
 }:
 let
   cfg = config.givc.sysvm;
-  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-agent;
+  inherit (config.givc.packages) givc-agent;
   inherit (lib)
     mkIf
     mkOption

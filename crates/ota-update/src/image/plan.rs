@@ -25,7 +25,12 @@ impl Plan {
                 Ok(Plan { steps: vec![] })
             }
 
-            SlotSelection::Selected(slot) => Plan::install_into_slot(rt, m, &slot, source),
+            SlotSelection::Selected { slot, pre_steps } => {
+                let mut plan = Plan::install_into_slot(rt, m, &slot, source)?;
+                // Prepend lvcreate steps (if any) before the dd/rename steps
+                plan.steps.splice(0..0, pre_steps);
+                Ok(plan)
+            }
         }
     }
 

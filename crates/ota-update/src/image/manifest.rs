@@ -19,6 +19,10 @@ pub struct File {
     #[serde(rename = "sha256")]
     #[serde_as(as = "serde_with::hex::Hex")]
     pub sha256sum: [u8; 32],
+    /// Decompressed size in bytes (for zstd-compressed files).
+    /// Used to correctly size LVM volumes before writing.
+    #[serde(default)]
+    pub unpacked_size: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

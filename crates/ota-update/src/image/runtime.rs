@@ -5,6 +5,7 @@ use super::Version;
 use super::group::SlotGroup;
 use super::lvm::Volume;
 use super::manifest::Manifest;
+use super::pipeline::{CommandSpec, Pipeline};
 use super::slot::{Slot, SlotClass};
 use super::uki::{BootEntry, BootEntryKind, UkiEntry};
 use crate::bootctl::BootctlItem;
@@ -34,7 +35,11 @@ pub struct KernelParams {
 #[allow(clippy::large_enum_variant)]
 pub enum SlotSelection {
     AlreadyInstalled,
-    Selected(SlotGroup),
+    Selected {
+        slot: SlotGroup,
+        /// Optional lvcreate steps to run before writing data
+        pre_steps: Vec<Pipeline>,
+    },
 }
 
 impl SlotSelection {
@@ -91,18 +96,146 @@ impl Runtime {
         }
 
         // 2. Find first suitable empty slot
-        let slot = slots
+        if let Some(slot) = slots
             .iter()
             .find(|slot| slot.is_empty() && !slot.is_active(&self.kernel) && slot.is_complete())
-            .context("no empty slot available for update")?;
+        {
+            // Resize if the slot is too small for the new image
+            let pre_steps = Self::resize_steps_for_slot(slot, manifest)?;
+            let slot = slot.attach_uki(UkiEntry {
+                version: target,
+                boot_counter: None,
+            })?;
+            return Ok(SlotSelection::Selected { slot, pre_steps });
+        }
 
-        // 3. Attach UKI metadata for the plan
+        // 3. No empty slot — create one sized for the manifest
+        let (slot, pre_steps) = self.create_empty_slot(manifest)?;
         let slot = slot.attach_uki(UkiEntry {
             version: target,
             boot_counter: None,
         })?;
+        Ok(SlotSelection::Selected { slot, pre_steps })
+    }
 
-        Ok(SlotSelection::Selected(slot))
+    /// Generate `lvresize` steps for an existing empty slot if its LVs are
+    /// smaller than the unpacked images in the manifest.
+    fn resize_steps_for_slot(slot: &SlotGroup, manifest: &Manifest) -> Result<Vec<Pipeline>> {
+        let mut steps = Vec::new();
+
+        if let (Some(root), Some(needed)) = (&slot.root, manifest.store.unpacked_size) {
+            let vol = root.volume();
+            if vol.lv_size_bytes.is_some_and(|cur| cur < needed) {
+                steps.push(
+                    CommandSpec::new("lvresize")
+                        .arg("-f")
+                        .arg("-L")
+                        .arg(format!("{needed}b"))
+                        .arg(format!("{}/{}", vol.vg_name, vol.lv_name))
+                        .into(),
+                );
+            }
+        }
+
+        if let (Some(verity), Some(needed)) = (&slot.verity, manifest.verity.unpacked_size) {
+            let vol = verity.volume();
+            if vol.lv_size_bytes.is_some_and(|cur| cur < needed) {
+                steps.push(
+                    CommandSpec::new("lvresize")
+                        .arg("-f")
+                        .arg("-L")
+                        .arg(format!("{needed}b"))
+                        .arg(format!("{}/{}", vol.vg_name, vol.lv_name))
+                        .into(),
+                );
+            }
+        }
+
+        Ok(steps)
+    }
+
+    /// Create empty root + verity LVs sized for the manifest images,
+    /// falling back to the active slot sizes if unpacked_size is not set.
+    fn create_empty_slot(&self, manifest: &Manifest) -> Result<(SlotGroup, Vec<Pipeline>)> {
+        let active = self.active_slot()?;
+
+        let active_root = active
+            .root
+            .as_ref()
+            .context("active slot has no root")?
+            .volume();
+        let active_verity = active
+            .verity
+            .as_ref()
+            .context("active slot has no verity")?
+            .volume();
+
+        let vg = &active_root.vg_name;
+
+        let root_size = manifest.store.unpacked_size.or(active_root.lv_size_bytes)
+            .context("cannot determine root LV size: no unpacked_size in manifest and no active root size")?;
+        let verity_size = manifest.verity.unpacked_size.or(active_verity.lv_size_bytes)
+            .context("cannot determine verity LV size: no unpacked_size in manifest and no active verity size")?;
+
+        let empty_id = self.allocate_empty_identifier()?;
+        let root_name = format!("root_empty_{empty_id}");
+        let verity_name = format!("verity_empty_{empty_id}");
+
+        let pre_steps = vec![
+            CommandSpec::new("lvcreate")
+                .arg("--yes")
+                .arg("--wipesignatures")
+                .arg("y")
+                .arg("-L")
+                .arg(format!("{root_size}b"))
+                .arg("-n")
+                .arg(&root_name)
+                .arg(vg)
+                .into(),
+            CommandSpec::new("lvcreate")
+                .arg("--yes")
+                .arg("--wipesignatures")
+                .arg("y")
+                .arg("-L")
+                .arg(format!("{verity_size}b"))
+                .arg("-n")
+                .arg(&verity_name)
+                .arg(vg)
+                .into(),
+        ];
+
+        let root_vol = Volume {
+            lv_name: root_name,
+            vg_name: vg.clone(),
+            lv_attr: None,
+            lv_size_bytes: Some(root_size),
+        };
+        let verity_vol = Volume {
+            lv_name: verity_name,
+            vg_name: vg.clone(),
+            lv_attr: None,
+            lv_size_bytes: Some(verity_size),
+        };
+
+        let (root_slots, _) = Slot::from_volumes(vec![root_vol]);
+        let (verity_slots, _) = Slot::from_volumes(vec![verity_vol]);
+
+        let root = root_slots
+            .into_iter()
+            .next()
+            .context("failed to parse created root slot")?;
+        let verity = verity_slots
+            .into_iter()
+            .next()
+            .context("failed to parse created verity slot")?;
+
+        let group = SlotGroup {
+            root: Some(root),
+            verity: Some(verity),
+            boot: None,
+        };
+
+        Ok((group, pre_steps))
     }
 
     fn find_exact_one_group<'a>(
@@ -521,7 +654,8 @@ mod tests {
 
         let m = manifest("2.0.0", "bbbbbbbbbbbbbbbb");
 
-        let SlotSelection::Selected(slot) = rt.select_update_slot(&m).expect("slot expected")
+        let SlotSelection::Selected { slot, .. } =
+            rt.select_update_slot(&m).expect("slot expected")
         else {
             panic!("Expect Selected()")
         };
@@ -537,8 +671,14 @@ mod tests {
 
         let m = manifest("1.0.0", "aaaaaaaaaaaaaaaa");
 
+        // The incomplete empty slot (root only, no verity) is skipped.
+        // Then create_empty_slot is attempted but fails because there
+        // is no active slot to derive sizes from.
         let err = rt.select_update_slot(&m).unwrap_err();
-        assert!(err.to_string().contains("no empty slot"));
+        assert!(
+            err.to_string().contains("no active slot"),
+            "unexpected error: {err}"
+        );
     }
 
     // Few empty slots, choose any free of them
@@ -558,11 +698,121 @@ mod tests {
 
         let m = manifest("1.0.0", "aaaaaaaaaaaaaaaa");
 
-        let SlotSelection::Selected(slot) = rt.select_update_slot(&m).expect("slot expected")
+        let SlotSelection::Selected { slot, .. } =
+            rt.select_update_slot(&m).expect("slot expected")
         else {
             panic!("Selected() expected")
         };
         assert!(slot.is_empty());
+    }
+
+    #[test]
+    fn creates_empty_slot_when_none_exists() {
+        // Only an active slot, no empty slot — should auto-create
+        let rt = Runtime {
+            slotgroups: groups(&[
+                "root_1.0.0_aaaaaaaaaaaaaaaa",
+                "verity_1.0.0_aaaaaaaaaaaaaaaa",
+            ]),
+            kernel: KernelParams {
+                store_hash: Some("aaaaaaaaaaaaaaaa".into()),
+                revision: Some("1.0.0".into()),
+            },
+            ..Runtime::default()
+        };
+
+        let m = manifest("2.0.0", "bbbbbbbbbbbbbbbb");
+
+        let SlotSelection::Selected { slot, pre_steps } =
+            rt.select_update_slot(&m).expect("slot expected")
+        else {
+            panic!("Selected expected")
+        };
+
+        // Should have lvcreate steps
+        assert_eq!(pre_steps.len(), 2, "expected 2 lvcreate steps");
+        let cmds: Vec<_> = pre_steps.iter().map(|s| s.format_shell()).collect();
+        assert!(
+            cmds[0].contains("lvcreate"),
+            "first step should be lvcreate for root: {}",
+            cmds[0]
+        );
+        assert!(
+            cmds[1].contains("lvcreate"),
+            "second step should be lvcreate for verity: {}",
+            cmds[1]
+        );
+
+        // The slot should be empty (pre-rename)
+        assert!(slot.is_empty());
+        assert!(slot.root.is_some());
+        assert!(slot.verity.is_some());
+    }
+
+    #[test]
+    fn resizes_small_empty_slot() {
+        // Empty slot exists but is smaller than the manifest's unpacked_size
+        let mut small_root = Volume::new("root_empty_0");
+        small_root.lv_size_bytes = Some(1_000_000_000); // 1 GB — too small
+        let mut small_verity = Volume::new("verity_empty_0");
+        small_verity.lv_size_bytes = Some(10_000_000); // 10 MB — too small
+
+        let (slots, _) = Slot::from_volumes(vec![small_root, small_verity]);
+        let slotgroups = SlotGroup::group_volumes(slots, vec![]).unwrap();
+
+        let rt = Runtime {
+            slotgroups,
+            ..Runtime::default()
+        };
+
+        let m = manifest("2.0.0", "bbbbbbbbbbbbbbbb");
+
+        let SlotSelection::Selected { pre_steps, .. } =
+            rt.select_update_slot(&m).expect("slot expected")
+        else {
+            panic!("Selected expected")
+        };
+
+        // Should have lvresize steps
+        assert_eq!(pre_steps.len(), 2, "expected 2 lvresize steps");
+        let cmds: Vec<_> = pre_steps.iter().map(|s| s.format_shell()).collect();
+        assert!(
+            cmds[0].contains("lvresize"),
+            "expected lvresize: {}",
+            cmds[0]
+        );
+        assert!(
+            cmds[1].contains("lvresize"),
+            "expected lvresize: {}",
+            cmds[1]
+        );
+    }
+
+    #[test]
+    fn no_resize_when_slot_is_large_enough() {
+        // Empty slot that's already large enough
+        let mut big_root = Volume::new("root_empty_0");
+        big_root.lv_size_bytes = Some(10_000_000_000); // 10 GB — big enough
+        let mut big_verity = Volume::new("verity_empty_0");
+        big_verity.lv_size_bytes = Some(100_000_000); // 100 MB — big enough
+
+        let (slots, _) = Slot::from_volumes(vec![big_root, big_verity]);
+        let slotgroups = SlotGroup::group_volumes(slots, vec![]).unwrap();
+
+        let rt = Runtime {
+            slotgroups,
+            ..Runtime::default()
+        };
+
+        let m = manifest("2.0.0", "bbbbbbbbbbbbbbbb");
+
+        let SlotSelection::Selected { pre_steps, .. } =
+            rt.select_update_slot(&m).expect("slot expected")
+        else {
+            panic!("Selected expected")
+        };
+
+        assert!(pre_steps.is_empty(), "no resize needed");
     }
 
     #[test]

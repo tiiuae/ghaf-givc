@@ -3,7 +3,6 @@
 {
   pkgs,
   lib,
-  self,
   src,
   ...
 }:
@@ -39,12 +38,15 @@ let
     name:
     (nixosOptionsDoc {
       inherit pkgs lib;
-      options = filterAttrsRecursive (n: _v: n != "_module") (evalModules {
-        modules = [
-          { _module.check = false; }
-          (import (./. + "/../modules/${name}.nix") { inherit self; })
-        ];
-      });
+      options =
+        filterAttrsRecursive (n: _v: n != "_module")
+          (evalModules {
+            specialArgs = { inherit pkgs; };
+            modules = [
+              { _module.check = false; }
+              (./. + "/../modules/${name}.nix")
+            ];
+          }).options;
     }).optionsCommonMark;
   mkNixosDoc =
     modules:
