@@ -203,6 +203,8 @@ in
           UserKnownHostsFile=/dev/null
           StrictHostKeyChecking=no
         '';
+        # Disable pam_lastlog2 which has linking issues in current nixpkgs
+        security.pam.services.login.updateWtmp = lib.mkForce false;
         givc.sysvm = {
           enable = true;
           notifier.enable = true;
