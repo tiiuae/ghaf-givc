@@ -12,7 +12,7 @@ async-channel = "2.3.1"
 async-fn-stream = "*"
 async-stream = "0.3"
 crossbeam-channel = "0.5.15"
-gix = { version = "0.79", default-features = false, features = [
+gix = { version = "0.80", default-features = false, features = [
   "blocking-network-client",
   "blocking-http-transport-reqwest",
   "worktree-mutation",
