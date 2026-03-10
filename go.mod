@@ -10,7 +10,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
 	github.com/holoplot/go-evdev v0.0.0-20250804134636-ab1d56a1fe83
-	github.com/jbdemonte/virtual-device v1.1.1-0.20250823152348-1aea79039990
+	github.com/jbdemonte/virtual-device v1.2.1
 	github.com/linuxkit/virtsock v0.0.0-20241009230534-cb6a20cc0422
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/sirupsen/logrus v1.9.4
