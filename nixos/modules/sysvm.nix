@@ -99,7 +99,7 @@ in
                 protocol = "tcp";
                 port = "9001";
               };'';
-          description = ''Admin server transport configuration. This configuration tells the agent how to reach the admin server.'';
+          description = "Admin server transport configuration. This configuration tells the agent how to reach the admin server.";
         };
       };
       tls = mkOption {
@@ -160,7 +160,7 @@ in
       };
 
       socketProxy = {
-        enable = mkEnableOption ''Socket proxy module to provide a VM-to-VM streaming mechanism with socket endpoints.'';
+        enable = mkEnableOption "Socket proxy module to provide a VM-to-VM streaming mechanism with socket endpoints.";
         sockets = mkOption {
           type = types.nullOr (types.listOf proxySubmodule);
           default = null;
