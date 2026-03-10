@@ -45,4 +45,9 @@ jobs:
       - name: Check nix flake show runs successfully
         run: nix flake show --system ${{ matrix.arch }}
       - name: Run nix flake check
-        run: nix flake check --system ${{ matrix.arch }}
+        run: |
+          if [ "${{ matrix.arch }}" = "x86_64-linux" ]; then
+            nix flake check --system ${{ matrix.arch }} --max-jobs 1
+          else
+            nix flake check --system ${{ matrix.arch }}
+          fi
