@@ -11,7 +11,7 @@ anyhow = "1.0.101"
 glib = { version = "*", optional = true, features = [] }
 prost = "0.14"
 serde = { version = "1.0.219", features = ["derive"] }
-strum = { version = "0.27", features = ["derive"] }
+strum = { version = "0.28", features = ["derive"] }
 tokio-vsock = "*"
 tonic = { version = "0.14", features = ["tls-aws-lc"] }
 tonic-prost = "0.14"

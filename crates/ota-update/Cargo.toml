@@ -25,7 +25,7 @@ serde_with = { version = "*", features = ["hex"] }
 hex = "0.4"
 memmap2 = "0.9"
 sha2 = { version = "0.10", features = ["asm"] }
-strum = { version = "0.27", features = ["derive"] }
+strum = { version = "0.28", features = ["derive"] }
 thiserror = "*"
 tokio = { version = "1.49", features = [
   "rt-multi-thread",
