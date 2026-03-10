@@ -36,7 +36,7 @@ let
 in
 {
   options.givc.host = {
-    enable = mkEnableOption ''givc host agent module, which is responsible for managing system VMs and app VMs.'';
+    enable = mkEnableOption "givc host agent module, which is responsible for managing system VMs and app VMs.";
 
     network = {
       agent = {
@@ -78,7 +78,7 @@ in
                 protocol = "tcp";
                 port = "9001";
               };'';
-          description = ''Admin server transport configuration. This configuration tells the agent how to reach the admin server.'';
+          description = "Admin server transport configuration. This configuration tells the agent how to reach the admin server.";
         };
       };
       tls = mkOption {

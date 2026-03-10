@@ -90,7 +90,7 @@ in
                 protocol = "tcp";
                 port = "9001";
               };'';
-          description = ''Admin server transport configuration. This configuration tells the agent how to reach the admin server.'';
+          description = "Admin server transport configuration. This configuration tells the agent how to reach the admin server.";
         };
       };
 

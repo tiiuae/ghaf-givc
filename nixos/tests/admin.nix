@@ -106,7 +106,7 @@
 
                       return any(pattern in name for name in nodes)
 
-                  retry(func, timeout=30)
+                  retry(func, timeout_seconds=30)
               # End of borrowed code
 
               def by_name(name, js):

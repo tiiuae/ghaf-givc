@@ -23,7 +23,7 @@
         flakeCheck = true;
         programs = {
           nixfmt.enable = true;
-          nixfmt.package = pkgs.nixfmt-rfc-style;
+          nixfmt.package = pkgs.nixfmt;
           rustfmt.enable = true;
           deadnix.enable = true; # removes dead nix code https://github.com/astro/deadnix
           statix.enable = true; # prevents use of nix anti-patterns https://github.com/nerdypepper/statix
