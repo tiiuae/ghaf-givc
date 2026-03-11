@@ -54,8 +54,8 @@ github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3 h1:B+8ClL/kCQkRiU82d9xajR
 github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3/go.mod h1:NbCUVmiS4foBGBHOYlCT25+YmGpJ32dZPi75pGEUpj4=
 github.com/holoplot/go-evdev v0.0.0-20250804134636-ab1d56a1fe83 h1:B+A58zGFuDrvEZpPN+yS6swJA0nzqgZvDzgl/OPyefU=
 github.com/holoplot/go-evdev v0.0.0-20250804134636-ab1d56a1fe83/go.mod h1:iHAf8OIncO2gcQ8XOjS7CMJ2aPbX2Bs0wl5pZyanEqk=
-github.com/jbdemonte/virtual-device v1.1.1-0.20250823152348-1aea79039990 h1:OO4/4Q4VQaWjq+ANwnHnr2tjzg8vRNbfOkNEB9QmMes=
-github.com/jbdemonte/virtual-device v1.1.1-0.20250823152348-1aea79039990/go.mod h1:5kUPv+50TdhUYqO+2lfoGaSrC1SiE4bj2jR5fFXpH7w=
+github.com/jbdemonte/virtual-device v1.2.1 h1:sAgbtMcvpq6YjL3cnERBCrOAt3ImLTPTLBPwku/A9ms=
+github.com/jbdemonte/virtual-device v1.2.1/go.mod h1:5kUPv+50TdhUYqO+2lfoGaSrC1SiE4bj2jR5fFXpH7w=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
