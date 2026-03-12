@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"os"
 
+	givc_grpc "givc/modules/pkgs/grpc"
 	givc_types "givc/modules/pkgs/types"
-	givc_util "givc/modules/pkgs/utility"
 )
 
 type IdentityConfig struct {
@@ -26,6 +26,7 @@ type NetworkConfig struct {
 	AgentEndpoint *givc_types.EndpointConfig `json:"agent"`
 	Tls           givc_types.TlsConfigJson   `json:"tls"`
 	TlsConfig     *tls.Config
+	TlsProvider   givc_types.GrpcTLSProvider
 }
 
 type CapabilitiesConfig struct {
@@ -103,16 +104,17 @@ func populateAgentConfig(agentConfig *AgentConfig) error {
 	// Service name
 	agentConfig.Identity.ServiceName = fmt.Sprintf("givc-%s.service", agentConfig.Identity.Name)
 
-	// Polulate tls config
-	if agentConfig.Network.Tls.Enable == true {
-		var err error
-		agentConfig.Network.TlsConfig, err = givc_util.TlsServerConfig(
-			agentConfig.Network.Tls.CaCertPath,
-			agentConfig.Network.Tls.CertPath,
-			agentConfig.Network.Tls.KeyPath, true)
+	mode := agentConfig.Network.Tls.Mode
+	if mode == "" {
+		mode = "static"
+	}
+
+	if agentConfig.Network.Tls.Enable && mode != "none" {
+		provider, err := createTLSProvider(mode, agentConfig.Network.Tls)
 		if err != nil {
-			return fmt.Errorf("failed to create TLS config: %w", err)
+			return fmt.Errorf("failed to create TLS provider: %w", err)
 		}
+		agentConfig.Network.TlsProvider = provider
 	}
 
 	// Populate units
@@ -144,7 +146,7 @@ func populateAgentConfig(agentConfig *AgentConfig) error {
 
 	// Populate admin endpoint
 	agentConfig.Network.AdminEndpoint.Services = nil
-	agentConfig.Network.AdminEndpoint.TlsConfig = agentConfig.Network.TlsConfig
+	agentConfig.Network.AdminEndpoint.TlsProvider = agentConfig.Network.TlsProvider
 
 	// Populate agent endpoint
 	var services []string
@@ -152,9 +154,32 @@ func populateAgentConfig(agentConfig *AgentConfig) error {
 	for unit := range agentConfig.Capabilities.Units {
 		services = append(services, unit)
 	}
-	agentConfig.Network.AgentEndpoint.TlsConfig = agentConfig.Network.TlsConfig
+	agentConfig.Network.AgentEndpoint.TlsProvider = agentConfig.Network.TlsProvider
 	agentConfig.Network.AgentEndpoint.Services = services
 
 	return nil
 
+}
+
+func createTLSProvider(mode string, tlsCfg givc_types.TlsConfigJson) (givc_types.GrpcTLSProvider, error) {
+	switch mode {
+	case "static":
+		return &givc_grpc.StaticTLSProvider{
+			CACertPath: tlsCfg.CaCertPath,
+			CertPath:   tlsCfg.CertPath,
+			KeyPath:    tlsCfg.KeyPath,
+		}, nil
+	case "spiffe":
+		provider, err := givc_grpc.NewSpiffeTLSProvider(givc_grpc.SpiffeTLSConfig{
+			SocketPath:  tlsCfg.SpiffeEndpoint,
+			TrustDomain: tlsCfg.TrustDomain,
+			AllowedIDs:  tlsCfg.AllowedIDs,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return provider, nil
+	default:
+		return nil, fmt.Errorf("unsupported TLS mode %q", mode)
+	}
 }

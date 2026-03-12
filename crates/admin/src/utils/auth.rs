@@ -44,7 +44,7 @@ pub fn auth_interceptor(mut req: Request<()>) -> Result<Request<()>, Status> {
                 .remote_addr()
                 .ok_or_else(|| Status::unauthenticated("Can't determine peer IP"))?;
             let ip = addr.ip();
-            if security_info.check_address(&ip) {
+            if security_info.check_address(&ip) || security_info.has_uri_identity() {
                 debug!("TCP: IP {ip} verified against certificate");
                 req.extensions_mut().insert(security_info);
                 Ok(req)
@@ -61,6 +61,41 @@ pub fn auth_interceptor(mut req: Request<()>) -> Result<Request<()>, Status> {
         }
         None => Err(Status::unauthenticated("No transport info")),
     }
+}
+
+/// SPIFFE auth interceptor for TLS connections carrying URI SAN identities.
+///
+/// # Errors
+/// Returns `Err(tonic::Status)` if authentication fails.
+pub fn spiffe_auth_interceptor(
+    mut req: Request<()>,
+    allowed_ids: &[String],
+) -> Result<Request<()>, Status> {
+    let security_info = security_info_from_request(&req)?;
+
+    if !security_info.has_uri_identity() {
+        return Err(Status::unauthenticated(
+            "No URI SAN identity in peer certificate",
+        ));
+    }
+
+    if allowed_ids.is_empty() {
+        req.extensions_mut().insert(security_info);
+        return Ok(req);
+    }
+
+    if !allowed_ids
+        .iter()
+        .any(|allowed| security_info.check_uri_identity(allowed))
+    {
+        return Err(Status::permission_denied(format!(
+            "Peer SPIFFE ID not allowed, peer IDs: {}",
+            security_info.uri_identities().join(",")
+        )));
+    }
+
+    req.extensions_mut().insert(security_info);
+    Ok(req)
 }
 
 /// No-auth interceptor for non-TLS connections.

@@ -2,14 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use clap::Parser;
-use givc::endpoint::TlsConfig;
+use givc::endpoint::{TlsConfig, TlsMode as EndpointTlsMode};
 use givc::systemd_api::server::SystemdService;
 use givc::types::{EndpointEntry, UnitStatus};
 use givc::utils::naming::VmName;
+use givc::utils::tls::CliTlsMode;
 use givc_client::AdminClient;
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
 use givc_common::pb::reflection::SYSTEMD_DESCRIPTOR;
+use spiffe::TrustDomain;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tonic::transport::Server;
@@ -30,6 +32,9 @@ struct Cli {
     #[arg(long, env = "TLS")]
     use_tls: bool,
 
+    #[arg(long, env = "TLS_MODE", value_enum, default_value_t = CliTlsMode::Static)]
+    tls_mode: CliTlsMode,
+
     #[arg(long, env = "TYPE")]
     r#type: u32,
 
@@ -44,6 +49,20 @@ struct Cli {
 
     #[arg(long, env = "HOST_KEY")]
     host_key: Option<PathBuf>,
+
+    #[arg(long, env = "SPIFFE_ENDPOINT")]
+    spiffe_endpoint: Option<String>,
+
+    #[arg(long, env = "TRUST_DOMAIN")]
+    trust_domain: Option<TrustDomain>,
+
+    #[arg(
+        long,
+        env = "ALLOWED_IDS",
+        use_value_delimiter = true,
+        value_delimiter = ','
+    )]
+    allowed_ids: Vec<String>,
 
     #[arg(long, env = "ADMIN_SERVER_ADDR", default_missing_value = "127.0.0.1")]
     admin_server_addr: String,
@@ -76,18 +95,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut builder = Server::builder();
 
-    let tls = if cli.use_tls {
-        let tls = TlsConfig {
-            ca_cert_file_path: cli.ca_cert.ok_or("CA cert file required")?,
-            cert_file_path: cli.host_cert.ok_or("cert file required")?,
-            key_file_path: cli.host_key.ok_or("key file required")?,
-            tls_name: None,
-        };
-        let tls_config = tls.server_config()?;
-        builder = builder.tls_config(tls_config)?;
-        Some(tls)
-    } else {
-        None
+    let tls = match cli.tls_mode {
+        CliTlsMode::None => None,
+        CliTlsMode::Static => {
+            if cli.use_tls {
+                let tls = TlsConfig {
+                    mode: EndpointTlsMode::Static {
+                        ca_cert_file_path: cli.ca_cert.ok_or("CA cert file required")?,
+                        cert_file_path: cli.host_cert.ok_or("cert file required")?,
+                        key_file_path: cli.host_key.ok_or("key file required")?,
+                    },
+                    tls_name: None,
+                };
+                let tls_config = tls.server_config().await?;
+                builder = builder.tls_config(tls_config)?;
+                Some(tls)
+            } else {
+                None
+            }
+        }
+        CliTlsMode::Spiffe => {
+            let tls = TlsConfig {
+                mode: EndpointTlsMode::Spiffe {
+                    endpoint: cli.spiffe_endpoint,
+                    trust_domain: cli.trust_domain.ok_or("trust domain required")?,
+                },
+                tls_name: None,
+            };
+            let tls_config = tls.server_config().await?;
+            builder = builder.tls_config(tls_config)?;
+            Some(tls)
+        }
     };
 
     // Perfect example of bad designed code, admin.register_service(entry) should hide structure filling

@@ -139,6 +139,15 @@ in
         default = true;
         description = "Enable the TLS module. Defaults to 'true' and should only be disabled for debugging.";
       };
+      mode = mkOption {
+        type = types.enum [
+          "static"
+          "spiffe"
+          "none"
+        ];
+        default = "static";
+        description = "TLS mode. static uses PEM files, spiffe uses Workload API identities, none disables TLS.";
+      };
       caCertPath = mkOption {
         description = "Path to the CA certificate file.";
         type = types.str;
@@ -153,6 +162,21 @@ in
         description = "Path to the service key file.";
         type = types.str;
         default = "/etc/givc/key.pem";
+      };
+      spiffeEndpoint = mkOption {
+        description = "SPIFFE Workload API endpoint, e.g. unix:///run/spire/agent.sock.";
+        type = types.str;
+        default = "unix:///run/spire/agent.sock";
+      };
+      trustDomain = mkOption {
+        description = "SPIFFE trust domain.";
+        type = types.str;
+        default = "ghaf.local";
+      };
+      allowedIDs = mkOption {
+        description = "List of allowed SPIFFE IDs for peer authorization.";
+        type = types.listOf types.str;
+        default = [ ];
       };
     };
   };

@@ -233,7 +233,11 @@ in
     assertions = [
       {
         assertion =
-          !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
+          !(
+            cfg.tls.enable
+            && cfg.tls.mode == "static"
+            && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == "")
+          );
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
       }
       {
@@ -303,12 +307,16 @@ in
           "TYPE" = "4";
           "SUBTYPE" = "5";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
+          "TLS_MODE" = cfg.tls.mode;
+          "SPIFFE_ENDPOINT" = cfg.tls.spiffeEndpoint;
+          "TRUST_DOMAIN" = cfg.tls.trustDomain;
+          "ALLOWED_IDS" = concatStringsSep "," cfg.tls.allowedIDs;
           "SERVICES" = "${concatStringsSep " " cfg.services}";
           "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
           "POLICY_CONFIG" = "${toJSON jsonPolicies}";
           "POLICY_STORE" = "${cfg.policyAdmin.storePath}";
         }
-        // attrsets.optionalAttrs cfg.tls.enable {
+        // attrsets.optionalAttrs (cfg.tls.enable && cfg.tls.mode == "static") {
           "CA_CERT" = "${cfg.tls.caCertPath}";
           "HOST_CERT" = "${cfg.tls.certPath}";
           "HOST_KEY" = "${cfg.tls.keyPath}";

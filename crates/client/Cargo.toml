@@ -18,5 +18,7 @@ tonic = { version = "0.14", features = ["tls-aws-lc"] }
 tower = "0.5"
 tracing = "0.1"
 gethostname = "1.1.0"
+pem = "3.0"
+spiffe = { version = "0.12", features = ["x509-source"] }
 
 givc-common = { path = "../common" }

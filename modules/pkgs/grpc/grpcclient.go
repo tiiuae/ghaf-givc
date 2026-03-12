@@ -6,6 +6,7 @@ package grpc
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"strings"
@@ -39,15 +40,22 @@ func NewClient(cfg *types.EndpointConfig) (*grpc.ClientConn, error) {
 
 	options := []grpc.DialOption{}
 
-	// Create client tls config
-	tlsConfig, err := givc_util.TlsClientConfigFromTlsConfig(cfg.TlsConfig, cfg.Transport.Name)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create TLS client config: %v", err)
-	}
-
 	// Setup TLS credentials
-	var tlsCredentials grpc.DialOption
-	if tlsConfig != nil {
+	var (
+		tlsCredentials grpc.DialOption
+		err            error
+	)
+	if cfg.TlsProvider != nil {
+		tlsCredentials, err = cfg.TlsProvider.ClientDialOption(cfg.Transport.Name)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create TLS dial option: %v", err)
+		}
+	} else if cfg.TlsConfig != nil {
+		var tlsConfig *tls.Config
+		tlsConfig, err = givc_util.TlsClientConfigFromTlsConfig(cfg.TlsConfig, cfg.Transport.Name)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create TLS client config: %v", err)
+		}
 		tlsCredentials = grpc.WithTransportCredentials(grpc_creds.NewTLS(tlsConfig))
 	} else {
 		tlsCredentials = grpc.WithTransportCredentials(insecure.NewCredentials())
