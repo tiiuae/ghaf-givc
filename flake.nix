@@ -108,12 +108,30 @@
         };
 
         # Overlays
-        overlays.default = _final: prev: {
-          givc-cli = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.cli;
-          ota-update = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.ota;
-          givc-docs = self.packages.${prev.stdenv.hostPlatform.system}.docs;
-          ota-update-server = self.packages.${prev.stdenv.hostPlatform.system}.givc-admin.update-server;
-        };
+        overlays.default = final: _prev:
+          let
+            src = ./.;
+            goSrc = final.lib.fileset.toSource {
+              root = src;
+              fileset = final.lib.fileset.unions [
+                (src + "/go.mod")
+                (src + "/go.sum")
+                (src + "/modules")
+              ];
+            };
+            givc-admin = final.callPackage ./nixos/packages/givc-admin.nix {
+              inherit crane;
+              inherit src;
+            };
+          in
+          {
+            inherit givc-admin;
+            givc-agent = final.callPackage ./nixos/packages/givc-agent.nix { src = goSrc; };
+            givc-cli = givc-admin.cli;
+            ota-update = givc-admin.ota;
+            ota-update-server = givc-admin.update_server;
+            givc-docs = self.packages.${final.stdenv.hostPlatform.system}.docs;
+          };
 
       };
     };

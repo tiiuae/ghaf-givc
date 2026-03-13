@@ -58,7 +58,7 @@ in
 
   config =
     let
-      ota-update-server = self.packages.${pkgs.stdenv.hostPlatform.system}.givc-admin.update_server;
+      inherit (pkgs) ota-update-server;
     in
     mkIf cfg.enable {
 
