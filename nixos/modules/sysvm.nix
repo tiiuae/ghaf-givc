@@ -9,7 +9,7 @@
 }:
 let
   cfg = config.givc.sysvm;
-  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-agent;
+  inherit (pkgs) givc-agent;
   inherit (lib)
     mkIf
     mkOption

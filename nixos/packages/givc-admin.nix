@@ -34,6 +34,8 @@ let
   givc = craneLib.buildPackage (
     commonArgs
     // {
+      cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
       outputs = [
         "out"
         "cli"

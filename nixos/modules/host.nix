@@ -9,7 +9,7 @@
 }:
 let
   cfg = config.givc.host;
-  inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) givc-agent ota-update;
+  inherit (pkgs) givc-agent ota-update;
   inherit (lib)
     mkOption
     mkEnableOption
@@ -248,7 +248,7 @@ in
       in
       [ port ];
     environment.systemPackages = [
-      self.packages.${pkgs.stdenv.hostPlatform.system}.ota-update
+      ota-update
       pkgs.nixos-rebuild # Need for ota-update
     ];
     systemd.tmpfiles.rules = [
