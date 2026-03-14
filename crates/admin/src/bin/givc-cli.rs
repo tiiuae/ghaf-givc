@@ -3,7 +3,7 @@
 
 use clap::{Parser, Subcommand};
 use givc::types::UnitType;
-use givc::utils::tls::{CliTlsMode, CliTlsOptions};
+use givc::utils::tls::CliTlsOptions;
 use givc::utils::vsock::parse_vsock_addr;
 use givc_client::client::AdminClient;
 use givc_common::address::EndpointAddress;
@@ -11,8 +11,6 @@ use givc_common::pb;
 use lazy_regex::regex;
 use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
 use serde::ser::Serialize;
-use spiffe::TrustDomain;
-use std::path::PathBuf;
 use std::time;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::interval;
@@ -33,26 +31,8 @@ struct Cli {
     #[arg(long)]
     vsock: Option<String>,
 
-    #[arg(long, env = "GIVC_CA_CERT")]
-    cacert: Option<PathBuf>,
-
-    #[arg(long, env = "GIVC_HOST_CERT")]
-    cert: Option<PathBuf>,
-
-    #[arg(long, env = "GIVC_HOST_KEY")]
-    key: Option<PathBuf>,
-
-    #[arg(long, env = "GIVC_NO_TLS", default_value_t = false)]
-    notls: bool,
-
-    #[arg(long, env = "GIVC_TLS_MODE", value_enum, default_value_t = CliTlsMode::Static)]
-    tls_mode: CliTlsMode,
-
-    #[arg(long, env = "GIVC_SPIFFE_ENDPOINT")]
-    spiffe_endpoint: Option<String>,
-
-    #[arg(long, env = "GIVC_TRUST_DOMAIN")]
-    trust_domain: Option<TrustDomain>,
+    #[command(flatten)]
+    tls: CliTlsOptions,
 
     #[arg(
         long,
@@ -348,21 +328,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     info!("CLI is {:#?}", cli);
 
-    let tls_mode = if cli.notls {
-        CliTlsMode::None
-    } else {
-        cli.tls_mode
-    };
-    let tls = CliTlsOptions {
-        tls_mode,
-        ca_cert: cli.cacert.clone(),
-        host_cert: cli.cert.clone(),
-        host_key: cli.key.clone(),
-        spiffe_endpoint: cli.spiffe_endpoint.clone(),
-        trust_domain: cli.trust_domain,
-    }
-    .into_client_tls_config(cli.name.clone())?
-    .map(|tls| (cli.name.clone(), tls));
+    let tls = cli
+        .tls
+        .clone()
+        .into_client_tls_config(cli.name.clone())?
+        .map(|tls| (cli.name.clone(), tls));
 
     // FIXME; big kludge, but allow to test vsock connection
     let admin = if let Some(vsock) = cli.vsock {

@@ -307,9 +307,9 @@ in
           "TYPE" = "4";
           "SUBTYPE" = "5";
           "TLS" = "${trivial.boolToString cfg.tls.enable}";
-          "TLS_MODE" = cfg.tls.mode;
-          "SPIFFE_ENDPOINT" = cfg.tls.spiffeEndpoint;
-          "TRUST_DOMAIN" = cfg.tls.trustDomain;
+          "GIVC_TLS_MODE" = cfg.tls.mode;
+          "GIVC_SPIFFE_ENDPOINT" = cfg.tls.spiffeEndpoint;
+          "GIVC_TRUST_DOMAIN" = cfg.tls.trustDomain;
           "ALLOWED_IDS" = concatStringsSep "," cfg.tls.allowedIDs;
           "SERVICES" = "${concatStringsSep " " cfg.services}";
           "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
@@ -317,9 +317,9 @@ in
           "POLICY_STORE" = "${cfg.policyAdmin.storePath}";
         }
         // attrsets.optionalAttrs (cfg.tls.enable && cfg.tls.mode == "static") {
-          "CA_CERT" = "${cfg.tls.caCertPath}";
-          "HOST_CERT" = "${cfg.tls.certPath}";
-          "HOST_KEY" = "${cfg.tls.keyPath}";
+          "GIVC_CA_CERT" = "${cfg.tls.caCertPath}";
+          "GIVC_HOST_CERT" = "${cfg.tls.certPath}";
+          "GIVC_HOST_KEY" = "${cfg.tls.keyPath}";
         }
         // attrsets.optionalAttrs cfg.debug {
           "RUST_BACKTRACE" = "1";

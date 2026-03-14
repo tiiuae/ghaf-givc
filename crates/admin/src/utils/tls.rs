@@ -16,22 +16,22 @@ pub enum CliTlsMode {
 
 #[derive(Debug, Clone, Args)]
 pub struct CliTlsOptions {
-    #[arg(long, env = "TLS_MODE", value_enum, default_value_t = CliTlsMode::Static)]
+    #[arg(long, env = "GIVC_TLS_MODE", value_enum, default_value_t = CliTlsMode::Static)]
     pub tls_mode: CliTlsMode,
 
-    #[arg(long, env = "CA_CERT")]
+    #[arg(long, env = "GIVC_CA_CERT")]
     pub ca_cert: Option<PathBuf>,
 
-    #[arg(long, env = "HOST_CERT")]
+    #[arg(long, env = "GIVC_HOST_CERT")]
     pub host_cert: Option<PathBuf>,
 
-    #[arg(long, env = "HOST_KEY")]
+    #[arg(long, env = "GIVC_HOST_KEY")]
     pub host_key: Option<PathBuf>,
 
-    #[arg(long, env = "SPIFFE_ENDPOINT")]
+    #[arg(long, env = "GIVC_SPIFFE_ENDPOINT")]
     pub spiffe_endpoint: Option<String>,
 
-    #[arg(long, env = "TRUST_DOMAIN")]
+    #[arg(long, env = "GIVC_TRUST_DOMAIN")]
     pub trust_domain: Option<TrustDomain>,
 }
 
@@ -63,5 +63,65 @@ impl CliTlsOptions {
             mode,
             tls_name: Some(tls_name),
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_spiffe_mode_to_endpoint_mode() {
+        let opts = CliTlsOptions {
+            tls_mode: CliTlsMode::Spiffe,
+            ca_cert: None,
+            host_cert: None,
+            host_key: None,
+            spiffe_endpoint: Some("unix:///tmp/spire-agent.sock".to_string()),
+            trust_domain: Some(
+                "ghaf.local"
+                    .parse::<TrustDomain>()
+                    .expect("valid trust domain"),
+            ),
+        };
+
+        let mode = opts
+            .into_endpoint_tls_mode()
+            .expect("conversion should succeed")
+            .expect("spiffe mode should produce endpoint mode");
+
+        match mode {
+            EndpointTlsMode::Spiffe {
+                endpoint,
+                trust_domain,
+            } => {
+                assert_eq!(endpoint.as_deref(), Some("unix:///tmp/spire-agent.sock"));
+                assert_eq!(trust_domain.to_string(), "ghaf.local");
+            }
+            EndpointTlsMode::Static { .. } => panic!("unexpected static mode"),
+        }
+    }
+
+    #[test]
+    fn creates_client_tls_config_with_tls_name() {
+        let opts = CliTlsOptions {
+            tls_mode: CliTlsMode::Spiffe,
+            ca_cert: None,
+            host_cert: None,
+            host_key: None,
+            spiffe_endpoint: None,
+            trust_domain: Some(
+                "ghaf.local"
+                    .parse::<TrustDomain>()
+                    .expect("valid trust domain"),
+            ),
+        };
+
+        let tls = opts
+            .into_client_tls_config("admin.ghaf".to_string())
+            .expect("conversion should succeed")
+            .expect("spiffe mode should produce tls config");
+
+        assert_eq!(tls.tls_name.as_deref(), Some("admin.ghaf"));
     }
 }
