@@ -10,6 +10,7 @@ pub struct SecurityInfo {
     enabled: bool,
     dns_names: Vec<String>,
     ip_addrs: Vec<IpAddr>,
+    uri_names: Vec<String>,
 }
 
 impl SecurityInfo {
@@ -18,6 +19,7 @@ impl SecurityInfo {
             enabled: true,
             dns_names: Vec::new(),
             ip_addrs: Vec::new(),
+            uri_names: Vec::new(),
         }
     }
 
@@ -37,6 +39,21 @@ impl SecurityInfo {
     #[must_use]
     pub fn check_hostname(&self, hostname: &str) -> bool {
         !self.enabled || self.dns_names.iter().any(|hn| hostname == hn)
+    }
+
+    #[must_use]
+    pub fn has_uri_identity(&self) -> bool {
+        !self.uri_names.is_empty()
+    }
+
+    #[must_use]
+    pub fn check_uri_identity(&self, uri: &str) -> bool {
+        !self.enabled || self.uri_names.iter().any(|entry| entry == uri)
+    }
+
+    #[must_use]
+    pub fn uri_identities(&self) -> &[String] {
+        &self.uri_names
     }
 
     #[must_use]
@@ -65,6 +82,7 @@ impl TryFrom<&[u8]> for SecurityInfo {
                             let ip = IpAddr::from(b);
                             this.ip_addrs.push(ip);
                         }
+                        GeneralName::URI(uri) => this.uri_names.push(uri.to_string()),
                         _ => (),
                     }
                 }

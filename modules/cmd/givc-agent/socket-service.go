@@ -45,8 +45,9 @@ func StartSocketService(ctx context.Context, wg *sync.WaitGroup, agentConfig *gi
 
 				// Configure client endpoint
 				socketClient := &givc_types.EndpointConfig{
-					Transport: proxyConfig.Transport,
-					TlsConfig: agentConfig.Network.TlsConfig,
+					Transport:   proxyConfig.Transport,
+					TlsConfig:   agentConfig.Network.TlsConfig,
+					TlsProvider: agentConfig.Network.TlsProvider,
 				}
 
 				err = socketProxyServer.StreamToRemote(ctx, socketClient)
@@ -81,7 +82,8 @@ func StartSocketService(ctx context.Context, wg *sync.WaitGroup, agentConfig *gi
 						Port:     proxyConfig.Transport.Port,
 						Protocol: proxyConfig.Transport.Protocol,
 					},
-					TlsConfig: agentConfig.Network.TlsConfig,
+					TlsConfig:   agentConfig.Network.TlsConfig,
+					TlsProvider: agentConfig.Network.TlsProvider,
 				}
 
 				var grpcProxyService []givc_types.GrpcServiceRegistration

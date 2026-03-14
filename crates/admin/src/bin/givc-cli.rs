@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use clap::{Parser, Subcommand};
-use givc::endpoint::TlsConfig;
 use givc::types::UnitType;
+use givc::utils::tls::CliTlsOptions;
 use givc::utils::vsock::parse_vsock_addr;
 use givc_client::client::AdminClient;
 use givc_common::address::EndpointAddress;
@@ -11,7 +11,6 @@ use givc_common::pb;
 use lazy_regex::regex;
 use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
 use serde::ser::Serialize;
-use std::path::PathBuf;
 use std::time;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::interval;
@@ -32,17 +31,16 @@ struct Cli {
     #[arg(long)]
     vsock: Option<String>,
 
-    #[arg(long, env = "GIVC_CA_CERT")]
-    cacert: Option<PathBuf>,
+    #[command(flatten)]
+    tls: CliTlsOptions,
 
-    #[arg(long, env = "GIVC_HOST_CERT")]
-    cert: Option<PathBuf>,
-
-    #[arg(long, env = "GIVC_HOST_KEY")]
-    key: Option<PathBuf>,
-
-    #[arg(long, env = "GIVC_NO_TLS", default_value_t = false)]
-    notls: bool,
+    #[arg(
+        long,
+        env = "GIVC_ALLOWED_IDS",
+        use_value_delimiter = true,
+        value_delimiter = ','
+    )]
+    allowed_ids: Vec<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -330,19 +328,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     info!("CLI is {:#?}", cli);
 
-    let tls = if cli.notls {
-        None
-    } else {
-        Some((
-            cli.name.clone(),
-            TlsConfig {
-                ca_cert_file_path: cli.cacert.expect("cacert is required"),
-                cert_file_path: cli.cert.expect("cert is required"),
-                key_file_path: cli.key.expect("key is required"),
-                tls_name: Some(cli.name),
-            },
-        ))
-    };
+    let tls = cli
+        .tls
+        .clone()
+        .into_client_tls_config(cli.name.clone())?
+        .map(|tls| (cli.name.clone(), tls));
 
     // FIXME; big kludge, but allow to test vsock connection
     let admin = if let Some(vsock) = cli.vsock {
