@@ -32,14 +32,19 @@ const (
 )
 
 type GrpcServerConfig struct {
-	Transport *types.TransportConfig
-	TlsConfig *tls.Config
-	Services  []types.GrpcServiceRegistration
+	Transport   *types.TransportConfig
+	TlsConfig   *tls.Config
+	TlsProvider types.GrpcTLSProvider
+	Services    []types.GrpcServiceRegistration
 }
 
 type GrpcServer struct {
 	config     *GrpcServerConfig
 	grpcServer *grpc.Server
+}
+
+type certIPVerificationSkipper interface {
+	SkipCertIPVerification() bool
 }
 
 // NewServer creates a new gRPC server based on the provided endpoint configuration and service registrations.
@@ -48,15 +53,22 @@ func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistrati
 	// GRPC Server
 	srv := GrpcServer{
 		config: &GrpcServerConfig{
-			Transport: &cfg.Transport,
-			TlsConfig: cfg.TlsConfig,
-			Services:  services,
+			Transport:   &cfg.Transport,
+			TlsConfig:   cfg.TlsConfig,
+			TlsProvider: cfg.TlsProvider,
+			Services:    services,
 		},
 	}
 
 	// TLS gRPC creds option
 	var grpcTlsConfig grpc.ServerOption
-	if srv.config.TlsConfig != nil {
+	if srv.config.TlsProvider != nil {
+		var err error
+		grpcTlsConfig, err = srv.config.TlsProvider.ServerOption()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create server TLS option: %w", err)
+		}
+	} else if srv.config.TlsConfig != nil {
 		grpcTlsConfig = grpc.Creds(grpc_creds.NewTLS(srv.config.TlsConfig))
 	} else {
 		grpcTlsConfig = grpc.Creds(insecure.NewCredentials())
@@ -69,7 +81,11 @@ func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistrati
 		unaryLogRequestInterceptor,
 		grpc_logrus.UnaryServerInterceptor(log.NewEntry(log.StandardLogger())),
 	}
-	if srv.config.TlsConfig != nil {
+	skipCertIPCheck := false
+	if provider, ok := any(srv.config.TlsProvider).(certIPVerificationSkipper); ok && provider.SkipCertIPVerification() {
+		skipCertIPCheck = true
+	}
+	if (srv.config.TlsProvider != nil || srv.config.TlsConfig != nil) && !skipCertIPCheck {
 		interceptors = append(interceptors, givc_util.CertIPVerifyInterceptor)
 	}
 

@@ -185,6 +185,13 @@ func main() {
 		log.Errorf("Failed to load configuration: %v", err)
 		return
 	}
+	if config.Network.TlsProvider != nil {
+		defer func() {
+			if err := config.Network.TlsProvider.Close(); err != nil {
+				log.Warnf("Failed to close TLS provider: %v", err)
+			}
+		}()
+	}
 
 	// Setup log level
 	if *debugFlag {

@@ -199,6 +199,7 @@ in
         assertion =
           !(
             cfg.network.tls.enable
+            && cfg.network.tls.mode == "static"
             && (
               cfg.network.tls.caCertPath == "" || cfg.network.tls.certPath == "" || cfg.network.tls.keyPath == ""
             )
@@ -216,12 +217,10 @@ in
     systemd.services."givc-${cfg.network.agent.transport.name}" = {
       description = "GIVC remote service manager for the host.";
       enable = true;
-      after = [
-        "givc-key-setup.service"
+      after = lib.optionals (cfg.network.tls.mode == "static") [ "givc-key-setup.service" ] ++ [
         "network.target"
       ];
-      wants = [
-        "givc-key-setup.service"
+      wants = lib.optionals (cfg.network.tls.mode == "static") [ "givc-key-setup.service" ] ++ [
         "network.target"
       ];
       wantedBy = [ "multi-user.target" ];

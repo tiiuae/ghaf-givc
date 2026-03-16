@@ -32,9 +32,17 @@ type TransportConfig struct {
 // EndpointConfig represents the configuration for an endpoint, including
 // transport settings, services, and TLS configuration.
 type EndpointConfig struct {
-	Transport TransportConfig `json:"transport"`
-	Services  []string
-	TlsConfig *tls.Config
+	Transport   TransportConfig `json:"transport"`
+	Services    []string
+	TlsConfig   *tls.Config
+	TlsProvider GrpcTLSProvider
+}
+
+// GrpcTLSProvider abstracts gRPC TLS option creation for server/client.
+type GrpcTLSProvider interface {
+	ServerOption() (grpc.ServerOption, error)
+	ClientDialOption(serverName string) (grpc.DialOption, error)
+	Close() error
 }
 
 // ProxyConfig represents the configuration for a proxy, including transport settings,
@@ -83,10 +91,14 @@ type ApplicationManifest struct {
 // TlsConfigJson represents the JSON configuration for TLS, including whether it is enabled,
 // the CA certificate path, the certificate path, and the key path.
 type TlsConfigJson struct {
-	Enable     bool   `json:"enable"`
-	CaCertPath string `json:"caCertPath"`
-	CertPath   string `json:"certPath"`
-	KeyPath    string `json:"keyPath"`
+	Enable         bool     `json:"enable"`
+	Mode           string   `json:"mode"`
+	CaCertPath     string   `json:"caCertPath"`
+	CertPath       string   `json:"certPath"`
+	KeyPath        string   `json:"keyPath"`
+	SpiffeEndpoint string   `json:"spiffeEndpoint"`
+	TrustDomain    string   `json:"trustDomain"`
+	AllowedIDs     []string `json:"allowedIDs"`
 }
 
 // GrpcServiceRegistration represents a gRPC service registration, including its name
