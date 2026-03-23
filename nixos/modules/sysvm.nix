@@ -253,6 +253,7 @@ in
         assertion =
           !(
             cfg.network.tls.enable
+            && cfg.network.tls.mode == "static"
             && (
               cfg.network.tls.caCertPath == "" || cfg.network.tls.certPath == "" || cfg.network.tls.keyPath == ""
             )
@@ -290,17 +291,19 @@ in
       wantedBy = [ "multi-user.target" ];
     };
 
-    systemd.services.givc-user-key-setup = optionalAttrs cfg.enableUserTlsAccess {
-      description = "Prepare givc keys and certificates for user access";
-      enable = true;
-      wantedBy = [ "local-fs.target" ];
-      after = [ "local-fs.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${pkgs.rsync}/bin/rsync -r --chown=root:users --chmod=g+rx /etc/givc /run";
-        Restart = "no";
-      };
-    };
+    systemd.services.givc-user-key-setup =
+      optionalAttrs (cfg.enableUserTlsAccess && cfg.network.tls.mode == "static")
+        {
+          description = "Prepare givc keys and certificates for user access";
+          enable = true;
+          wantedBy = [ "local-fs.target" ];
+          after = [ "local-fs.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = "${pkgs.rsync}/bin/rsync -r --chown=root:users --chmod=g+rx /etc/givc /run";
+            Restart = "no";
+          };
+        };
 
     # JSON configuration for GIVC sysvm agent
     environment.etc."givc-agent/config.json".text = toJSON agentConfig;

@@ -242,6 +242,7 @@ in
         assertion =
           !(
             cfg.network.tls.enable
+            && cfg.network.tls.mode == "static"
             && (
               cfg.network.tls.caCertPath == "" || cfg.network.tls.certPath == "" || cfg.network.tls.keyPath == ""
             )
@@ -286,7 +287,7 @@ in
     };
 
     # Copy givc keys and certificates for user access
-    systemd.services.givc-user-key-setup = {
+    systemd.services.givc-user-key-setup = lib.optionalAttrs (cfg.network.tls.mode == "static") {
       description = "Prepare givc keys and certificates for user access";
       enable = true;
       wantedBy = [ "local-fs.target" ];

@@ -50,7 +50,7 @@
                   if tls then
                     "--cacert /etc/givc/ca-cert.pem --cert /etc/givc/cert.pem --key /etc/givc/key.pem"
                   else
-                    "--notls"
+                    "--tls-mode none"
                 }";
               grpcurl = "grpcurl -cacert /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem";
               userSocket =

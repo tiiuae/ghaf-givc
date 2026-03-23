@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod naming;
+pub mod tls;
 pub mod tonic;
 pub mod vsock;
 pub mod x509;
