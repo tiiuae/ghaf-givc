@@ -19,7 +19,7 @@ jobs:
       GO111MODULE: on
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
           egress-policy: audit
 
@@ -28,7 +28,7 @@ jobs:
       - name: Install libudev-dev (for go-udev)
         run: sudo apt-get update && sudo apt-get install -y libudev-dev
       - name: Run Gosec Security Scanner
-        uses: securego/gosec@bb17e422fc34bf4c0a2e5cab9d07dc45a68c040c # master
+        uses: securego/gosec@223e19b8856e00f02cc67804499a83f77e208f3c # master
         with:
           args: '-exclude=G302,G204 -no-fail ./modules/...'
       - name: Run Go Tests
