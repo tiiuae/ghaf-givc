@@ -29,7 +29,7 @@ let
 in
 {
   perSystem =
-    { self', ... }:
+    { self', pkgs, ... }:
     {
       vmTests.tests.app = {
         module = {
@@ -59,7 +59,52 @@ in
                 inherit (adminConfig) addresses;
                 tls.enable = tls;
               };
+              givc.accessControl =
+                let
+                  cedarRules = pkgs.writeText "cedar_rules.cedar" ''
+                    permit (
+                      principal,
+                      action,
+                      resource
+                    )
+                    when {
+                        principal in [
+                          Source::"guivm",
+                          Source::"appvm"
+                        ] &&
+                        action == Command::"RegisterService" &&
+                        resource == Module::"admin"
+                    };
+                    permit (
+                        principal,
+                        action,
+                        resource
+                    )
+                    when {
+                        principal == Source::"guivm" && 
+                        action == Command::"StartApplication" &&
+                        resource == Module::"admin" &&
+                        context.VmName == "appvm" &&
+                        ["cat", "foot", "clearexit"].contains(context.AppName)
+                    };
 
+                    forbid (
+                        principal,
+                        action,
+                        resource
+                    )
+                    when {
+                        action == Command::"StartApplication" &&
+                        resource == Module::"admin" &&
+                        context.AppName == "cat" &&
+                        context.Args.contains("/tmp/admin_forbids")
+                    };
+                  '';
+                in
+                {
+                  enable = true;
+                  customRulesFile = cedarRules;
+                };
             };
             guivm =
               { pkgs, ... }:
@@ -108,6 +153,7 @@ in
                   };
                   network.tls.enable = tls;
                 };
+                #givc.accessControl.enable = true;
               };
             hostvm = {
               imports = [
@@ -187,34 +233,58 @@ in
                   }
                 ];
                 services.openssh.enable = true;
-                givc.appvm = {
-                  enable = true;
-                  debug = true;
-                  network = {
-                    agent.transport = {
-                      name = "appvm";
-                      addr = addrs.appvm;
+                givc = {
+                  appvm = {
+                    enable = true;
+                    debug = true;
+                    network = {
+                      agent.transport = {
+                        name = "appvm";
+                        addr = addrs.appvm;
+                      };
+                      admin.transport = lib.head adminConfig.addresses;
+                      tls = {
+                        enable = tls;
+                        caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
+                        certPath = lib.mkForce "/etc/givc/cert.pem";
+                        keyPath = lib.mkForce "/etc/givc/key.pem";
+                      };
                     };
-                    admin.transport = lib.head adminConfig.addresses;
-                    tls = {
-                      enable = tls;
-                      caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
-                      certPath = lib.mkForce "/etc/givc/cert.pem";
-                      keyPath = lib.mkForce "/etc/givc/key.pem";
+                    capabilities = {
+                      applications = [
+                        {
+                          name = "cat";
+                          command = "/run/current-system/sw/bin/cat";
+                          args = [ "file" ];
+                          directories = [
+                            "/etc"
+                            "/tmp"
+                          ];
+                        }
+
+                        {
+                          name = "another-cat";
+                          command = "/run/current-system/sw/bin/cat";
+                          args = [ "file" ];
+                          directories = [
+                            "/etc"
+                            "/tmp"
+                          ];
+                        }
+                      ];
                     };
                   };
-                  capabilities = {
-                    applications = [
-                      {
-                        name = "cat";
-                        command = "/run/current-system/sw/bin/cat";
-                        args = [ "file" ];
-                        directories = [
-                          "/etc"
-                          "/tmp"
-                        ];
-                      }
-                    ];
+                  accessControl = {
+                    enable = true;
+                    rules."adminvm" = {
+                      deny.systemd = {
+                        methods = [ "StartApplication" ];
+                        params = {
+                          UnitName = "cat@*";
+                          Args = [ [ "/tmp/app_forbids" ] ];
+                        };
+                      };
+                    };
                   };
                 };
               };
@@ -240,6 +310,8 @@ in
                   guivm.wait_for_unit("givc-guivm.service")
                   appvm.wait_for_unit("multi-user.target")
                   appvm.succeed("sudo -u ghaf touch /tmp/testfile")
+                  appvm.succeed("sudo -u ghaf touch /tmp/admin_forbids")
+                  appvm.succeed("sudo -u ghaf touch /tmp/agent_forbids")
 
               with subtest("start app with correct file path"):
                   guivm.succeed("${cli} ${cliArgs} start app --vm appvm cat -- /tmp/testfile")
@@ -248,6 +320,23 @@ in
               with subtest("fail app start with wrong file path"):
                   guivm.fail("${cli} ${cliArgs} start --vm appvm cat -- /var/log/lastlog")
                   guivm.fail("${cli} ${cliArgs} start --vm appvm cat -- /etc/../bin/sh")
+
+              with subtest("admin access control test (cedar)"):
+                  (exit_code, output) = guivm.execute(
+                      "${cli} ${cliArgs} start app --vm appvm cat -- /tmp/admin_forbids 2>&1"
+                  )
+                  assert exit_code != 0, f"permission denied by admin access control policy: {output}"
+                  assert "permission denied by admin access control policy" in output, f"Expected 'permission denied by admin access control policy', got: {output}"
+                  print("\033[94m" + "\n-- admin access control test (cedar) completed successfully --\n" + "\033[0m")
+
+              with subtest("agent access control test (cedar)"):
+                  (exit_code, output) = guivm.execute(
+                      "${cli} ${cliArgs} start app --vm appvm cat -- /tmp/app_forbids 2>&1"
+                  )
+                  assert exit_code != 0, f"permission denied by access control policy: {output}"
+                  assert "permission denied by access control policy" in output, f"Expected 'permission denied by access control policy', got: {output}"
+                  print("\033[94m" + "\n-- agent access control test (cedar) completed successfully --\n" + "\033[0m")
+
             '';
         };
       };

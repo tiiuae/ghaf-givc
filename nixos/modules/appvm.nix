@@ -44,9 +44,15 @@ let
       parent = "microvm@${cfg.network.agent.transport.name}.service";
     };
     inherit (cfg) network capabilities;
+    accessControl = {
+      inherit (config.givc.accessControl) enable rulesFile;
+    };
   };
 in
 {
+  imports = [
+    ./access-control.nix
+  ];
   options.givc.appvm = {
     enable = mkEnableOption "GIVC appvm agent module";
 
@@ -229,7 +235,6 @@ in
         to keep the user session alive in the application VM without specific login.
       '';
     };
-
   };
 
   config = mkIf cfg.enable {
@@ -270,6 +275,21 @@ in
         message = "EventProxy: Each event proxy instance requires a unique port number.";
       }
     ];
+
+    givc.accessControl.rules = {
+      "${cfg.network.admin.transport.name}" =
+        let
+          apps = map (x: "${x.name}*") cfg.capabilities.applications;
+        in
+        {
+          allow = {
+            locale = { };
+            systemd = {
+              params.UnitName = apps ++ [ "givc-${cfg.network.agent.transport.name}.service" ];
+            };
+          };
+        };
+    };
 
     security.polkit = {
       enable = true;

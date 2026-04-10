@@ -81,6 +81,12 @@
             command = "./scripts/update-copyright.sh $@";
             category = "tools";
           }
+          {
+            help = "Access control options";
+            name = "givc-acl-option";
+            command = "./scripts/givc-acl-helper.sh";
+            category = "tools";
+          }
         ];
       };
       pre-commit.settings = {

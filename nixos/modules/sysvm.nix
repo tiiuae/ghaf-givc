@@ -45,11 +45,16 @@ let
         socket = dirOf cfg.notifier.socketPath;
       };
     };
+    accessControl = {
+      inherit (config.givc.accessControl) enable rulesFile;
+    };
   };
+
 in
 {
   imports = [
     ./notifier.nix
+    ./access-control.nix
   ];
 
   options.givc.sysvm = {
@@ -128,6 +133,7 @@ in
         '';
       };
     };
+
     capabilities = {
       services = mkOption {
         type = types.listOf types.str;
@@ -281,6 +287,19 @@ in
         message = "EventProxy: Each event proxy instance requires a unique port number.";
       }
     ];
+
+    givc.accessControl.rules = {
+      "${cfg.network.admin.transport.name}" = {
+        allow = {
+          locale = { };
+          systemd = {
+            params.UnitName = cfg.capabilities.services ++ [
+              "givc-${cfg.network.agent.transport.name}.service"
+            ];
+          };
+        };
+      };
+    };
 
     systemd.targets.givc-setup = {
       enable = true;

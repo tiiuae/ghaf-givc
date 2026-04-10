@@ -59,6 +59,9 @@ let
       { };
 in
 {
+  imports = [
+    ./access-control.nix
+  ];
   options.givc.admin = {
     enable = mkOption {
       type = types.bool;
@@ -307,6 +310,8 @@ in
           "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
           "POLICY_CONFIG" = "${toJSON jsonPolicies}";
           "POLICY_STORE" = "${cfg.policyAdmin.storePath}";
+          "CEDAR_FILE" =
+            lib.optionalString config.givc.accessControl.enable "${config.givc.accessControl.rulesFile}";
         }
         // attrsets.optionalAttrs cfg.tls.enable {
           "CA_CERT" = "${cfg.tls.caCertPath}";

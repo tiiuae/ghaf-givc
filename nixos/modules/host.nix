@@ -33,9 +33,16 @@ let
       subType = 1;
     };
     inherit (cfg) network capabilities;
+    accessControl = {
+      inherit (config.givc.accessControl) enable rulesFile;
+    };
   };
 in
 {
+  imports = [
+    ./access-control.nix
+    ./givc-agent-acl.nix
+  ];
   options.givc.host = {
     enable = mkEnableOption "givc host agent module, which is responsible for managing system VMs and app VMs.";
 
@@ -213,6 +220,21 @@ in
 
     # JSON configuration for GIVC host agent
     environment.etc."givc-agent/config.json".text = toJSON agentConfig;
+    givc.accessControl.rules = {
+      "${cfg.network.admin.transport.name}" = {
+        allow = {
+          locale = { };
+          systemd = {
+            params.UnitName =
+              cfg.capabilities.services
+              ++ cfg.capabilities.services.vmServices.adminVm
+              ++ cfg.capabilities.services.vmServices.systemVms
+              ++ cfg.capabilities.services.vmServices.appVms
+              ++ [ "givc-${cfg.network.agent.transport.name}.service" ];
+          };
+        };
+      };
+    };
 
     systemd.services."givc-${cfg.network.agent.transport.name}" = {
       description = "GIVC remote service manager for the host.";
