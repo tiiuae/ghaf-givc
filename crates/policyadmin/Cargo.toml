@@ -7,7 +7,7 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
-anyhow = "1.0.100"
+anyhow = "1.0.102"
 async-channel = "2.3.1"
 async-fn-stream = "*"
 async-stream = "0.3"
@@ -19,7 +19,7 @@ gix = { version = "0.80", default-features = false, features = [
   "revision",
   "blob-diff",
 ] }
-reqwest = { version = "0.13.1", default-features = false, features = [
+reqwest = { version = "0.13.3", default-features = false, features = [
   "json",
   "gzip",
   "deflate",
