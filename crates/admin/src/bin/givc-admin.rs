@@ -5,8 +5,8 @@ use anyhow::Context;
 use clap::Parser;
 use givc::admin;
 use givc::endpoint::TlsConfig;
-use givc::utils::access_control::AccessControl;
-use givc::utils::auth::AuthInterceptor;
+use givc::utils::access_control::Authorizer;
+use givc::utils::auth::Authenticator;
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use std::path::PathBuf;
 use tonic::transport::Server;
@@ -88,9 +88,9 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     let admin_service_svc = admin::server::AdminServiceServer::new(admin_impl);
-    let access_control = AccessControl::new(cli.cedar_file.as_deref())?;
+    let authorizer = Authorizer::new(cli.cedar_file.as_deref())?;
 
-    let auth_interceptor = AuthInterceptor {
+    let authenticator = Authenticator {
         use_tls: cli.use_tls,
     };
 
@@ -104,8 +104,8 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting givc-admin with dynamic logging...");
 
     builder
-        .layer(RequestInterceptorLayer::new(auth_interceptor))
-        .layer(RequestInterceptorLayer::new(access_control))
+        .layer(RequestInterceptorLayer::new(authenticator))
+        .layer(RequestInterceptorLayer::new(authorizer))
         .add_service(reflect)
         .add_service(admin_service_svc)
         .serve_with_incoming(listener)

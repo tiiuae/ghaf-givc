@@ -32,7 +32,7 @@ fn transport_info_from_request<T>(req: &HttpRequest<T>) -> Option<&ListenerConne
 }
 
 #[derive(Clone)]
-pub struct AuthInterceptor {
+pub struct Authenticator {
     pub use_tls: bool,
 }
 
@@ -42,7 +42,7 @@ pub struct AuthInterceptor {
 /// **Vsock/Unix/Other**: Certificate validity only (TLS handshake). No IP check -
 /// security relies on hypervisor isolation (vsock) or filesystem permissions (unix).
 #[async_trait::async_trait]
-impl RequestInterceptor for AuthInterceptor {
+impl RequestInterceptor for Authenticator {
     async fn intercept(&self, mut req: HttpRequest<Body>) -> Result<HttpRequest<Body>, Status> {
         if self.use_tls {
             let security_info = security_info_from_request(&req)?;

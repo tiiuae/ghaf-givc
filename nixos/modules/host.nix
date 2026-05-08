@@ -41,7 +41,6 @@ in
 {
   imports = [
     ./access-control.nix
-    ./givc-agent-acl.nix
   ];
   options.givc.host = {
     enable = mkEnableOption "givc host agent module, which is responsible for managing system VMs and app VMs.";

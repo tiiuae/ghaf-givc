@@ -21,57 +21,72 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+func toCedarValue(v reflect.Value) (cedartypes.Value, bool) {
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil, false
+		}
+		v = v.Elem()
+	}
+
+	switch v.Kind() {
+	case reflect.String:
+		return cedartypes.String(v.String()), true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return cedartypes.Long(v.Int()), true
+	case reflect.Bool:
+		return cedartypes.Boolean(v.Bool()), true
+	case reflect.Slice:
+		elements := make([]cedartypes.Value, 0, v.Len())
+		for j := 0; j < v.Len(); j++ {
+			if val, ok := toCedarValue(v.Index(j)); ok {
+				elements = append(elements, val)
+			}
+		}
+		return cedartypes.NewSet(elements...), true
+	case reflect.Struct:
+		// Map nested struct to Cedar Record
+		return cedartypes.NewRecord(MapRequestToContext(v.Interface())), true
+	default:
+		return nil, false
+	}
+}
+
 func MapRequestToContext(req interface{}) cedartypes.RecordMap {
-	ctxMap := make(cedartypes.RecordMap)
 	v := reflect.ValueOf(req)
 	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return make(cedartypes.RecordMap)
+		}
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
-		return ctxMap
+		return make(cedartypes.RecordMap)
 	}
+
+	ctxMap := make(cedartypes.RecordMap)
 	t := v.Type()
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		fieldType := t.Field(i)
 		fieldName := fieldType.Name
 
-		// Skip unexported fields and protobuf internal fields
 		if !fieldType.IsExported() {
 			continue
 		}
-		// Skip protobuf internal fields
 		if _, ok := fieldType.Tag.Lookup("protobuf"); !ok {
 			continue
 		}
 
-		switch field.Kind() {
-		case reflect.String:
-			ctxMap[cedartypes.String(fieldName)] = cedartypes.String(field.String())
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			ctxMap[cedartypes.String(fieldName)] = cedartypes.Long(field.Int())
-		case reflect.Bool:
-			ctxMap[cedartypes.String(fieldName)] = cedartypes.Boolean(field.Bool())
-		case reflect.Slice:
-			elements := make([]cedartypes.Value, 0, field.Len())
-			for j := 0; j < field.Len(); j++ {
-				elem := field.Index(j)
-				switch elem.Kind() {
-				case reflect.String:
-					elements = append(elements, cedartypes.String(elem.String()))
-				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-					elements = append(elements, cedartypes.Long(elem.Int()))
-				case reflect.Bool:
-					elements = append(elements, cedartypes.Boolean(elem.Bool()))
-				}
-			}
-			ctxMap[cedartypes.String(fieldName)] = cedartypes.NewSet(elements...)
+		if val, ok := toCedarValue(field); ok {
+			ctxMap[cedartypes.String(fieldName)] = val
 		}
 	}
 	return ctxMap
 }
 
 func getSource(ctx context.Context) string {
+	host := "unknown"
 	if p, ok := peer.FromContext(ctx); ok {
 		if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok {
 			if len(tlsInfo.State.PeerCertificates) > 0 {
@@ -89,9 +104,7 @@ func getSource(ctx context.Context) string {
 				}
 			}
 		}
-	}
-
-	if p, ok := peer.FromContext(ctx); ok {
+		// ipaddress/vsock cid
 		host, _, splitErr := net.SplitHostPort(p.Addr.String())
 		if splitErr != nil {
 			host = p.Addr.String()
@@ -102,8 +115,7 @@ func getSource(ctx context.Context) string {
 		}
 	}
 
-	log.Warn("Could not determine source for authorization, defaulting to 0.0.0.0")
-	return "0.0.0.0"
+	return host
 }
 
 func NewAccessController(policyPath string) (grpc.UnaryServerInterceptor, grpc.StreamServerInterceptor, error) {

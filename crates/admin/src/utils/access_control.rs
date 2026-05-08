@@ -6,7 +6,7 @@ use anyhow::Context;
 use bytes::Buf;
 
 use cedar_policy::{
-    Authorizer,
+    Authorizer as CedarAuthorizer,
     Context as CedarContext,
     Decision,
     Entities,
@@ -31,16 +31,16 @@ use tracing::{debug, info, warn};
 type ListenerConnectInfo = <tokio_listener::Connection as Connected>::ConnectInfo;
 
 #[derive(Clone)]
-pub struct AccessControl {
+pub struct Authorizer {
     pool: Arc<DescriptorPool>,
-    policy_state: Arc<std::sync::RwLock<(Arc<PolicySet>, Arc<Authorizer>)>>,
+    policy_state: Arc<std::sync::RwLock<(Arc<PolicySet>, Arc<CedarAuthorizer>)>>,
     enabled: bool,
     type_source: EntityTypeName,
     type_action: EntityTypeName,
     type_module: EntityTypeName,
 }
 
-impl AccessControl {
+impl Authorizer {
     pub fn new(acl_file: Option<&str>) -> anyhow::Result<Self> {
         let pool = DescriptorPool::decode(ADMIN_DESCRIPTOR)
             .expect("Failed to decode ADMIN_DESCRIPTOR; check your reflection setup.");
@@ -51,7 +51,7 @@ impl AccessControl {
             Some("") | None => (
                 Arc::new(std::sync::RwLock::new((
                     Arc::new(PolicySet::new()),
-                    Arc::new(Authorizer::new()),
+                    Arc::new(CedarAuthorizer::new()),
                 ))),
                 false,
             ),
@@ -70,11 +70,8 @@ impl AccessControl {
 
                 let state = Arc::new(std::sync::RwLock::new((
                     Arc::new(policies),
-                    Arc::new(Authorizer::new()),
+                    Arc::new(CedarAuthorizer::new()),
                 )));
-
-                let path_buf = path_obj.to_path_buf();
-                Self::spawn_policy_watcher(path_buf, state.clone());
 
                 (state, true)
             }
@@ -88,53 +85,6 @@ impl AccessControl {
             type_action: EntityTypeName::from_str("Command").expect("valid type name"),
             type_module: EntityTypeName::from_str("Module").expect("valid type name"),
         })
-    }
-
-    fn spawn_policy_watcher(
-        path_buf: std::path::PathBuf,
-        state_clone: Arc<std::sync::RwLock<(Arc<PolicySet>, Arc<Authorizer>)>>,
-    ) {
-        tokio::spawn(async move {
-            use notify::Watcher;
-
-            let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-            let mut watcher =
-                match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-                    if res.is_ok() {
-                        let _ = tx.try_send(());
-                    }
-                }) {
-                    Ok(w) => w,
-                    Err(e) => {
-                        warn!("Failed to initialize cedar policy watcher: {}", e);
-                        return;
-                    }
-                };
-
-            if let Err(e) = watcher.watch(&path_buf, notify::RecursiveMode::NonRecursive) {
-                warn!("Failed to watch cedar policy file: {}", e);
-                return;
-            }
-
-            while rx.recv().await.is_some() {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-                if let Ok(text) = tokio::fs::read_to_string(&path_buf).await {
-                    match PolicySet::from_str(&text) {
-                        Ok(new_policies) => {
-                            if let Ok(mut write_guard) = state_clone.write() {
-                                *write_guard =
-                                    (Arc::new(new_policies), Arc::new(Authorizer::new()));
-                                info!("Cedar policies reloaded successfully.");
-                            }
-                        }
-                        Err(e) => {
-                            warn!("Failed to parse updated Cedar policies: {}", e);
-                        }
-                    }
-                }
-            }
-        });
     }
 
     pub fn authorize(
@@ -202,7 +152,7 @@ impl AccessControl {
     }
 }
 
-impl Default for AccessControl {
+impl Default for Authorizer {
     fn default() -> Self {
         Self::new(None).unwrap()
     }
@@ -223,6 +173,9 @@ fn get_source<T>(req: &HttpRequest<T>) -> Option<String> {
                     }
                 }
                 return Some("anonymous-unix".to_string());
+            }
+            ListenerConnectInfo::Vsock(addr) => {
+                return addr.peer_addr().map(|vsock| vsock.cid().to_string());
             }
             _ => {}
         }
@@ -250,7 +203,7 @@ fn get_source<T>(req: &HttpRequest<T>) -> Option<String> {
 }
 
 #[async_trait::async_trait]
-impl RequestInterceptor for AccessControl {
+impl RequestInterceptor for Authorizer {
     async fn intercept(&self, req: HttpRequest<Body>) -> Result<HttpRequest<Body>, Status> {
         if !self.enabled {
             return Ok(req);
@@ -273,8 +226,8 @@ impl RequestInterceptor for AccessControl {
         let path = parts.uri.path().to_string();
 
         if let Some((service_name, method_name)) = parse_grpc_path(&path) {
-            let full_service_name = service_name; // e.g., "ctap.Ctap"
-            let grpc_method_name = method_name; // e.g., "Ctap"
+            let full_service_name = service_name;
+            let grpc_method_name = method_name;
 
             if let Some(service) = self.pool.get_service_by_name(full_service_name) {
                 if let Some(method) = service.methods().find(|m| m.name() == grpc_method_name) {
@@ -317,7 +270,7 @@ impl RequestInterceptor for AccessControl {
                                         ));
                                     }
                                     Err(e) => {
-                                        debug!("AccessControl: Failed to decode: {}", e);
+                                        debug!("Authorizer: Failed to decode: {}", e);
                                         return Err(Status::internal(format!(
                                             "Failed to decode: {}",
                                             e
@@ -330,7 +283,8 @@ impl RequestInterceptor for AccessControl {
                     }
                 }
             }
-            let context_json = serde_json::Value::Object(Default::default()); // For client streaming or if service/method not found in pool
+            // For client, if streaming or service/method not found in pool
+            let context_json = serde_json::Value::Object(Default::default());
             self.authorize(&source, full_service_name, grpc_method_name, context_json)?;
             return Ok(HttpRequest::from_parts(parts, body));
         }

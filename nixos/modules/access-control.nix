@@ -172,7 +172,7 @@ in
         ### Policy Entities:
         * **Principal:** `Source::"<vm-name>"` — The source VM (e.g., `Source::"admin-vm"`).
         * **Action:** `Command::"<rpc-method>"` — The gRPC method being called (e.g., `Command::"StartApplication"`).
-        * **Resource:** `Module::"<grpc-module>"` — The targeted gRPC service (e.g., `Module::"systemd.UnitControlService"`).
+        * **Resource:** `Module::"<grpc-module>"` — The targeted gRPC Module (e.g., `Module::"systemd"`).
         * **Context:** Dynamic RPC call parameters.
           * *Safety:* Use `context has <field>` guards before accessing specific fields.
           * *Mapping:* Services within a module are mapped to `context.service`.
