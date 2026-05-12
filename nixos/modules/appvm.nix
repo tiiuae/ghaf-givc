@@ -276,20 +276,15 @@ in
       }
     ];
 
-    givc.accessControl.rules = {
-      "${cfg.network.admin.transport.name}" =
-        let
-          apps = map (x: "${x.name}*") cfg.capabilities.applications;
-        in
-        {
-          allow = {
-            locale = { };
-            systemd = {
-              params.UnitName = apps ++ [ "givc-${cfg.network.agent.transport.name}.service" ];
-            };
-          };
-        };
-    };
+    givc.accessControl.agentRules = [
+      {
+        sourceVMs = [ cfg.network.admin.transport.name ];
+        modules = [
+          "systemd"
+          "local"
+        ];
+      }
+    ];
 
     security.polkit = {
       enable = true;

@@ -288,18 +288,15 @@ in
       }
     ];
 
-    givc.accessControl.rules = {
-      "${cfg.network.admin.transport.name}" = {
-        allow = {
-          locale = { };
-          systemd = {
-            params.UnitName = cfg.capabilities.services ++ [
-              "givc-${cfg.network.agent.transport.name}.service"
-            ];
-          };
-        };
-      };
-    };
+    givc.accessControl.agentRules = [
+      {
+        sourceVMs = [ cfg.network.admin.transport.name ];
+        modules = [
+          "systemd"
+          "local"
+        ];
+      }
+    ];
 
     systemd.targets.givc-setup = {
       enable = true;

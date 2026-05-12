@@ -29,7 +29,7 @@ let
 in
 {
   perSystem =
-    { self', pkgs, ... }:
+    { self', ... }:
     {
       vmTests.tests.app = {
         module = {
@@ -59,52 +59,23 @@ in
                 inherit (adminConfig) addresses;
                 tls.enable = tls;
               };
-              givc.accessControl =
-                let
-                  cedarRules = pkgs.writeText "cedar_rules.cedar" ''
-                    permit (
-                      principal,
-                      action,
-                      resource
-                    )
-                    when {
-                        principal in [
-                          Source::"guivm",
-                          Source::"appvm"
-                        ] &&
-                        action == Command::"RegisterService" &&
-                        resource == Module::"admin"
-                    };
-                    permit (
-                        principal,
-                        action,
-                        resource
-                    )
-                    when {
-                        principal == Source::"guivm" && 
-                        action == Command::"StartApplication" &&
-                        resource == Module::"admin" &&
-                        context.VmName == "appvm" &&
-                        ["cat", "foot", "clearexit"].contains(context.AppName)
-                    };
-
-                    forbid (
-                        principal,
-                        action,
-                        resource
-                    )
-                    when {
-                        action == Command::"StartApplication" &&
-                        resource == Module::"admin" &&
-                        context.AppName == "cat" &&
-                        context.Args.contains("/tmp/admin_forbids")
-                    };
-                  '';
-                in
-                {
-                  enable = true;
-                  customRulesFile = cedarRules;
-                };
+              givc.accessControl = {
+                enable = true;
+                adminRules = [
+                  {
+                    sourceVMs = [
+                      "appvm"
+                      "guivm"
+                    ];
+                    requests = [ "RegisterService" ];
+                  }
+                  {
+                    sourceVMs = [ "guivm" ];
+                    targetVMs = [ "appvm" ];
+                    requests = [ "StartApplication" ];
+                  }
+                ];
+              };
             };
             guivm =
               { pkgs, ... }:
@@ -144,6 +115,7 @@ in
                     prefixLength = 24;
                   }
                 ];
+
                 givc.sysvm = {
                   enable = true;
                   network.admin.transport = lib.head adminConfig.addresses;
@@ -153,7 +125,11 @@ in
                   };
                   network.tls.enable = tls;
                 };
-                #givc.accessControl.enable = true;
+                environment = {
+                  systemPackages = with pkgs; [
+                    grpcurl
+                  ];
+                };
               };
             hostvm = {
               imports = [
@@ -263,7 +239,7 @@ in
                         }
 
                         {
-                          name = "another-cat";
+                          name = "anothercat";
                           command = "/run/current-system/sw/bin/cat";
                           args = [ "file" ];
                           directories = [
@@ -276,22 +252,21 @@ in
                   };
                   accessControl = {
                     enable = true;
-                    rules."adminvm" = {
-                      deny.systemd = {
-                        methods = [ "StartApplication" ];
-                        params = {
-                          UnitName = "cat@*";
-                          Args = [ [ "/tmp/app_forbids" ] ];
-                        };
-                      };
-                    };
+                    agentRules = [
+                      {
+                        sourceVMs = [ "guivm" ];
+                        modules = [ "systemd" ];
+                      }
+                    ];
                   };
                 };
               };
           };
           testScript =
-            _:
+            { nodes, ... }:
             let
+              app = nodes.appvm.givc.appvm.network.agent.transport;
+
               cli = "${self'.packages.givc-admin.cli}/bin/givc-cli";
               cliArgs =
                 "--name ${admin.name} --addr ${admin.addr} --port ${admin.port} "
@@ -301,6 +276,8 @@ in
                   else
                     "--notls"
                 }";
+
+              grpcurl = "grpcurl -cacert /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem";
             in
             ''
               with subtest("startup"):
@@ -321,21 +298,23 @@ in
                   guivm.fail("${cli} ${cliArgs} start --vm appvm cat -- /var/log/lastlog")
                   guivm.fail("${cli} ${cliArgs} start --vm appvm cat -- /etc/../bin/sh")
 
-              with subtest("admin access control test (cedar)"):
+              with subtest("agent access control test (direct StartApplication from guivm forbid by appvm)"):
                   (exit_code, output) = guivm.execute(
-                      "${cli} ${cliArgs} start app --vm appvm cat -- /tmp/admin_forbids 2>&1"
+                      "${grpcurl} -d '{\"UnitName\": \"anothercat@0.service\"}' "
+                      "${app.addr}:${app.port} systemd.UnitControlService/StartApplication 2>&1"
+                  )  
+
+                  assert exit_code != 0, f"permission denied by access control policy: {output}"
+                  assert "permission denied by access control policy" in output, f"Expected 'permission denied by access control policy', got: {output}"
+                  print("\033[94m" + "\n-- agent access control test (cedar) completed successfully --\n" + "\033[0m")
+
+              with subtest("admin access control test (get-status on appvm from guivm forbid by admin)"):
+                  (exit_code, output) = guivm.execute(
+                      "${cli} ${cliArgs} get-status appvm multi-user.target 2>&1"
                   )
                   assert exit_code != 0, f"permission denied by admin access control policy: {output}"
                   assert "permission denied by admin access control policy" in output, f"Expected 'permission denied by admin access control policy', got: {output}"
                   print("\033[94m" + "\n-- admin access control test (cedar) completed successfully --\n" + "\033[0m")
-
-              with subtest("agent access control test (cedar)"):
-                  (exit_code, output) = guivm.execute(
-                      "${cli} ${cliArgs} start app --vm appvm cat -- /tmp/app_forbids 2>&1"
-                  )
-                  assert exit_code != 0, f"permission denied by access control policy: {output}"
-                  assert "permission denied by access control policy" in output, f"Expected 'permission denied by access control policy', got: {output}"
-                  print("\033[94m" + "\n-- agent access control test (cedar) completed successfully --\n" + "\033[0m")
 
             '';
         };

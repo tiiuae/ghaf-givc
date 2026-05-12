@@ -219,22 +219,15 @@ in
 
     # JSON configuration for GIVC host agent
     environment.etc."givc-agent/config.json".text = toJSON agentConfig;
-    givc.accessControl.rules = {
-      "${cfg.network.admin.transport.name}" = {
-        allow = {
-          locale = { };
-          systemd = {
-            params.UnitName =
-              cfg.capabilities.services
-              ++ cfg.capabilities.services.vmServices.adminVm
-              ++ cfg.capabilities.services.vmServices.systemVms
-              ++ cfg.capabilities.services.vmServices.appVms
-              ++ [ "givc-${cfg.network.agent.transport.name}.service" ];
-          };
-        };
-      };
-    };
-
+    givc.accessControl.agentRules = [
+      {
+        sourceVMs = [ cfg.network.admin.transport.name ];
+        modules = [
+          "systemd"
+          "local"
+        ];
+      }
+    ];
     systemd.services."givc-${cfg.network.agent.transport.name}" = {
       description = "GIVC remote service manager for the host.";
       enable = true;
