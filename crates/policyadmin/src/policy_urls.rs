@@ -9,6 +9,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
+use base16ct::HexDisplay;
 use reqwest::{
     Client,
     header::{ETAG, LAST_MODIFIED},
@@ -279,7 +280,7 @@ impl PolicyUrlMonitor {
         let final_head = if force_hash_check {
             let mut hasher = Sha256::new();
             hasher.update(&body);
-            let hash = format!("sha256:{:x}", hasher.finalize());
+            let hash = format!("sha256:{:x}", HexDisplay(hasher.finalize().as_slice()));
             if hash == current_head {
                 return Ok(None);
             }
