@@ -148,6 +148,11 @@ enum Commands {
     GetStats {
         vm_name: String,
     },
+    SetVmSize {
+        vm_name: String,
+        minimum: Option<u64>,
+        maximum: Option<u64>,
+    },
     Watch {
         #[arg(long, default_value_t = false)]
         as_json: bool,
@@ -422,6 +427,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
         Commands::GetStats { vm_name } => {
             println!("{:?}", admin.get_stats(vm_name).await?);
+        }
+
+        Commands::SetVmSize {
+            vm_name,
+            minimum,
+            maximum,
+        } => {
+            println!("{:?}", admin.vm_size(vm_name, minimum, maximum).await?);
         }
 
         Commands::Watch {
