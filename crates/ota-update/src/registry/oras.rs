@@ -6,11 +6,12 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Context, ensure};
-use futures_util::TryStreamExt;
+use futures_util::StreamExt;
 use oci_client::client::ClientConfig;
 use oci_client::manifest::OciDescriptor;
 use oci_client::secrets::RegistryAuth;
 use oci_client::{Client, Reference};
+use tokio::io::AsyncWriteExt;
 
 use super::RegistryCredentials;
 
@@ -136,12 +137,17 @@ pub(crate) async fn fetch_manifest_and_config(
     })
 }
 
-pub(crate) async fn fetch_blob_bytes(
+pub(crate) async fn download_blob_to_file<F>(
     client: &Client,
     reference: &Reference,
     descriptor: &BlobDescriptor,
     credentials: &RegistryCredentials,
-) -> anyhow::Result<Vec<u8>> {
+    mut out: tokio::fs::File,
+    mut on_progress: F,
+) -> anyhow::Result<()>
+where
+    F: FnMut(u64, Option<u64>),
+{
     let auth = to_registry_auth(credentials);
     client
         .auth(reference, &auth, oci_client::RegistryOperation::Pull)
@@ -161,15 +167,24 @@ pub(crate) async fn fetch_blob_bytes(
         .await
         .context("while opening blob stream")?;
 
-    let mut out = Vec::with_capacity(stream.content_length.unwrap_or(0) as usize);
+    let total = stream.content_length;
+    let mut downloaded: u64 = 0;
+    on_progress(downloaded, total);
     while let Some(chunk) = stream
-        .try_next()
+        .next()
         .await
+        .transpose()
         .context("while reading blob stream")?
     {
-        out.extend_from_slice(&chunk);
+        out.write_all(&chunk)
+            .await
+            .context("while writing blob chunk")?;
+        downloaded += chunk.len() as u64;
+        on_progress(downloaded, total);
     }
-    Ok(out)
+    out.flush().await.context("while flushing blob file")?;
+
+    Ok(())
 }
 
 fn descriptor_to_blob(descriptor: &OciDescriptor) -> BlobDescriptor {
