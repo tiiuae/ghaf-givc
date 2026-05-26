@@ -41,5 +41,6 @@ tracing-subscriber = { version = "0.3", features = [
   "time",
   "local-time",
 ] }
+oci-client = { git = "https://github.com/oras-project/rust-oci-client", rev = "1f9a41e49158634cf590903981162fa67ffdf039" }
 
 cachix-client = { path = "../cachix-client", features = ["nixos"] }
