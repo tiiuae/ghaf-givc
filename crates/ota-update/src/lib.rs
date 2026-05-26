@@ -9,4 +9,5 @@ pub mod query;
 pub mod registry;
 pub mod types;
 
+pub(crate) mod lock;
 mod nixos;

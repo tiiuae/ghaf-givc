@@ -5,6 +5,7 @@ pub(crate) mod checksum;
 pub mod cli;
 pub mod executor;
 pub mod group;
+pub mod install;
 pub mod lvm;
 pub mod manifest;
 pub mod pipeline;

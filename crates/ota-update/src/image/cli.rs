@@ -2,23 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::Version;
-use super::executor::{DryRunExecutor, Executor, ShellExecutor};
-use super::lvm::read_lvs_output;
-use super::manifest::Manifest;
+use super::install::{
+    execute_plan, install_from_manifest_path, populate_runtime, validate_manifest_path,
+};
 use super::plan::Plan;
-use super::runtime::Runtime;
-use crate::bootctl::get_bootctl_info;
-use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use fs2::FileExt;
-use std::fs::{File, OpenOptions};
-use std::path::{Path, PathBuf};
-use tokio::fs::read_to_string;
-
-struct UpdateLock {
-    _file: File,
-    path: PathBuf,
-}
+use std::path::Path;
 
 #[derive(Debug, Parser)]
 pub struct ImageUpdate {
@@ -76,33 +65,16 @@ impl ImageUpdate {
                 validate,
                 no_validate,
             } => {
-                let rt = populate_runtime().await?;
-                let manifest_path = Path::new(&manifest);
-                let source_dir = manifest_path
-                    .parent()
-                    .context("manifest path has no parent directory")?;
-
-                let manifest = Manifest::from_file(manifest_path)?;
-                manifest
-                    .validate(source_dir, validate && !no_validate)
-                    .await
-                    .context("while validating manifest content")?;
-                let plan = Plan::install(&rt, &manifest, source_dir)?;
-
-                execute_plan(plan, self.dry_run).await
+                install_from_manifest_path(
+                    Path::new(&manifest),
+                    validate && !no_validate,
+                    self.dry_run,
+                )
+                .await
             }
 
             ImageAction::Validate { manifest } => {
-                let manifest_path = Path::new(&manifest);
-                let source_dir = manifest_path
-                    .parent()
-                    .context("manifest path has no parent directory")?;
-
-                let manifest = Manifest::from_file(manifest_path)?;
-                manifest
-                    .validate(source_dir, true)
-                    .await
-                    .context("while validating manifest content")?;
+                validate_manifest_path(Path::new(&manifest)).await?;
                 println!("Manifest validation successful.");
                 Ok(())
             }
@@ -121,61 +93,5 @@ impl ImageUpdate {
                 Ok(())
             }
         }
-    }
-}
-
-async fn populate_runtime() -> anyhow::Result<Runtime> {
-    let cmdline = read_to_string("/proc/cmdline")
-        .await
-        .context("while reading /proc/cmdline")?;
-    let bootctl = get_bootctl_info().await?;
-    let lvs = read_lvs_output().await.context("while invoking lvs")?;
-    Runtime::new(lvs, &cmdline, bootctl)
-}
-
-async fn execute_plan(plan: Plan, dry_run: bool) -> anyhow::Result<()> {
-    if plan.steps.is_empty() {
-        println!("Nothing to do.");
-        return Ok(());
-    }
-
-    // Acquire global lock
-    let _lock = UpdateLock::acquire("/run/ota-update.lock")?;
-
-    if dry_run {
-        let exec = DryRunExecutor;
-        exec.run_plan(&plan).await?;
-    } else {
-        let exec = ShellExecutor::default();
-        exec.run_plan(&plan).await?;
-    }
-
-    Ok(())
-}
-
-impl UpdateLock {
-    fn acquire<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let path = path.as_ref().to_path_buf();
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .read(true)
-            .write(true)
-            .open(&path)
-            .with_context(|| format!("opening lock file {}", path.display()))?;
-
-        file.try_lock_exclusive()
-            .context("another ota-update instance is already running")?;
-
-        Ok(Self { _file: file, path })
-    }
-}
-
-impl Drop for UpdateLock {
-    fn drop(&mut self) {
-        // Best-effort cleanup:
-        // - lock is released automatically when File is dropped
-        // - remove the file itself
-        let _ = std::fs::remove_file(&self.path);
     }
 }
