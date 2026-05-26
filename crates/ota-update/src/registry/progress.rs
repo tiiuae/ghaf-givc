@@ -8,14 +8,19 @@ use serde::Serialize;
 pub enum RegistryEvent {
     DiscoverStarted {
         reference: String,
+        total: usize,
     },
     TagDiscovered {
         repository: String,
         tag: String,
+        current: usize,
+        total: usize,
     },
     ManifestFetched {
         repository: String,
         tag: String,
+        current: usize,
+        total: usize,
     },
     PullStarted {
         reference: String,

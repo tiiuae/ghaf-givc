@@ -16,6 +16,7 @@ async-stream = "0.3"
 axum = "0.8"
 bootspec = "2.0"
 clap = "4.5.60"
+futures-util = "0.3"
 regex = "1.12"
 reqwest = { version = "0.13.2", default-features = false }
 serde = "1.0.228"

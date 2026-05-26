@@ -3,6 +3,9 @@
 
 use clap::{Parser, Subcommand, ValueEnum};
 
+use super::progress::{FeedbackSink, RegistryEvent};
+use super::{DiscoverOptions, RegistryCredentials, discover_updates, fetch_changelog};
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum OutputFormat {
     Text,
@@ -71,7 +74,115 @@ pub enum RegistryAction {
 impl RegistryCommand {
     #[allow(clippy::missing_errors_doc)]
     pub async fn handle(self) -> anyhow::Result<()> {
-        let _ = self;
-        anyhow::bail!("registry CLI is not implemented yet")
+        let credentials = self.credentials()?;
+        let mut sink = CliFeedback {
+            format: self.output,
+        };
+
+        match self.action {
+            RegistryAction::Discover { reference } => {
+                let updates = discover_updates(
+                    &DiscoverOptions {
+                        reference,
+                        credentials,
+                    },
+                    &mut sink,
+                )
+                .await?;
+
+                match self.output {
+                    OutputFormat::Text => {
+                        for update in updates {
+                            println!(
+                                "{}/{} version={} hash={}",
+                                update.repository,
+                                update.tag,
+                                update.version,
+                                short_hash(&update.hash)
+                            );
+                        }
+                    }
+                    OutputFormat::Jsonl => {
+                        for update in updates {
+                            println!("{}", serde_json::to_string(&update)?);
+                        }
+                    }
+                }
+                Ok(())
+            }
+            RegistryAction::Pull { .. } => anyhow::bail!("registry pull is not implemented yet"),
+            RegistryAction::Changelog { reference } => {
+                let changelog = fetch_changelog(&reference, &credentials).await?;
+                println!("{changelog}");
+                Ok(())
+            }
+        }
     }
+
+    fn credentials(&self) -> anyhow::Result<RegistryCredentials> {
+        if let Some(token) = &self.token {
+            return Ok(RegistryCredentials::Bearer {
+                token: token.clone(),
+            });
+        }
+
+        match (&self.username, &self.password) {
+            (Some(username), Some(password)) => Ok(RegistryCredentials::Basic {
+                username: username.clone(),
+                password: password.clone(),
+            }),
+            (None, None) => Ok(RegistryCredentials::Anonymous),
+            (Some(_), None) => anyhow::bail!("--password is required when --username is set"),
+            (None, Some(_)) => anyhow::bail!("--username is required when --password is set"),
+        }
+    }
+}
+
+struct CliFeedback {
+    format: OutputFormat,
+}
+
+impl FeedbackSink for CliFeedback {
+    fn event(&mut self, event: RegistryEvent) {
+        match self.format {
+            OutputFormat::Text => print_text_event(&event),
+            OutputFormat::Jsonl => {
+                if let Ok(line) = serde_json::to_string(&event) {
+                    println!("{line}");
+                }
+            }
+        }
+    }
+}
+
+fn print_text_event(event: &RegistryEvent) {
+    match event {
+        RegistryEvent::DiscoverStarted { reference, total } => {
+            println!("discover start: {reference} ({total} tags)");
+        }
+        RegistryEvent::TagDiscovered {
+            repository,
+            tag,
+            current,
+            total,
+        } => {
+            println!("tag [{current}/{total}]: {repository}:{tag}");
+        }
+        RegistryEvent::ManifestFetched {
+            repository,
+            tag,
+            current,
+            total,
+        } => {
+            println!("manifest [{current}/{total}]: {repository}:{tag}");
+        }
+        RegistryEvent::Done => {
+            println!("done");
+        }
+        _ => {}
+    }
+}
+
+fn short_hash(value: &str) -> &str {
+    value.get(..16).unwrap_or(value)
 }

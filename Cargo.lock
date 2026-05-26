@@ -3034,6 +3034,7 @@ dependencies = [
  "cachix-client",
  "clap",
  "fs2",
+ "futures-util",
  "hex",
  "memmap2",
  "oci-client",
