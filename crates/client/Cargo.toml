@@ -7,16 +7,16 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
-anyhow = "1.0.102"
-async-channel = "2.5.0"
+anyhow.workspace = true
+async-channel.workspace = true
 hyper-util = "0.1"
-tokio-stream = "0.1"
-tokio = { version = "1.50", features = ["rt-multi-thread", "time", "macros"] }
+tokio-stream.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros"] }
 tokio-vsock = "*"
-tonic-types = "0.14"
-tonic = { version = "0.14", features = ["tls-aws-lc"] }
+tonic-types.workspace = true
+tonic = { workspace = true, features = ["tls-aws-lc"] }
 tower = "0.5"
-tracing = "0.1"
+tracing.workspace = true
 gethostname = "1.1.0"
 
 givc-common = { path = "../common" }

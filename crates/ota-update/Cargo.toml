@@ -7,35 +7,35 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
-anyhow = "1.0.102"
+anyhow.workspace = true
 async-trait = "*"
-axum = "*"
-bootspec = "*"
-clap = { version = "4.5.60", features = ["derive", "env"] }
+axum.workspace = true
+bootspec.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
 fs2 = "*" # For locking
-regex = "*"
-reqwest = { version = "0.13", default-features = false, features = [
+regex.workspace = true
+reqwest = { workspace = true, default-features = false, features = [
   "json",
   "default-tls",
 ] }
-serde_json = "1.0.150"
-serde = { version = "1.0.202", features = ["derive"] }
+serde_json.workspace = true
+serde = { workspace = true, features = ["derive"] }
 shell-escape = "*"
 serde_with = { version = "*", features = ["hex"] }
 hex = "0.4"
 memmap2 = "0.9"
-sha2 = "0.11"
-strum = { version = "0.28", features = ["derive"] }
-thiserror = "*"
-tokio = { version = "1.50", features = [
+sha2 = { workspace = true, features = ["asm"] }
+strum = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = [
   "rt-multi-thread",
   "time",
   "macros",
   "fs",
   "process",
 ] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = [
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = [
   "env-filter",
   "tracing-log",
   "time",
