@@ -4,7 +4,10 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
 use super::progress::{FeedbackSink, RegistryEvent};
-use super::{DiscoverOptions, RegistryCredentials, discover_updates, fetch_changelog};
+use super::{
+    DiscoverOptions, PullOptions, RegistryCredentials, discover_updates, fetch_changelog,
+    pull_update,
+};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum OutputFormat {
@@ -110,7 +113,37 @@ impl RegistryCommand {
                 }
                 Ok(())
             }
-            RegistryAction::Pull { .. } => anyhow::bail!("registry pull is not implemented yet"),
+            RegistryAction::Pull {
+                reference,
+                destination,
+                validate,
+                no_validate,
+                install,
+            } => {
+                let result = pull_update(
+                    &PullOptions {
+                        reference,
+                        destination_root: destination.into(),
+                        credentials,
+                        install,
+                        validate: validate && !no_validate,
+                    },
+                    &mut sink,
+                )
+                .await?;
+
+                match self.output {
+                    OutputFormat::Text => {
+                        println!("pulled to: {}", result.output_dir.display());
+                        println!("manifest: {}", result.manifest_path.display());
+                    }
+                    OutputFormat::Jsonl => {
+                        println!("{}", serde_json::to_string(&result.output_dir)?);
+                        println!("{}", serde_json::to_string(&result.manifest_path)?);
+                    }
+                }
+                Ok(())
+            }
             RegistryAction::Changelog { reference } => {
                 let changelog = fetch_changelog(&reference, &credentials).await?;
                 println!("{changelog}");
@@ -178,6 +211,12 @@ fn print_text_event(event: &RegistryEvent) {
         }
         RegistryEvent::Done => {
             println!("done");
+        }
+        RegistryEvent::PullStarted {
+            reference,
+            destination,
+        } => {
+            println!("pull start: {reference} -> {destination}");
         }
         _ => {}
     }

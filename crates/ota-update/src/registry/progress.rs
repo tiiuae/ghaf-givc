@@ -43,6 +43,9 @@ pub enum RegistryEvent {
     InstallStarted {
         manifest: String,
     },
+    Cancelled {
+        stage: String,
+    },
     Done,
 }
 
