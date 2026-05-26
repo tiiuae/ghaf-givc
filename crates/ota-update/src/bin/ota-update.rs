@@ -12,6 +12,7 @@ use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
 use ota_update::image::cli::ImageUpdate;
 use ota_update::profile;
 use ota_update::query::query_available_updates;
+use ota_update::registry::cli::RegistryCommand;
 use regex::Regex;
 use tracing::info;
 
@@ -51,6 +52,7 @@ enum Commands {
 
     Cachix(CachixOptions),
     Image(ImageUpdate),
+    Registry(RegistryCommand),
 }
 
 async fn get_generations() -> anyhow::Result<()> {
@@ -209,6 +211,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cache,
         }) => perform_cachix_update(&pin_name, token, cachix_host, cache).await?,
         Commands::Image(image) => image.handle().await?,
+        Commands::Registry(registry) => registry.handle().await?,
     }
     Ok(())
 }
