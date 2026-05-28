@@ -193,8 +193,8 @@ impl RegistryCommand {
                 })
                 .await?;
                 println!(
-                    "pushed: {} digest={}",
-                    result.reference, result.manifest_url
+                    "pushed: {} manifest_url={} digest={}",
+                    result.reference, result.manifest_url, result.digest
                 );
                 Ok(())
             }

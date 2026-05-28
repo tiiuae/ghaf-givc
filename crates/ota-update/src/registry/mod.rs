@@ -70,6 +70,7 @@ pub struct PushOptions {
 pub struct PushResult {
     pub reference: String,
     pub manifest_url: String,
+    pub digest: String,
 }
 
 pub trait CancelSignal {
@@ -350,6 +351,9 @@ pub async fn prune_downloaded_updates(_options: &PruneOptions) -> anyhow::Result
         return Ok(());
     }
 
+    let lock_path = _options.destination_root.join(".ota-update.lock");
+    let _lock = UpdateLock::acquire(&lock_path, "registry-prune")?;
+
     let mut stack = vec![_options.destination_root.clone()];
     while let Some(current) = stack.pop() {
         let mut entries = tokio::fs::read_dir(&current)
@@ -448,9 +452,17 @@ pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
     .await
     .context("push timeout")??;
 
+    let remote = timeout(
+        Duration::from_secs(30),
+        oras::fetch_manifest_and_config(&client, &reference, &options.credentials),
+    )
+    .await
+    .context("push timeout while verifying manifest digest")??;
+
     Ok(PushResult {
         reference: options.reference.clone(),
         manifest_url: pushed,
+        digest: remote.manifest_digest,
     })
 }
 
