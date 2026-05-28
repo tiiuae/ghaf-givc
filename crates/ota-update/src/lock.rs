@@ -20,6 +20,7 @@ impl UpdateLock {
             .create(true)
             .read(true)
             .write(true)
+            .truncate(false)
             .open(&path)
             .with_context(|| format!("opening lock file {}", path.display()))?;
 

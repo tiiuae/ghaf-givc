@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use tokio::time::{Duration, timeout};
 
 use crate::image::install::install_from_manifest_path;
 use crate::image::manifest::Manifest;
@@ -56,6 +58,20 @@ pub struct PullResult {
     pub manifest_path: std::path::PathBuf,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PushOptions {
+    pub reference: String,
+    pub manifest_path: PathBuf,
+    pub changelog_path: Option<PathBuf>,
+    pub credentials: RegistryCredentials,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PushResult {
+    pub reference: String,
+    pub manifest_url: String,
+}
+
 pub trait CancelSignal {
     fn is_cancelled(&self) -> bool;
 }
@@ -86,7 +102,12 @@ where
     let reference = oras::parse_reference(&options.reference, oras::RefTagPolicy::ForbidTag)?;
     let client = oras::build_client();
 
-    let tags = oras::list_tags(&client, &reference, &options.credentials).await?;
+    let tags = timeout(
+        Duration::from_secs(30),
+        oras::list_tags(&client, &reference, &options.credentials),
+    )
+    .await
+    .context("discover timeout while listing tags")??;
     let total = tags.len();
     feedback.event(progress::RegistryEvent::DiscoverStarted {
         reference: options.reference.clone(),
@@ -105,10 +126,17 @@ where
             total,
         });
 
-        let remote = oras::fetch_manifest_and_config(&client, &tag_ref, &options.credentials).await;
+        let remote = timeout(
+            Duration::from_secs(30),
+            oras::fetch_manifest_and_config(&client, &tag_ref, &options.credentials),
+        )
+        .await;
         let remote = match remote {
-            Ok(remote) => remote,
+            Ok(Ok(remote)) => remote,
             Err(_) => {
+                continue;
+            }
+            Ok(Err(_)) => {
                 continue;
             }
         };
@@ -194,11 +222,16 @@ where
     println!("pull layout: {}", output_dir.display());
 
     let client = oras::build_client();
-    let remote = oras::fetch_manifest_and_config(&client, &reference, &options.credentials).await?;
+    let remote = timeout(
+        Duration::from_secs(30),
+        oras::fetch_manifest_and_config(&client, &reference, &options.credentials),
+    )
+    .await
+    .context("pull timeout while fetching manifest")??;
     let mut manifest = Manifest::from_json_str(&remote.config_json)?;
     manifest.normalize_paths()?;
 
-    let artifact_bindings = select_artifact_bindings(&manifest, &remote.layers);
+    let artifact_bindings = select_artifact_bindings(&manifest, &remote.layers)?;
     for binding in artifact_bindings {
         let local = output_dir.join(&binding.local_name);
         if let Some(parent) = local.parent() {
@@ -216,21 +249,25 @@ where
         let file = tokio::fs::File::create(&part)
             .await
             .with_context(|| format!("creating temp blob file {}", part.display()))?;
-        oras::download_blob_to_file(
-            &client,
-            &reference,
-            &binding.blob,
-            &options.credentials,
-            file,
-            |downloaded, total| {
-                feedback.event(progress::RegistryEvent::BlobDownloading {
-                    digest: binding.digest.clone(),
-                    downloaded,
-                    total,
-                });
-            },
+        timeout(
+            Duration::from_secs(120),
+            oras::download_blob_to_file(
+                &client,
+                &reference,
+                &binding.blob,
+                &options.credentials,
+                file,
+                |downloaded, total| {
+                    feedback.event(progress::RegistryEvent::BlobDownloading {
+                        digest: binding.digest.clone(),
+                        downloaded,
+                        total,
+                    });
+                },
+            ),
         )
         .await
+        .context("pull timeout while downloading blob")?
         .with_context(|| format!("downloading blob {}", binding.digest))?;
         tokio::fs::rename(&part, &local)
             .await
@@ -284,16 +321,154 @@ where
 
 pub async fn fetch_changelog(
     reference: &str,
-    _credentials: &RegistryCredentials,
+    credentials: &RegistryCredentials,
 ) -> anyhow::Result<String> {
-    // TODO: Implement changelog fetch by downloading blob with MEDIA_TYPE_OTA_CHANGELOG.
-    let _ = oras::parse_reference(reference, oras::RefTagPolicy::RequireTag)?;
-    anyhow::bail!("registry changelog fetch is not implemented yet")
+    let parsed = oras::parse_reference(reference, oras::RefTagPolicy::RequireTag)?;
+    let client = oras::build_client();
+    let remote = timeout(
+        Duration::from_secs(30),
+        oras::fetch_manifest_and_config(&client, &parsed, credentials),
+    )
+    .await
+    .context("changelog timeout while fetching manifest")??;
+    let changelog = find_layer_by_media_type(&remote.layers, MEDIA_TYPE_OTA_CHANGELOG)
+        .context("no changelog layer found for reference")?;
+
+    let bytes = timeout(
+        Duration::from_secs(60),
+        oras::download_blob_to_vec(&client, &parsed, changelog, credentials),
+    )
+    .await
+    .context("changelog timeout while downloading blob")??;
+    String::from_utf8(bytes).context("changelog blob is not valid UTF-8")
 }
 
 pub async fn prune_downloaded_updates(_options: &PruneOptions) -> anyhow::Result<()> {
-    // TODO: Implement retention policy and pruning API for stale downloaded updates.
-    anyhow::bail!("prune downloaded updates is not implemented yet")
+    const KEEP_PER_REPOSITORY: usize = 2;
+
+    if !tokio::fs::try_exists(&_options.destination_root).await? {
+        return Ok(());
+    }
+
+    let mut stack = vec![_options.destination_root.clone()];
+    while let Some(current) = stack.pop() {
+        let mut entries = tokio::fs::read_dir(&current)
+            .await
+            .with_context(|| format!("reading directory {}", current.display()))?;
+        let mut subdirs = Vec::new();
+        while let Some(entry) = entries.next_entry().await? {
+            if entry.file_type().await?.is_dir() {
+                subdirs.push(entry.path());
+            }
+        }
+
+        let mut tags = Vec::new();
+        for subdir in &subdirs {
+            if tokio::fs::try_exists(subdir.join("manifest.json")).await? {
+                let metadata = tokio::fs::metadata(subdir).await?;
+                tags.push((subdir.clone(), metadata.modified().ok()));
+            }
+        }
+
+        if !tags.is_empty() {
+            tags.sort_by(|a, b| b.1.cmp(&a.1));
+            for (path, _) in tags.into_iter().skip(KEEP_PER_REPOSITORY) {
+                tokio::fs::remove_dir_all(&path)
+                    .await
+                    .with_context(|| format!("removing stale update dir {}", path.display()))?;
+            }
+            continue;
+        }
+
+        stack.extend(subdirs);
+    }
+
+    Ok(())
+}
+
+pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
+    let reference = oras::parse_reference(&options.reference, oras::RefTagPolicy::RequireTag)?;
+    let manifest = Manifest::from_file(&options.manifest_path)?;
+    let base_dir = options
+        .manifest_path
+        .parent()
+        .context("manifest path has no parent directory")?;
+    manifest
+        .validate(base_dir, true)
+        .await
+        .context("while validating manifest content")?;
+
+    let config_bytes = tokio::fs::read(&options.manifest_path)
+        .await
+        .with_context(|| format!("reading manifest file {}", options.manifest_path.display()))?;
+
+    let mut layers = Vec::new();
+    layers.push(layer_input_with_title(
+        manifest.kernel.full_name(base_dir),
+        MEDIA_TYPE_OTA_UKI,
+    )?);
+    layers.push(layer_input_with_title(
+        manifest.store.full_name(base_dir),
+        MEDIA_TYPE_OTA_ROOT,
+    )?);
+    layers.push(layer_input_with_title(
+        manifest.verity.full_name(base_dir),
+        MEDIA_TYPE_OTA_VERITY,
+    )?);
+
+    if let Some(changelog_path) = &options.changelog_path {
+        let title = changelog_path
+            .file_name()
+            .and_then(|v| v.to_str())
+            .context("changelog path has invalid filename")?;
+        let mut annotations = BTreeMap::new();
+        annotations.insert(
+            "org.opencontainers.image.title".to_string(),
+            sanitize_relative_file_path(title)?,
+        );
+        layers.push(oras::LayerInput {
+            path: changelog_path.clone(),
+            media_type: MEDIA_TYPE_OTA_CHANGELOG.to_string(),
+            annotations: Some(annotations),
+        });
+    }
+
+    let client = oras::build_client();
+    let pushed = timeout(
+        Duration::from_secs(180),
+        oras::push_layers_and_config(
+            &client,
+            &reference,
+            &options.credentials,
+            layers,
+            config_bytes,
+            MEDIA_TYPE_OTA_MANIFEST,
+        ),
+    )
+    .await
+    .context("push timeout")??;
+
+    Ok(PushResult {
+        reference: options.reference.clone(),
+        manifest_url: pushed,
+    })
+}
+
+fn layer_input_with_title(path: PathBuf, media_type: &str) -> anyhow::Result<oras::LayerInput> {
+    let title = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .context("layer path has invalid filename")?;
+    let mut annotations = BTreeMap::new();
+    annotations.insert(
+        "org.opencontainers.image.title".to_string(),
+        sanitize_relative_file_path(title)?,
+    );
+    Ok(oras::LayerInput {
+        path,
+        media_type: media_type.to_string(),
+        annotations: Some(annotations),
+    })
 }
 
 #[derive(Debug)]
@@ -308,26 +483,26 @@ struct ArtifactBinding {
 fn select_artifact_bindings(
     manifest: &Manifest,
     layers: &[oras::BlobDescriptor],
-) -> Vec<ArtifactBinding> {
+) -> anyhow::Result<Vec<ArtifactBinding>> {
     let mut bindings = vec![
         required_binding(
             layers,
             MEDIA_TYPE_OTA_UKI,
             "uki",
             manifest.kernel.name.clone(),
-        ),
+        )?,
         required_binding(
             layers,
             MEDIA_TYPE_OTA_ROOT,
             "root",
             manifest.store.name.clone(),
-        ),
+        )?,
         required_binding(
             layers,
             MEDIA_TYPE_OTA_VERITY,
             "verity",
             manifest.verity.name.clone(),
-        ),
+        )?,
     ];
 
     if let Some(layer) = find_layer_by_media_type(layers, MEDIA_TYPE_OTA_CHANGELOG) {
@@ -338,7 +513,7 @@ fn select_artifact_bindings(
         ));
     }
 
-    bindings
+    Ok(bindings)
 }
 
 fn required_binding(
@@ -346,10 +521,10 @@ fn required_binding(
     media_type: &str,
     kind: &'static str,
     local_name: String,
-) -> ArtifactBinding {
+) -> anyhow::Result<ArtifactBinding> {
     let layer = find_layer_by_media_type(layers, media_type)
-        .expect("required artifact layer missing for expected media type");
-    make_binding(layer, kind, local_name)
+        .with_context(|| format!("missing required artifact layer media_type={media_type}"))?;
+    Ok(make_binding(layer, kind, local_name))
 }
 
 fn find_layer_by_media_type<'a>(
@@ -409,4 +584,123 @@ fn sanitize_relative_file_path(value: &str) -> anyhow::Result<String> {
         anyhow::bail!("empty path is not allowed");
     }
     Ok(out.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use tokio::time::{Duration, sleep};
+
+    fn descriptor(media_type: &str) -> oras::BlobDescriptor {
+        oras::BlobDescriptor {
+            digest: "sha256:deadbeef".to_string(),
+            media_type: media_type.to_string(),
+            size: 10,
+            annotations: None,
+        }
+    }
+
+    #[test]
+    fn changelog_local_name_defaults_when_title_missing() {
+        let value = changelog_local_name(&descriptor(MEDIA_TYPE_OTA_CHANGELOG));
+        assert_eq!(value, "changelog.txt");
+    }
+
+    #[test]
+    fn sanitize_relative_file_path_rejects_parent_dir() {
+        let err = sanitize_relative_file_path("../../etc/passwd").expect_err("must fail");
+        assert!(err.to_string().contains("parent dir"));
+    }
+
+    #[test]
+    fn find_layer_by_media_type_returns_none_for_missing_layer() {
+        let layers = vec![
+            descriptor(MEDIA_TYPE_OTA_UKI),
+            descriptor(MEDIA_TYPE_OTA_ROOT),
+        ];
+        let got = find_layer_by_media_type(&layers, MEDIA_TYPE_OTA_CHANGELOG);
+        assert!(got.is_none());
+    }
+
+    #[test]
+    fn select_artifact_bindings_returns_error_when_required_layer_missing() {
+        let manifest = Manifest {
+            meta: Default::default(),
+            manifest_version: 1,
+            system: None,
+            version: "1.0".to_string(),
+            root_verity_hash: "0123456789abcdef0123456789abcdef".to_string(),
+            kernel: crate::image::manifest::File {
+                name: "kernel.efi".to_string(),
+                sha256sum: [0; 32],
+                unpacked_size: None,
+            },
+            store: crate::image::manifest::File {
+                name: "root.raw".to_string(),
+                sha256sum: [0; 32],
+                unpacked_size: None,
+            },
+            verity: crate::image::manifest::File {
+                name: "verity.raw".to_string(),
+                sha256sum: [0; 32],
+                unpacked_size: None,
+            },
+        };
+        let layers = vec![descriptor(MEDIA_TYPE_OTA_UKI)];
+        let err = select_artifact_bindings(&manifest, &layers).expect_err("must fail");
+        assert!(err.to_string().contains("missing required artifact layer"));
+    }
+
+    #[tokio::test]
+    async fn prune_keeps_two_newest_directories_per_repository() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let tmp = std::env::temp_dir().join(format!("ota-update-prune-test-{unique}"));
+        let repo = tmp.join("registry.local/repo");
+        tokio::fs::create_dir_all(&repo).await.expect("mkdir repo");
+
+        let d1 = repo.join("v1");
+        tokio::fs::create_dir_all(&d1).await.expect("mkdir v1");
+        tokio::fs::write(d1.join("manifest.json"), b"{}")
+            .await
+            .expect("manifest v1");
+        sleep(Duration::from_millis(20)).await;
+        let d2 = repo.join("v2");
+        tokio::fs::create_dir_all(&d2).await.expect("mkdir v2");
+        tokio::fs::write(d2.join("manifest.json"), b"{}")
+            .await
+            .expect("manifest v2");
+        sleep(Duration::from_millis(20)).await;
+        let d3 = repo.join("v3");
+        tokio::fs::create_dir_all(&d3).await.expect("mkdir v3");
+        tokio::fs::write(d3.join("manifest.json"), b"{}")
+            .await
+            .expect("manifest v3");
+
+        prune_downloaded_updates(&PruneOptions {
+            destination_root: tmp.clone(),
+        })
+        .await
+        .expect("prune ok");
+
+        assert!(tokio::fs::try_exists(&d1).await.expect("exists d1") == false);
+        assert!(tokio::fs::try_exists(&d2).await.expect("exists d2"));
+        assert!(tokio::fs::try_exists(&d3).await.expect("exists d3"));
+
+        let _ = tokio::fs::remove_dir_all(tmp).await;
+    }
+
+    #[test]
+    fn layer_input_with_title_uses_basename_annotation() {
+        let input = layer_input_with_title(PathBuf::from("dir/image.efi"), MEDIA_TYPE_OTA_UKI)
+            .expect("layer input");
+        let title = input
+            .annotations
+            .and_then(|a| a.get("org.opencontainers.image.title").cloned())
+            .expect("title annotation");
+        assert_eq!(title, "image.efi");
+    }
 }

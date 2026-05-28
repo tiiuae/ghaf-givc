@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use super::progress::{FeedbackSink, RegistryEvent};
 use super::{
     DiscoverOptions, PullOptions, RegistryCredentials, discover_updates, fetch_changelog,
-    pull_update,
+    prune_downloaded_updates, pull_update, push_update,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -71,6 +71,27 @@ pub enum RegistryAction {
     Changelog {
         /// OCI reference with tag (registry/repo[:tag])
         reference: String,
+    },
+
+    /// Prune stale downloaded updates from destination root
+    Prune {
+        /// Destination root path
+        #[arg(long, default_value = "/persist/sysupdate")]
+        destination: String,
+    },
+
+    /// Push OTA update artifacts to OCI repository
+    Push {
+        /// Path to manifest file
+        #[arg(long)]
+        manifest: String,
+
+        /// OCI reference with tag (registry/repo[:tag])
+        reference: String,
+
+        /// Optional changelog file path
+        #[arg(long)]
+        changelog: Option<String>,
     },
 }
 
@@ -147,6 +168,34 @@ impl RegistryCommand {
             RegistryAction::Changelog { reference } => {
                 let changelog = fetch_changelog(&reference, &credentials).await?;
                 println!("{changelog}");
+                Ok(())
+            }
+            RegistryAction::Prune { destination } => {
+                prune_downloaded_updates(&super::PruneOptions {
+                    destination_root: destination.into(),
+                })
+                .await?;
+                if matches!(self.output, OutputFormat::Text) {
+                    println!("prune done");
+                }
+                Ok(())
+            }
+            RegistryAction::Push {
+                manifest,
+                reference,
+                changelog,
+            } => {
+                let result = push_update(&super::PushOptions {
+                    reference,
+                    manifest_path: manifest.into(),
+                    changelog_path: changelog.map(Into::into),
+                    credentials,
+                })
+                .await?;
+                println!(
+                    "pushed: {} digest={}",
+                    result.reference, result.manifest_url
+                );
                 Ok(())
             }
         }
