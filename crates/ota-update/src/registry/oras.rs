@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use anyhow::{Context, ensure};
 use futures_util::StreamExt;
@@ -31,6 +32,13 @@ pub(crate) struct RemoteImage {
     pub config_json: String,
     pub config: BlobDescriptor,
     pub layers: Vec<BlobDescriptor>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct LayerInput {
+    pub path: PathBuf,
+    pub media_type: String,
+    pub annotations: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -187,6 +195,44 @@ where
     Ok(())
 }
 
+pub(crate) async fn download_blob_to_vec(
+    client: &Client,
+    reference: &Reference,
+    descriptor: &BlobDescriptor,
+    credentials: &RegistryCredentials,
+) -> anyhow::Result<Vec<u8>> {
+    let auth = to_registry_auth(credentials);
+    client
+        .auth(reference, &auth, oci_client::RegistryOperation::Pull)
+        .await
+        .context("while authenticating for blob download")?;
+
+    let oci_descriptor = OciDescriptor {
+        media_type: descriptor.media_type.clone(),
+        digest: descriptor.digest.clone(),
+        size: descriptor.size,
+        annotations: descriptor.annotations.clone(),
+        ..Default::default()
+    };
+
+    let mut stream = client
+        .pull_blob_stream(reference, &oci_descriptor)
+        .await
+        .context("while opening blob stream")?;
+
+    let mut out = Vec::new();
+    while let Some(chunk) = stream
+        .next()
+        .await
+        .transpose()
+        .context("while reading blob stream")?
+    {
+        out.extend_from_slice(&chunk);
+    }
+
+    Ok(out)
+}
+
 fn descriptor_to_blob(descriptor: &OciDescriptor) -> BlobDescriptor {
     BlobDescriptor {
         digest: descriptor.digest.clone(),
@@ -194,4 +240,44 @@ fn descriptor_to_blob(descriptor: &OciDescriptor) -> BlobDescriptor {
         size: descriptor.size,
         annotations: descriptor.annotations.clone(),
     }
+}
+
+pub(crate) async fn push_layers_and_config(
+    client: &Client,
+    reference: &Reference,
+    credentials: &RegistryCredentials,
+    layer_inputs: Vec<LayerInput>,
+    config_bytes: Vec<u8>,
+    config_media_type: &str,
+) -> anyhow::Result<String> {
+    let auth = to_registry_auth(credentials);
+    client
+        .auth(reference, &auth, oci_client::RegistryOperation::Push)
+        .await
+        .context("while authenticating for push")?;
+
+    let mut layers = Vec::new();
+    for input in layer_inputs {
+        let data = tokio::fs::read(&input.path)
+            .await
+            .with_context(|| format!("reading layer file {}", input.path.display()))?;
+        layers.push(oci_client::client::ImageLayer::new(
+            data,
+            input.media_type,
+            input.annotations,
+        ));
+    }
+
+    let response = client
+        .push(
+            reference,
+            &layers,
+            oci_client::client::Config::new(config_bytes, config_media_type.to_string(), None),
+            &auth,
+            None,
+        )
+        .await
+        .context("while pushing image")?;
+
+    Ok(response.manifest_url)
 }
