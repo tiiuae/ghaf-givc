@@ -3,7 +3,7 @@
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use super::progress::{FeedbackSink, RegistryEvent};
+use super::progress::RegistryEvent;
 use super::{
     DiscoverOptions, PullOptions, RegistryCredentials, discover_updates, fetch_changelog,
     prune_downloaded_updates, pull_update, push_update,
@@ -99,18 +99,17 @@ impl RegistryCommand {
     #[allow(clippy::missing_errors_doc)]
     pub async fn handle(self) -> anyhow::Result<()> {
         let credentials = self.credentials()?;
-        let mut sink = CliFeedback {
-            format: self.output,
-        };
+        let (feedback_tx, feedback_rx) = async_channel::unbounded();
+        let progress_task = spawn_feedback_printer(self.output, feedback_rx);
 
-        match self.action {
+        let result = match self.action {
             RegistryAction::Discover { reference } => {
                 let updates = discover_updates(
                     &DiscoverOptions {
                         reference,
                         credentials,
                     },
-                    &mut sink,
+                    Some(feedback_tx.clone()),
                     None,
                 )
                 .await?;
@@ -150,7 +149,7 @@ impl RegistryCommand {
                         install,
                         validate: validate && !no_validate,
                     },
-                    &mut sink,
+                    Some(feedback_tx.clone()),
                     None,
                 )
                 .await?;
@@ -168,7 +167,9 @@ impl RegistryCommand {
                 Ok(())
             }
             RegistryAction::Changelog { reference } => {
-                let changelog = fetch_changelog(&reference, &credentials, None).await?;
+                let changelog =
+                    fetch_changelog(&reference, &credentials, Some(feedback_tx.clone()), None)
+                        .await?;
                 println!("{changelog}");
                 Ok(())
             }
@@ -200,7 +201,12 @@ impl RegistryCommand {
                 );
                 Ok(())
             }
-        }
+        };
+        drop(feedback_tx);
+        progress_task
+            .await
+            .map_err(|err| anyhow::anyhow!("progress printer task failed: {err}"))?;
+        result
     }
 
     fn credentials(&self) -> anyhow::Result<RegistryCredentials> {
@@ -218,23 +224,6 @@ impl RegistryCommand {
             (None, None) => Ok(RegistryCredentials::Anonymous),
             (Some(_), None) => anyhow::bail!("--password is required when --username is set"),
             (None, Some(_)) => anyhow::bail!("--username is required when --password is set"),
-        }
-    }
-}
-
-struct CliFeedback {
-    format: OutputFormat,
-}
-
-impl FeedbackSink for CliFeedback {
-    fn event(&mut self, event: RegistryEvent) {
-        match self.format {
-            OutputFormat::Text => print_text_event(&event),
-            OutputFormat::Jsonl => {
-                if let Ok(line) = serde_json::to_string(&event) {
-                    println!("{line}");
-                }
-            }
         }
     }
 }
@@ -271,6 +260,24 @@ fn print_text_event(event: &RegistryEvent) {
         }
         _ => {}
     }
+}
+
+fn spawn_feedback_printer(
+    format: OutputFormat,
+    rx: async_channel::Receiver<RegistryEvent>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Ok(event) = rx.recv().await {
+            match format {
+                OutputFormat::Text => print_text_event(&event),
+                OutputFormat::Jsonl => {
+                    if let Ok(line) = serde_json::to_string(&event) {
+                        println!("{line}");
+                    }
+                }
+            }
+        }
+    })
 }
 
 fn short_hash(value: &str) -> &str {

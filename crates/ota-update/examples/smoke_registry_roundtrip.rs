@@ -6,7 +6,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 use ota_update::image::install::validate_manifest_path;
-use ota_update::registry::progress::NoopFeedback;
 use ota_update::registry::{
     PullOptions, PushOptions, RegistryCredentials, pull_update, push_update,
 };
@@ -83,7 +82,6 @@ async fn main() -> anyhow::Result<()> {
 
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let output_root = std::env::temp_dir().join(format!("ota-update-smoke-{stamp}"));
-    let mut feedback = NoopFeedback;
     let pull = pull_update(
         &PullOptions {
             reference: args.reference,
@@ -92,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
             install: false,
             validate: true,
         },
-        &mut feedback,
+        None,
         None,
     )
     .await?;
