@@ -5,8 +5,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use super::progress::RegistryEvent;
 use super::{
-    DiscoverOptions, PullOptions, RegistryCredentials, discover_updates, fetch_changelog,
-    prune_downloaded_updates, pull_update, push_update,
+    DiscoverOptions, PullOptions, RegistryCredentials, TaggedReference, UntaggedReference,
+    discover_updates, fetch_changelog, prune_downloaded_updates, pull_update, push_update,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -104,6 +104,7 @@ impl RegistryCommand {
 
         let result = match self.action {
             RegistryAction::Discover { reference } => {
+                let reference: UntaggedReference = reference.parse()?;
                 let updates = discover_updates(
                     &DiscoverOptions {
                         reference,
@@ -141,6 +142,7 @@ impl RegistryCommand {
                 no_validate,
                 install,
             } => {
+                let reference: TaggedReference = reference.parse()?;
                 let result = pull_update(
                     &PullOptions {
                         reference,
@@ -167,6 +169,7 @@ impl RegistryCommand {
                 Ok(())
             }
             RegistryAction::Changelog { reference } => {
+                let reference: TaggedReference = reference.parse()?;
                 let changelog =
                     fetch_changelog(&reference, &credentials, Some(feedback_tx.clone()), None)
                         .await?;
@@ -188,6 +191,7 @@ impl RegistryCommand {
                 reference,
                 changelog,
             } => {
+                let reference: TaggedReference = reference.parse()?;
                 let result = push_update(&super::PushOptions {
                     reference,
                     manifest_path: manifest.into(),

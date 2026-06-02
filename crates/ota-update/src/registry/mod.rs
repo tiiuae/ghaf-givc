@@ -4,6 +4,7 @@
 pub mod cli;
 mod oras;
 pub mod progress;
+pub mod types;
 
 use async_channel::Sender;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 use crate::image::install::install_from_manifest_path;
 use crate::image::manifest::Manifest;
 use crate::lock::UpdateLock;
+pub use types::{TaggedReference, UntaggedReference};
 
 macro_rules! notify {
     ($feedback:expr, $event:expr) => {
@@ -49,13 +51,13 @@ pub struct AvailableUpdate {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscoverOptions {
-    pub reference: String,
+    pub reference: UntaggedReference,
     pub credentials: RegistryCredentials,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PullOptions {
-    pub reference: String,
+    pub reference: TaggedReference,
     pub destination_root: std::path::PathBuf,
     pub credentials: RegistryCredentials,
     pub install: bool,
@@ -70,7 +72,7 @@ pub struct PullResult {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PushOptions {
-    pub reference: String,
+    pub reference: TaggedReference,
     pub manifest_path: PathBuf,
     pub changelog_path: Option<PathBuf>,
     pub credentials: RegistryCredentials,
@@ -93,13 +95,13 @@ pub async fn discover_updates(
     feedback: Option<Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
 ) -> anyhow::Result<Vec<AvailableUpdate>> {
-    let reference = oras::parse_reference(&options.reference, oras::RefTagPolicy::ForbidTag)?;
     let client = oras::build_client();
     let ct = ct.as_ref();
+    let reference = options.reference.as_ref();
 
     let tags = timeout(
         Duration::from_secs(30),
-        oras::list_tags(&client, &reference, &options.credentials, ct),
+        oras::list_tags(&client, reference, &options.credentials, ct),
     )
     .await
     .context("discover timeout while listing tags")??;
@@ -107,7 +109,7 @@ pub async fn discover_updates(
     notify!(
         feedback,
         progress::RegistryEvent::DiscoverStarted {
-            reference: options.reference.clone(),
+            reference: options.reference.to_string(),
             total,
         }
     );
@@ -115,8 +117,8 @@ pub async fn discover_updates(
 
     for (idx, tag) in tags.into_iter().enumerate() {
         let current = idx + 1;
-        let tag_ref = oras::reference_for_tag(&reference, &tag)?;
-        let repository = oras::repository_path(&tag_ref);
+        let tag_ref = options.reference.for_tag(&tag)?;
+        let repository = tag_ref.repository_path();
         notify!(
             feedback,
             progress::RegistryEvent::TagDiscovered {
@@ -129,7 +131,7 @@ pub async fn discover_updates(
 
         let remote = timeout(
             Duration::from_secs(30),
-            oras::fetch_manifest_and_config(&client, &tag_ref, &options.credentials, ct),
+            oras::fetch_manifest_and_config(&client, tag_ref.as_ref(), &options.credentials, ct),
         )
         .await;
         let remote = match remote {
@@ -185,8 +187,8 @@ pub async fn pull_update(
     feedback: Option<Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
 ) -> anyhow::Result<PullResult> {
-    let reference = oras::parse_reference(&options.reference, oras::RefTagPolicy::RequireTag)?;
     let ct = ct.as_ref();
+    let reference = options.reference.as_ref();
 
     std::fs::create_dir_all(&options.destination_root).with_context(|| {
         format!(
@@ -212,7 +214,7 @@ pub async fn pull_update(
     notify!(
         feedback,
         progress::RegistryEvent::PullStarted {
-            reference: options.reference.clone(),
+            reference: options.reference.to_string(),
             destination: output_dir.display().to_string(),
         }
     );
@@ -222,7 +224,7 @@ pub async fn pull_update(
     let client = oras::build_client();
     let remote = match timeout(
         Duration::from_secs(30),
-        oras::fetch_manifest_and_config(&client, &reference, &options.credentials, ct),
+        oras::fetch_manifest_and_config(&client, reference, &options.credentials, ct),
     )
     .await
     {
@@ -271,7 +273,7 @@ pub async fn pull_update(
             Duration::from_secs(120),
             oras::download_blob_to_file(
                 &client,
-                &reference,
+                reference,
                 &binding.blob,
                 &options.credentials,
                 file,
@@ -370,17 +372,16 @@ pub async fn pull_update(
 }
 
 pub async fn fetch_changelog(
-    reference: &str,
+    reference: &TaggedReference,
     credentials: &RegistryCredentials,
     feedback: Option<Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
 ) -> anyhow::Result<String> {
-    let parsed = oras::parse_reference(reference, oras::RefTagPolicy::RequireTag)?;
     let client = oras::build_client();
     let ct = ct.as_ref();
     let remote = timeout(
         Duration::from_secs(30),
-        oras::fetch_manifest_and_config(&client, &parsed, credentials, ct),
+        oras::fetch_manifest_and_config(&client, reference.as_ref(), credentials, ct),
     )
     .await
     .context("changelog timeout while fetching manifest")??;
@@ -389,7 +390,7 @@ pub async fn fetch_changelog(
 
     let bytes = timeout(
         Duration::from_secs(60),
-        oras::download_blob_to_vec(&client, &parsed, changelog, credentials, ct),
+        oras::download_blob_to_vec(&client, reference.as_ref(), changelog, credentials, ct),
     )
     .await
     .context("changelog timeout while downloading blob")??;
@@ -447,7 +448,6 @@ pub async fn prune_downloaded_updates(_options: &PruneOptions) -> anyhow::Result
 }
 
 pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
-    let reference = oras::parse_reference(&options.reference, oras::RefTagPolicy::RequireTag)?;
     let manifest = Manifest::from_file(&options.manifest_path)?;
     let base_dir = options
         .manifest_path
@@ -498,7 +498,7 @@ pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
         Duration::from_secs(180),
         oras::push_layers_and_config(
             &client,
-            &reference,
+            options.reference.as_ref(),
             &options.credentials,
             layers,
             config_bytes,
@@ -510,13 +510,18 @@ pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
 
     let remote = timeout(
         Duration::from_secs(30),
-        oras::fetch_manifest_and_config(&client, &reference, &options.credentials, None),
+        oras::fetch_manifest_and_config(
+            &client,
+            options.reference.as_ref(),
+            &options.credentials,
+            None,
+        ),
     )
     .await
     .context("push timeout while verifying manifest digest")??;
 
     Ok(PushResult {
-        reference: options.reference.clone(),
+        reference: options.reference.to_string(),
         manifest_url: pushed,
         digest: remote.manifest_digest,
     })
