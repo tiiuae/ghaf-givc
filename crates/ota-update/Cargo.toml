@@ -12,6 +12,7 @@ async-trait = "*"
 axum.workspace = true
 bootspec.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
+async-channel.workspace = true
 futures-util.workspace = true
 fs2 = "*" # For locking
 regex.workspace = true

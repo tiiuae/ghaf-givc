@@ -3028,6 +3028,7 @@ name = "ota-update"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "async-channel",
  "async-trait",
  "axum",
  "bootspec",

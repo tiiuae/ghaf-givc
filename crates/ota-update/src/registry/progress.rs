@@ -48,27 +48,3 @@ pub enum RegistryEvent {
     },
     Done,
 }
-
-pub trait FeedbackSink {
-    fn event(&mut self, event: RegistryEvent);
-}
-
-#[derive(Default)]
-pub struct NoopFeedback;
-
-impl FeedbackSink for NoopFeedback {
-    fn event(&mut self, _event: RegistryEvent) {}
-}
-
-pub struct CallbackFeedback<F>(pub F)
-where
-    F: FnMut(RegistryEvent);
-
-impl<F> FeedbackSink for CallbackFeedback<F>
-where
-    F: FnMut(RegistryEvent),
-{
-    fn event(&mut self, event: RegistryEvent) {
-        (self.0)(event);
-    }
-}

@@ -5,6 +5,7 @@ pub mod cli;
 mod oras;
 pub mod progress;
 
+use async_channel::Sender;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -16,6 +17,14 @@ use tokio_util::sync::CancellationToken;
 use crate::image::install::install_from_manifest_path;
 use crate::image::manifest::Manifest;
 use crate::lock::UpdateLock;
+
+macro_rules! notify {
+    ($feedback:expr, $event:expr) => {
+        if let Some(tx) = $feedback.as_ref() {
+            let _ = tx.try_send($event);
+        }
+    };
+}
 
 pub const MEDIA_TYPE_OTA_MANIFEST: &str = "application/vnd.ghaf.ota.manifest.v1+json";
 pub const MEDIA_TYPE_OTA_UKI: &str = "application/vnd.ghaf.ota.uki.v1+efi";
@@ -79,14 +88,11 @@ pub struct PruneOptions {
     pub destination_root: std::path::PathBuf,
 }
 
-pub async fn discover_updates<F>(
+pub async fn discover_updates(
     options: &DiscoverOptions,
-    feedback: &mut F,
+    feedback: Option<Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
-) -> anyhow::Result<Vec<AvailableUpdate>>
-where
-    F: progress::FeedbackSink,
-{
+) -> anyhow::Result<Vec<AvailableUpdate>> {
     let reference = oras::parse_reference(&options.reference, oras::RefTagPolicy::ForbidTag)?;
     let client = oras::build_client();
     let ct = ct.as_ref();
@@ -98,22 +104,28 @@ where
     .await
     .context("discover timeout while listing tags")??;
     let total = tags.len();
-    feedback.event(progress::RegistryEvent::DiscoverStarted {
-        reference: options.reference.clone(),
-        total,
-    });
+    notify!(
+        feedback,
+        progress::RegistryEvent::DiscoverStarted {
+            reference: options.reference.clone(),
+            total,
+        }
+    );
     let mut updates = Vec::new();
 
     for (idx, tag) in tags.into_iter().enumerate() {
         let current = idx + 1;
         let tag_ref = oras::reference_for_tag(&reference, &tag)?;
         let repository = oras::repository_path(&tag_ref);
-        feedback.event(progress::RegistryEvent::TagDiscovered {
-            repository: repository.clone(),
-            tag: tag.clone(),
-            current,
-            total,
-        });
+        notify!(
+            feedback,
+            progress::RegistryEvent::TagDiscovered {
+                repository: repository.clone(),
+                tag: tag.clone(),
+                current,
+                total,
+            }
+        );
 
         let remote = timeout(
             Duration::from_secs(30),
@@ -123,9 +135,12 @@ where
         let remote = match remote {
             Ok(Ok(remote)) => remote,
             Ok(Err(err)) if err.is::<oras::CancellationError>() => {
-                feedback.event(progress::RegistryEvent::Cancelled {
-                    stage: "discover-manifest".to_string(),
-                });
+                notify!(
+                    feedback,
+                    progress::RegistryEvent::Cancelled {
+                        stage: "discover-manifest".to_string(),
+                    }
+                );
                 anyhow::bail!("discover cancelled")
             }
             Err(_) => {
@@ -143,12 +158,15 @@ where
             }
         };
 
-        feedback.event(progress::RegistryEvent::ManifestFetched {
-            repository: remote.repository.clone(),
-            tag: remote.tag.clone(),
-            current,
-            total,
-        });
+        notify!(
+            feedback,
+            progress::RegistryEvent::ManifestFetched {
+                repository: remote.repository.clone(),
+                tag: remote.tag.clone(),
+                current,
+                total,
+            }
+        );
 
         updates.push(AvailableUpdate {
             repository: remote.repository,
@@ -158,18 +176,15 @@ where
         });
     }
 
-    feedback.event(progress::RegistryEvent::Done);
+    notify!(feedback, progress::RegistryEvent::Done);
     Ok(updates)
 }
 
-pub async fn pull_update<F>(
+pub async fn pull_update(
     options: &PullOptions,
-    feedback: &mut F,
+    feedback: Option<Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
-) -> anyhow::Result<PullResult>
-where
-    F: progress::FeedbackSink,
-{
+) -> anyhow::Result<PullResult> {
     let reference = oras::parse_reference(&options.reference, oras::RefTagPolicy::RequireTag)?;
     let ct = ct.as_ref();
 
@@ -194,10 +209,13 @@ where
     std::fs::create_dir_all(&output_dir)
         .with_context(|| format!("creating output dir {}", output_dir.display()))?;
 
-    feedback.event(progress::RegistryEvent::PullStarted {
-        reference: options.reference.clone(),
-        destination: output_dir.display().to_string(),
-    });
+    notify!(
+        feedback,
+        progress::RegistryEvent::PullStarted {
+            reference: options.reference.clone(),
+            destination: output_dir.display().to_string(),
+        }
+    );
 
     println!("pull layout: {}", output_dir.display());
 
@@ -210,9 +228,12 @@ where
     {
         Ok(Ok(remote)) => remote,
         Ok(Err(err)) if err.is::<oras::CancellationError>() => {
-            feedback.event(progress::RegistryEvent::Cancelled {
-                stage: "fetch-manifest".to_string(),
-            });
+            notify!(
+                feedback,
+                progress::RegistryEvent::Cancelled {
+                    stage: "fetch-manifest".to_string(),
+                }
+            );
             let _ = tokio::fs::remove_dir_all(&output_dir).await;
             anyhow::bail!("pull cancelled");
         }
@@ -255,11 +276,14 @@ where
                 &options.credentials,
                 file,
                 |downloaded, total| {
-                    feedback.event(progress::RegistryEvent::BlobDownloading {
-                        digest: binding.digest.clone(),
-                        downloaded,
-                        total,
-                    });
+                    notify!(
+                        feedback,
+                        progress::RegistryEvent::BlobDownloading {
+                            digest: binding.digest.clone(),
+                            downloaded,
+                            total,
+                        }
+                    );
                 },
                 ct,
             ),
@@ -268,9 +292,12 @@ where
         match download {
             Ok(Ok(())) => {}
             Ok(Err(err)) if err.is::<oras::CancellationError>() => {
-                feedback.event(progress::RegistryEvent::Cancelled {
-                    stage: format!("blob-download:{}", binding.digest),
-                });
+                notify!(
+                    feedback,
+                    progress::RegistryEvent::Cancelled {
+                        stage: format!("blob-download:{}", binding.digest),
+                    }
+                );
                 let _ = tokio::fs::remove_dir_all(&output_dir).await;
                 anyhow::bail!("pull cancelled");
             }
@@ -286,9 +313,12 @@ where
         tokio::fs::rename(&part, &local)
             .await
             .with_context(|| format!("renaming {} to {}", part.display(), local.display()))?;
-        feedback.event(progress::RegistryEvent::BlobVerified {
-            digest: binding.digest.clone(),
-        });
+        notify!(
+            feedback,
+            progress::RegistryEvent::BlobVerified {
+                digest: binding.digest.clone(),
+            }
+        );
 
         println!(
             "artifact {kind}: remote media_type={} digest={} -> local {}",
@@ -303,9 +333,12 @@ where
     manifest
         .write_to_file(&manifest_path)
         .with_context(|| format!("writing manifest file {}", manifest_path.display()))?;
-    feedback.event(progress::RegistryEvent::ManifestWritten {
-        path: manifest_path.display().to_string(),
-    });
+    notify!(
+        feedback,
+        progress::RegistryEvent::ManifestWritten {
+            path: manifest_path.display().to_string(),
+        }
+    );
 
     if options.validate {
         manifest
@@ -315,9 +348,12 @@ where
     }
 
     if options.install {
-        feedback.event(progress::RegistryEvent::InstallStarted {
-            manifest: manifest_path.display().to_string(),
-        });
+        notify!(
+            feedback,
+            progress::RegistryEvent::InstallStarted {
+                manifest: manifest_path.display().to_string(),
+            }
+        );
         install_from_manifest_path(&manifest_path, options.validate, false)
             .await
             .context("while installing pulled manifest")?;
@@ -325,7 +361,7 @@ where
 
     println!("manifest path: {}", manifest_path.display());
 
-    feedback.event(progress::RegistryEvent::Done);
+    notify!(feedback, progress::RegistryEvent::Done);
 
     Ok(PullResult {
         output_dir,
@@ -336,6 +372,7 @@ where
 pub async fn fetch_changelog(
     reference: &str,
     credentials: &RegistryCredentials,
+    feedback: Option<Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
 ) -> anyhow::Result<String> {
     let parsed = oras::parse_reference(reference, oras::RefTagPolicy::RequireTag)?;
@@ -356,6 +393,10 @@ pub async fn fetch_changelog(
     )
     .await
     .context("changelog timeout while downloading blob")??;
+    notify!(
+        feedback,
+        progress::RegistryEvent::ChangelogFetched { bytes: bytes.len() }
+    );
     String::from_utf8(bytes).context("changelog blob is not valid UTF-8")
 }
 
