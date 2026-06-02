@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use ota_update::image::install::validate_manifest_path;
 use ota_update::registry::{
-    PullOptions, PushOptions, RegistryCredentials, pull_update, push_update,
+    PullOptions, PushOptions, RegistryCredentials, TaggedReference, pull_update, push_update,
 };
 
 #[derive(Debug, Parser)]
@@ -72,8 +72,9 @@ async fn main() -> anyhow::Result<()> {
     validate_manifest_path(&args.manifest).await?;
 
     let creds = credentials(&args)?;
+    let reference: TaggedReference = args.reference.parse()?;
     let push = push_update(&PushOptions {
-        reference: args.reference.clone(),
+        reference: reference.clone(),
         manifest_path: args.manifest.clone(),
         changelog_path: args.changelog.clone(),
         credentials: creds.clone(),
@@ -84,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
     let output_root = std::env::temp_dir().join(format!("ota-update-smoke-{stamp}"));
     let pull = pull_update(
         &PullOptions {
-            reference: args.reference,
+            reference,
             destination_root: output_root.clone(),
             credentials: creds,
             install: false,
