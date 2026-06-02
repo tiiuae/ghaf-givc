@@ -111,6 +111,7 @@ impl RegistryCommand {
                         credentials,
                     },
                     &mut sink,
+                    None,
                 )
                 .await?;
 
@@ -150,6 +151,7 @@ impl RegistryCommand {
                         validate: validate && !no_validate,
                     },
                     &mut sink,
+                    None,
                 )
                 .await?;
 
@@ -166,7 +168,7 @@ impl RegistryCommand {
                 Ok(())
             }
             RegistryAction::Changelog { reference } => {
-                let changelog = fetch_changelog(&reference, &credentials).await?;
+                let changelog = fetch_changelog(&reference, &credentials, None).await?;
                 println!("{changelog}");
                 Ok(())
             }

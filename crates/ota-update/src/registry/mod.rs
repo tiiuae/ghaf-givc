@@ -11,6 +11,7 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tokio::time::{Duration, timeout};
+use tokio_util::sync::CancellationToken;
 
 use crate::image::install::install_from_manifest_path;
 use crate::image::manifest::Manifest;
@@ -73,19 +74,6 @@ pub struct PushResult {
     pub digest: String,
 }
 
-pub trait CancelSignal {
-    fn is_cancelled(&self) -> bool;
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct NoCancel;
-
-impl CancelSignal for NoCancel {
-    fn is_cancelled(&self) -> bool {
-        false
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PruneOptions {
     pub destination_root: std::path::PathBuf,
@@ -94,18 +82,18 @@ pub struct PruneOptions {
 pub async fn discover_updates<F>(
     options: &DiscoverOptions,
     feedback: &mut F,
+    ct: Option<CancellationToken>,
 ) -> anyhow::Result<Vec<AvailableUpdate>>
 where
     F: progress::FeedbackSink,
 {
-    // TODO: Add cancellable networking (oneshot/select) + explicit timeouts.
-    // Keep this in sync with pull cancellation semantics.
     let reference = oras::parse_reference(&options.reference, oras::RefTagPolicy::ForbidTag)?;
     let client = oras::build_client();
+    let ct = ct.as_ref();
 
     let tags = timeout(
         Duration::from_secs(30),
-        oras::list_tags(&client, &reference, &options.credentials),
+        oras::list_tags(&client, &reference, &options.credentials, ct),
     )
     .await
     .context("discover timeout while listing tags")??;
@@ -129,11 +117,17 @@ where
 
         let remote = timeout(
             Duration::from_secs(30),
-            oras::fetch_manifest_and_config(&client, &tag_ref, &options.credentials),
+            oras::fetch_manifest_and_config(&client, &tag_ref, &options.credentials, ct),
         )
         .await;
         let remote = match remote {
             Ok(Ok(remote)) => remote,
+            Ok(Err(err)) if err.is::<oras::CancellationError>() => {
+                feedback.event(progress::RegistryEvent::Cancelled {
+                    stage: "discover-manifest".to_string(),
+                });
+                anyhow::bail!("discover cancelled")
+            }
             Err(_) => {
                 continue;
             }
@@ -168,31 +162,16 @@ where
     Ok(updates)
 }
 
-pub async fn pull_update<F>(options: &PullOptions, _feedback: &mut F) -> anyhow::Result<PullResult>
-where
-    F: progress::FeedbackSink,
-{
-    pull_update_with_control(options, _feedback, &NoCancel).await
-}
-
-pub async fn pull_update_with_control<F, C>(
+pub async fn pull_update<F>(
     options: &PullOptions,
     feedback: &mut F,
-    cancel: &C,
+    ct: Option<CancellationToken>,
 ) -> anyhow::Result<PullResult>
 where
     F: progress::FeedbackSink,
-    C: CancelSignal,
 {
-    // TODO: Wire real async cancellation: pass a cancel receiver/token into ORAS streaming
-    // and stop blocked network awaits via tokio::select! plus per-step timeouts.
     let reference = oras::parse_reference(&options.reference, oras::RefTagPolicy::RequireTag)?;
-    if cancel.is_cancelled() {
-        feedback.event(progress::RegistryEvent::Cancelled {
-            stage: "before-pull".to_string(),
-        });
-        anyhow::bail!("pull cancelled");
-    }
+    let ct = ct.as_ref();
 
     std::fs::create_dir_all(&options.destination_root).with_context(|| {
         format!(
@@ -223,12 +202,29 @@ where
     println!("pull layout: {}", output_dir.display());
 
     let client = oras::build_client();
-    let remote = timeout(
+    let remote = match timeout(
         Duration::from_secs(30),
-        oras::fetch_manifest_and_config(&client, &reference, &options.credentials),
+        oras::fetch_manifest_and_config(&client, &reference, &options.credentials, ct),
     )
     .await
-    .context("pull timeout while fetching manifest")??;
+    {
+        Ok(Ok(remote)) => remote,
+        Ok(Err(err)) if err.is::<oras::CancellationError>() => {
+            feedback.event(progress::RegistryEvent::Cancelled {
+                stage: "fetch-manifest".to_string(),
+            });
+            let _ = tokio::fs::remove_dir_all(&output_dir).await;
+            anyhow::bail!("pull cancelled");
+        }
+        Ok(Err(err)) => {
+            let _ = tokio::fs::remove_dir_all(&output_dir).await;
+            return Err(err).context("pull timeout while fetching manifest");
+        }
+        Err(err) => {
+            let _ = tokio::fs::remove_dir_all(&output_dir).await;
+            return Err(err).context("pull timeout while fetching manifest");
+        }
+    };
     let mut manifest = Manifest::from_json_str(&remote.config_json)?;
     manifest.normalize_paths()?;
 
@@ -250,7 +246,7 @@ where
         let file = tokio::fs::File::create(&part)
             .await
             .with_context(|| format!("creating temp blob file {}", part.display()))?;
-        timeout(
+        let download = timeout(
             Duration::from_secs(120),
             oras::download_blob_to_file(
                 &client,
@@ -265,11 +261,28 @@ where
                         total,
                     });
                 },
+                ct,
             ),
         )
-        .await
-        .context("pull timeout while downloading blob")?
-        .with_context(|| format!("downloading blob {}", binding.digest))?;
+        .await;
+        match download {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) if err.is::<oras::CancellationError>() => {
+                feedback.event(progress::RegistryEvent::Cancelled {
+                    stage: format!("blob-download:{}", binding.digest),
+                });
+                let _ = tokio::fs::remove_dir_all(&output_dir).await;
+                anyhow::bail!("pull cancelled");
+            }
+            Ok(Err(err)) => {
+                let _ = tokio::fs::remove_dir_all(&output_dir).await;
+                return Err(err).with_context(|| format!("downloading blob {}", binding.digest));
+            }
+            Err(err) => {
+                let _ = tokio::fs::remove_dir_all(&output_dir).await;
+                return Err(err).context("pull timeout while downloading blob");
+            }
+        }
         tokio::fs::rename(&part, &local)
             .await
             .with_context(|| format!("renaming {} to {}", part.display(), local.display()))?;
@@ -323,12 +336,14 @@ where
 pub async fn fetch_changelog(
     reference: &str,
     credentials: &RegistryCredentials,
+    ct: Option<CancellationToken>,
 ) -> anyhow::Result<String> {
     let parsed = oras::parse_reference(reference, oras::RefTagPolicy::RequireTag)?;
     let client = oras::build_client();
+    let ct = ct.as_ref();
     let remote = timeout(
         Duration::from_secs(30),
-        oras::fetch_manifest_and_config(&client, &parsed, credentials),
+        oras::fetch_manifest_and_config(&client, &parsed, credentials, ct),
     )
     .await
     .context("changelog timeout while fetching manifest")??;
@@ -337,7 +352,7 @@ pub async fn fetch_changelog(
 
     let bytes = timeout(
         Duration::from_secs(60),
-        oras::download_blob_to_vec(&client, &parsed, changelog, credentials),
+        oras::download_blob_to_vec(&client, &parsed, changelog, credentials, ct),
     )
     .await
     .context("changelog timeout while downloading blob")??;
@@ -454,7 +469,7 @@ pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
 
     let remote = timeout(
         Duration::from_secs(30),
-        oras::fetch_manifest_and_config(&client, &reference, &options.credentials),
+        oras::fetch_manifest_and_config(&client, &reference, &options.credentials, None),
     )
     .await
     .context("push timeout while verifying manifest digest")??;
