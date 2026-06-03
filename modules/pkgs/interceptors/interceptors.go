@@ -5,7 +5,6 @@ package interceptors
 
 import (
 	"context"
-	"crypto/tls"
 
 	givc_types "givc/modules/pkgs/types"
 	givc_util "givc/modules/pkgs/utility"
@@ -14,6 +13,7 @@ import (
 	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 func unaryLogRequestInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -21,7 +21,7 @@ func unaryLogRequestInterceptor(ctx context.Context, req interface{}, info *grpc
 	return handler(ctx, req)
 }
 
-func GetServerInterceptors(acConfig *givc_types.AccessControl, tlsConfig *tls.Config) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
+func GetServerInterceptors(acConfig *givc_types.AccessControl, transportCred credentials.TransportCredentials) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
 	unaryInterceptors := []grpc.UnaryServerInterceptor{
 		grpc_ctxtags.UnaryServerInterceptor(grpc_ctxtags.WithFieldExtractor(grpc_ctxtags.TagBasedRequestFieldExtractor("log"))),
 		unaryLogRequestInterceptor,
@@ -33,7 +33,7 @@ func GetServerInterceptors(acConfig *givc_types.AccessControl, tlsConfig *tls.Co
 		grpc_logrus.StreamServerInterceptor(log.NewEntry(log.StandardLogger())),
 	}
 
-	if tlsConfig != nil {
+	if transportCred != nil {
 		unaryInterceptors = append(unaryInterceptors, givc_util.CertIPVerifyInterceptor)
 	}
 

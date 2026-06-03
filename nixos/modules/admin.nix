@@ -128,20 +128,33 @@ in
 
     tls = mkOption {
       type = tlsSubmodule;
-      default = { };
+      default = {
+        type = "legacy";
+        legacy = {
+          caCertPath = "/etc/givc/ca-cert.pem";
+          certPath = "/etc/givc/cert.pem";
+          keyPath = "/etc/givc/key.pem";
+        };
+      };
       defaultText = literalExpression ''
         tls = {
           enable = true;
-          caCertPath = "/etc/givc/ca-cert.pem";
-          certPath = /etc/givc/cert.pem";
-          keyPath = "/etc/givc/key.pem";
+          type = "legacy";
+          legacy = {
+            caCertPath = "/run/givc/ca-cert.pem";
+            certPath = "/run/givc/cert.pem";
+            keyPath = "/run/givc/key.pem";
+          };
         };'';
       example = literalExpression ''
         tls = {
           enable = true;
-          caCertPath = "/etc/ssl/certs/ca-certificates.crt";
-          certPath = "/etc/ssl/certs/server.crt";
-          keyPath = "/etc/ssl/private/server.key";
+          type = "legacy";
+          legacy = {
+            caCertPath = "/etc/ssl/certs/ca-certificates.crt";
+            certPath = "/etc/ssl/certs/server.crt";
+            keyPath = "/etc/ssl/private/server.key";
+          };
         };'';
       description = ''
         TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
@@ -236,7 +249,13 @@ in
     assertions = [
       {
         assertion =
-          !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
+          !(
+            cfg.tls.enable
+            && cfg.tls.type == "legacy"
+            && (
+              cfg.tls.legacy.caCertPath == "" || cfg.tls.legacy.certPath == "" || cfg.tls.legacy.keyPath == ""
+            )
+          );
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
       }
       {
@@ -313,10 +332,10 @@ in
           "CEDAR_FILE" =
             lib.optionalString config.givc.accessControl.enable "${config.givc.accessControl.rulesFile}";
         }
-        // attrsets.optionalAttrs cfg.tls.enable {
-          "CA_CERT" = "${cfg.tls.caCertPath}";
-          "HOST_CERT" = "${cfg.tls.certPath}";
-          "HOST_KEY" = "${cfg.tls.keyPath}";
+        // attrsets.optionalAttrs (cfg.tls.enable && cfg.tls.type == "legacy") {
+          "CA_CERT" = "${cfg.tls.legacy.caCertPath}";
+          "HOST_CERT" = "${cfg.tls.legacy.certPath}";
+          "HOST_KEY" = "${cfg.tls.legacy.keyPath}";
         }
         // attrsets.optionalAttrs cfg.debug {
           "RUST_BACKTRACE" = "1";

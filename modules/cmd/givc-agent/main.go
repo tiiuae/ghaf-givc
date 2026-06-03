@@ -196,7 +196,6 @@ func main() {
 	log.Debugf("AGENT_CONFIG: %+v", config)
 	log.Debugf("AGENT_CONFIG-admin: %+v", config.Network.AdminEndpoint)
 	log.Debugf("AGENT_CONFIG-agent: %+v", config.Network.AgentEndpoint)
-	log.Debugf("AGENT_CONFIG-tls: %+v", config.Network.TlsConfig)
 
 	// Endpoint configurations are already created during parsing
 	agentEndpointConfig := config.Network.AgentEndpoint

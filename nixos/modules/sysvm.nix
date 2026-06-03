@@ -109,20 +109,33 @@ in
       };
       tls = mkOption {
         type = tlsSubmodule;
-        default = { };
+        default = {
+          type = "legacy";
+          legacy = {
+            caCertPath = "/etc/givc/ca-cert.pem";
+            certPath = "/etc/givc/cert.pem";
+            keyPath = "/etc/givc/key.pem";
+          };
+        };
         defaultText = literalExpression ''
           tls = {
             enable = true;
-            caCertPath = "/etc/givc/ca-cert.pem";
-            certPath = /etc/givc/cert.pem";
-            keyPath = "/etc/givc/key.pem";
+            type = "legacy";
+            legacy = {
+              caCertPath = "/etc/givc/ca-cert.pem";
+              certPath = "/etc/givc/cert.pem";
+              keyPath = "/etc/givc/key.pem";
+            };
           };'';
         example = literalExpression ''
           tls = {
             enable = true;
-            caCertPath = "/etc/ssl/certs/ca-certificates.crt";
-            certPath = "/etc/ssl/certs/server.crt";
-            keyPath = "/etc/ssl/private/server.key";
+            type = "legacy";
+            legacy = {
+              caCertPath = "/etc/ssl/certs/ca-certificates.crt";
+              certPath = "/etc/ssl/certs/server.crt";
+              keyPath = "/etc/ssl/private/server.key";
+            };
           };'';
         description = ''
           TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
@@ -259,8 +272,11 @@ in
         assertion =
           !(
             cfg.network.tls.enable
+            && cfg.network.tls.type == "legacy"
             && (
-              cfg.network.tls.caCertPath == "" || cfg.network.tls.certPath == "" || cfg.network.tls.keyPath == ""
+              cfg.network.tls.legacy.caCertPath == ""
+              || cfg.network.tls.legacy.certPath == ""
+              || cfg.network.tls.legacy.keyPath == ""
             )
           );
         message = ''
