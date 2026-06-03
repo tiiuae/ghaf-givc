@@ -15,5 +15,5 @@ if [[ -n "$changelog" ]]; then
   push_args+=(--changelog "$changelog")
 fi
 
-cargo run -p ota-update --bin ota-update -- "${push_args[@]}"
-cargo run -p ota-update --bin ota-update -- registry --insecure pull "$reference" --destination "/tmp/ota-registry-smoke"
+time cargo run --profile release -p ota-update --bin ota-update -- "${push_args[@]}"
+time cargo run --profile release -p ota-update --bin ota-update -- registry --insecure pull "$reference" --destination "/tmp/ota-registry-smoke"
