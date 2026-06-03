@@ -10,10 +10,10 @@ manifest="$1"
 reference="$2"
 changelog="${3:-}"
 
-push_args=(registry push --manifest "$manifest" "$reference")
+push_args=(registry --insecure push --manifest "$manifest" "$reference")
 if [[ -n "$changelog" ]]; then
   push_args+=(--changelog "$changelog")
 fi
 
 cargo run -p ota-update --bin ota-update -- "${push_args[@]}"
-cargo run -p ota-update --bin ota-update -- registry pull "$reference" --destination "/tmp/ota-registry-smoke"
+cargo run -p ota-update --bin ota-update -- registry --insecure pull "$reference" --destination "/tmp/ota-registry-smoke"

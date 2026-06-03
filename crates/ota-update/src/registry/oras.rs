@@ -4,18 +4,26 @@
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::{Context, ensure};
-use futures_util::StreamExt;
-use oci_client::client::ClientConfig;
-use oci_client::manifest::OciDescriptor;
+use futures_util::{Stream, StreamExt, TryStreamExt};
+use oci_client::client::{ClientConfig, ClientProtocol};
+use oci_client::manifest::{OCI_IMAGE_MEDIA_TYPE, OciDescriptor, OciImageManifest, OciManifest};
 use oci_client::secrets::RegistryAuth;
 use oci_client::{Client, Reference};
-use tokio::io::AsyncWriteExt;
+use sha2::{Digest, Sha256};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_util::bytes::Bytes;
+use tokio_util::io::ReaderStream;
 use tokio_util::sync::CancellationToken;
 
-use super::RegistryCredentials;
+use super::{RegistryCredentials, progress};
+
+const PROGRESS_EVENT_STEP: u64 = 10 * 1024 * 1024;
+
+static CLIENT_PROTOCOL: OnceLock<ClientProtocol> = OnceLock::new();
 
 #[derive(Debug, thiserror::Error)]
 #[error("operation cancelled")]
@@ -44,6 +52,30 @@ pub(crate) struct LayerInput {
     pub path: PathBuf,
     pub media_type: String,
     pub annotations: Option<BTreeMap<String, String>>,
+}
+
+struct ProgressReporter {
+    next_report_at: u64,
+    step: u64,
+}
+
+impl ProgressReporter {
+    fn new(step: u64) -> Self {
+        Self {
+            next_report_at: step,
+            step,
+        }
+    }
+
+    fn emit_due<F>(&mut self, current: u64, mut emit: F)
+    where
+        F: FnMut(u64),
+    {
+        while current >= self.next_report_at {
+            emit(self.next_report_at);
+            self.next_report_at = self.next_report_at.saturating_add(self.step);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -100,8 +132,16 @@ pub(crate) fn to_registry_auth(credentials: &RegistryCredentials) -> RegistryAut
     }
 }
 
+pub fn set_client_protocol(protocol: ClientProtocol) {
+    let _ = CLIENT_PROTOCOL.set(protocol);
+}
+
 pub(crate) fn build_client() -> Client {
-    Client::new(ClientConfig::default())
+    let protocol = CLIENT_PROTOCOL.get().cloned().unwrap_or_default();
+    Client::new(ClientConfig {
+        protocol,
+        ..Default::default()
+    })
 }
 
 pub(crate) async fn list_tags(
@@ -192,7 +232,7 @@ where
 
         let total = stream.content_length;
         let mut downloaded: u64 = 0;
-        on_progress(downloaded, total);
+        let mut reporter = ProgressReporter::new(PROGRESS_EVENT_STEP);
         while let Some(chunk) = stream
             .next()
             .await
@@ -203,7 +243,7 @@ where
                 .await
                 .context("while writing blob chunk")?;
             downloaded += chunk.len() as u64;
-            on_progress(downloaded, total);
+            reporter.emit_due(downloaded, |reported| on_progress(reported, total));
         }
         out.flush().await.context("while flushing blob file")?;
 
@@ -254,6 +294,51 @@ pub(crate) async fn download_blob_to_vec(
     .await
 }
 
+async fn digest_and_size(path: &Path) -> anyhow::Result<(String, u64)> {
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .with_context(|| format!("opening file {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut size = 0u64;
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .await
+            .with_context(|| format!("reading file {}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        size += n as u64;
+    }
+    Ok((format!("sha256:{}", hex::encode(hasher.finalize())), size))
+}
+
+fn file_stream_with_progress(
+    file: tokio::fs::File,
+    kind: String,
+    total: u64,
+    feedback: Option<async_channel::Sender<progress::RegistryEvent>>,
+) -> impl Stream<Item = oci_client::errors::Result<Bytes>> {
+    let mut uploaded = 0u64;
+    let mut reporter = ProgressReporter::new(PROGRESS_EVENT_STEP);
+    ReaderStream::new(file)
+        .inspect_ok(move |chunk| {
+            uploaded += chunk.len() as u64;
+            reporter.emit_due(uploaded, |reported| {
+                if let Some(tx) = feedback.as_ref() {
+                    let _ = tx.try_send(progress::RegistryEvent::LayerUploading {
+                        kind: kind.clone(),
+                        uploaded: reported,
+                        total: Some(total),
+                    });
+                }
+            });
+        })
+        .map_err(Into::into)
+}
+
 async fn cancelable<T, F>(ct: Option<&CancellationToken>, future: F) -> anyhow::Result<T>
 where
     F: std::future::Future<Output = anyhow::Result<T>>,
@@ -285,6 +370,7 @@ pub(crate) async fn push_layers_and_config(
     layer_inputs: Vec<LayerInput>,
     config_bytes: Vec<u8>,
     config_media_type: &str,
+    feedback: Option<async_channel::Sender<progress::RegistryEvent>>,
 ) -> anyhow::Result<String> {
     let auth = to_registry_auth(credentials);
     client
@@ -292,36 +378,94 @@ pub(crate) async fn push_layers_and_config(
         .await
         .context("while authenticating for push")?;
 
-    let mut layers = Vec::new();
-    for input in layer_inputs {
-        let data = tokio::fs::read(&input.path)
-            .await
-            .with_context(|| format!("reading layer file {}", input.path.display()))?;
-        layers.push(oci_client::client::ImageLayer::new(
-            data,
-            input.media_type,
-            input.annotations,
-        ));
+    if let Some(tx) = feedback.as_ref() {
+        let _ = tx.try_send(progress::RegistryEvent::PushStarted {
+            reference: reference.to_string(),
+            layers: layer_inputs.len(),
+        });
     }
 
-    let response = client
-        .push(
-            reference,
-            &layers,
-            oci_client::client::Config::new(config_bytes, config_media_type.to_string(), None),
-            &auth,
-            None,
-        )
-        .await
-        .context("while pushing image")?;
+    let mut layer_descriptors = Vec::new();
+    for input in layer_inputs {
+        let (digest, total) = digest_and_size(&input.path)
+            .await
+            .with_context(|| format!("digesting layer file {}", input.path.display()))?;
 
-    Ok(response.manifest_url)
+        if let Some(tx) = feedback.as_ref() {
+            let _ = tx.try_send(progress::RegistryEvent::LayerUploading {
+                kind: input.media_type.clone(),
+                uploaded: 0,
+                total: Some(total),
+            });
+        }
+
+        let file = tokio::fs::File::open(&input.path)
+            .await
+            .with_context(|| format!("opening layer file {}", input.path.display()))?;
+        let stream =
+            file_stream_with_progress(file, input.media_type.clone(), total, feedback.clone());
+
+        let _location = client
+            .push_blob_stream(reference, stream, &digest)
+            .await
+            .with_context(|| format!("while pushing blob {}", input.path.display()))?;
+
+        if let Some(tx) = feedback.as_ref() {
+            let _ = tx.try_send(progress::RegistryEvent::LayerUploaded {
+                kind: input.media_type.clone(),
+                digest: digest.clone(),
+            });
+        }
+
+        layer_descriptors.push(OciDescriptor {
+            media_type: input.media_type,
+            digest,
+            size: total as i64,
+            annotations: input.annotations,
+            ..Default::default()
+        });
+    }
+
+    let config_digest = format!("sha256:{}", hex::encode(Sha256::digest(&config_bytes)));
+    let config_descriptor = OciDescriptor {
+        media_type: config_media_type.to_string(),
+        digest: config_digest,
+        size: config_bytes.len() as i64,
+        annotations: None,
+        ..Default::default()
+    };
+
+    client
+        .push_blob(reference, config_bytes, &config_descriptor.digest)
+        .await
+        .context("while pushing config blob")?;
+
+    let manifest = OciImageManifest {
+        schema_version: 2,
+        media_type: Some(OCI_IMAGE_MEDIA_TYPE.to_string()),
+        config: config_descriptor,
+        layers: layer_descriptors,
+        subject: None,
+        artifact_type: None,
+        annotations: None,
+    };
+
+    let response = client
+        .push_manifest(reference, &OciManifest::Image(manifest))
+        .await
+        .context("while pushing image manifest")?;
+
+    Ok(response)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures_util::future::pending;
+    use crate::registry::progress::RegistryEvent;
+    use async_channel::unbounded;
+    use futures_util::{TryStreamExt, future::pending};
+    use sha2::{Digest, Sha256};
+    use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::time::{Duration, sleep};
     use tokio_util::sync::CancellationToken;
 
@@ -342,5 +486,62 @@ mod tests {
         .await
         .expect_err("must cancel");
         assert!(err.is::<CancellationError>());
+    }
+
+    #[tokio::test]
+    async fn digest_and_size_computes_streaming_file_digest() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ota-update-digest-{unique}"));
+        std::fs::write(&path, b"abcdef").expect("write");
+
+        let (digest, size) = digest_and_size(&path).await.expect("digest");
+
+        assert_eq!(size, 6);
+        assert_eq!(
+            digest,
+            format!("sha256:{}", hex::encode(Sha256::digest(b"abcdef")))
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn progress_reporter_emits_at_step_boundaries() {
+        let mut reporter = ProgressReporter::new(PROGRESS_EVENT_STEP);
+        let mut emitted = Vec::new();
+
+        reporter.emit_due(PROGRESS_EVENT_STEP - 1, |value| emitted.push(value));
+        reporter.emit_due(PROGRESS_EVENT_STEP, |value| emitted.push(value));
+        reporter.emit_due(PROGRESS_EVENT_STEP * 2 + 7, |value| emitted.push(value));
+
+        assert_eq!(emitted, vec![PROGRESS_EVENT_STEP, PROGRESS_EVENT_STEP * 2]);
+    }
+
+    #[tokio::test]
+    async fn file_stream_with_progress_emits_bytes_uploaded() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ota-update-stream-{unique}"));
+        std::fs::write(&path, vec![0u8; PROGRESS_EVENT_STEP as usize + 1]).expect("write");
+        let file = tokio::fs::File::open(&path).await.expect("open");
+        let (tx, rx) = unbounded();
+
+        let chunks =
+            file_stream_with_progress(file, "root".to_string(), PROGRESS_EVENT_STEP + 1, Some(tx))
+                .try_collect::<Vec<_>>()
+                .await
+                .expect("stream");
+
+        assert!(!chunks.is_empty());
+        let mut saw_progress = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            saw_progress.push(event);
+        }
+        assert!(saw_progress.iter().any(|event| matches!(event, RegistryEvent::LayerUploading { kind, uploaded, total } if kind == "root" && *uploaded >= PROGRESS_EVENT_STEP && *total == Some(PROGRESS_EVENT_STEP + 1))));
+        let _ = std::fs::remove_file(path);
     }
 }

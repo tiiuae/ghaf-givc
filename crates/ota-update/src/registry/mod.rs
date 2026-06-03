@@ -20,6 +20,10 @@ use crate::image::manifest::Manifest;
 use crate::lock::UpdateLock;
 pub use types::{TaggedReference, UntaggedReference};
 
+pub fn set_client_protocol(protocol: oci_client::client::ClientProtocol) {
+    oras::set_client_protocol(protocol);
+}
+
 macro_rules! notify {
     ($feedback:expr, $event:expr) => {
         if let Some(tx) = $feedback.as_ref() {
@@ -448,6 +452,13 @@ pub async fn prune_downloaded_updates(_options: &PruneOptions) -> anyhow::Result
 }
 
 pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
+    push_update_with_feedback(options, None).await
+}
+
+pub async fn push_update_with_feedback(
+    options: &PushOptions,
+    feedback: Option<Sender<progress::RegistryEvent>>,
+) -> anyhow::Result<PushResult> {
     let manifest = Manifest::from_file(&options.manifest_path)?;
     let base_dir = options
         .manifest_path
@@ -503,6 +514,7 @@ pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
             layers,
             config_bytes,
             MEDIA_TYPE_OTA_MANIFEST,
+            feedback.clone(),
         ),
     )
     .await
@@ -519,6 +531,15 @@ pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
     )
     .await
     .context("push timeout while verifying manifest digest")??;
+
+    notify!(
+        feedback,
+        progress::RegistryEvent::ManifestPushed {
+            reference: options.reference.to_string(),
+            manifest_url: pushed.clone(),
+            digest: remote.manifest_digest.clone(),
+        }
+    );
 
     Ok(PushResult {
         reference: options.reference.to_string(),
