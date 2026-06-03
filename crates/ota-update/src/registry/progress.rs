@@ -43,6 +43,24 @@ pub enum RegistryEvent {
     InstallStarted {
         manifest: String,
     },
+    PushStarted {
+        reference: String,
+        layers: usize,
+    },
+    LayerUploading {
+        kind: String,
+        uploaded: u64,
+        total: Option<u64>,
+    },
+    LayerUploaded {
+        kind: String,
+        digest: String,
+    },
+    ManifestPushed {
+        reference: String,
+        manifest_url: String,
+        digest: String,
+    },
     Cancelled {
         stage: String,
     },

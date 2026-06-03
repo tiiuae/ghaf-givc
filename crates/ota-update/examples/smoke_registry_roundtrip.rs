@@ -5,9 +5,11 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use oci_client::client::ClientProtocol;
 use ota_update::image::install::validate_manifest_path;
 use ota_update::registry::{
     PullOptions, PushOptions, RegistryCredentials, TaggedReference, pull_update, push_update,
+    set_client_protocol,
 };
 
 #[derive(Debug, Parser)]
@@ -35,6 +37,9 @@ struct Args {
 
     #[arg(long)]
     token: Option<String>,
+
+    #[arg(long)]
+    insecure: bool,
 }
 
 fn validate_reference_host(reference: &str, allow_nonlocal: bool) -> anyhow::Result<()> {
@@ -72,6 +77,9 @@ async fn main() -> anyhow::Result<()> {
     validate_manifest_path(&args.manifest).await?;
 
     let creds = credentials(&args)?;
+    if args.insecure {
+        set_client_protocol(ClientProtocol::Http);
+    }
     let reference: TaggedReference = args.reference.parse()?;
     let push = push_update(&PushOptions {
         reference: reference.clone(),

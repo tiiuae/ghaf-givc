@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use clap::{Parser, Subcommand, ValueEnum};
+use oci_client::client::ClientProtocol;
 
 use super::progress::RegistryEvent;
+use super::set_client_protocol;
 use super::{
     DiscoverOptions, PullOptions, RegistryCredentials, TaggedReference, UntaggedReference,
-    discover_updates, fetch_changelog, prune_downloaded_updates, pull_update, push_update,
+    discover_updates, fetch_changelog, prune_downloaded_updates, pull_update,
+    push_update_with_feedback,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -35,6 +38,10 @@ pub struct RegistryCommand {
     /// Registry API token (bearer auth)
     #[arg(long, conflicts_with_all = ["username", "password"])]
     pub token: Option<String>,
+
+    /// Use HTTP instead of HTTPS for registry access
+    #[arg(long)]
+    pub insecure: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -99,6 +106,9 @@ impl RegistryCommand {
     #[allow(clippy::missing_errors_doc)]
     pub async fn handle(self) -> anyhow::Result<()> {
         let credentials = self.credentials()?;
+        if self.insecure {
+            set_client_protocol(ClientProtocol::Http);
+        }
         let (feedback_tx, feedback_rx) = async_channel::unbounded();
         let progress_task = spawn_feedback_printer(self.output, feedback_rx);
 
@@ -192,12 +202,15 @@ impl RegistryCommand {
                 changelog,
             } => {
                 let reference: TaggedReference = reference.parse()?;
-                let result = push_update(&super::PushOptions {
-                    reference,
-                    manifest_path: manifest.into(),
-                    changelog_path: changelog.map(Into::into),
-                    credentials,
-                })
+                let result = push_update_with_feedback(
+                    &super::PushOptions {
+                        reference,
+                        manifest_path: manifest.into(),
+                        changelog_path: changelog.map(Into::into),
+                        credentials,
+                    },
+                    Some(feedback_tx.clone()),
+                )
                 .await?;
                 println!(
                     "pushed: {} manifest_url={} digest={}",
@@ -261,6 +274,26 @@ fn print_text_event(event: &RegistryEvent) {
             destination,
         } => {
             println!("pull start: {reference} -> {destination}");
+        }
+        RegistryEvent::PushStarted { reference, layers } => {
+            println!("push start: {reference} ({layers} layers)");
+        }
+        RegistryEvent::LayerUploading {
+            kind,
+            uploaded,
+            total,
+        } => {
+            println!("upload {kind}: {uploaded}/{}", total.unwrap_or(0));
+        }
+        RegistryEvent::LayerUploaded { kind, digest } => {
+            println!("uploaded {kind}: {digest}");
+        }
+        RegistryEvent::ManifestPushed {
+            reference,
+            manifest_url,
+            digest,
+        } => {
+            println!("push done: {reference} url={manifest_url} digest={digest}");
         }
         _ => {}
     }
