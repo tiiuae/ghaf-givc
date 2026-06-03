@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use anyhow::{Context, ensure};
 use futures_util::{Stream, StreamExt, TryStreamExt};
@@ -22,6 +23,8 @@ use tokio_util::sync::CancellationToken;
 use super::{RegistryCredentials, progress};
 
 const PROGRESS_EVENT_STEP: u64 = 10 * 1024 * 1024;
+const IO_CHUNK_CAPACITY: usize = 256 * 1024;
+const IO_CHUNK_TIMEOUT: Duration = Duration::from_secs(120);
 
 static CLIENT_PROTOCOL: OnceLock<ClientProtocol> = OnceLock::new();
 
@@ -233,9 +236,9 @@ where
         let total = stream.content_length;
         let mut downloaded: u64 = 0;
         let mut reporter = ProgressReporter::new(PROGRESS_EVENT_STEP);
-        while let Some(chunk) = stream
-            .next()
+        while let Some(chunk) = tokio::time::timeout(IO_CHUNK_TIMEOUT, stream.next())
             .await
+            .context("timed out waiting for next blob chunk")?
             .transpose()
             .context("while reading blob stream")?
         {
@@ -280,9 +283,9 @@ pub(crate) async fn download_blob_to_vec(
             .context("while opening blob stream")?;
 
         let mut out = Vec::new();
-        while let Some(chunk) = stream
-            .next()
+        while let Some(chunk) = tokio::time::timeout(IO_CHUNK_TIMEOUT, stream.next())
             .await
+            .context("timed out waiting for next blob chunk")?
             .transpose()
             .context("while reading blob stream")?
         {
@@ -323,7 +326,7 @@ fn file_stream_with_progress(
 ) -> impl Stream<Item = oci_client::errors::Result<Bytes>> {
     let mut uploaded = 0u64;
     let mut reporter = ProgressReporter::new(PROGRESS_EVENT_STEP);
-    ReaderStream::new(file)
+    ReaderStream::with_capacity(file, IO_CHUNK_CAPACITY)
         .inspect_ok(move |chunk| {
             uploaded += chunk.len() as u64;
             reporter.emit_due(uploaded, |reported| {

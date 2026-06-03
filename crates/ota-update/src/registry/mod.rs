@@ -273,31 +273,28 @@ pub async fn pull_update(
         let file = tokio::fs::File::create(&part)
             .await
             .with_context(|| format!("creating temp blob file {}", part.display()))?;
-        let download = timeout(
-            Duration::from_secs(120),
-            oras::download_blob_to_file(
-                &client,
-                reference,
-                &binding.blob,
-                &options.credentials,
-                file,
-                |downloaded, total| {
-                    notify!(
-                        feedback,
-                        progress::RegistryEvent::BlobDownloading {
-                            digest: binding.digest.clone(),
-                            downloaded,
-                            total,
-                        }
-                    );
-                },
-                ct,
-            ),
+        let download = oras::download_blob_to_file(
+            &client,
+            reference,
+            &binding.blob,
+            &options.credentials,
+            file,
+            |downloaded, total| {
+                notify!(
+                    feedback,
+                    progress::RegistryEvent::BlobDownloading {
+                        digest: binding.digest.clone(),
+                        downloaded,
+                        total,
+                    }
+                );
+            },
+            ct,
         )
         .await;
         match download {
-            Ok(Ok(())) => {}
-            Ok(Err(err)) if err.is::<oras::CancellationError>() => {
+            Ok(()) => {}
+            Err(err) if err.is::<oras::CancellationError>() => {
                 notify!(
                     feedback,
                     progress::RegistryEvent::Cancelled {
@@ -307,13 +304,9 @@ pub async fn pull_update(
                 let _ = tokio::fs::remove_dir_all(&output_dir).await;
                 anyhow::bail!("pull cancelled");
             }
-            Ok(Err(err)) => {
-                let _ = tokio::fs::remove_dir_all(&output_dir).await;
-                return Err(err).with_context(|| format!("downloading blob {}", binding.digest));
-            }
             Err(err) => {
                 let _ = tokio::fs::remove_dir_all(&output_dir).await;
-                return Err(err).context("pull timeout while downloading blob");
+                return Err(err).with_context(|| format!("downloading blob {}", binding.digest));
             }
         }
         tokio::fs::rename(&part, &local)
@@ -505,20 +498,16 @@ pub async fn push_update_with_feedback(
     }
 
     let client = oras::build_client();
-    let pushed = timeout(
-        Duration::from_secs(180),
-        oras::push_layers_and_config(
-            &client,
-            options.reference.as_ref(),
-            &options.credentials,
-            layers,
-            config_bytes,
-            MEDIA_TYPE_OTA_MANIFEST,
-            feedback.clone(),
-        ),
+    let pushed = oras::push_layers_and_config(
+        &client,
+        options.reference.as_ref(),
+        &options.credentials,
+        layers,
+        config_bytes,
+        MEDIA_TYPE_OTA_MANIFEST,
+        feedback.clone(),
     )
-    .await
-    .context("push timeout")??;
+    .await?;
 
     let remote = timeout(
         Duration::from_secs(30),
