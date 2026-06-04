@@ -44,21 +44,20 @@ impl TaggedReference {
     pub(crate) fn as_ref(&self) -> &Reference {
         &self.0
     }
-
     pub fn repository_path(&self) -> String {
         format!("{}/{}", self.0.resolve_registry(), self.0.repository())
     }
 }
 
-impl Into<Reference> for UntaggedReference {
-    fn into(self) -> Reference {
-        self.0
+impl From<UntaggedReference> for Reference {
+    fn from(val: UntaggedReference) -> Reference {
+        val.0
     }
 }
 
-impl Into<Reference> for TaggedReference {
-    fn into(self) -> Reference {
-        self.0
+impl From<TaggedReference> for Reference {
+    fn from(val: TaggedReference) -> Reference {
+        val.0
     }
 }
 
@@ -66,15 +65,19 @@ impl FromStr for UntaggedReference {
     type Err = anyhow::Error;
 
     fn from_str(input: &str) -> anyhow::Result<Self> {
-        let suffix = input.rsplit_once('/').map_or(input, |(_, suffix)| suffix);
-        ensure!(
-            !suffix.contains(':') && !input.contains('@'),
-            "reference for discover must not include tag or digest: {input}"
-        );
         let reference: Reference = input
             .parse()
             .map_err(anyhow::Error::new)
             .with_context(|| format!("invalid OCI reference: {input}"))?;
+        // NOTE: untagged ref may have tag value "latest"
+        ensure!(
+            matches!(reference.tag(), None | Some("latest")),
+            "reference for discover must not include tag: {input}"
+        );
+        ensure!(
+            reference.digest().is_none(),
+            "reference for discover must not include digest: {input}"
+        );
         Ok(Self(reference))
     }
 }
@@ -83,15 +86,14 @@ impl FromStr for TaggedReference {
     type Err = anyhow::Error;
 
     fn from_str(input: &str) -> anyhow::Result<Self> {
-        let suffix = input.rsplit_once('/').map_or(input, |(_, suffix)| suffix);
-        ensure!(
-            suffix.contains(':') || input.contains('@'),
-            "reference must include tag or digest: {input}"
-        );
         let reference: Reference = input
             .parse()
             .map_err(anyhow::Error::new)
             .with_context(|| format!("invalid OCI reference: {input}"))?;
+        ensure!(
+            reference.tag().is_some() || reference.digest().is_some(),
+            "reference must include tag or digest: {input}"
+        );
         Ok(Self(reference))
     }
 }

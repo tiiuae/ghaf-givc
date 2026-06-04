@@ -24,12 +24,10 @@ pub fn set_client_protocol(protocol: oci_client::client::ClientProtocol) {
     oras::set_client_protocol(protocol);
 }
 
-macro_rules! notify {
-    ($feedback:expr, $event:expr) => {
-        if let Some(tx) = $feedback.as_ref() {
-            let _ = tx.try_send($event);
-        }
-    };
+fn notify<T>(feedback: Option<&Sender<T>>, event: T) {
+    if let Some(tx) = feedback {
+        let _ = tx.try_send(event);
+    }
 }
 
 pub const MEDIA_TYPE_OTA_MANIFEST: &str = "application/vnd.ghaf.ota.manifest.v1+json";
@@ -62,16 +60,16 @@ pub struct DiscoverOptions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PullOptions {
     pub reference: TaggedReference,
-    pub destination_root: std::path::PathBuf,
+    pub destination_root: PathBuf,
     pub credentials: RegistryCredentials,
     pub install: bool,
     pub validate: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PullResult {
-    pub output_dir: std::path::PathBuf,
-    pub manifest_path: std::path::PathBuf,
+    pub output_dir: PathBuf,
+    pub manifest_path: PathBuf,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,7 +94,7 @@ pub struct PruneOptions {
 
 pub async fn discover_updates(
     options: &DiscoverOptions,
-    feedback: Option<Sender<progress::RegistryEvent>>,
+    feedback: Option<&Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
 ) -> anyhow::Result<Vec<AvailableUpdate>> {
     let client = oras::build_client();
@@ -110,12 +108,12 @@ pub async fn discover_updates(
     .await
     .context("discover timeout while listing tags")??;
     let total = tags.len();
-    notify!(
+    notify(
         feedback,
         progress::RegistryEvent::DiscoverStarted {
             reference: options.reference.to_string(),
             total,
-        }
+        },
     );
     let mut updates = Vec::new();
 
@@ -123,14 +121,14 @@ pub async fn discover_updates(
         let current = idx + 1;
         let tag_ref = options.reference.for_tag(&tag)?;
         let repository = tag_ref.repository_path();
-        notify!(
+        notify(
             feedback,
             progress::RegistryEvent::TagDiscovered {
                 repository: repository.clone(),
                 tag: tag.clone(),
                 current,
                 total,
-            }
+            },
         );
 
         let remote = timeout(
@@ -141,11 +139,11 @@ pub async fn discover_updates(
         let remote = match remote {
             Ok(Ok(remote)) => remote,
             Ok(Err(err)) if err.is::<oras::CancellationError>() => {
-                notify!(
+                notify(
                     feedback,
                     progress::RegistryEvent::Cancelled {
                         stage: "discover-manifest".to_string(),
-                    }
+                    },
                 );
                 anyhow::bail!("discover cancelled")
             }
@@ -157,21 +155,18 @@ pub async fn discover_updates(
             }
         };
 
-        let manifest = match Manifest::from_json_str(&remote.config_json) {
-            Ok(manifest) => manifest,
-            Err(_) => {
-                continue;
-            }
+        let Ok(manifest) = Manifest::from_slice(remote.config_json.as_bytes()) else {
+            continue;
         };
 
-        notify!(
+        notify(
             feedback,
             progress::RegistryEvent::ManifestFetched {
                 repository: remote.repository.clone(),
                 tag: remote.tag.clone(),
                 current,
                 total,
-            }
+            },
         );
 
         updates.push(AvailableUpdate {
@@ -182,13 +177,13 @@ pub async fn discover_updates(
         });
     }
 
-    notify!(feedback, progress::RegistryEvent::Done);
+    notify(feedback, progress::RegistryEvent::Done);
     Ok(updates)
 }
 
 pub async fn pull_update(
     options: &PullOptions,
-    feedback: Option<Sender<progress::RegistryEvent>>,
+    feedback: Option<&Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
 ) -> anyhow::Result<PullResult> {
     let ct = ct.as_ref();
@@ -215,44 +210,41 @@ pub async fn pull_update(
     std::fs::create_dir_all(&output_dir)
         .with_context(|| format!("creating output dir {}", output_dir.display()))?;
 
-    notify!(
+    notify(
         feedback,
         progress::RegistryEvent::PullStarted {
             reference: options.reference.to_string(),
             destination: output_dir.display().to_string(),
-        }
+        },
     );
 
     println!("pull layout: {}", output_dir.display());
 
     let client = oras::build_client();
-    let remote = match timeout(
+    let remote = timeout(
         Duration::from_secs(30),
         oras::fetch_manifest_and_config(&client, reference, &options.credentials, ct),
     )
     .await
-    {
-        Ok(Ok(remote)) => remote,
-        Ok(Err(err)) if err.is::<oras::CancellationError>() => {
-            notify!(
+    .context("pull timeout while fetching manifest")?;
+    let remote = match remote {
+        Ok(remote) => remote,
+        Err(err) if err.is::<oras::CancellationError>() => {
+            notify(
                 feedback,
                 progress::RegistryEvent::Cancelled {
                     stage: "fetch-manifest".to_string(),
-                }
+                },
             );
             let _ = tokio::fs::remove_dir_all(&output_dir).await;
             anyhow::bail!("pull cancelled");
         }
-        Ok(Err(err)) => {
-            let _ = tokio::fs::remove_dir_all(&output_dir).await;
-            return Err(err).context("pull timeout while fetching manifest");
-        }
         Err(err) => {
             let _ = tokio::fs::remove_dir_all(&output_dir).await;
-            return Err(err).context("pull timeout while fetching manifest");
+            return Err(err).context("pull manifest fetch failed");
         }
     };
-    let mut manifest = Manifest::from_json_str(&remote.config_json)?;
+    let mut manifest = Manifest::from_slice(remote.config_json.as_bytes())?;
     manifest.normalize_paths()?;
 
     let artifact_bindings = select_artifact_bindings(&manifest, &remote.layers)?;
@@ -280,13 +272,13 @@ pub async fn pull_update(
             &options.credentials,
             file,
             |downloaded, total| {
-                notify!(
+                notify(
                     feedback,
                     progress::RegistryEvent::BlobDownloading {
                         digest: binding.digest.clone(),
                         downloaded,
                         total,
-                    }
+                    },
                 );
             },
             ct,
@@ -295,11 +287,11 @@ pub async fn pull_update(
         match download {
             Ok(()) => {}
             Err(err) if err.is::<oras::CancellationError>() => {
-                notify!(
+                notify(
                     feedback,
                     progress::RegistryEvent::Cancelled {
                         stage: format!("blob-download:{}", binding.digest),
-                    }
+                    },
                 );
                 let _ = tokio::fs::remove_dir_all(&output_dir).await;
                 anyhow::bail!("pull cancelled");
@@ -312,11 +304,11 @@ pub async fn pull_update(
         tokio::fs::rename(&part, &local)
             .await
             .with_context(|| format!("renaming {} to {}", part.display(), local.display()))?;
-        notify!(
+        notify(
             feedback,
             progress::RegistryEvent::BlobVerified {
                 digest: binding.digest.clone(),
-            }
+            },
         );
 
         println!(
@@ -332,11 +324,11 @@ pub async fn pull_update(
     manifest
         .write_to_file(&manifest_path)
         .with_context(|| format!("writing manifest file {}", manifest_path.display()))?;
-    notify!(
+    notify(
         feedback,
         progress::RegistryEvent::ManifestWritten {
-            path: manifest_path.display().to_string(),
-        }
+            path: manifest_path.clone(),
+        },
     );
 
     if options.validate {
@@ -347,11 +339,11 @@ pub async fn pull_update(
     }
 
     if options.install {
-        notify!(
+        notify(
             feedback,
             progress::RegistryEvent::InstallStarted {
                 manifest: manifest_path.display().to_string(),
-            }
+            },
         );
         install_from_manifest_path(&manifest_path, options.validate, false)
             .await
@@ -360,7 +352,7 @@ pub async fn pull_update(
 
     println!("manifest path: {}", manifest_path.display());
 
-    notify!(feedback, progress::RegistryEvent::Done);
+    notify(feedback, progress::RegistryEvent::Done);
 
     Ok(PullResult {
         output_dir,
@@ -371,7 +363,7 @@ pub async fn pull_update(
 pub async fn fetch_changelog(
     reference: &TaggedReference,
     credentials: &RegistryCredentials,
-    feedback: Option<Sender<progress::RegistryEvent>>,
+    feedback: Option<&Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
 ) -> anyhow::Result<String> {
     let client = oras::build_client();
@@ -391,24 +383,24 @@ pub async fn fetch_changelog(
     )
     .await
     .context("changelog timeout while downloading blob")??;
-    notify!(
+    notify(
         feedback,
-        progress::RegistryEvent::ChangelogFetched { bytes: bytes.len() }
+        progress::RegistryEvent::ChangelogFetched { bytes: bytes.len() },
     );
     String::from_utf8(bytes).context("changelog blob is not valid UTF-8")
 }
 
-pub async fn prune_downloaded_updates(_options: &PruneOptions) -> anyhow::Result<()> {
+pub async fn prune_downloaded_updates(options: &PruneOptions) -> anyhow::Result<()> {
     const KEEP_PER_REPOSITORY: usize = 2;
 
-    if !tokio::fs::try_exists(&_options.destination_root).await? {
+    if !tokio::fs::try_exists(&options.destination_root).await? {
         return Ok(());
     }
 
-    let lock_path = _options.destination_root.join(".ota-update.lock");
+    let lock_path = options.destination_root.join(".ota-update.lock");
     let _lock = UpdateLock::acquire(&lock_path, "registry-prune")?;
 
-    let mut stack = vec![_options.destination_root.clone()];
+    let mut stack = vec![options.destination_root.clone()];
     while let Some(current) = stack.pop() {
         let mut entries = tokio::fs::read_dir(&current)
             .await
@@ -450,9 +442,13 @@ pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
 
 pub async fn push_update_with_feedback(
     options: &PushOptions,
-    feedback: Option<Sender<progress::RegistryEvent>>,
+    feedback: Option<&Sender<progress::RegistryEvent>>,
 ) -> anyhow::Result<PushResult> {
-    let manifest = Manifest::from_file(&options.manifest_path)?;
+    let config_bytes = tokio::fs::read(&options.manifest_path)
+        .await
+        .with_context(|| format!("reading manifest file {}", options.manifest_path.display()))?;
+
+    let manifest = Manifest::from_slice(&config_bytes)?;
     let base_dir = options
         .manifest_path
         .parent()
@@ -461,10 +457,6 @@ pub async fn push_update_with_feedback(
         .validate(base_dir, true)
         .await
         .context("while validating manifest content")?;
-
-    let config_bytes = tokio::fs::read(&options.manifest_path)
-        .await
-        .with_context(|| format!("reading manifest file {}", options.manifest_path.display()))?;
 
     let mut layers = Vec::new();
     layers.push(layer_input_with_title(
@@ -505,7 +497,7 @@ pub async fn push_update_with_feedback(
         layers,
         config_bytes,
         MEDIA_TYPE_OTA_MANIFEST,
-        feedback.clone(),
+        feedback,
     )
     .await?;
 
@@ -521,13 +513,13 @@ pub async fn push_update_with_feedback(
     .await
     .context("push timeout while verifying manifest digest")??;
 
-    notify!(
+    notify(
         feedback,
         progress::RegistryEvent::ManifestPushed {
             reference: options.reference.to_string(),
             manifest_url: pushed.clone(),
             digest: remote.manifest_digest.clone(),
-        }
+        },
     );
 
     Ok(PushResult {
@@ -544,7 +536,7 @@ fn layer_input_with_title(path: PathBuf, media_type: &str) -> anyhow::Result<ora
         .context("layer path has invalid filename")?;
     let mut annotations = BTreeMap::new();
     annotations.insert(
-        "org.opencontainers.image.title".to_string(),
+        oci_client::annotations::ORG_OPENCONTAINERS_IMAGE_TITLE.to_string(),
         sanitize_relative_file_path(title)?,
     );
     Ok(oras::LayerInput {
