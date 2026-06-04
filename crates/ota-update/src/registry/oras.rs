@@ -20,7 +20,7 @@ use tokio_util::bytes::Bytes;
 use tokio_util::io::ReaderStream;
 use tokio_util::sync::CancellationToken;
 
-use super::{RegistryCredentials, progress};
+use super::{RegistryCredentials, notify, progress};
 
 const PROGRESS_EVENT_STEP: u64 = 10 * 1024 * 1024;
 const IO_CHUNK_CAPACITY: usize = 256 * 1024;
@@ -67,6 +67,15 @@ impl ProgressReporter {
         Self {
             next_report_at: step,
             step,
+        }
+    }
+
+    fn progress(&mut self, current: u64) -> Option<u64> {
+        if current >= self.next_report_at {
+            self.next_report_at = (current + 1).next_multiple_of(self.step);
+            Some(self.next_report_at - self.step)
+        } else {
+            None
         }
     }
 
@@ -177,11 +186,7 @@ pub(crate) async fn fetch_manifest_and_config(
             .await
             .context("while fetching manifest and config")?;
 
-        let layers = manifest
-            .layers
-            .iter()
-            .map(descriptor_to_blob)
-            .collect::<Vec<_>>();
+        let layers = manifest.layers.iter().map(Into::into).collect();
 
         let tag = reference
             .tag()
@@ -194,7 +199,7 @@ pub(crate) async fn fetch_manifest_and_config(
             tag,
             manifest_digest,
             config_json,
-            config: descriptor_to_blob(&manifest.config),
+            config: (&manifest.config).into(),
             layers,
         })
     })
@@ -246,7 +251,9 @@ where
                 .await
                 .context("while writing blob chunk")?;
             downloaded += chunk.len() as u64;
-            reporter.emit_due(downloaded, |reported| on_progress(reported, total));
+            if let Some(reported) = reporter.progress(downloaded) {
+                on_progress(reported, total)
+            }
         }
         out.flush().await.context("while flushing blob file")?;
 
@@ -322,22 +329,23 @@ fn file_stream_with_progress(
     file: tokio::fs::File,
     kind: String,
     total: u64,
-    feedback: Option<async_channel::Sender<progress::RegistryEvent>>,
+    feedback: Option<&async_channel::Sender<progress::RegistryEvent>>,
 ) -> impl Stream<Item = oci_client::errors::Result<Bytes>> {
     let mut uploaded = 0u64;
     let mut reporter = ProgressReporter::new(PROGRESS_EVENT_STEP);
     ReaderStream::with_capacity(file, IO_CHUNK_CAPACITY)
         .inspect_ok(move |chunk| {
             uploaded += chunk.len() as u64;
-            reporter.emit_due(uploaded, |reported| {
-                if let Some(tx) = feedback.as_ref() {
-                    let _ = tx.try_send(progress::RegistryEvent::LayerUploading {
+            if let Some(reported) = reporter.progress(uploaded) {
+                notify(
+                    feedback,
+                    progress::RegistryEvent::LayerUploading {
                         kind: kind.clone(),
                         uploaded: reported,
                         total: Some(total),
-                    });
-                }
-            });
+                    },
+                )
+            };
         })
         .map_err(Into::into)
 }
@@ -357,12 +365,14 @@ where
     }
 }
 
-fn descriptor_to_blob(descriptor: &OciDescriptor) -> BlobDescriptor {
-    BlobDescriptor {
-        digest: descriptor.digest.clone(),
-        media_type: descriptor.media_type.clone(),
-        size: descriptor.size,
-        annotations: descriptor.annotations.clone(),
+impl From<&OciDescriptor> for BlobDescriptor {
+    fn from(descriptor: &OciDescriptor) -> BlobDescriptor {
+        BlobDescriptor {
+            digest: descriptor.digest.clone(),
+            media_type: descriptor.media_type.clone(),
+            size: descriptor.size,
+            annotations: descriptor.annotations.clone(),
+        }
     }
 }
 
@@ -373,7 +383,7 @@ pub(crate) async fn push_layers_and_config(
     layer_inputs: Vec<LayerInput>,
     config_bytes: Vec<u8>,
     config_media_type: &str,
-    feedback: Option<async_channel::Sender<progress::RegistryEvent>>,
+    feedback: Option<&async_channel::Sender<progress::RegistryEvent>>,
 ) -> anyhow::Result<String> {
     let auth = to_registry_auth(credentials);
     client
@@ -381,12 +391,13 @@ pub(crate) async fn push_layers_and_config(
         .await
         .context("while authenticating for push")?;
 
-    if let Some(tx) = feedback.as_ref() {
-        let _ = tx.try_send(progress::RegistryEvent::PushStarted {
+    notify(
+        feedback,
+        progress::RegistryEvent::PushStarted {
             reference: reference.to_string(),
             layers: layer_inputs.len(),
-        });
-    }
+        },
+    );
 
     let mut layer_descriptors = Vec::new();
     for input in layer_inputs {
@@ -394,31 +405,32 @@ pub(crate) async fn push_layers_and_config(
             .await
             .with_context(|| format!("digesting layer file {}", input.path.display()))?;
 
-        if let Some(tx) = feedback.as_ref() {
-            let _ = tx.try_send(progress::RegistryEvent::LayerUploading {
+        notify(
+            feedback,
+            progress::RegistryEvent::LayerUploading {
                 kind: input.media_type.clone(),
                 uploaded: 0,
                 total: Some(total),
-            });
-        }
+            },
+        );
 
         let file = tokio::fs::File::open(&input.path)
             .await
             .with_context(|| format!("opening layer file {}", input.path.display()))?;
-        let stream =
-            file_stream_with_progress(file, input.media_type.clone(), total, feedback.clone());
+        let stream = file_stream_with_progress(file, input.media_type.clone(), total, feedback);
 
         let _location = client
             .push_blob_stream(reference, stream, &digest)
             .await
             .with_context(|| format!("while pushing blob {}", input.path.display()))?;
 
-        if let Some(tx) = feedback.as_ref() {
-            let _ = tx.try_send(progress::RegistryEvent::LayerUploaded {
+        notify(
+            feedback,
+            progress::RegistryEvent::LayerUploaded {
                 kind: input.media_type.clone(),
                 digest: digest.clone(),
-            });
-        }
+            },
+        );
 
         layer_descriptors.push(OciDescriptor {
             media_type: input.media_type,
@@ -515,9 +527,15 @@ mod tests {
         let mut reporter = ProgressReporter::new(PROGRESS_EVENT_STEP);
         let mut emitted = Vec::new();
 
-        reporter.emit_due(PROGRESS_EVENT_STEP - 1, |value| emitted.push(value));
-        reporter.emit_due(PROGRESS_EVENT_STEP, |value| emitted.push(value));
-        reporter.emit_due(PROGRESS_EVENT_STEP * 2 + 7, |value| emitted.push(value));
+        if let Some(value) = reporter.progress(PROGRESS_EVENT_STEP - 1) {
+            emitted.push(value)
+        }
+        if let Some(value) = reporter.progress(PROGRESS_EVENT_STEP) {
+            emitted.push(value)
+        }
+        if let Some(value) = reporter.progress(PROGRESS_EVENT_STEP * 2 + 7) {
+            emitted.push(value)
+        }
 
         assert_eq!(emitted, vec![PROGRESS_EVENT_STEP, PROGRESS_EVENT_STEP * 2]);
     }
@@ -534,7 +552,7 @@ mod tests {
         let (tx, rx) = unbounded();
 
         let chunks =
-            file_stream_with_progress(file, "root".to_string(), PROGRESS_EVENT_STEP + 1, Some(tx))
+            file_stream_with_progress(file, "root".to_string(), PROGRESS_EVENT_STEP + 1, Some(&tx))
                 .try_collect::<Vec<_>>()
                 .await
                 .expect("stream");

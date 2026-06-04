@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use serde::Serialize;
+use std::path::PathBuf;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
@@ -35,7 +36,7 @@ pub enum RegistryEvent {
         digest: String,
     },
     ManifestWritten {
-        path: String,
+        path: PathBuf,
     },
     ChangelogFetched {
         bytes: usize,

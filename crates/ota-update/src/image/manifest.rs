@@ -42,12 +42,12 @@ pub struct Manifest {
 
 impl Manifest {
     pub(crate) fn from_file(filename: &Path) -> anyhow::Result<Self> {
-        let content = std::fs::read_to_string(filename).context("Read manifest")?;
-        Self::from_json_str(&content)
+        let content = std::fs::read(filename).context("Read manifest")?;
+        Self::from_slice(&content)
     }
 
-    pub(crate) fn from_json_str(content: &str) -> anyhow::Result<Self> {
-        let this = serde_json::from_str(content).context("Deserializing manifest)")?;
+    pub(crate) fn from_slice(content: &[u8]) -> anyhow::Result<Self> {
+        let this = serde_json::from_slice(content).context("Deserializing manifest")?;
         Ok(this)
     }
 

@@ -3,6 +3,7 @@
 
 use clap::{Parser, Subcommand, ValueEnum};
 use oci_client::client::ClientProtocol;
+use std::path::PathBuf;
 
 use super::progress::RegistryEvent;
 use super::set_client_protocol;
@@ -19,6 +20,18 @@ pub enum OutputFormat {
 }
 
 #[derive(Debug, Parser)]
+#[group(requires_all = ["username", "password"])]
+pub struct PasswordAuth {
+    /// Registry username (basic auth)
+    #[arg(long, required = false)]
+    pub username: String,
+
+    /// Registry password (basic auth)
+    #[arg(long, required = false)]
+    pub password: String,
+}
+
+#[derive(Debug, Parser)]
 pub struct RegistryCommand {
     #[command(subcommand)]
     pub action: RegistryAction,
@@ -27,13 +40,9 @@ pub struct RegistryCommand {
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub output: OutputFormat,
 
-    /// Registry username (basic auth)
-    #[arg(long)]
-    pub username: Option<String>,
-
-    /// Registry password (basic auth)
-    #[arg(long, requires = "username")]
-    pub password: Option<String>,
+    /// Registry username/password (basic auth)
+    #[clap(flatten)]
+    pub auth: Option<PasswordAuth>,
 
     /// Registry API token (bearer auth)
     #[arg(long, conflicts_with_all = ["username", "password"])]
@@ -49,13 +58,13 @@ pub enum RegistryAction {
     /// Discover available OTA updates in OCI repository
     Discover {
         /// OCI reference to repository (registry/repo[/namespace])
-        reference: String,
+        reference: UntaggedReference,
     },
 
     /// Pull OTA update artifacts from OCI repository
     Pull {
         /// OCI reference with tag (registry/repo[:tag])
-        reference: String,
+        reference: TaggedReference,
 
         /// Destination root path
         #[arg(long, default_value = "/persist/sysupdate")]
@@ -77,28 +86,28 @@ pub enum RegistryAction {
     /// Fetch changelog text for a specific tag
     Changelog {
         /// OCI reference with tag (registry/repo[:tag])
-        reference: String,
+        reference: TaggedReference,
     },
 
     /// Prune stale downloaded updates from destination root
     Prune {
         /// Destination root path
         #[arg(long, default_value = "/persist/sysupdate")]
-        destination: String,
+        destination: PathBuf,
     },
 
     /// Push OTA update artifacts to OCI repository
     Push {
         /// Path to manifest file
         #[arg(long)]
-        manifest: String,
+        manifest: PathBuf,
 
         /// OCI reference with tag (registry/repo[:tag])
-        reference: String,
+        reference: TaggedReference,
 
         /// Optional changelog file path
         #[arg(long)]
-        changelog: Option<String>,
+        changelog: Option<PathBuf>,
     },
 }
 
@@ -110,17 +119,16 @@ impl RegistryCommand {
             set_client_protocol(ClientProtocol::Http);
         }
         let (feedback_tx, feedback_rx) = async_channel::unbounded();
-        let progress_task = spawn_feedback_printer(self.output, feedback_rx);
+        let progress_task = tokio::spawn(feedback_printer(self.output, feedback_rx));
 
         let result = match self.action {
             RegistryAction::Discover { reference } => {
-                let reference: UntaggedReference = reference.parse()?;
                 let updates = discover_updates(
                     &DiscoverOptions {
                         reference,
                         credentials,
                     },
-                    Some(feedback_tx.clone()),
+                    Some(&feedback_tx),
                     None,
                 )
                 .await?;
@@ -138,9 +146,7 @@ impl RegistryCommand {
                         }
                     }
                     OutputFormat::Jsonl => {
-                        for update in updates {
-                            println!("{}", serde_json::to_string(&update)?);
-                        }
+                        println!("{}", serde_json::to_string(&updates)?);
                     }
                 }
                 Ok(())
@@ -152,7 +158,6 @@ impl RegistryCommand {
                 no_validate,
                 install,
             } => {
-                let reference: TaggedReference = reference.parse()?;
                 let result = pull_update(
                     &PullOptions {
                         reference,
@@ -161,7 +166,7 @@ impl RegistryCommand {
                         install,
                         validate: validate && !no_validate,
                     },
-                    Some(feedback_tx.clone()),
+                    Some(&feedback_tx),
                     None,
                 )
                 .await?;
@@ -172,23 +177,20 @@ impl RegistryCommand {
                         println!("manifest: {}", result.manifest_path.display());
                     }
                     OutputFormat::Jsonl => {
-                        println!("{}", serde_json::to_string(&result.output_dir)?);
-                        println!("{}", serde_json::to_string(&result.manifest_path)?);
+                        println!("{}", serde_json::to_string(&result)?);
                     }
                 }
                 Ok(())
             }
             RegistryAction::Changelog { reference } => {
-                let reference: TaggedReference = reference.parse()?;
                 let changelog =
-                    fetch_changelog(&reference, &credentials, Some(feedback_tx.clone()), None)
-                        .await?;
+                    fetch_changelog(&reference, &credentials, Some(&feedback_tx), None).await?;
                 println!("{changelog}");
                 Ok(())
             }
             RegistryAction::Prune { destination } => {
                 prune_downloaded_updates(&super::PruneOptions {
-                    destination_root: destination.into(),
+                    destination_root: destination,
                 })
                 .await?;
                 if matches!(self.output, OutputFormat::Text) {
@@ -201,15 +203,14 @@ impl RegistryCommand {
                 reference,
                 changelog,
             } => {
-                let reference: TaggedReference = reference.parse()?;
                 let result = push_update_with_feedback(
                     &super::PushOptions {
                         reference,
-                        manifest_path: manifest.into(),
-                        changelog_path: changelog.map(Into::into),
+                        manifest_path: manifest,
+                        changelog_path: changelog,
                         credentials,
                     },
-                    Some(feedback_tx.clone()),
+                    Some(&feedback_tx),
                 )
                 .await?;
                 println!(
@@ -232,16 +233,14 @@ impl RegistryCommand {
                 token: token.clone(),
             });
         }
-
-        match (&self.username, &self.password) {
-            (Some(username), Some(password)) => Ok(RegistryCredentials::Basic {
-                username: username.clone(),
-                password: password.clone(),
-            }),
-            (None, None) => Ok(RegistryCredentials::Anonymous),
-            (Some(_), None) => anyhow::bail!("--password is required when --username is set"),
-            (None, Some(_)) => anyhow::bail!("--username is required when --password is set"),
+        if let Some(auth) = &self.auth {
+            return Ok(RegistryCredentials::Basic {
+                username: auth.username.clone(),
+                password: auth.password.clone(),
+            });
         }
+
+        anyhow::bail!("unreachable")
     }
 }
 
@@ -299,22 +298,17 @@ fn print_text_event(event: &RegistryEvent) {
     }
 }
 
-fn spawn_feedback_printer(
-    format: OutputFormat,
-    rx: async_channel::Receiver<RegistryEvent>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        while let Ok(event) = rx.recv().await {
-            match format {
-                OutputFormat::Text => print_text_event(&event),
-                OutputFormat::Jsonl => {
-                    if let Ok(line) = serde_json::to_string(&event) {
-                        println!("{line}");
-                    }
+async fn feedback_printer(format: OutputFormat, rx: async_channel::Receiver<RegistryEvent>) {
+    while let Ok(event) = rx.recv().await {
+        match format {
+            OutputFormat::Text => print_text_event(&event),
+            OutputFormat::Jsonl => {
+                if let Ok(line) = serde_json::to_string(&event) {
+                    println!("{line}");
                 }
             }
         }
-    })
+    }
 }
 
 fn short_hash(value: &str) -> &str {
