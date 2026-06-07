@@ -7,16 +7,16 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
-anyhow = "1.0.101"
-async-channel = "2.3.1"
+anyhow.workspace = true
+async-channel.workspace = true
 async-fn-stream = "*"
-async-stream = "0.3"
-clap = { version = "4.5.60", features = ["derive", "env"] }
-regex = "1.12"
-serde_json = "1.0.149"
-serde = { version = "1.0.202", features = ["derive"] }
-tokio-stream = "0.1"
-tokio = { version = "1.50", features = [
+async-stream.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+regex.workspace = true
+serde_json.workspace = true
+serde = { workspace = true, features = ["derive"] }
+tokio-stream.workspace = true
+tokio = { workspace = true, features = [
   "rt-multi-thread",
   "time",
   "macros",
@@ -28,13 +28,13 @@ tokio-listener = { version = "0.5.1", features = [
   "tonic014",
 ] }
 tokio-vsock = "0.7"
-tonic-reflection = "0.14"
-tonic-types = "0.14"
-tonic = { version = "0.14", features = ["tls-aws-lc"] }
-tracing = "0.1"
+tonic-reflection.workspace = true
+tonic-types.workspace = true
+tonic = { workspace = true, features = ["tls-aws-lc"] }
+tracing.workspace = true
 tracing-journald = "0.3"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-walkdir = "2.5.0"
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+walkdir.workspace = true
 x509-parser = "0.18"
 lazy-regex = "3.6.0"
 

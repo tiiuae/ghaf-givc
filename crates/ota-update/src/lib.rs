@@ -6,6 +6,8 @@ pub mod cli;
 pub mod image;
 pub mod profile;
 pub mod query;
+pub mod registry;
 pub mod types;
 
+pub(crate) mod lock;
 mod nixos;

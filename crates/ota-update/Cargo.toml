@@ -7,39 +7,43 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
-anyhow = "1.0.101"
+anyhow.workspace = true
 async-trait = "*"
-axum = "*"
-bootspec = "*"
-clap = { version = "4.5.60", features = ["derive", "env"] }
+axum.workspace = true
+bootspec.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+async-channel.workspace = true
+futures-util.workspace = true
 fs2 = "*" # For locking
-regex = "*"
-reqwest = { version = "0.13", default-features = false, features = [
+regex.workspace = true
+reqwest = { workspace = true, default-features = false, features = [
   "json",
   "default-tls",
 ] }
-serde_json = "1.0.149"
-serde = { version = "1.0.202", features = ["derive"] }
+serde_json.workspace = true
+serde = { workspace = true, features = ["derive"] }
 shell-escape = "*"
 serde_with = { version = "*", features = ["hex"] }
 hex = "0.4"
 memmap2 = "0.9"
-sha2 = { version = "0.10", features = ["asm"] }
-strum = { version = "0.28", features = ["derive"] }
-thiserror = "*"
-tokio = { version = "1.50", features = [
+sha2 = { workspace = true, features = ["asm"] }
+strum = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = [
   "rt-multi-thread",
   "time",
   "macros",
   "fs",
   "process",
 ] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = [
+tokio-util = { workspace = true, features = ["io"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = [
   "env-filter",
   "tracing-log",
   "time",
   "local-time",
 ] }
+oci-client = { git = "https://github.com/oras-project/rust-oci-client", rev = "1f9a41e49158634cf590903981162fa67ffdf039" }
 
 cachix-client = { path = "../cachix-client", features = ["nixos"] }
