@@ -106,11 +106,13 @@ func (s *SocketProxyController) Write(conn net.Conn, data []byte) error {
 }
 
 // Read reads data from the socket connection.
+const socketReadChunkSize = 32 * 1024 // 32K
+
 func (s *SocketProxyController) Read(conn net.Conn) ([]byte, error) {
-	buf := make([]byte, 1024)
+	buf := make([]byte, socketReadChunkSize)
 	n, err := conn.Read(buf)
-	if err != nil {
-		return nil, err
+	if n > 0 {
+		return buf[:n], nil
 	}
-	return buf[:n], nil
+	return nil, err
 }
