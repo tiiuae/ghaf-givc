@@ -94,6 +94,12 @@
               };
               ota-update-server = givc-admin.update_server;
             };
+
+          # Apps
+          apps.ota-update = {
+            type = "app";
+            program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.ota-update}/bin/ota-update";
+          };
         };
       flake = {
         # NixOS Modules
