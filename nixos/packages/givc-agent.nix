@@ -8,7 +8,7 @@ pkgs.buildGoModule {
   inherit pname;
   version = "0.0.5";
   inherit src;
-  vendorHash = "sha256-kwqzRUpwC4odGbdjZCzyCynW5tMxe0tgua0vZnQayLU=";
+  vendorHash = "sha256-332bSHCEn6T2RaRCmYsXXIriK1mHJJ7EfFbCPeTQbQk=";
   buildInputs = [ pkgs.systemd ]; # For libudev headers
   subPackages = [
     "modules/cmd/${pname}"
