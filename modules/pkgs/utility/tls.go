@@ -11,7 +11,13 @@ import (
 	"os"
 	"path/filepath"
 
+	givc_types "givc/modules/pkgs/types"
+
 	log "github.com/sirupsen/logrus"
+	"github.com/spiffe/go-spiffe/v2/spiffegrpc/grpccredentials"
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -27,9 +33,93 @@ var (
 	}
 )
 
-func TlsServerConfig(cacertFilePath string, certFilePath string, keyFilePath string, mutual bool) (*tls.Config, error) {
+// Credentials holds gRPC transport credentials for both server and client.
+type Credentials struct {
+	credtype   string
+	authorizer tlsconfig.Authorizer
+	source     *workloadapi.X509Source
 
-	// Load TLS certificates and key
+	serverCreds           credentials.TransportCredentials
+	clientCreds           credentials.TransportCredentials
+	legacyClientTlsConfig *tls.Config
+}
+
+func (c *Credentials) GetServerCredentials() credentials.TransportCredentials {
+	return c.serverCreds.Clone()
+}
+
+func (c *Credentials) GetClientCredentials(serverName string) credentials.TransportCredentials {
+	if c.credtype == "spire" {
+		return c.clientCreds.Clone()
+	}
+
+	ccreds := c.legacyClientTlsConfig
+	ccreds.ServerName = serverName
+	return credentials.NewTLS(ccreds)
+}
+
+// NewCredentials creates a new Credentials container based on the provided TlsConfigJson.
+func NewCredentials(cfg givc_types.TlsConfigJson) (*Credentials, error) {
+	creds := Credentials{}
+	if !cfg.Enable {
+		return nil, nil
+	}
+
+	switch cfg.Type {
+	case "spire":
+		if cfg.Spire == nil || cfg.Spire.AgentSocketPath == "" {
+			return nil, fmt.Errorf("spire TLS mode enabled but spire.agentSocketPath is missing")
+		}
+		creds.credtype = cfg.Type
+		// Use context.Background() as the SPIRE source must remain active for the life of the process
+		// to handle certificate rotations.
+		ctx := context.Background()
+		source, err := workloadapi.NewX509Source(
+			ctx,
+			workloadapi.WithClientOptions(workloadapi.WithAddr(cfg.Spire.AgentSocketPath)),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to fetch credentials from SPIRE agent, Error: %v", err)
+		}
+
+		trustDomain := spiffeid.RequireTrustDomainFromString(cfg.Spire.TrustDomain)
+		authorizer := tlsconfig.AuthorizeMemberOf(trustDomain)
+		creds.serverCreds = grpccredentials.MTLSServerCredentials(source, source, authorizer)
+		creds.clientCreds = grpccredentials.MTLSClientCredentials(source, source, authorizer)
+
+	case "legacy", "":
+		if cfg.Legacy == nil {
+			return nil, fmt.Errorf("legacy TLS mode enabled but legacy configuration block is missing")
+		}
+		var err error
+		creds.serverCreds, err = getServerCred(
+			cfg.Legacy.CaCertPath,
+			cfg.Legacy.CertPath,
+			cfg.Legacy.KeyPath,
+			true,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create legacy server creds: %v", err)
+		}
+		creds.credtype = cfg.Type
+		creds.legacyClientTlsConfig, err = getClientTlsConfig(
+			cfg.Legacy.CaCertPath,
+			cfg.Legacy.CertPath,
+			cfg.Legacy.KeyPath,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to create legacy client creds: %v", err)
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported TLS type: %s", cfg.Type)
+	}
+
+	return &creds, nil
+}
+
+func getServerCred(cacertFilePath string, certFilePath string, keyFilePath string, mutual bool) (credentials.TransportCredentials, error) {
 	serverTLSCert, err := tls.LoadX509KeyPair(filepath.Clean(certFilePath), filepath.Clean(keyFilePath))
 	if err != nil {
 		log.Errorf("[TlsServerConfig] Error loading server certificate and key file: %v", err)
@@ -55,7 +145,6 @@ func TlsServerConfig(cacertFilePath string, certFilePath string, keyFilePath str
 		clientAuth = tls.NoClientCert
 	}
 
-	// Set TLS configuration
 	tlsConfig := &tls.Config{
 		MinVersion:   tls.VersionTLS13,
 		ClientAuth:   clientAuth,
@@ -65,12 +154,10 @@ func TlsServerConfig(cacertFilePath string, certFilePath string, keyFilePath str
 		CipherSuites: CIPHER_SUITES,
 	}
 
-	return tlsConfig, nil
+	return credentials.NewTLS(tlsConfig), nil
 }
 
-func TlsClientConfig(cacertFilePath string, certFilePath string, keyFilePath string, serverName string) (*tls.Config, error) {
-
-	// Load TLS certificates and key
+func getClientTlsConfig(cacertFilePath string, certFilePath string, keyFilePath string) (*tls.Config, error) {
 	clientTLSCert, err := tls.LoadX509KeyPair(certFilePath, keyFilePath)
 	if err != nil {
 		log.Errorf("[TlsClientConfig] Error loading client certificate and key file: %v", err)
@@ -88,35 +175,15 @@ func TlsClientConfig(cacertFilePath string, certFilePath string, keyFilePath str
 		return nil, fmt.Errorf("invalid CA certificate")
 	}
 
-	// Set TLS configuration
 	tlsConfig := &tls.Config{
 		MinVersion:   tls.VersionTLS13,
-		ServerName:   serverName,
+		ServerName:   "",
 		RootCAs:      certPool,
 		Certificates: []tls.Certificate{clientTLSCert},
 		CipherSuites: CIPHER_SUITES,
 	}
 
 	return tlsConfig, nil
-}
-
-func TlsClientConfigFromTlsConfig(tlsConfig *tls.Config, serverName string) (*tls.Config, error) {
-
-	// Return nil if no TLS config is set
-	if tlsConfig == nil {
-		return nil, fmt.Errorf("no TLS config provided")
-	}
-
-	// Set TLS configuration
-	newTlsConfig := &tls.Config{
-		MinVersion:   tls.VersionTLS13,
-		ServerName:   serverName,
-		RootCAs:      tlsConfig.RootCAs,
-		Certificates: tlsConfig.Certificates,
-		CipherSuites: CIPHER_SUITES,
-	}
-
-	return newTlsConfig, nil
 }
 
 // CertIPVerifyInterceptor is a gRPC server interceptor that verifies

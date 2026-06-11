@@ -4,7 +4,6 @@
 package config
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,7 +24,7 @@ type NetworkConfig struct {
 	AdminEndpoint *givc_types.EndpointConfig `json:"admin"`
 	AgentEndpoint *givc_types.EndpointConfig `json:"agent"`
 	Tls           givc_types.TlsConfigJson   `json:"tls"`
-	TlsConfig     *tls.Config
+	TlsCred       givc_types.Credentials
 }
 
 type CapabilitiesConfig struct {
@@ -75,9 +74,10 @@ type CapabilitiesConfig struct {
 }
 
 type AgentConfig struct {
-	Identity     IdentityConfig     `json:"identity"`
-	Network      NetworkConfig      `json:"network"`
-	Capabilities CapabilitiesConfig `json:"capabilities"`
+	Identity      IdentityConfig           `json:"identity"`
+	Network       NetworkConfig            `json:"network"`
+	Capabilities  CapabilitiesConfig       `json:"capabilities"`
+	AccessControl givc_types.AccessControl `json:"accessControl"`
 }
 
 func LoadConfig(filePath string) (*AgentConfig, error) {
@@ -103,18 +103,17 @@ func populateAgentConfig(agentConfig *AgentConfig) error {
 	// Service name
 	agentConfig.Identity.ServiceName = fmt.Sprintf("givc-%s.service", agentConfig.Identity.Name)
 
-	// Polulate tls config
-	if agentConfig.Network.Tls.Enable == true {
-		var err error
-		agentConfig.Network.TlsConfig, err = givc_util.TlsServerConfig(
-			agentConfig.Network.Tls.CaCertPath,
-			agentConfig.Network.Tls.CertPath,
-			agentConfig.Network.Tls.KeyPath, true)
-		if err != nil {
-			return fmt.Errorf("failed to create TLS config: %w", err)
-		}
+	// Set default TLS type to legacy if not specified
+	if agentConfig.Network.Tls.Type == "" {
+		agentConfig.Network.Tls.Type = "legacy"
 	}
 
+	// Populate tls config
+	var err error
+	agentConfig.Network.TlsCred, err = givc_util.NewCredentials(agentConfig.Network.Tls)
+	if err != nil {
+		return err
+	}
 	// Populate units
 	agentConfig.Capabilities.Units = make(map[string]uint32)
 	// Services
@@ -144,7 +143,7 @@ func populateAgentConfig(agentConfig *AgentConfig) error {
 
 	// Populate admin endpoint
 	agentConfig.Network.AdminEndpoint.Services = nil
-	agentConfig.Network.AdminEndpoint.TlsConfig = agentConfig.Network.TlsConfig
+	agentConfig.Network.AdminEndpoint.TlsCred = agentConfig.Network.TlsCred
 
 	// Populate agent endpoint
 	var services []string
@@ -152,7 +151,7 @@ func populateAgentConfig(agentConfig *AgentConfig) error {
 	for unit := range agentConfig.Capabilities.Units {
 		services = append(services, unit)
 	}
-	agentConfig.Network.AgentEndpoint.TlsConfig = agentConfig.Network.TlsConfig
+	agentConfig.Network.AgentEndpoint.TlsCred = agentConfig.Network.TlsCred
 	agentConfig.Network.AgentEndpoint.Services = services
 
 	return nil

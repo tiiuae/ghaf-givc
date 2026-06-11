@@ -44,9 +44,15 @@ let
       parent = "microvm@${cfg.network.agent.transport.name}.service";
     };
     inherit (cfg) network capabilities;
+    accessControl = {
+      inherit (config.givc.accessControl) enable rulesFile;
+    };
   };
 in
 {
+  imports = [
+    ./access-control.nix
+  ];
   options.givc.appvm = {
     enable = mkEnableOption "GIVC appvm agent module";
 
@@ -96,20 +102,33 @@ in
 
       tls = mkOption {
         type = tlsSubmodule;
-        default = { };
+        default = {
+          type = "legacy";
+          legacy = {
+            caCertPath = "/etc/givc/ca-cert.pem";
+            certPath = "/etc/givc/cert.pem";
+            keyPath = "/etc/givc/key.pem";
+          };
+        };
         defaultText = literalExpression ''
           tls = {
             enable = true;
-            caCertPath = "/run/givc/ca-cert.pem";
-            certPath = "/run/givc/cert.pem";
-            keyPath = "/run/givc/key.pem";
+            type = "legacy";
+            legacy = {
+              caCertPath = "/run/givc/ca-cert.pem";
+              certPath = "/run/givc/cert.pem";
+              keyPath = "/run/givc/key.pem";
+            };
           };'';
         example = literalExpression ''
           tls = {
             enable = true;
-            caCertPath = "/etc/ssl/certs/ca-certificates.crt";
-            certPath = "/etc/ssl/certs/server.crt";
-            keyPath = "/etc/ssl/private/server.key";
+            type = "legacy";
+            legacy = {
+              caCertPath = "/etc/ssl/certs/ca-certificates.crt";
+              certPath = "/etc/ssl/certs/server.crt";
+              keyPath = "/etc/ssl/private/server.key";
+            };
           };'';
         description = ''
           TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
@@ -229,7 +248,6 @@ in
         to keep the user session alive in the application VM without specific login.
       '';
     };
-
   };
 
   config = mkIf cfg.enable {
@@ -242,8 +260,11 @@ in
         assertion =
           !(
             cfg.network.tls.enable
+            && cfg.network.tls.type == "legacy"
             && (
-              cfg.network.tls.caCertPath == "" || cfg.network.tls.certPath == "" || cfg.network.tls.keyPath == ""
+              cfg.network.tls.legacy.caCertPath == ""
+              || cfg.network.tls.legacy.certPath == ""
+              || cfg.network.tls.legacy.keyPath == ""
             )
           );
         message = ''
@@ -268,6 +289,16 @@ in
           !cfg.capabilities.eventProxy.enable
           || lists.allUnique (map (p: (strings.toInt p.transport.port)) cfg.capabilities.eventProxy.events);
         message = "EventProxy: Each event proxy instance requires a unique port number.";
+      }
+    ];
+
+    givc.accessControl.agentRules = [
+      {
+        sourceVMs = [ cfg.network.admin.transport.name ];
+        modules = [
+          "systemd"
+          "local"
+        ];
       }
     ];
 
@@ -296,11 +327,6 @@ in
         ExecStart = "${pkgs.rsync}/bin/rsync -r --chown=root:users --chmod=g+rx /etc/givc /run";
         Restart = "no";
       };
-    };
-    givc.appvm.network.tls = {
-      caCertPath = "/run/givc/ca-cert.pem";
-      certPath = "/run/givc/cert.pem";
-      keyPath = "/run/givc/key.pem";
     };
 
     # User agent

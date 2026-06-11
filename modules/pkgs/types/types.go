@@ -3,9 +3,8 @@
 package types
 
 import (
-	"crypto/tls"
-
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 type UnitType uint32
@@ -34,7 +33,12 @@ type TransportConfig struct {
 type EndpointConfig struct {
 	Transport TransportConfig `json:"transport"`
 	Services  []string
-	TlsConfig *tls.Config
+	TlsCred   Credentials
+}
+
+type Credentials interface {
+	GetServerCredentials() credentials.TransportCredentials
+	GetClientCredentials(serverName string) credentials.TransportCredentials
 }
 
 // ProxyConfig represents the configuration for a proxy, including transport settings,
@@ -60,6 +64,11 @@ type Policy struct {
 	Policies           map[string]string `json:"policies"`
 }
 
+type AccessControl struct {
+	AccessControlEnabled bool   `json:"enable"`
+	RulesFile            string `json:"rulesFile"`
+}
+
 // RegistryEntry represents an entry in the registry, including its name,
 // parent, type, transport configuration, state, and whether it should be watched.
 type RegistryEntry struct {
@@ -80,13 +89,23 @@ type ApplicationManifest struct {
 	Directories []string `json:"directories,omitempty"`
 }
 
-// TlsConfigJson represents the JSON configuration for TLS, including whether it is enabled,
-// the CA certificate path, the certificate path, and the key path.
-type TlsConfigJson struct {
-	Enable     bool   `json:"enable"`
+type LegacyTlsConfig struct {
 	CaCertPath string `json:"caCertPath"`
 	CertPath   string `json:"certPath"`
 	KeyPath    string `json:"keyPath"`
+}
+
+type SpireTlsConfig struct {
+	AgentSocketPath string `json:"agentSocketPath"`
+	TrustDomain     string `json:"trustDomain"`
+}
+
+// TlsConfigJson represents the JSON configuration for TLS.
+type TlsConfigJson struct {
+	Enable bool             `json:"enable"`
+	Type   string           `json:"type"` // "legacy" or "spire"
+	Legacy *LegacyTlsConfig `json:"legacy,omitempty"`
+	Spire  *SpireTlsConfig  `json:"spire,omitempty"`
 }
 
 // GrpcServiceRegistration represents a gRPC service registration, including its name

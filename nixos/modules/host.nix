@@ -33,9 +33,15 @@ let
       subType = 1;
     };
     inherit (cfg) network capabilities;
+    accessControl = {
+      inherit (config.givc.accessControl) enable rulesFile;
+    };
   };
 in
 {
+  imports = [
+    ./access-control.nix
+  ];
   options.givc.host = {
     enable = mkEnableOption "givc host agent module, which is responsible for managing system VMs and app VMs.";
 
@@ -84,20 +90,33 @@ in
       };
       tls = mkOption {
         type = tlsSubmodule;
-        default = { };
+        default = {
+          type = "legacy";
+          legacy = {
+            caCertPath = "/etc/givc/ca-cert.pem";
+            certPath = "/etc/givc/cert.pem";
+            keyPath = "/etc/givc/key.pem";
+          };
+        };
         defaultText = literalExpression ''
           tls = {
             enable = true;
-            caCertPath = "/etc/givc/ca-cert.pem";
-            certPath = /etc/givc/cert.pem";
-            keyPath = "/etc/givc/key.pem";
+            type = "legacy";
+            legacy = {
+              caCertPath = "/etc/givc/ca-cert.pem";
+              certPath = "/etc/givc/cert.pem";
+              keyPath = "/etc/givc/key.pem";
+            };
           };'';
         example = literalExpression ''
           tls = {
             enable = true;
-            caCertPath = "/etc/ssl/certs/ca-certificates.crt";
-            certPath = "/etc/ssl/certs/server.crt";
-            keyPath = "/etc/ssl/private/server.key";
+            type = "legacy";
+            legacy = {
+              caCertPath = "/etc/ssl/certs/ca-certificates.crt";
+              certPath = "/etc/ssl/certs/server.crt";
+              keyPath = "/etc/ssl/private/server.key";
+            };
           };'';
         description = ''
           TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
@@ -200,8 +219,11 @@ in
         assertion =
           !(
             cfg.network.tls.enable
+            && cfg.network.tls.type == "legacy"
             && (
-              cfg.network.tls.caCertPath == "" || cfg.network.tls.certPath == "" || cfg.network.tls.keyPath == ""
+              cfg.network.tls.legacy.caCertPath == ""
+              || cfg.network.tls.legacy.certPath == ""
+              || cfg.network.tls.legacy.keyPath == ""
             )
           );
         message = ''
@@ -213,7 +235,15 @@ in
 
     # JSON configuration for GIVC host agent
     environment.etc."givc-agent/config.json".text = toJSON agentConfig;
-
+    givc.accessControl.agentRules = [
+      {
+        sourceVMs = [ cfg.network.admin.transport.name ];
+        modules = [
+          "systemd"
+          "local"
+        ];
+      }
+    ];
     systemd.services."givc-${cfg.network.agent.transport.name}" = {
       description = "GIVC remote service manager for the host.";
       enable = true;
