@@ -4,10 +4,11 @@
 use anyhow::Context;
 use clap::Parser;
 use givc::admin;
-use givc::endpoint::TlsConfig;
 use givc::utils::access_control::Authorizer;
-use givc::utils::auth::Authenticator;
+use givc::utils::authenticator::Authenticator;
+use givc_common::authn::TlsConfig;
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
+use givc_common::tls_stream::incoming_tls_stream;
 use std::path::PathBuf;
 use tonic::transport::Server;
 use tonic_middleware::RequestInterceptorLayer;
@@ -30,6 +31,19 @@ struct Cli {
 
     #[arg(long, env = "HOST_KEY")]
     host_key: Option<PathBuf>,
+
+    #[arg(long, env = "AUTH_TYPE", default_value = "legacy")]
+    auth_type: String,
+
+    #[arg(
+        long,
+        env = "SPIRE_AGENT_SOCKET",
+        default_value = "/run/spire/agent-socket"
+    )]
+    spire_agent_socket: String,
+
+    #[arg(long, env = "TRUST_DOMAIN", default_value = "ghaf.ssrc.tii.ae")]
+    trust_domain: String,
 
     #[arg(long, env = "GIVC_MONITORING", default_value_t = true)]
     monitoring: bool,
@@ -59,17 +73,23 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     givc::trace_init()?;
     let cli = Cli::parse();
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let mut builder = Server::builder();
+    let builder = Server::builder();
 
+    // Cloneable reference to your TLS provider wrapper
     let tls = if cli.use_tls {
-        let tls_conf = TlsConfig {
-            ca_cert_file_path: cli.ca_cert.context("CA_CERT required")?,
-            cert_file_path: cli.host_cert.context("HOST_CERT required")?,
-            key_file_path: cli.host_key.context("HOST_KEY required")?,
-            tls_name: None,
+        let tls_conf = match cli.auth_type.to_lowercase().as_str() {
+            "spire" => {
+                TlsConfig::from_spire_agent(cli.spire_agent_socket, cli.trust_domain).await?
+            }
+            _ => TlsConfig::from_certs_and_key(
+                cli.ca_cert.context("CA_CERT required")?,
+                cli.host_cert.context("HOST_CERT required")?,
+                cli.host_key.context("HOST_KEY required")?,
+                None,
+            )?,
         };
-        builder = builder.tls_config(tls_conf.server_config()?)?;
         Some(tls_conf)
     } else {
         None
@@ -80,7 +100,7 @@ async fn main() -> anyhow::Result<()> {
         .build_v1()?;
 
     let admin_impl = admin::server::AdminService::new(
-        tls,
+        tls.clone(), // Clone to pass down into your admin panel
         cli.monitoring,
         cli.policy_admin,
         cli.policy_store,
@@ -101,14 +121,16 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    info!("Starting givc-admin with dynamic logging...");
+    info!(" Starting givc-admin.. listening at {0:?}", cli.listen);
+
+    let incoming_tls_stream = incoming_tls_stream(listener, tls);
 
     builder
         .layer(RequestInterceptorLayer::new(authenticator))
         .layer(RequestInterceptorLayer::new(authorizer))
         .add_service(reflect)
         .add_service(admin_service_svc)
-        .serve_with_incoming(listener)
+        .serve_with_incoming(incoming_tls_stream) // Hand off our custom handshake loop
         .await?;
 
     Ok(())

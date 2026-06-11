@@ -9,15 +9,29 @@ version = "0.0.1"
 [dependencies]
 anyhow = "1.0.102"
 glib = { version = "*", optional = true, features = [] }
+hyper-util = "0.1"
 prost = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+rustls-pemfile = "2.2.0"
 serde = { version = "1.0.219", features = ["derive"] }
+spiffe = { version = "0.16.0", features = ["x509-source"] }
+spiffe-rustls = "0.7.0"
 strum = { version = "0.28", features = ["derive"] }
+tokio = { version = "1", features = ["net", "io-util", "sync", "rt"] }
+tokio-listener = "*"
+tokio-rustls = "*"
+tokio-stream = "*"
 tokio-vsock = "*"
 tonic = { version = "0.14", features = ["tls-aws-lc"] }
 tonic-prost = "0.14"
+tower = "*"
+tracing = "0.1"
 
 [build-dependencies]
 tonic-prost-build = "0.14"
 
 [features]
 glib = ["dep:glib"]
+
+[package.metadata.cargo-machete]
+ignored = ["prost", "tonic-prost"]

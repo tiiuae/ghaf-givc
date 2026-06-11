@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::x509::SecurityInfo;
-use tonic::transport::server::{Connected, TlsConnectInfo};
+use tonic::transport::server::Connected;
 use tonic::{Request, Status};
 use tracing::debug;
 
 /// Type alias for `tokio_listener`'s connection info.
 type ListenerConnectInfo = <tokio_listener::Connection as Connected>::ConnectInfo;
 
+use givc_common::tls_stream::CustomConnectInfo;
 use http::Request as HttpRequest;
 use tonic::body::Body;
 use tonic_middleware::RequestInterceptor;
@@ -16,19 +17,19 @@ use tonic_middleware::RequestInterceptor;
 /// Extract `SecurityInfo` from the peer certificate in the request.
 fn security_info_from_request<T>(req: &HttpRequest<T>) -> Result<SecurityInfo, Status> {
     req.extensions()
-        .get::<TlsConnectInfo<ListenerConnectInfo>>()
-        .and_then(TlsConnectInfo::peer_certs)
+        .get::<CustomConnectInfo<ListenerConnectInfo>>()
+        .and_then(|info| info.certs.as_ref())
         .ok_or_else(|| Status::unauthenticated("No peer certificate"))?
         .iter()
-        .find_map(|cert| SecurityInfo::try_from(cert.as_ref()).ok())
+        .find_map(|cert| SecurityInfo::try_from(cert.as_slice()).ok())
         .ok_or_else(|| Status::unauthenticated("Can't parse certificate"))
 }
 
 /// Extract transport info from the request extensions.
 fn transport_info_from_request<T>(req: &HttpRequest<T>) -> Option<&ListenerConnectInfo> {
     req.extensions()
-        .get::<TlsConnectInfo<ListenerConnectInfo>>()
-        .map(TlsConnectInfo::get_ref)
+        .get::<CustomConnectInfo<ListenerConnectInfo>>()
+        .map(|info| &info.inner)
 }
 
 #[derive(Clone)]

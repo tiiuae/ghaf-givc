@@ -10,6 +10,7 @@ use tonic::transport::Channel;
 use tracing::{debug, info};
 
 use givc_common::address::EndpointAddress;
+use givc_common::authn::TlsConfig;
 use givc_common::pb;
 use givc_common::pb::Generation;
 pub use givc_common::pb::stats::StatsResponse;
@@ -17,7 +18,7 @@ pub use givc_common::pb::stats::SysinfoResponse as Sysinfo;
 pub use givc_common::query::{Event, QueryResult};
 use givc_common::types::{EndpointEntry, TransportConfig, UnitStatus, UnitType};
 
-use crate::endpoint::{EndpointConfig, TlsConfig};
+use crate::endpoint::EndpointConfig;
 use crate::error::StatusWrapExt;
 use crate::stream::drain_stream_with_callback;
 

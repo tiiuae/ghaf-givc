@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use clap::Parser;
-use givc::endpoint::TlsConfig;
 use givc::systemd_api::server::SystemdService;
 use givc::types::{EndpointEntry, UnitStatus};
 use givc::utils::naming::VmName;
 use givc_client::AdminClient;
 use givc_common::address::EndpointAddress;
+use givc_common::authn::TlsConfig;
 use givc_common::pb;
 use givc_common::pb::reflection::SYSTEMD_DESCRIPTOR;
-use std::net::SocketAddr;
+use givc_common::tls_stream::incoming_tls_stream;
 use std::path::PathBuf;
 use tonic::transport::Server;
 use tracing::info;
@@ -45,6 +45,19 @@ struct Cli {
     #[arg(long, env = "HOST_KEY")]
     host_key: Option<PathBuf>,
 
+    #[arg(long, env = "AUTH_TYPE", default_value = "legacy")]
+    auth_type: String,
+
+    #[arg(
+        long,
+        env = "SPIRE_AGENT_SOCKET",
+        default_value = "/run/spire/agent-socket"
+    )]
+    spire_agent_socket: String,
+
+    #[arg(long, env = "TRUST_DOMAIN", default_value = "ghaf.ssrc.tii.ae")]
+    trust_domain: String,
+
     #[arg(long, env = "ADMIN_SERVER_ADDR", default_missing_value = "127.0.0.1")]
     admin_server_addr: String,
     #[arg(long, env = "ADMIN_SERVER_PORT", default_missing_value = "9000")]
@@ -69,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     info!("CLI is {cli:#?}");
 
-    let addr = SocketAddr::new(cli.addr.parse()?, cli.port);
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     // FIXME: Totally wrong,
     let agent_service_name = VmName::App(&cli.name).agent_service();
@@ -77,15 +90,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut builder = Server::builder();
 
     let tls = if cli.use_tls {
-        let tls = TlsConfig {
-            ca_cert_file_path: cli.ca_cert.ok_or("CA cert file required")?,
-            cert_file_path: cli.host_cert.ok_or("cert file required")?,
-            key_file_path: cli.host_key.ok_or("key file required")?,
-            tls_name: None,
+        let tls_conf = match cli.auth_type.to_lowercase().as_str() {
+            "spire" => {
+                TlsConfig::from_spire_agent(cli.spire_agent_socket, cli.trust_domain).await?
+            }
+            _ => TlsConfig::from_certs_and_key(
+                cli.ca_cert.unwrap_or_default(),
+                cli.host_cert.unwrap_or_default(),
+                cli.host_key.unwrap_or_default(),
+                None,
+            )?,
         };
-        let tls_config = tls.server_config()?;
-        builder = builder.tls_config(tls_config)?;
-        Some(tls)
+        Some(tls_conf)
     } else {
         None
     };
@@ -93,8 +109,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Perfect example of bad designed code, admin.register_service(entry) should hide structure filling
     let endpoint = EndpointEntry {
         address: EndpointAddress::Tcp {
-            addr: cli.addr,
-            port: cli.port,
+            addr: cli.addr.clone(),
+            port: cli.port.clone(),
         },
         tls_name: cli.name,
     };
@@ -124,10 +140,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         SystemdService::new(),
     );
 
+    let listen_addr_str = format!("{}:{}", cli.addr, cli.port);
+    let listen_addr: tokio_listener::ListenerAddress = listen_addr_str.parse()?;
+    let listener = tokio_listener::Listener::bind(
+        &listen_addr,
+        &tokio_listener::SystemOptions::default(),
+        &tokio_listener::UserOptions::default(),
+    )
+    .await?;
+
+    info!("Starting givc-agent on {}...", listener.local_addr()?);
+
+    let incoming_stream = incoming_tls_stream(listener, tls);
+
     builder
         .add_service(reflect)
         .add_service(agent_service_svc)
-        .serve(addr)
+        .serve_with_incoming(incoming_stream)
         .await?;
 
     Ok(())
