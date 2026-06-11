@@ -4,20 +4,18 @@ package grpc
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
+	interceptors "givc/modules/pkgs/interceptors"
 	"givc/modules/pkgs/types"
 	givc_util "givc/modules/pkgs/utility"
 	"net"
 	"time"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	grpc_logrus "github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus"
-	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 
 	"golang.org/x/sync/errgroup"
 	grpc "google.golang.org/grpc"
-	grpc_creds "google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
@@ -32,9 +30,9 @@ const (
 )
 
 type GrpcServerConfig struct {
-	Transport *types.TransportConfig
-	TlsConfig *tls.Config
-	Services  []types.GrpcServiceRegistration
+	Transport     *types.TransportConfig
+	TransportCred credentials.TransportCredentials
+	Services      []types.GrpcServiceRegistration
 }
 
 type GrpcServer struct {
@@ -43,44 +41,37 @@ type GrpcServer struct {
 }
 
 // NewServer creates a new gRPC server based on the provided endpoint configuration and service registrations.
-func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistration) (*GrpcServer, error) {
+func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistration, acConfig *types.AccessControl) (*GrpcServer, error) {
 
 	// GRPC Server
 	srv := GrpcServer{
 		config: &GrpcServerConfig{
-			Transport: &cfg.Transport,
-			TlsConfig: cfg.TlsConfig,
-			Services:  services,
+			Transport:     &cfg.Transport,
+			TransportCred: cfg.TlsCred.GetServerCredentials(),
+			Services:      services,
 		},
 	}
 
 	// TLS gRPC creds option
-	var grpcTlsConfig grpc.ServerOption
-	if srv.config.TlsConfig != nil {
-		grpcTlsConfig = grpc.Creds(grpc_creds.NewTLS(srv.config.TlsConfig))
+	var grpcTransportCred grpc.ServerOption
+	if srv.config.TransportCred != nil {
+		grpcTransportCred = grpc.Creds(srv.config.TransportCred)
 	} else {
-		grpcTlsConfig = grpc.Creds(insecure.NewCredentials())
+		grpcTransportCred = grpc.Creds(insecure.NewCredentials())
 		// return nil, grpc_status.Error(grpc_codes.Unavailable, "TLS configuration not provided")
 	}
 
-	// Interceptor chain
-	interceptors := []grpc.UnaryServerInterceptor{
-		grpc_ctxtags.UnaryServerInterceptor(grpc_ctxtags.WithFieldExtractor(grpc_ctxtags.TagBasedRequestFieldExtractor("log"))),
-		unaryLogRequestInterceptor,
-		grpc_logrus.UnaryServerInterceptor(log.NewEntry(log.StandardLogger())),
-	}
-	if srv.config.TlsConfig != nil {
-		interceptors = append(interceptors, givc_util.CertIPVerifyInterceptor)
+	// Interceptors
+	unaryInterceptors, streamInterceptors, err := interceptors.GetServerInterceptors(acConfig, srv.config.TransportCred)
+	if err != nil {
+		return nil, err
 	}
 
-	// GRPC Server
 	srv.grpcServer = grpc.NewServer(
-		grpc.UnaryInterceptor(
-			grpc_middleware.ChainUnaryServer(interceptors...),
-		),
-		grpcTlsConfig,
+		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(unaryInterceptors...)),
+		grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(streamInterceptors...)),
+		grpcTransportCred,
 	)
-
 	// Register gRPC services
 	for _, s := range srv.config.Services {
 		log.Info("Registering service: ", s.Name())
@@ -160,9 +151,4 @@ func (s *GrpcServer) ListenAndServe(ctx context.Context, started chan struct{}) 
 	}
 
 	return nil
-}
-
-func unaryLogRequestInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	log.WithFields(grpc_ctxtags.Extract(ctx).Values()).Info("GRPC Request: ", info.FullMethod)
-	return handler(ctx, req)
 }

@@ -1,0 +1,17 @@
+
+entity Module {
+    attributes: {}
+};
+
+entity Source {
+    attributes: {}
+};
+
+entity Command {
+    attributes: {}
+};
+
+action "RegisterService" appliesTo {
+    principal: [Source],
+    resource: [Module],
+};

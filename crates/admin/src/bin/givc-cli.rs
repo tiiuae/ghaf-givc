@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use clap::{Parser, Subcommand};
-use givc::endpoint::TlsConfig;
 use givc::types::UnitType;
 use givc::utils::vsock::parse_vsock_addr;
 use givc_client::client::AdminClient;
 use givc_common::address::EndpointAddress;
+use givc_common::authn::TlsConfig;
 use givc_common::pb;
 use lazy_regex::regex;
 use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
@@ -40,6 +40,19 @@ struct Cli {
 
     #[arg(long, env = "GIVC_HOST_KEY")]
     key: Option<PathBuf>,
+
+    #[arg(long, env = "AUTH_TYPE", default_value = "legacy")]
+    auth_type: String,
+
+    #[arg(
+        long,
+        env = "SPIRE_AGENT_SOCKET",
+        default_value = "/run/spire/agent-socket"
+    )]
+    spire_agent_socket: String,
+
+    #[arg(long, env = "TRUST_DOMAIN", default_value = "ghaf.tii")]
+    trust_domain: String,
 
     #[arg(long, env = "GIVC_NO_TLS", default_value_t = false)]
     notls: bool,
@@ -355,19 +368,25 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let cli = Cli::parse();
     info!("CLI is {:#?}", cli);
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     let tls = if cli.notls {
         None
     } else {
-        Some((
-            cli.name.clone(),
-            TlsConfig {
-                ca_cert_file_path: cli.cacert.expect("cacert is required"),
-                cert_file_path: cli.cert.expect("cert is required"),
-                key_file_path: cli.key.expect("key is required"),
-                tls_name: Some(cli.name),
-            },
-        ))
+        let tls_conf = match cli.auth_type.to_lowercase().as_str() {
+            "spire" => TlsConfig::from_spire_agent(cli.spire_agent_socket, cli.trust_domain)
+                .await
+                .expect("TLS initialization failed"),
+            _ => TlsConfig::from_certs_and_key(
+                cli.cacert.expect("cacert is required"),
+                cli.cert.expect("cert is required"),
+                cli.key.expect("key is required"),
+                Some(cli.name.clone()),
+            )
+            .expect("TLS initialization failed"),
+        };
+
+        Some((cli.name.clone(), tls_conf))
     };
 
     // FIXME; big kludge, but allow to test vsock connection

@@ -4,21 +4,20 @@
 use anyhow::Context;
 use clap::Parser;
 use givc::admin;
-use givc::endpoint::TlsConfig;
-use givc::utils::auth::{auth_interceptor, no_auth_interceptor};
+use givc::utils::access_control::Authorizer;
+use givc::utils::authenticator::Authenticator;
+use givc_common::authn::TlsConfig;
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
+use givc_common::tls_stream::incoming_tls_stream;
 use std::path::PathBuf;
 use tonic::transport::Server;
-use tracing::debug;
+use tonic_middleware::RequestInterceptorLayer;
+use tracing::info;
 
-#[derive(Debug, Parser)] // requires `derive` feature
-#[command(name = "givc-admin")]
-#[command(about = "A givc admin", long_about = None)]
+#[derive(Debug, Parser)]
+#[command(name = "givc-admin", about = "A givc admin")]
 struct Cli {
-    #[arg(
-        long,
-        help = "Additionally listen socket (addr:port, unix path, vsock:cid:port)"
-    )]
+    #[arg(long)]
     listen: Vec<tokio_listener::ListenerAddress>,
 
     #[arg(long, env = "TLS")]
@@ -33,6 +32,19 @@ struct Cli {
     #[arg(long, env = "HOST_KEY")]
     host_key: Option<PathBuf>,
 
+    #[arg(long, env = "AUTH_TYPE", default_value = "legacy")]
+    auth_type: String,
+
+    #[arg(
+        long,
+        env = "SPIRE_AGENT_SOCKET",
+        default_value = "/run/spire/agent-socket"
+    )]
+    spire_agent_socket: String,
+
+    #[arg(long, env = "TRUST_DOMAIN", default_value = "ghaf.ssrc.tii.ae")]
+    trust_domain: String,
+
     #[arg(long, env = "GIVC_MONITORING", default_value_t = true)]
     monitoring: bool,
 
@@ -41,6 +53,9 @@ struct Cli {
 
     #[arg(long, env = "POLICY_CONFIG")]
     policy_config: Option<String>,
+
+    #[arg(long, env = "CEDAR_FILE")]
+    cedar_file: Option<String>,
 
     #[arg(long, env = "POLICY_STORE")]
     policy_store: Option<PathBuf>,
@@ -57,57 +72,65 @@ struct Cli {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     givc::trace_init()?;
-
     let cli = Cli::parse();
-    debug!("CLI is {:#?}", cli);
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let mut builder = Server::builder();
+    let builder = Server::builder();
 
+    // Cloneable reference to your TLS provider wrapper
     let tls = if cli.use_tls {
-        let tls = TlsConfig {
-            ca_cert_file_path: cli.ca_cert.context("required")?,
-            cert_file_path: cli.host_cert.context("required")?,
-            key_file_path: cli.host_key.context("required")?,
-            tls_name: None,
+        let tls_conf = match cli.auth_type.to_lowercase().as_str() {
+            "spire" => {
+                TlsConfig::from_spire_agent(cli.spire_agent_socket, cli.trust_domain).await?
+            }
+            _ => TlsConfig::from_certs_and_key(
+                cli.ca_cert.context("CA_CERT required")?,
+                cli.host_cert.context("HOST_CERT required")?,
+                cli.host_key.context("HOST_KEY required")?,
+                None,
+            )?,
         };
-        let tls_config = tls.server_config()?;
-        builder = builder.tls_config(tls_config)?;
-        Some(tls)
+        Some(tls_conf)
     } else {
         None
     };
 
     let reflect = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(ADMIN_DESCRIPTOR)
-        .build_v1()
-        .unwrap();
+        .build_v1()?;
 
-    let interceptor = if tls.is_some() {
-        auth_interceptor
-    } else {
-        no_auth_interceptor
-    };
-
-    let admin_service = admin::server::AdminService::new(
-        tls,
+    let admin_impl = admin::server::AdminService::new(
+        tls.clone(), // Clone to pass down into your admin panel
         cli.monitoring,
         cli.policy_admin,
         cli.policy_store,
         cli.policy_config,
     )?;
-    let admin_service_svc =
-        admin::server::AdminServiceServer::with_interceptor(admin_service.clone(), interceptor);
 
-    let sys_opts = tokio_listener::SystemOptions::default();
-    let user_opts = tokio_listener::UserOptions::default();
+    let admin_service_svc = admin::server::AdminServiceServer::new(admin_impl);
+    let authorizer = Authorizer::new(cli.cedar_file.as_deref())?;
 
-    let listener =
-        tokio_listener::Listener::bind_multiple(&cli.listen, &sys_opts, &user_opts).await?;
+    let authenticator = Authenticator {
+        use_tls: cli.use_tls,
+    };
 
-    let () = builder
+    let listener = tokio_listener::Listener::bind_multiple(
+        &cli.listen,
+        &tokio_listener::SystemOptions::default(),
+        &tokio_listener::UserOptions::default(),
+    )
+    .await?;
+
+    info!(" Starting givc-admin.. listening at {0:?}", cli.listen);
+
+    let incoming_tls_stream = incoming_tls_stream(listener, tls);
+
+    builder
+        .layer(RequestInterceptorLayer::new(authenticator))
+        .layer(RequestInterceptorLayer::new(authorizer))
         .add_service(reflect)
         .add_service(admin_service_svc)
-        .serve_with_incoming(listener)
+        .serve_with_incoming(incoming_tls_stream) // Hand off our custom handshake loop
         .await?;
 
     Ok(())
