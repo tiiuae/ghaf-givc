@@ -71,6 +71,10 @@ type CapabilitiesConfig struct {
 		Sockets []givc_types.ProxyConfig `json:"sockets"`
 	} `json:"socketProxy"`
 
+	Vm struct {
+		Enabled bool `json:"enable"`
+	} `json:"vm"`
+
 	Policy givc_types.Policy `json:"policy"`
 }
 
