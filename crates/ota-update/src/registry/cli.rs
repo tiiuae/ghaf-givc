@@ -114,7 +114,7 @@ pub enum RegistryAction {
 impl RegistryCommand {
     #[allow(clippy::missing_errors_doc)]
     pub async fn handle(self) -> anyhow::Result<()> {
-        let credentials = self.credentials()?;
+        let credentials = self.credentials();
         if self.insecure {
             set_client_protocol(ClientProtocol::Http);
         }
@@ -227,20 +227,20 @@ impl RegistryCommand {
         result
     }
 
-    fn credentials(&self) -> anyhow::Result<RegistryCredentials> {
+    fn credentials(&self) -> RegistryCredentials {
         if let Some(token) = &self.token {
-            return Ok(RegistryCredentials::Bearer {
+            return RegistryCredentials::Bearer {
                 token: token.clone(),
-            });
+            };
         }
         if let Some(auth) = &self.auth {
-            return Ok(RegistryCredentials::Basic {
+            return RegistryCredentials::Basic {
                 username: auth.username.clone(),
                 password: auth.password.clone(),
-            });
+            };
         }
 
-        anyhow::bail!("unreachable")
+        RegistryCredentials::Anonymous
     }
 }
 
