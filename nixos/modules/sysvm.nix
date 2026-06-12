@@ -289,11 +289,40 @@ in
     ];
 
     givc.accessControl.agentRules = [
+      # For admin-vm
       {
-        sourceVMs = [ cfg.network.admin.transport.name ];
-        modules = [
+        permittedVms = [ cfg.network.admin.transport.name ];
+        permittedModules = [
           "systemd"
-          "local"
+          "locale"
+        ]
+        ++ optionals cfg.capabilities.ctap.enable [
+          "ctap"
+        ]
+        ++ optionals cfg.capabilities.wifi.enable [
+          "wifi"
+        ]
+        ++ optionals cfg.capabilities.hwid.enable [
+          "hwid"
+        ]
+        ++ optionals cfg.capabilities.policy.enable [
+          "policy"
+        ];
+      }
+    ]
+    ++ optionals cfg.capabilities.socketProxy.enable [
+      {
+        permittedVms = map (p: p.transport.name) cfg.capabilities.socketProxy.sockets;
+        permittedModules = [
+          "socket"
+        ];
+      }
+    ]
+    ++ optionals cfg.capabilities.eventProxy.enable [
+      {
+        permittedVms = map (p: p.transport.name) cfg.capabilities.eventProxy.events;
+        permittedModules = [
+          "event"
         ];
       }
     ];

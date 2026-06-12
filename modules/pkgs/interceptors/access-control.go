@@ -86,36 +86,35 @@ func MapRequestToContext(req interface{}) cedartypes.RecordMap {
 }
 
 func getSource(ctx context.Context) string {
-	host := "unknown"
-	if p, ok := peer.FromContext(ctx); ok {
-		if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok {
-			if len(tlsInfo.State.PeerCertificates) > 0 {
-				cert := tlsInfo.State.PeerCertificates[0]
-				if len(cert.DNSNames) > 0 {
-					name := cert.DNSNames[0]
-					if strings.HasPrefix(name, "DNS.1:") {
-						name = strings.TrimPrefix(name, "DNS.1:")
-						if idx := strings.Index(name, ","); idx != -1 {
-							name = name[:idx]
-						}
-					}
-					log.Infof("Authorizing with principal from certificate SAN DNSName: %s", name)
-					return name
-				}
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return "unknown"
+	}
+
+	if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok && len(tlsInfo.State.PeerCertificates) > 0 {
+		cert := tlsInfo.State.PeerCertificates[0]
+		if len(cert.DNSNames) > 0 {
+			name := cert.DNSNames[0]
+			name = strings.TrimPrefix(name, "DNS.1:")
+			if idx := strings.Index(name, ","); idx != -1 {
+				name = name[:idx]
 			}
-		}
-		// ipaddress/vsock cid
-		host, _, splitErr := net.SplitHostPort(p.Addr.String())
-		if splitErr != nil {
-			host = p.Addr.String()
-		}
-		if ip := net.ParseIP(host); ip != nil {
-			log.Infof("Authorizing with principal from peer IP: %s", host)
-			return host
+			log.Infof("Authorizing with principal from certificate SAN DNSName: %s", name)
+			return name
 		}
 	}
 
-	return host
+	// ipaddress/vsock cid
+	host, _, err := net.SplitHostPort(p.Addr.String())
+	if err != nil {
+		host = p.Addr.String()
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		log.Infof("Authorizing with principal from peer IP: %s", host)
+		return host
+	}
+
+	return "unknown"
 }
 
 func NewAccessController(policyPath string) (grpc.UnaryServerInterceptor, grpc.StreamServerInterceptor, error) {

@@ -15,6 +15,7 @@ let
     mkOption
     mkEnableOption
     mkIf
+    optionals
     types
     literalExpression
     optionalString
@@ -221,13 +222,20 @@ in
     environment.etc."givc-agent/config.json".text = toJSON agentConfig;
     givc.accessControl.agentRules = [
       {
-        sourceVMs = [ cfg.network.admin.transport.name ];
-        modules = [
+        permittedVms = [ cfg.network.admin.transport.name ];
+        permittedModules = [
           "systemd"
-          "local"
+          "locale"
+        ]
+        ++ optionals cfg.capabilities.policy.enable [
+          "policy"
+        ]
+        ++ optionals cfg.capabilities.exec.enable [
+          "exec"
         ];
       }
     ];
+
     systemd.services."givc-${cfg.network.agent.transport.name}" = {
       description = "GIVC remote service manager for the host.";
       enable = true;

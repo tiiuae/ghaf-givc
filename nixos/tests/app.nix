@@ -63,16 +63,16 @@ in
                 enable = true;
                 adminRules = [
                   {
-                    sourceVMs = [
+                    from = [
                       "appvm"
                       "guivm"
                     ];
-                    requests = [ "RegisterService" ];
+                    permittedRequests = [ "RegisterService" ];
                   }
                   {
-                    sourceVMs = [ "guivm" ];
-                    targetVMs = [ "appvm" ];
-                    requests = [ "StartApplication" ];
+                    from = [ "guivm" ];
+                    to = [ "appvm" ];
+                    permittedRequests = [ "StartApplication" ];
                   }
                 ];
               };
@@ -254,8 +254,8 @@ in
                     enable = true;
                     agentRules = [
                       {
-                        sourceVMs = [ "guivm" ];
-                        modules = [ "systemd" ];
+                        permittedVms = [ "guivm" ];
+                        permittedModules = [ "systemd" ];
                       }
                     ];
                   };
