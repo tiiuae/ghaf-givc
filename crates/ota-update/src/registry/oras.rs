@@ -23,7 +23,8 @@ use tokio_util::sync::CancellationToken;
 use super::{RegistryCredentials, notify, progress};
 
 const PROGRESS_EVENT_STEP: u64 = 10 * 1024 * 1024;
-const IO_CHUNK_CAPACITY: usize = 256 * 1024;
+// Match rust-oci-client's default push chunk size so one read usually becomes one upload chunk.
+const IO_CHUNK_CAPACITY: usize = 4 * 1024 * 1024;
 const IO_CHUNK_TIMEOUT: Duration = Duration::from_secs(120);
 
 static CLIENT_PROTOCOL: OnceLock<ClientProtocol> = OnceLock::new();
