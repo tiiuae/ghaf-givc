@@ -35,6 +35,7 @@
           pkgs.golangci-lint
           pkgs.rustfmt
           pkgs.clippy
+          pkgs.oras
           pkgs.stdenv.cc
           pkgs.protobuf
           pkgs.protoc-gen-go
