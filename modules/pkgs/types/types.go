@@ -60,6 +60,11 @@ type Policy struct {
 	Policies           map[string]string `json:"policies"`
 }
 
+type AccessControl struct {
+	AccessControlEnabled bool   `json:"enable"`
+	RulesFile            string `json:"rulesFile"`
+}
+
 // RegistryEntry represents an entry in the registry, including its name,
 // parent, type, transport configuration, state, and whether it should be watched.
 type RegistryEntry struct {

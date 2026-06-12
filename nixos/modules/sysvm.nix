@@ -45,11 +45,16 @@ let
         socket = dirOf cfg.notifier.socketPath;
       };
     };
+    accessControl = {
+      inherit (config.givc.accessControl) enable rulesFile;
+    };
   };
+
 in
 {
   imports = [
     ./notifier.nix
+    ./access-control.nix
   ];
 
   options.givc.sysvm = {
@@ -128,6 +133,7 @@ in
         '';
       };
     };
+
     capabilities = {
       services = mkOption {
         type = types.listOf types.str;
@@ -279,6 +285,45 @@ in
           !cfg.capabilities.eventProxy.enable
           || lists.allUnique (map (p: (strings.toInt p.transport.port)) cfg.capabilities.eventProxy.events);
         message = "EventProxy: Each event proxy instance requires a unique port number.";
+      }
+    ];
+
+    givc.accessControl.agentRules = [
+      # For admin-vm
+      {
+        permittedVms = [ cfg.network.admin.transport.name ];
+        permittedModules = [
+          "systemd"
+          "locale"
+        ]
+        ++ optionals cfg.capabilities.ctap.enable [
+          "ctap"
+        ]
+        ++ optionals cfg.capabilities.wifi.enable [
+          "wifi"
+        ]
+        ++ optionals cfg.capabilities.hwid.enable [
+          "hwid"
+        ]
+        ++ optionals cfg.capabilities.policy.enable [
+          "policy"
+        ];
+      }
+    ]
+    ++ optionals cfg.capabilities.socketProxy.enable [
+      {
+        permittedVms = map (p: p.transport.name) cfg.capabilities.socketProxy.sockets;
+        permittedModules = [
+          "socket"
+        ];
+      }
+    ]
+    ++ optionals cfg.capabilities.eventProxy.enable [
+      {
+        permittedVms = map (p: p.transport.name) cfg.capabilities.eventProxy.events;
+        permittedModules = [
+          "event"
+        ];
       }
     ];
 

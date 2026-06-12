@@ -15,6 +15,7 @@ let
     mkOption
     mkEnableOption
     mkIf
+    optionals
     types
     literalExpression
     optionalString
@@ -33,9 +34,15 @@ let
       subType = 1;
     };
     inherit (cfg) network capabilities;
+    accessControl = {
+      inherit (config.givc.accessControl) enable rulesFile;
+    };
   };
 in
 {
+  imports = [
+    ./access-control.nix
+  ];
   options.givc.host = {
     enable = mkEnableOption "givc host agent module, which is responsible for managing system VMs and app VMs.";
 
@@ -213,6 +220,21 @@ in
 
     # JSON configuration for GIVC host agent
     environment.etc."givc-agent/config.json".text = toJSON agentConfig;
+    givc.accessControl.agentRules = [
+      {
+        permittedVms = [ cfg.network.admin.transport.name ];
+        permittedModules = [
+          "systemd"
+          "locale"
+        ]
+        ++ optionals cfg.capabilities.policy.enable [
+          "policy"
+        ]
+        ++ optionals cfg.capabilities.exec.enable [
+          "exec"
+        ];
+      }
+    ];
 
     systemd.services."givc-${cfg.network.agent.transport.name}" = {
       description = "GIVC remote service manager for the host.";
