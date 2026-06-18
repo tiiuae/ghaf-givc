@@ -141,6 +141,7 @@ func main() {
 	// Validate required arguments
 	if *configFile == "" {
 		log.Errorf("Configuration file is required. Use -config flag to specify the path.")
+		log.Errorf("Usage: %s -config <path-to-config.json> [-debug]", filepath.Base(os.Args[0]))
 		os.Exit(1)
 	}
 
@@ -232,7 +233,7 @@ func main() {
 	registry.StartRegistrationWorker(ctx, &wg, serverStarted)
 
 	// Start main grpc server
-	grpcServer, err := givc_grpc.NewServer(agentEndpointConfig, grpcServices, &config.AccessControl)
+	grpcServer, err := givc_grpc.NewServer(agentEndpointConfig, grpcServices)
 	if err != nil {
 		log.Errorf("Cannot create grpc server config: %v", err)
 		return

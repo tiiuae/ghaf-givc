@@ -16,6 +16,8 @@ let
     literalExpression
     concatStrings
     concatStringsSep
+    optionalString
+    optionals
     ;
 
   transportSubmodule = types.submodule {
@@ -54,8 +56,12 @@ let
     permit (
       principal,
       action,
-      resource == Module::"grpc"
-    );
+      resource
+    )
+    when {
+      (action == Command::"ServerReflectionInfo") &&
+      (resource == Module::"grpc")
+    };
   '';
 
   agentRulesType = types.submodule {
@@ -155,6 +161,7 @@ in
           --policies ${policyFile}
 
         cp ${policyFile} $out
+        rm schema.ced
       '';
 
   agentRulesToCedar =
@@ -167,20 +174,17 @@ in
           srcConditions = map (src: ''principal == Source::"${src}"'') rule.permittedVms;
           modConditions = map (mod: ''resource == Module::"${mod}"'') rule.permittedModules;
         in
-        if srcConditions == [ ] || modConditions == [ ] then
-          ""
-        else
-          ''
-            permit (
-              principal,
-              action,
-              resource
-            )
-            when {
-              (${concatStringsSep " || " srcConditions}) &&
-              (${concatStringsSep " || " modConditions})
-            };
-          ''
+        optionalString (srcConditions != [ ] && modConditions != [ ]) ''
+          permit (
+            principal,
+            action,
+            resource
+          )
+          when {
+            (${concatStringsSep " || " srcConditions}) &&
+            (${concatStringsSep " || " modConditions})
+          };
+        ''
       ) rules
     );
 
@@ -200,26 +204,20 @@ in
             ''resource == Module::"admin"''
             "(${concatStringsSep " || " reqConditions})"
           ]
-          ++ (
-            if rule.to != [ ] then
-              [ ''(context has "VmName" && (${concatStringsSep " || " targetConditions}))'' ]
-            else
-              [ ]
-          );
+          ++ optionals (rule.to != [ ]) [
+            ''(context has "VmName" && (${concatStringsSep " || " targetConditions}))''
+          ];
         in
-        if srcConditions == [ ] || reqConditions == [ ] then
-          ""
-        else
-          ''
-            permit (
-              principal,
-              action,
-              resource
-            )
-            when {
-              ${concatStringsSep " &&\n              " conditions}
-            };
-          ''
+        optionalString (srcConditions != [ ] && reqConditions != [ ]) ''
+          permit (
+            principal,
+            action,
+            resource
+          )
+          when {
+            ${concatStringsSep " &&\n              " conditions}
+          };
+        ''
       ) rules
     );
 

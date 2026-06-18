@@ -248,6 +248,10 @@ in
   config = mkIf cfg.enable {
     assertions = [
       {
+        assertion = cfg.accessControl.enable -> cfg.tls.enable;
+        message = "Access control is only available with TLS enabled.";
+      }
+      {
         assertion =
           !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
@@ -324,7 +328,7 @@ in
           "POLICY_CONFIG" = "${toJSON jsonPolicies}";
           "POLICY_STORE" = "${cfg.policyAdmin.storePath}";
           "ACCESS_CONTROL" = "${trivial.boolToString cfg.accessControl.enable}";
-          "CEDAR_FILE" = lib.optionalString cfg.accessControl.enable "${rulesFilePath}";
+          "CEDAR_FILE" = "${rulesFilePath}";
         }
         // attrsets.optionalAttrs cfg.tls.enable {
           "CA_CERT" = "${cfg.tls.caCertPath}";

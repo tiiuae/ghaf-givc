@@ -82,11 +82,12 @@ func StartSocketService(ctx context.Context, wg *sync.WaitGroup, agentConfig *gi
 						Protocol: proxyConfig.Transport.Protocol,
 					},
 					TlsConfig: agentConfig.Network.TlsConfig,
+					AclConfig: agentConfig.AccessControl,
 				}
 
 				var grpcProxyService []givc_types.GrpcServiceRegistration
 				grpcProxyService = append(grpcProxyService, socketProxyServer)
-				grpcServer, err := givc_grpc.NewServer(cfgProxyServer, grpcProxyService, &agentConfig.AccessControl)
+				grpcServer, err := givc_grpc.NewServer(cfgProxyServer, grpcProxyService)
 				if err != nil {
 					log.Errorf("Cannot create grpc proxy server config: %v", err)
 					return

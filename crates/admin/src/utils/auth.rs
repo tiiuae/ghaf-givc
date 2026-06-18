@@ -41,7 +41,7 @@ pub struct Authenticator {
 /// **TCP**: Verifies peer IP matches an IP in their certificate's SAN.
 /// **Vsock/Unix/Other**: Certificate validity only (TLS handshake). No IP check -
 /// security relies on hypervisor isolation (vsock) or filesystem permissions (unix).
-#[async_trait::async_trait]
+#[tonic::async_trait]
 impl RequestInterceptor for Authenticator {
     async fn intercept(&self, mut req: HttpRequest<Body>) -> Result<HttpRequest<Body>, Status> {
         if self.use_tls {

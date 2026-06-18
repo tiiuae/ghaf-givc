@@ -42,8 +42,7 @@ type GrpcServer struct {
 }
 
 // NewServer creates a new gRPC server based on the provided endpoint configuration and service registrations.
-func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistration, acConfig *types.AccessControl) (*GrpcServer, error) {
-
+func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistration) (*GrpcServer, error) {
 	// GRPC Server
 	srv := GrpcServer{
 		config: &GrpcServerConfig{
@@ -63,7 +62,7 @@ func NewServer(cfg *types.EndpointConfig, services []types.GrpcServiceRegistrati
 	}
 
 	// Interceptors
-	unaryInterceptors, streamInterceptors, err := interceptors.GetServerInterceptors(acConfig, srv.config.TlsConfig)
+	unaryInterceptors, streamInterceptors, err := interceptors.GetServerInterceptors(&cfg.AclConfig, srv.config.TlsConfig)
 	if err != nil {
 		return nil, err
 	}

@@ -212,6 +212,10 @@ in
   config = mkIf cfg.enable {
     assertions = [
       {
+        assertion = cfg.accessControl.enable -> cfg.network.tls.enable;
+        message = "Access control is only available with TLS enabled.";
+      }
+      {
         assertion = cfg.capabilities.services != [ ];
         message = "A list of services (or targets) is required for this module to run.";
       }

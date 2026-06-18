@@ -29,12 +29,18 @@ type TransportConfig struct {
 	Protocol string `json:"protocol"`
 }
 
+type AccessControl struct {
+	Enabled   bool   `json:"enable"`
+	RulesFile string `json:"rulesFile"`
+}
+
 // EndpointConfig represents the configuration for an endpoint, including
 // transport settings, services, and TLS configuration.
 type EndpointConfig struct {
 	Transport TransportConfig `json:"transport"`
 	Services  []string
 	TlsConfig *tls.Config
+	AclConfig AccessControl
 }
 
 // ProxyConfig represents the configuration for a proxy, including transport settings,
@@ -58,11 +64,6 @@ type Policy struct {
 	PolicyAdminEnabled bool              `json:"enable"`
 	PolicyStorePath    string            `json:"storePath"`
 	Policies           map[string]string `json:"policies"`
-}
-
-type AccessControl struct {
-	AccessControlEnabled bool   `json:"enable"`
-	RulesFile            string `json:"rulesFile"`
 }
 
 // RegistryEntry represents an entry in the registry, including its name,
