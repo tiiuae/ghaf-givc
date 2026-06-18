@@ -3,13 +3,21 @@ syntax = "proto3";
 option go_package = "givc/modules/api/socketproxy";
 package socketproxy;
 
-// Data package in byte format
-message BytePacket {
-    bytes Data = 1;         // Data bytes
+// Stream frame with raw bytes and explicit EOF signalling.
+// `chunk` is always the payload bytes for this frame.
+// EOF is represented by `eof = true` (typically with empty `chunk`).
+message StreamFrame {
+
+    // Raw payload bytes.
+    bytes Chunk = 1;
+
+    // true when this frame marks end of stream.
+    bool Eof = 2;
+
 }
 
 service SocketStream {
-    // Initiate bi-directional socket stream
-    rpc TransferData(stream BytePacket) returns (stream BytePacket) {}
+    // Bi-directional framed socket stream with explicit EOF signalling.
+    rpc TransferData(stream StreamFrame) returns (stream StreamFrame) {}
 }
 

@@ -17,9 +17,7 @@
 package socketproxy
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"net"
 	"time"
 
@@ -40,8 +38,8 @@ type SocketProxyServer struct {
 }
 
 type DataStream interface {
-	Recv() (*givc_socket.BytePacket, error)
-	Send(*givc_socket.BytePacket) error
+	Recv() (*givc_socket.StreamFrame, error)
+	Send(*givc_socket.StreamFrame) error
 	Context() context.Context
 }
 
@@ -118,14 +116,14 @@ func (s *SocketProxyServer) StreamToRemote(ctx context.Context, cfg *givc_types.
 				// Stream data between socket and GRPC
 				err = s.StreamData(stream, c)
 				if err != nil {
-					log.Warnf("StreamData exited with: %v", err)
+					log.Warnf("grpc: StreamData exited with: %v", err)
 				}
 
 				// Close stream connection
 				if stream != nil {
 					err := stream.CloseSend()
 					if err != nil {
-						log.Warnf("Error closing stream: %v", err)
+						log.Warnf("grpc: Error closing stream: %v", err)
 					}
 				}
 
@@ -167,28 +165,33 @@ func (s *SocketProxyServer) StreamData(stream DataStream, conn net.Conn) error {
 			default:
 
 				// Read data from grpc stream
-				data, err := stream.Recv()
+				frame, err := stream.Recv()
 				if err != nil {
-					log.Warnf(">> GRPC failure: %v", err)
+					log.Errorf("grpc: GRPC failure: %v", err)
 					return err
 				}
-				log.Infof("Recv data: %s", data.GetData())
 
-				// Check for EOF; and close socket connection
-				if bytes.Equal(data.GetData(), []byte(io.EOF.Error())) {
+				if frame.GetEof() {
+					log.Infof("grpc: EOF detected from remote")
 					if conn != nil {
-						err := conn.Close()
-						if err != nil {
-							log.Warnf("Error closing socket: %v", err)
+						if err := conn.Close(); err != nil {
+							log.Errorf("grpc: Error closing socket: %v", err)
+							return err
 						}
 					}
-					return fmt.Errorf("EOF received")
+					return nil
 				}
 
+				payload := frame.GetChunk()
+				if len(payload) == 0 {
+					continue
+				}
+
+				log.Infof("grpc: Recv frame: %d bytes", len(payload))
 				// Write data to socket
-				err = s.socketController.Write(conn, data.GetData())
+				err = s.socketController.Write(conn, payload)
 				if err != nil {
-					log.Warnf("Error writing to socket: %v", err)
+					log.Warnf("grpc: Error writing to socket: %v", err)
 					return err
 				}
 			}
@@ -207,9 +210,10 @@ func (s *SocketProxyServer) StreamData(stream DataStream, conn net.Conn) error {
 				data, err := s.socketController.Read(conn)
 				if err != nil {
 					// Forward any read error to terminate stream and socket connections on both ends
-					log.Infof(">> Socket read error: %v", err)
-					message := &givc_socket.BytePacket{
-						Data: []byte(io.EOF.Error()),
+					log.Infof("socket: Socket read error: %v", err)
+					// Send explicit EOF control frame.
+					message := &givc_socket.StreamFrame{
+						Eof: true,
 					}
 					err = stream.Send(message)
 					if err != nil {
@@ -219,27 +223,27 @@ func (s *SocketProxyServer) StreamData(stream DataStream, conn net.Conn) error {
 				}
 
 				// Send data to grpc stream
-				message := &givc_socket.BytePacket{
-					Data: data,
+				message := &givc_socket.StreamFrame{
+					Chunk: data,
 				}
 				err = stream.Send(message)
 				if err != nil {
 					return err
 				}
-				log.Infof("Sent data: %s", data)
+				log.Infof("socket: Sent data from input socket: %d bytes", len(data))
 			}
 		}
 	})
 
 	if err := group.Wait(); err != nil {
-		log.Infof("Stream exited with: %s", err)
+		log.Infof("socket: Stream exited with: %s", err)
 	}
 
 	// Close socket connection
 	if conn != nil {
 		err := conn.Close()
 		if err != nil {
-			log.Warnf("Error closing socket: %v", err)
+			log.Warnf("socket: Error closing socket: %v", err)
 		}
 	}
 
