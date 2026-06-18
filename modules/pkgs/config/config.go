@@ -75,9 +75,10 @@ type CapabilitiesConfig struct {
 }
 
 type AgentConfig struct {
-	Identity     IdentityConfig     `json:"identity"`
-	Network      NetworkConfig      `json:"network"`
-	Capabilities CapabilitiesConfig `json:"capabilities"`
+	Identity      IdentityConfig           `json:"identity"`
+	Network       NetworkConfig            `json:"network"`
+	Capabilities  CapabilitiesConfig       `json:"capabilities"`
+	AccessControl givc_types.AccessControl `json:"accessControl"`
 }
 
 func LoadConfig(filePath string) (*AgentConfig, error) {
