@@ -9,6 +9,8 @@
 }:
 let
   cfg = config.givc.admin;
+  rulesFile = "givc-admin-acl/rules.cedar";
+  rulesFilePath = "/etc/${rulesFile}";
   givc-admin = pkgs."givc-admin" or self.packages.${pkgs.system}."givc-admin";
   inherit (lib)
     mkOption
@@ -23,9 +25,12 @@ let
     literalExpression
     ;
   inherit (builtins) toJSON;
-  inherit (import ./definitions.nix { inherit config lib; })
+  inherit (import ./definitions.nix { inherit config lib pkgs; })
     transportSubmodule
     tlsSubmodule
+    adminAclSubmodule
+    adminRulesToCedar
+    validateCedarRules
     ;
   tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
   unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
@@ -57,6 +62,10 @@ let
       }
     else
       { };
+
+  policyText = adminRulesToCedar cfg.accessControl.adminRules;
+  cedarPolicyFile = pkgs.writeText "policy.cedar" policyText;
+  validatedCedarRules = validateCedarRules cedarPolicyFile;
 in
 {
   options.givc.admin = {
@@ -69,6 +78,13 @@ in
         of host, system VMs, and application VMs.
       '';
     };
+
+    accessControl = mkOption {
+      type = adminAclSubmodule;
+      default = { };
+      description = "Access control settings for the GIVC admin module.";
+    };
+
     debug = mkEnableOption "givc-admin debug logging. This increases the verbosity of the logs";
 
     name = mkOption {
@@ -307,6 +323,8 @@ in
           "POLICY_ADMIN" = "${trivial.boolToString cfg.policyAdmin.enable}";
           "POLICY_CONFIG" = "${toJSON jsonPolicies}";
           "POLICY_STORE" = "${cfg.policyAdmin.storePath}";
+          "ACCESS_CONTROL" = "${trivial.boolToString cfg.accessControl.enable}";
+          "CEDAR_FILE" = lib.optionalString cfg.accessControl.enable "${rulesFilePath}";
         }
         // attrsets.optionalAttrs cfg.tls.enable {
           "CA_CERT" = "${cfg.tls.caCertPath}";
@@ -315,9 +333,13 @@ in
         }
         // attrsets.optionalAttrs cfg.debug {
           "RUST_BACKTRACE" = "1";
-          "GIVC_LOG" = "givc=debug,info";
+          "GIVC_LOG" = "givc=info";
         };
       };
     networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) tcpAddresses);
+    environment.etc."${rulesFile}" = mkIf cfg.accessControl.enable {
+      source = validatedCedarRules;
+    };
+
   };
 }
