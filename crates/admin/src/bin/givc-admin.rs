@@ -11,12 +11,15 @@ use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use std::path::PathBuf;
 use tonic::transport::Server;
 use tonic_middleware::RequestInterceptorLayer;
-use tracing::info;
+use tracing::{debug, info};
 
 #[derive(Debug, Parser)]
 #[command(name = "givc-admin", about = "A givc admin")]
 struct Cli {
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Additionally listen socket (addr:port, unix path, vsock:cid:port)"
+    )]
     listen: Vec<tokio_listener::ListenerAddress>,
 
     #[arg(long, env = "TLS")]
@@ -44,7 +47,7 @@ struct Cli {
     access_control: bool,
 
     #[arg(long, env = "CEDAR_FILE")]
-    cedar_file: Option<String>,
+    cedar_file: Option<PathBuf>,
 
     #[arg(long, env = "POLICY_STORE")]
     policy_store: Option<PathBuf>,
@@ -62,6 +65,8 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     givc::trace_init()?;
     let cli = Cli::parse();
+
+    debug!("CLI is {:#?}", cli);
 
     let mut builder = Server::builder();
 
@@ -106,7 +111,11 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting givc-admin with dynamic logging...");
 
     if cli.access_control {
-        let authorizer = Authorizer::new(cli.cedar_file.as_deref())?;
+        let cedar_path = cli
+            .cedar_file
+            .as_deref()
+            .context("Initialization failed: No Cedar policy file provided")?;
+        let authorizer = Authorizer::new(cedar_path)?;
         builder
             .layer(RequestInterceptorLayer::new(authenticator))
             .layer(RequestInterceptorLayer::new(authorizer))

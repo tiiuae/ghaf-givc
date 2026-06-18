@@ -155,6 +155,7 @@ func populateAgentConfig(agentConfig *AgentConfig) error {
 	}
 	agentConfig.Network.AgentEndpoint.TlsConfig = agentConfig.Network.TlsConfig
 	agentConfig.Network.AgentEndpoint.Services = services
+	agentConfig.Network.AgentEndpoint.AclConfig = agentConfig.AccessControl
 
 	return nil
 

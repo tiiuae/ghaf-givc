@@ -324,7 +324,7 @@ in
           "POLICY_CONFIG" = "${toJSON jsonPolicies}";
           "POLICY_STORE" = "${cfg.policyAdmin.storePath}";
           "ACCESS_CONTROL" = "${trivial.boolToString cfg.accessControl.enable}";
-          "CEDAR_FILE" = lib.optionalString cfg.accessControl.enable "${rulesFilePath}";
+          "CEDAR_FILE" = "${rulesFilePath}";
         }
         // attrsets.optionalAttrs cfg.tls.enable {
           "CA_CERT" = "${cfg.tls.caCertPath}";

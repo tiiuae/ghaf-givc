@@ -232,7 +232,7 @@ func main() {
 	registry.StartRegistrationWorker(ctx, &wg, serverStarted)
 
 	// Start main grpc server
-	grpcServer, err := givc_grpc.NewServer(agentEndpointConfig, grpcServices, &config.AccessControl)
+	grpcServer, err := givc_grpc.NewServer(agentEndpointConfig, grpcServices)
 	if err != nil {
 		log.Errorf("Cannot create grpc server config: %v", err)
 		return

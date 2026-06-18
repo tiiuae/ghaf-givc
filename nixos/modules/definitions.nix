@@ -54,8 +54,12 @@ let
     permit (
       principal,
       action,
-      resource == Module::"grpc"
-    );
+      resource
+    )
+    when {
+      (action == Command::"ServerReflectionInfo") &&
+      (resource == Module::"grpc")
+    };
   '';
 
   agentRulesType = types.submodule {

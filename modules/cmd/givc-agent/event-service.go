@@ -53,11 +53,12 @@ func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_con
 						Protocol: eventConfig.Transport.Protocol,
 					},
 					TlsConfig: config.Network.TlsConfig,
+					AclConfig: config.AccessControl,
 				}
 
 				var grpcProxyService []givc_types.GrpcServiceRegistration
 				grpcProxyService = append(grpcProxyService, eventProxyServer)
-				grpcServer, err := givc_grpc.NewServer(cfgEventServer, grpcProxyService, &config.AccessControl)
+				grpcServer, err := givc_grpc.NewServer(cfgEventServer, grpcProxyService)
 				if err != nil {
 					log.Errorf("event: cannot create grpc proxy server config: %v", err)
 					return

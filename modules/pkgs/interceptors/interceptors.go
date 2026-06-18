@@ -34,7 +34,8 @@ func GetServerInterceptors(acConfig *givc_types.AccessControl, tlsConfig *tls.Co
 	}
 
 	if tlsConfig != nil {
-		unaryInterceptors = append(unaryInterceptors, givc_util.CertIPVerifyInterceptor)
+		unaryInterceptors = append(unaryInterceptors, givc_util.CertIPVerifyUnaryInterceptor)
+		streamInterceptors = append(streamInterceptors, givc_util.CertIPVerifyStreamInterceptor)
 	}
 
 	if acConfig != nil && acConfig.AccessControlEnabled && acConfig.RulesFile != "" {

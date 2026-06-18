@@ -5,10 +5,10 @@ package interceptors
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
-	"reflect"
 	"strings"
 
 	"github.com/cedar-policy/cedar-go"
@@ -19,88 +19,48 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
-func toCedarValue(v reflect.Value) (cedartypes.Value, bool) {
-	if v.Kind() == reflect.Ptr {
-		if v.IsNil() {
-			return nil, false
-		}
-		v = v.Elem()
+func MapRequestToContext(req proto.Message) (cedartypes.RecordMap, error) {
+	b, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(req)
+	if err != nil {
+		return cedartypes.RecordMap{}, err
 	}
-
-	switch v.Kind() {
-	case reflect.String:
-		return cedartypes.String(v.String()), true
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return cedartypes.Long(v.Int()), true
-	case reflect.Bool:
-		return cedartypes.Boolean(v.Bool()), true
-	case reflect.Slice:
-		elements := make([]cedartypes.Value, 0, v.Len())
-		for j := 0; j < v.Len(); j++ {
-			if val, ok := toCedarValue(v.Index(j)); ok {
-				elements = append(elements, val)
-			}
-		}
-		return cedartypes.NewSet(elements...), true
-	case reflect.Struct:
-		// Map nested struct to Cedar Record
-		return cedartypes.NewRecord(MapRequestToContext(v.Interface())), true
-	default:
-		return nil, false
+	var record cedartypes.Record
+	if err := json.Unmarshal(b, &record); err != nil {
+		return cedartypes.RecordMap{}, err
 	}
+	rm := record.Map()
+	if rm == nil {
+		return cedartypes.RecordMap{}, nil
+	}
+	return rm, nil
 }
 
-func MapRequestToContext(req interface{}) cedartypes.RecordMap {
-	v := reflect.ValueOf(req)
-	if v.Kind() == reflect.Ptr {
-		if v.IsNil() {
-			return make(cedartypes.RecordMap)
-		}
-		v = v.Elem()
-	}
-	if v.Kind() != reflect.Struct {
-		return make(cedartypes.RecordMap)
-	}
-
-	ctxMap := make(cedartypes.RecordMap)
-	t := v.Type()
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		fieldType := t.Field(i)
-		fieldName := fieldType.Name
-
-		if !fieldType.IsExported() {
-			continue
-		}
-		if _, ok := fieldType.Tag.Lookup("protobuf"); !ok {
-			continue
-		}
-
-		if val, ok := toCedarValue(field); ok {
-			ctxMap[cedartypes.String(fieldName)] = val
-		}
-	}
-	return ctxMap
-}
-
-func getSource(ctx context.Context) string {
+func getSource(ctx context.Context) (string, error) {
 	p, ok := peer.FromContext(ctx)
 	if !ok {
-		return "unknown"
+		return "", fmt.Errorf("no peer info available in context")
 	}
 
 	if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok && len(tlsInfo.State.PeerCertificates) > 0 {
 		cert := tlsInfo.State.PeerCertificates[0]
 		if len(cert.DNSNames) > 0 {
 			name := cert.DNSNames[0]
-			name = strings.TrimPrefix(name, "DNS.1:")
-			if idx := strings.Index(name, ","); idx != -1 {
-				name = name[:idx]
+			name = strings.TrimSpace(name)
+			if name == "" {
+				return "", fmt.Errorf("invalid DNS SAN: DNS name not found")
 			}
+
+			name, _, _ = strings.Cut(name, ",") //First name only
+			if name == "" {
+				return "", fmt.Errorf("invalid DNS SAN")
+			}
+
 			log.Infof("Authorizing with principal from certificate SAN DNSName: %s", name)
-			return name
+			return name, nil
 		}
 	}
 
@@ -111,10 +71,11 @@ func getSource(ctx context.Context) string {
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		log.Infof("Authorizing with principal from peer IP: %s", host)
-		return host
+		return host, nil
 	}
 
-	return "unknown"
+	// Replaced "unknown" with empty string and an explicit error
+	return "", fmt.Errorf("unable to determine source principal from peer connection")
 }
 
 func NewAccessController(policyPath string) (grpc.UnaryServerInterceptor, grpc.StreamServerInterceptor, error) {
@@ -129,12 +90,29 @@ func NewAccessController(policyPath string) (grpc.UnaryServerInterceptor, grpc.S
 	}
 
 	authorize := func(ctx context.Context, fullMethod string, ctxMap cedartypes.RecordMap) error {
-		source := getSource(ctx)
-		firstSplit := strings.SplitN(strings.TrimPrefix(fullMethod, "/"), "/", 2)
-		secondSplit := strings.SplitN(firstSplit[0], ".", 2)
-		method := firstSplit[1]
-		moduleName := secondSplit[0]
-		grpcService := secondSplit[1]
+		if fullMethod == "" {
+			return status.Error(codes.InvalidArgument, "fullMethod cannot be empty")
+		}
+
+		var source string
+		if source, err = getSource(ctx); err != nil {
+			return status.Errorf(codes.PermissionDenied, "Cedar: unknow source! error: %v", err)
+		}
+
+		trimmedMethod := strings.TrimPrefix(fullMethod, "/")
+		if trimmedMethod == "" {
+			return status.Errorf(codes.InvalidArgument, "invalid gRPC method format: %s", fullMethod)
+		}
+
+		servicePart, method, found := strings.Cut(trimmedMethod, "/")
+		if !found || servicePart == "" || method == "" {
+			return status.Errorf(codes.InvalidArgument, "failed to parse method from fullMethod: %s", fullMethod)
+		}
+
+		moduleName, grpcService, found := strings.Cut(servicePart, ".")
+		if !found || moduleName == "" || grpcService == "" {
+			return status.Errorf(codes.InvalidArgument, "failed to parse module and service from fullMethod: %s", fullMethod)
+		}
 
 		ctxMap["service"] = cedartypes.String(grpcService)
 		cedarCtx := cedartypes.NewRecord(ctxMap)
@@ -168,7 +146,15 @@ func NewAccessController(policyPath string) (grpc.UnaryServerInterceptor, grpc.S
 
 	// Unary Interceptor
 	unary := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if err := authorize(ctx, info.FullMethod, MapRequestToContext(req)); err != nil {
+		protoReq, ok := req.(proto.Message)
+		if !ok {
+			return nil, status.Error(codes.Internal, "request is not a proto.Message")
+		}
+		record, err := MapRequestToContext(protoReq)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "failed to map request to cedar context")
+		}
+		if err := authorize(ctx, info.FullMethod, record); err != nil {
 			return nil, err
 		}
 		return handler(ctx, req)
