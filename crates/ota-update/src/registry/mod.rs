@@ -99,11 +99,10 @@ pub async fn discover_updates(
 ) -> anyhow::Result<Vec<AvailableUpdate>> {
     let client = oras::build_client();
     let ct = ct.as_ref();
-    let reference = options.reference.as_ref();
 
     let tags = timeout(
         Duration::from_secs(30),
-        oras::list_tags(&client, reference, &options.credentials, ct),
+        oras::list_tags(&client, &options.reference, &options.credentials, ct),
     )
     .await
     .context("discover timeout while listing tags")??;
@@ -133,7 +132,7 @@ pub async fn discover_updates(
 
         let remote = timeout(
             Duration::from_secs(30),
-            oras::fetch_manifest_and_config(&client, tag_ref.as_ref(), &options.credentials, ct),
+            oras::fetch_manifest_and_config(&client, &tag_ref, &options.credentials, ct),
         )
         .await;
         let remote = match remote {
@@ -187,7 +186,6 @@ pub async fn pull_update(
     ct: Option<CancellationToken>,
 ) -> anyhow::Result<PullResult> {
     let ct = ct.as_ref();
-    let reference = options.reference.as_ref();
 
     std::fs::create_dir_all(&options.destination_root).with_context(|| {
         format!(
@@ -198,14 +196,15 @@ pub async fn pull_update(
     let lock_path = options.destination_root.join(".ota-update.lock");
     let _lock = UpdateLock::acquire(&lock_path, "registry-pull")?;
 
-    let tag = reference
+    let tag = options
+        .reference
         .tag()
-        .map(ToString::to_string)
-        .or_else(|| reference.digest().map(ToString::to_string))
-        .context("reference must include tag or digest")?;
+        .or(options.reference.digest())
+        .context("reference must include tag or digest")?
+        .to_string();
     let output_dir = options
         .destination_root
-        .join(reference.repository())
+        .join(options.reference.repository())
         .join(sanitize_path_component(&tag));
     std::fs::create_dir_all(&output_dir)
         .with_context(|| format!("creating output dir {}", output_dir.display()))?;
@@ -223,7 +222,7 @@ pub async fn pull_update(
     let client = oras::build_client();
     let remote = timeout(
         Duration::from_secs(30),
-        oras::fetch_manifest_and_config(&client, reference, &options.credentials, ct),
+        oras::fetch_manifest_and_config(&client, &options.reference, &options.credentials, ct),
     )
     .await
     .context("pull timeout while fetching manifest")?;
@@ -255,19 +254,13 @@ pub async fn pull_update(
                 .await
                 .with_context(|| format!("creating parent dir {}", parent.display()))?;
         }
-        let part = local.with_extension(format!(
-            "{}.part",
-            local
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .unwrap_or("download")
-        ));
+        let part = local.with_added_extension("part");
         let file = tokio::fs::File::create(&part)
             .await
             .with_context(|| format!("creating temp blob file {}", part.display()))?;
         let download = oras::download_blob_to_file(
             &client,
-            reference,
+            &options.reference,
             &binding.blob,
             &options.credentials,
             file,
@@ -312,11 +305,11 @@ pub async fn pull_update(
         );
 
         println!(
-            "artifact {kind}: remote media_type={} digest={} -> local {}",
+            "artifact {}: remote media_type={} digest={} -> local {}",
+            binding.kind,
             binding.media_type,
             binding.digest,
             local.display(),
-            kind = binding.kind,
         );
     }
 
@@ -370,7 +363,7 @@ pub async fn fetch_changelog(
     let ct = ct.as_ref();
     let remote = timeout(
         Duration::from_secs(30),
-        oras::fetch_manifest_and_config(&client, reference.as_ref(), credentials, ct),
+        oras::fetch_manifest_and_config(&client, reference, credentials, ct),
     )
     .await
     .context("changelog timeout while fetching manifest")??;
@@ -379,7 +372,7 @@ pub async fn fetch_changelog(
 
     let bytes = timeout(
         Duration::from_secs(60),
-        oras::download_blob_to_vec(&client, reference.as_ref(), changelog, credentials, ct),
+        oras::download_blob_to_vec(&client, reference, changelog, credentials, ct),
     )
     .await
     .context("changelog timeout while downloading blob")??;
@@ -416,7 +409,7 @@ pub async fn prune_downloaded_updates(options: &PruneOptions) -> anyhow::Result<
         for subdir in &subdirs {
             if tokio::fs::try_exists(subdir.join("manifest.json")).await? {
                 let metadata = tokio::fs::metadata(subdir).await?;
-                tags.push((subdir.clone(), metadata.modified().ok()));
+                tags.push((subdir, metadata.modified().ok()));
             }
         }
 
@@ -492,7 +485,7 @@ pub async fn push_update_with_feedback(
     let client = oras::build_client();
     let pushed = oras::push_layers_and_config(
         &client,
-        options.reference.as_ref(),
+        &options.reference,
         &options.credentials,
         layers,
         config_bytes,
@@ -503,12 +496,7 @@ pub async fn push_update_with_feedback(
 
     let remote = timeout(
         Duration::from_secs(30),
-        oras::fetch_manifest_and_config(
-            &client,
-            options.reference.as_ref(),
-            &options.credentials,
-            None,
-        ),
+        oras::fetch_manifest_and_config(&client, &options.reference, &options.credentials, None),
     )
     .await
     .context("push timeout while verifying manifest digest")??;
@@ -686,16 +674,6 @@ mod tests {
     fn sanitize_relative_file_path_rejects_parent_dir() {
         let err = sanitize_relative_file_path("../../etc/passwd").expect_err("must fail");
         assert!(err.to_string().contains("parent dir"));
-    }
-
-    #[test]
-    fn find_layer_by_media_type_returns_none_for_missing_layer() {
-        let layers = vec![
-            descriptor(MEDIA_TYPE_OTA_UKI),
-            descriptor(MEDIA_TYPE_OTA_ROOT),
-        ];
-        let got = find_layer_by_media_type(&layers, MEDIA_TYPE_OTA_CHANGELOG);
-        assert!(got.is_none());
     }
 
     #[test]

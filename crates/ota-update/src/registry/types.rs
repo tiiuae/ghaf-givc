@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fmt;
+use std::ops::Deref;
 use std::str::FromStr;
 
 use anyhow::{Context, ensure};
@@ -19,10 +20,6 @@ impl UntaggedReference {
         self.0
     }
 
-    pub(crate) fn as_ref(&self) -> &Reference {
-        &self.0
-    }
-
     pub fn repository_path(&self) -> String {
         format!("{}/{}", self.0.resolve_registry(), self.0.repository())
     }
@@ -35,17 +32,30 @@ impl UntaggedReference {
     }
 }
 
+impl Deref for UntaggedReference {
+    type Target = Reference;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl TaggedReference {
     #[allow(dead_code)]
     pub(crate) fn into_inner(self) -> Reference {
         self.0
     }
 
-    pub(crate) fn as_ref(&self) -> &Reference {
-        &self.0
-    }
     pub fn repository_path(&self) -> String {
         format!("{}/{}", self.0.resolve_registry(), self.0.repository())
+    }
+}
+
+impl Deref for TaggedReference {
+    type Target = Reference;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

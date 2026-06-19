@@ -51,11 +51,12 @@ impl Drop for UpdateLock {
 
 fn lock_owner_text(purpose: &str) -> String {
     let pid = std::process::id();
-    let hostname = std::fs::read_to_string("/proc/sys/kernel/hostname")
-        .ok()
-        .map(|value| value.trim().to_string())
+    let data = std::fs::read_to_string("/proc/sys/kernel/hostname").ok();
+    let hostname = data
+        .as_ref()
+        .map(|value| value.trim())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "unknown".to_string());
+        .unwrap_or("unknown");
 
     format!("host={hostname}\npid={pid}\npurpose={purpose}\n")
 }
