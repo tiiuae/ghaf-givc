@@ -9,7 +9,6 @@ use oci_client::client::ClientProtocol;
 use ota_update::image::install::validate_manifest_path;
 use ota_update::registry::{
     PullOptions, PushOptions, RegistryCredentials, TaggedReference, pull_update, push_update,
-    set_client_protocol,
 };
 
 #[derive(Debug, Parser)]
@@ -77,15 +76,18 @@ async fn main() -> anyhow::Result<()> {
     validate_manifest_path(&args.manifest).await?;
 
     let creds = credentials(&args)?;
-    if args.insecure {
-        set_client_protocol(ClientProtocol::Http);
-    }
+    let client_protocol = if args.insecure {
+        ClientProtocol::Http
+    } else {
+        ClientProtocol::default()
+    };
     let reference: TaggedReference = args.reference.parse()?;
     let push = push_update(&PushOptions {
         reference: reference.clone(),
         manifest_path: args.manifest.clone(),
         changelog_path: args.changelog.clone(),
         credentials: creds.clone(),
+        client_protocol,
     })
     .await?;
 
@@ -96,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
             reference,
             destination_root: output_root.clone(),
             credentials: creds,
+            client_protocol,
             install: false,
             validate: true,
         },

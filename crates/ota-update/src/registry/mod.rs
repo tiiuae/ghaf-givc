@@ -18,11 +18,8 @@ use tokio_util::sync::CancellationToken;
 use crate::image::install::install_from_manifest_path;
 use crate::image::manifest::Manifest;
 use crate::lock::UpdateLock;
+pub use oci_client::client::ClientProtocol;
 pub use types::{TaggedReference, UntaggedReference};
-
-pub fn set_client_protocol(protocol: oci_client::client::ClientProtocol) {
-    oras::set_client_protocol(protocol);
-}
 
 fn notify<T>(feedback: Option<&Sender<T>>, event: T) {
     if let Some(tx) = feedback {
@@ -55,6 +52,7 @@ pub struct AvailableUpdate {
 pub struct DiscoverOptions {
     pub reference: UntaggedReference,
     pub credentials: RegistryCredentials,
+    pub client_protocol: ClientProtocol,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,6 +60,7 @@ pub struct PullOptions {
     pub reference: TaggedReference,
     pub destination_root: PathBuf,
     pub credentials: RegistryCredentials,
+    pub client_protocol: ClientProtocol,
     pub install: bool,
     pub validate: bool,
 }
@@ -78,6 +77,7 @@ pub struct PushOptions {
     pub manifest_path: PathBuf,
     pub changelog_path: Option<PathBuf>,
     pub credentials: RegistryCredentials,
+    pub client_protocol: ClientProtocol,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -97,7 +97,7 @@ pub async fn discover_updates(
     feedback: Option<&Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
 ) -> anyhow::Result<Vec<AvailableUpdate>> {
-    let client = oras::build_client();
+    let client = oras::build_client(options.client_protocol.clone());
     let ct = ct.as_ref();
 
     let tags = timeout(
@@ -219,7 +219,7 @@ pub async fn pull_update(
 
     println!("pull layout: {}", output_dir.display());
 
-    let client = oras::build_client();
+    let client = oras::build_client(options.client_protocol.clone());
     let remote = timeout(
         Duration::from_secs(30),
         oras::fetch_manifest_and_config(&client, &options.reference, &options.credentials, ct),
@@ -356,10 +356,11 @@ pub async fn pull_update(
 pub async fn fetch_changelog(
     reference: &TaggedReference,
     credentials: &RegistryCredentials,
+    client_protocol: ClientProtocol,
     feedback: Option<&Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
 ) -> anyhow::Result<String> {
-    let client = oras::build_client();
+    let client = oras::build_client(client_protocol);
     let ct = ct.as_ref();
     let remote = timeout(
         Duration::from_secs(30),
@@ -482,7 +483,7 @@ pub async fn push_update_with_feedback(
         });
     }
 
-    let client = oras::build_client();
+    let client = oras::build_client(options.client_protocol.clone());
     let pushed = oras::push_layers_and_config(
         &client,
         &options.reference,

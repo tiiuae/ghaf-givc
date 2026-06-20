@@ -5,7 +5,6 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{Context, ensure};
@@ -26,8 +25,6 @@ const PROGRESS_EVENT_STEP: u64 = 10 * 1024 * 1024;
 // Match rust-oci-client's default push chunk size so one read usually becomes one upload chunk.
 const IO_CHUNK_CAPACITY: usize = 4 * 1024 * 1024;
 const IO_CHUNK_TIMEOUT: Duration = Duration::from_secs(120);
-
-static CLIENT_PROTOCOL: OnceLock<ClientProtocol> = OnceLock::new();
 
 #[derive(Debug, thiserror::Error)]
 #[error("operation cancelled")]
@@ -145,12 +142,7 @@ pub(crate) fn to_registry_auth(credentials: &RegistryCredentials) -> RegistryAut
     }
 }
 
-pub fn set_client_protocol(protocol: ClientProtocol) {
-    let _ = CLIENT_PROTOCOL.set(protocol);
-}
-
-pub(crate) fn build_client() -> Client {
-    let protocol = CLIENT_PROTOCOL.get().cloned().unwrap_or_default();
+pub(crate) fn build_client(protocol: ClientProtocol) -> Client {
     Client::new(ClientConfig {
         protocol,
         ..Default::default()

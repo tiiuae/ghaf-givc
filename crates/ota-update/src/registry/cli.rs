@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use clap::{Parser, Subcommand, ValueEnum};
-use oci_client::client::ClientProtocol;
 use std::path::PathBuf;
 
 use super::progress::RegistryEvent;
-use super::set_client_protocol;
 use super::{
-    DiscoverOptions, PullOptions, RegistryCredentials, TaggedReference, UntaggedReference,
-    discover_updates, fetch_changelog, prune_downloaded_updates, pull_update,
+    ClientProtocol, DiscoverOptions, PullOptions, RegistryCredentials, TaggedReference,
+    UntaggedReference, discover_updates, fetch_changelog, prune_downloaded_updates, pull_update,
     push_update_with_feedback,
 };
 
@@ -115,9 +113,11 @@ impl RegistryCommand {
     #[allow(clippy::missing_errors_doc)]
     pub async fn handle(self) -> anyhow::Result<()> {
         let credentials = self.credentials();
-        if self.insecure {
-            set_client_protocol(ClientProtocol::Http);
-        }
+        let client_protocol = if self.insecure {
+            ClientProtocol::Http
+        } else {
+            ClientProtocol::default()
+        };
         let (feedback_tx, feedback_rx) = async_channel::unbounded();
         let progress_task = tokio::spawn(feedback_printer(self.output, feedback_rx));
 
@@ -127,6 +127,7 @@ impl RegistryCommand {
                     &DiscoverOptions {
                         reference,
                         credentials,
+                        client_protocol,
                     },
                     Some(&feedback_tx),
                     None,
@@ -163,6 +164,7 @@ impl RegistryCommand {
                         reference,
                         destination_root: destination.into(),
                         credentials,
+                        client_protocol,
                         install,
                         validate: validate && !no_validate,
                     },
@@ -183,8 +185,14 @@ impl RegistryCommand {
                 Ok(())
             }
             RegistryAction::Changelog { reference } => {
-                let changelog =
-                    fetch_changelog(&reference, &credentials, Some(&feedback_tx), None).await?;
+                let changelog = fetch_changelog(
+                    &reference,
+                    &credentials,
+                    client_protocol,
+                    Some(&feedback_tx),
+                    None,
+                )
+                .await?;
                 println!("{changelog}");
                 Ok(())
             }
@@ -209,6 +217,7 @@ impl RegistryCommand {
                         manifest_path: manifest,
                         changelog_path: changelog,
                         credentials,
+                        client_protocol,
                     },
                     Some(&feedback_tx),
                 )
