@@ -141,8 +141,8 @@ mod tests {
         let untagged: UntaggedReference = "registry.example/repo".parse().expect("untagged");
         let tagged: TaggedReference = "registry.example/repo:v1".parse().expect("tagged");
 
-        let _borrowed_untagged = untagged.as_ref();
-        let _borrowed_tagged = tagged.as_ref();
+        let _borrowed_untagged = &untagged;
+        let _borrowed_tagged = &tagged;
         let _owned_untagged = untagged.into_inner();
         let _owned_tagged = tagged.into_inner();
     }
