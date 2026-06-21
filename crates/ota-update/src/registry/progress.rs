@@ -4,6 +4,8 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
+use super::MediaType;
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum RegistryEvent {
@@ -49,12 +51,12 @@ pub enum RegistryEvent {
         layers: usize,
     },
     LayerUploading {
-        kind: String,
+        kind: MediaType,
         uploaded: u64,
         total: Option<u64>,
     },
     LayerUploaded {
-        kind: String,
+        kind: MediaType,
         digest: String,
     },
     ManifestPushed {

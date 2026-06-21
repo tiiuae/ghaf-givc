@@ -87,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
         manifest_path: args.manifest.clone(),
         changelog_path: args.changelog.clone(),
         credentials: creds.clone(),
-        client_protocol,
+        client_protocol: client_protocol.clone(),
     })
     .await?;
 

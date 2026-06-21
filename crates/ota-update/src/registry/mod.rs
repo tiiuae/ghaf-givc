@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod cli;
+pub mod media_type;
 mod oras;
 pub mod progress;
 pub mod types;
@@ -18,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 use crate::image::install::install_from_manifest_path;
 use crate::image::manifest::Manifest;
 use crate::lock::UpdateLock;
+pub use media_type::MediaType;
 pub use oci_client::client::ClientProtocol;
 pub use types::{TaggedReference, UntaggedReference};
 
@@ -26,12 +28,6 @@ fn notify<T>(feedback: Option<&Sender<T>>, event: T) {
         let _ = tx.try_send(event);
     }
 }
-
-pub const MEDIA_TYPE_OTA_MANIFEST: &str = "application/vnd.ghaf.ota.manifest.v1+json";
-pub const MEDIA_TYPE_OTA_UKI: &str = "application/vnd.ghaf.ota.uki.v1+efi";
-pub const MEDIA_TYPE_OTA_ROOT: &str = "application/vnd.ghaf.ota.root.v1+raw";
-pub const MEDIA_TYPE_OTA_VERITY: &str = "application/vnd.ghaf.ota.verity.v1+raw";
-pub const MEDIA_TYPE_OTA_CHANGELOG: &str = "application/vnd.ghaf.ota.changelog.v1+plain";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RegistryCredentials {
@@ -307,7 +303,7 @@ pub async fn pull_update(
         println!(
             "artifact {}: remote media_type={} digest={} -> local {}",
             binding.kind,
-            binding.media_type,
+            binding.kind,
             binding.digest,
             local.display(),
         );
@@ -368,7 +364,7 @@ pub async fn fetch_changelog(
     )
     .await
     .context("changelog timeout while fetching manifest")??;
-    let changelog = find_layer_by_media_type(&remote.layers, MEDIA_TYPE_OTA_CHANGELOG)
+    let changelog = find_layer_by_media_type(&remote.layers, MediaType::Changelog)
         .context("no changelog layer found for reference")?;
 
     let bytes = timeout(
@@ -455,15 +451,15 @@ pub async fn push_update_with_feedback(
     let mut layers = Vec::new();
     layers.push(layer_input_with_title(
         manifest.kernel.full_name(base_dir),
-        MEDIA_TYPE_OTA_UKI,
+        MediaType::Uki,
     )?);
     layers.push(layer_input_with_title(
         manifest.store.full_name(base_dir),
-        MEDIA_TYPE_OTA_ROOT,
+        MediaType::Root,
     )?);
     layers.push(layer_input_with_title(
         manifest.verity.full_name(base_dir),
-        MEDIA_TYPE_OTA_VERITY,
+        MediaType::Verity,
     )?);
 
     if let Some(changelog_path) = &options.changelog_path {
@@ -478,7 +474,7 @@ pub async fn push_update_with_feedback(
         );
         layers.push(oras::LayerInput {
             path: changelog_path.clone(),
-            media_type: MEDIA_TYPE_OTA_CHANGELOG.to_string(),
+            media_type: MediaType::Changelog,
             annotations: Some(annotations),
         });
     }
@@ -490,7 +486,7 @@ pub async fn push_update_with_feedback(
         &options.credentials,
         layers,
         config_bytes,
-        MEDIA_TYPE_OTA_MANIFEST,
+        MediaType::Manifest,
         feedback,
     )
     .await?;
@@ -518,7 +514,10 @@ pub async fn push_update_with_feedback(
     })
 }
 
-fn layer_input_with_title(path: PathBuf, media_type: &str) -> anyhow::Result<oras::LayerInput> {
+fn layer_input_with_title(
+    path: PathBuf,
+    media_type: MediaType,
+) -> anyhow::Result<oras::LayerInput> {
     let title = path
         .file_name()
         .and_then(|value| value.to_str())
@@ -530,16 +529,15 @@ fn layer_input_with_title(path: PathBuf, media_type: &str) -> anyhow::Result<ora
     );
     Ok(oras::LayerInput {
         path,
-        media_type: media_type.to_string(),
+        media_type,
         annotations: Some(annotations),
     })
 }
 
 #[derive(Debug)]
 struct ArtifactBinding {
-    kind: &'static str,
+    kind: MediaType,
     blob: oras::BlobDescriptor,
-    media_type: String,
     digest: String,
     local_name: String,
 }
@@ -549,30 +547,15 @@ fn select_artifact_bindings(
     layers: &[oras::BlobDescriptor],
 ) -> anyhow::Result<Vec<ArtifactBinding>> {
     let mut bindings = vec![
-        required_binding(
-            layers,
-            MEDIA_TYPE_OTA_UKI,
-            "uki",
-            manifest.kernel.name.clone(),
-        )?,
-        required_binding(
-            layers,
-            MEDIA_TYPE_OTA_ROOT,
-            "root",
-            manifest.store.name.clone(),
-        )?,
-        required_binding(
-            layers,
-            MEDIA_TYPE_OTA_VERITY,
-            "verity",
-            manifest.verity.name.clone(),
-        )?,
+        required_binding(layers, MediaType::Uki, manifest.kernel.name.clone())?,
+        required_binding(layers, MediaType::Root, manifest.store.name.clone())?,
+        required_binding(layers, MediaType::Verity, manifest.verity.name.clone())?,
     ];
 
-    if let Some(layer) = find_layer_by_media_type(layers, MEDIA_TYPE_OTA_CHANGELOG) {
+    if let Some(layer) = find_layer_by_media_type(layers, MediaType::Changelog) {
         bindings.push(make_binding(
             layer,
-            "changelog",
+            MediaType::Changelog,
             changelog_local_name(layer),
         ));
     }
@@ -582,31 +565,31 @@ fn select_artifact_bindings(
 
 fn required_binding(
     layers: &[oras::BlobDescriptor],
-    media_type: &str,
-    kind: &'static str,
+    media_type: MediaType,
     local_name: String,
 ) -> anyhow::Result<ArtifactBinding> {
     let layer = find_layer_by_media_type(layers, media_type)
         .with_context(|| format!("missing required artifact layer media_type={media_type}"))?;
-    Ok(make_binding(layer, kind, local_name))
+    Ok(make_binding(layer, media_type, local_name))
 }
 
 fn find_layer_by_media_type<'a>(
     layers: &'a [oras::BlobDescriptor],
-    media_type: &str,
+    media_type: MediaType,
 ) -> Option<&'a oras::BlobDescriptor> {
-    layers.iter().find(|layer| layer.media_type == media_type)
+    layers
+        .iter()
+        .find(|layer| layer.media_type == media_type.as_ref())
 }
 
 fn make_binding(
     layer: &oras::BlobDescriptor,
-    kind: &'static str,
+    kind: MediaType,
     local_name: String,
 ) -> ArtifactBinding {
     ArtifactBinding {
         kind,
         blob: layer.clone(),
-        media_type: layer.media_type.clone(),
         digest: layer.digest.clone(),
         local_name,
     }
@@ -656,10 +639,10 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::time::{Duration, sleep};
 
-    fn descriptor(media_type: &str) -> oras::BlobDescriptor {
+    fn descriptor(media_type: MediaType) -> oras::BlobDescriptor {
         oras::BlobDescriptor {
             digest: "sha256:deadbeef".to_string(),
-            media_type: media_type.to_string(),
+            media_type: media_type.as_ref().to_string(),
             size: 10,
             annotations: None,
         }
@@ -667,7 +650,7 @@ mod tests {
 
     #[test]
     fn changelog_local_name_defaults_when_title_missing() {
-        let value = changelog_local_name(&descriptor(MEDIA_TYPE_OTA_CHANGELOG));
+        let value = changelog_local_name(&descriptor(MediaType::Changelog));
         assert_eq!(value, "changelog.txt");
     }
 
@@ -701,7 +684,7 @@ mod tests {
                 unpacked_size: None,
             },
         };
-        let layers = vec![descriptor(MEDIA_TYPE_OTA_UKI)];
+        let layers = vec![descriptor(MediaType::Uki)];
         let err = select_artifact_bindings(&manifest, &layers).expect_err("must fail");
         assert!(err.to_string().contains("missing required artifact layer"));
     }
@@ -749,7 +732,7 @@ mod tests {
 
     #[test]
     fn layer_input_with_title_uses_basename_annotation() {
-        let input = layer_input_with_title(PathBuf::from("dir/image.efi"), MEDIA_TYPE_OTA_UKI)
+        let input = layer_input_with_title(PathBuf::from("dir/image.efi"), MediaType::Uki)
             .expect("layer input");
         let title = input
             .annotations

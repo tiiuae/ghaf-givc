@@ -19,7 +19,7 @@ use tokio_util::bytes::Bytes;
 use tokio_util::io::ReaderStream;
 use tokio_util::sync::CancellationToken;
 
-use super::{RegistryCredentials, notify, progress};
+use super::{MediaType, RegistryCredentials, notify, progress};
 
 const PROGRESS_EVENT_STEP: u64 = 10 * 1024 * 1024;
 // Match rust-oci-client's default push chunk size so one read usually becomes one upload chunk.
@@ -51,7 +51,7 @@ pub(crate) struct RemoteImage {
 #[derive(Clone, Debug)]
 pub(crate) struct LayerInput {
     pub path: PathBuf,
-    pub media_type: String,
+    pub media_type: MediaType,
     pub annotations: Option<BTreeMap<String, String>>,
 }
 
@@ -320,7 +320,7 @@ async fn digest_and_size(path: &Path) -> anyhow::Result<(String, u64)> {
 
 fn file_stream_with_progress(
     file: tokio::fs::File,
-    kind: String,
+    kind: MediaType,
     total: u64,
     feedback: Option<&async_channel::Sender<progress::RegistryEvent>>,
 ) -> impl Stream<Item = oci_client::errors::Result<Bytes>> {
@@ -375,7 +375,7 @@ pub(crate) async fn push_layers_and_config(
     credentials: &RegistryCredentials,
     layer_inputs: Vec<LayerInput>,
     config_bytes: Vec<u8>,
-    config_media_type: &str,
+    config_media_type: MediaType,
     feedback: Option<&async_channel::Sender<progress::RegistryEvent>>,
 ) -> anyhow::Result<String> {
     let auth = to_registry_auth(credentials);
@@ -401,7 +401,7 @@ pub(crate) async fn push_layers_and_config(
         notify(
             feedback,
             progress::RegistryEvent::LayerUploading {
-                kind: input.media_type.clone(),
+                kind: input.media_type,
                 uploaded: 0,
                 total: Some(total),
             },
@@ -410,7 +410,7 @@ pub(crate) async fn push_layers_and_config(
         let file = tokio::fs::File::open(&input.path)
             .await
             .with_context(|| format!("opening layer file {}", input.path.display()))?;
-        let stream = file_stream_with_progress(file, input.media_type.clone(), total, feedback);
+        let stream = file_stream_with_progress(file, input.media_type, total, feedback);
 
         let _location = client
             .push_blob_stream(reference, stream, &digest)
@@ -420,13 +420,13 @@ pub(crate) async fn push_layers_and_config(
         notify(
             feedback,
             progress::RegistryEvent::LayerUploaded {
-                kind: input.media_type.clone(),
+                kind: input.media_type,
                 digest: digest.clone(),
             },
         );
 
         layer_descriptors.push(OciDescriptor {
-            media_type: input.media_type,
+            media_type: input.media_type.as_ref().to_string(),
             digest,
             size: total as i64,
             annotations: input.annotations,
@@ -436,7 +436,7 @@ pub(crate) async fn push_layers_and_config(
 
     let config_digest = format!("sha256:{}", hex::encode(Sha256::digest(&config_bytes)));
     let config_descriptor = OciDescriptor {
-        media_type: config_media_type.to_string(),
+        media_type: config_media_type.as_ref().to_string(),
         digest: config_digest,
         size: config_bytes.len() as i64,
         annotations: None,
@@ -545,7 +545,7 @@ mod tests {
         let (tx, rx) = unbounded();
 
         let chunks =
-            file_stream_with_progress(file, "root".to_string(), PROGRESS_EVENT_STEP + 1, Some(&tx))
+            file_stream_with_progress(file, MediaType::Root, PROGRESS_EVENT_STEP + 1, Some(&tx))
                 .try_collect::<Vec<_>>()
                 .await
                 .expect("stream");
@@ -555,7 +555,7 @@ mod tests {
         while let Ok(event) = rx.try_recv() {
             saw_progress.push(event);
         }
-        assert!(saw_progress.iter().any(|event| matches!(event, RegistryEvent::LayerUploading { kind, uploaded, total } if kind == "root" && *uploaded >= PROGRESS_EVENT_STEP && *total == Some(PROGRESS_EVENT_STEP + 1))));
+        assert!(saw_progress.iter().any(|event| matches!(event, RegistryEvent::LayerUploading { kind, uploaded, total } if *kind == MediaType::Root && *uploaded >= PROGRESS_EVENT_STEP && *total == Some(PROGRESS_EVENT_STEP + 1))));
         let _ = std::fs::remove_file(path);
     }
 }
