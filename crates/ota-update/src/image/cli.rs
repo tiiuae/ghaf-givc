@@ -7,7 +7,7 @@ use super::install::{
 };
 use super::plan::Plan;
 use clap::{Parser, Subcommand};
-use std::path::Path;
+use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 pub struct ImageUpdate {
@@ -25,7 +25,7 @@ pub enum ImageAction {
     Install {
         /// Path to manifest.json
         #[arg(long)]
-        manifest: String,
+        manifest: PathBuf,
 
         /// Validate manifest checksums before install
         #[arg(long, conflicts_with = "no_validate")]
@@ -40,7 +40,7 @@ pub enum ImageAction {
     Validate {
         /// Path to manifest.json
         #[arg(long)]
-        manifest: String,
+        manifest: PathBuf,
     },
 
     /// Remove installed image slot
@@ -65,16 +65,11 @@ impl ImageUpdate {
                 validate,
                 no_validate,
             } => {
-                install_from_manifest_path(
-                    Path::new(&manifest),
-                    validate && !no_validate,
-                    self.dry_run,
-                )
-                .await
+                install_from_manifest_path(&manifest, validate && !no_validate, self.dry_run).await
             }
 
             ImageAction::Validate { manifest } => {
-                validate_manifest_path(Path::new(&manifest)).await?;
+                validate_manifest_path(&manifest).await?;
                 println!("Manifest validation successful.");
                 Ok(())
             }

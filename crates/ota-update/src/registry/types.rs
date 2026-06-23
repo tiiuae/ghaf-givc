@@ -77,7 +77,6 @@ impl FromStr for UntaggedReference {
     fn from_str(input: &str) -> anyhow::Result<Self> {
         let reference: Reference = input
             .parse()
-            .map_err(anyhow::Error::new)
             .with_context(|| format!("invalid OCI reference: {input}"))?;
         // NOTE: untagged ref may have tag value "latest"
         ensure!(
@@ -98,7 +97,6 @@ impl FromStr for TaggedReference {
     fn from_str(input: &str) -> anyhow::Result<Self> {
         let reference: Reference = input
             .parse()
-            .map_err(anyhow::Error::new)
             .with_context(|| format!("invalid OCI reference: {input}"))?;
         ensure!(
             reference.tag().is_some() || reference.digest().is_some(),
