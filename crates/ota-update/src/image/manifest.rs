@@ -2,17 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, ensure};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 use super::Version;
 use super::checksum::read_sha256;
 
 #[serde_as]
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct File {
     #[serde(rename = "file")]
     pub name: String,
@@ -25,7 +26,7 @@ pub struct File {
     pub unpacked_size: Option<u64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Manifest {
     pub meta: HashMap<String, String>,
     #[serde(default)]
@@ -41,9 +42,26 @@ pub struct Manifest {
 
 impl Manifest {
     pub(crate) fn from_file(filename: &Path) -> anyhow::Result<Self> {
-        let content = std::fs::read_to_string(filename).context("Read manifest")?;
-        let this = serde_json::from_str(&content).context("Deserializing manifest)")?;
+        let content = std::fs::read(filename).context("Read manifest")?;
+        Self::from_slice(&content)
+    }
+
+    pub(crate) fn from_slice(content: &[u8]) -> anyhow::Result<Self> {
+        let this = serde_json::from_slice(content).context("Deserializing manifest")?;
         Ok(this)
+    }
+
+    pub(crate) fn write_to_file(&self, filename: &Path) -> anyhow::Result<()> {
+        let content = serde_json::to_vec_pretty(self).context("Serializing manifest")?;
+        std::fs::write(filename, content)
+            .with_context(|| format!("writing manifest to {}", filename.display()))
+    }
+
+    pub(crate) fn normalize_paths(&mut self) -> anyhow::Result<()> {
+        self.kernel.normalize_path()?;
+        self.store.normalize_path()?;
+        self.verity.normalize_path()?;
+        Ok(())
     }
 
     #[must_use]
@@ -87,6 +105,11 @@ impl File {
             .is_some_and(|ext| ext.eq_ignore_ascii_case("zst"))
     }
 
+    pub(crate) fn normalize_path(&mut self) -> anyhow::Result<()> {
+        self.name = normalize_relative_path(&self.name)?;
+        Ok(())
+    }
+
     async fn validate(&self, base_dir: &Path, checksum: bool) -> anyhow::Result<()> {
         let full_name = self.full_name(base_dir);
         if !tokio::fs::try_exists(&full_name).await? {
@@ -110,4 +133,32 @@ impl File {
         }
         Ok(())
     }
+}
+
+fn normalize_relative_path(value: &str) -> anyhow::Result<String> {
+    let path = Path::new(value);
+    if path.is_absolute() {
+        anyhow::bail!("absolute path is not allowed in manifest: {value}");
+    }
+
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(item) => out.push(item),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                anyhow::bail!("parent dir '..' is not allowed in manifest path: {value}");
+            }
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                anyhow::bail!("non-relative path is not allowed in manifest: {value}");
+            }
+        }
+    }
+
+    if out.as_os_str().is_empty() {
+        anyhow::bail!("empty path is not allowed in manifest");
+    }
+
+    let normalized: OsString = out.into_os_string();
+    Ok(normalized.to_string_lossy().into_owned())
 }

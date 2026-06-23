@@ -7,17 +7,17 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
-anyhow = "1.0.102"
+anyhow.workspace = true
 glib = { version = "*", optional = true, features = [] }
 prost = "0.14"
-serde = { version = "1.0.219", features = ["derive"] }
-strum = { version = "0.28", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+strum = { workspace = true, features = ["derive"] }
 tokio-vsock = "*"
-tonic = { version = "0.14", features = ["tls-aws-lc"] }
-tonic-prost = "0.14"
+tonic = { workspace = true, features = ["tls-aws-lc"] }
+tonic-prost.workspace = true
 
 [build-dependencies]
-tonic-prost-build = "0.14"
+tonic-prost-build.workspace = true
 
 [features]
 glib = ["dep:glib"]

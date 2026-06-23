@@ -82,9 +82,13 @@
                 inherit crane;
                 src = ./.;
               };
+              ota-oras-push = pkgs.callPackage ./nixos/packages/ota-oras-push.nix {
+                src = ./.;
+              };
             in
             {
               inherit givc-admin;
+              inherit ota-oras-push;
               givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
               givc-cli = givc-admin.cli;
               ota-update = givc-admin.ota;
@@ -94,6 +98,16 @@
               };
               ota-update-server = givc-admin.update_server;
             };
+
+          # Apps
+          apps.ota-update = {
+            type = "app";
+            program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.ota-update}/bin/ota-update";
+          };
+          apps.ota-oras-push = {
+            type = "app";
+            program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.ota-oras-push}/bin/ota-oras-push";
+          };
         };
       flake = {
         # NixOS Modules
