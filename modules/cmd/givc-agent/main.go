@@ -29,6 +29,7 @@ import (
 	givc_servicemanager "givc/modules/pkgs/servicemanager"
 	givc_statsmanager "givc/modules/pkgs/statsmanager"
 	givc_types "givc/modules/pkgs/types"
+	givc_vm "givc/modules/pkgs/vm"
 	givc_wifimanager "givc/modules/pkgs/wifimanager"
 
 	log "github.com/sirupsen/logrus"
@@ -85,6 +86,16 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 		} else {
 			log.Warnf("Exec capability enabled - allows remote command execution!")
 			grpcServices = append(grpcServices, execServer)
+		}
+	}
+
+	if config.Capabilities.Vm.Enabled {
+		vmServer, err := givc_vm.NewVmControlServer()
+		if err != nil {
+			log.Errorf("Cannot create vm server: %v", err)
+		} else {
+			log.Infof("VM management capability enabled")
+			grpcServices = append(grpcServices, vmServer)
 		}
 	}
 

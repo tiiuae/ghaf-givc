@@ -14,6 +14,7 @@ use givc_common::pb;
 use givc_common::pb::Generation;
 pub use givc_common::pb::stats::StatsResponse;
 pub use givc_common::pb::stats::SysinfoResponse as Sysinfo;
+pub use givc_common::pb::vm::VmSizeResponse;
 pub use givc_common::query::{Event, QueryResult};
 use givc_common::types::{EndpointEntry, TransportConfig, UnitStatus, UnitType};
 
@@ -546,5 +547,27 @@ impl AdminClient {
         let response = self.connect_to().await?.ctap(req).await?.into_inner();
 
         Ok(response.output)
+    }
+
+    /// Adjust VM memory limits
+    /// Fails if named VM is not running or does not have memory sizing enabled
+    pub async fn vm_size(
+        &self,
+        vm: String,
+        minimum: Option<u64>,
+        maximum: Option<u64>,
+    ) -> anyhow::Result<VmSizeResponse> {
+        let req = pb::vm::VmSizeRequest {
+            vm,
+            minimum,
+            maximum,
+        };
+
+        self.connect_to()
+            .await?
+            .vm_size(req)
+            .await
+            .map(tonic::Response::into_inner)
+            .rewrap_err()
     }
 }
