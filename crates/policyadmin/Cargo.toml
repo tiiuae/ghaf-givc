@@ -8,11 +8,7 @@ version = "0.0.1"
 
 [dependencies]
 anyhow.workspace = true
-async-channel.workspace = true
-async-fn-stream = "*"
-async-stream.workspace = true
 base16ct = "1"
-crossbeam-channel = "0.5.15"
 gix = { version = "0.84", default-features = false, features = [
   "blocking-network-client",
   "blocking-http-transport-reqwest",
@@ -29,17 +25,10 @@ reqwest = { workspace = true, default-features = false, features = [
 serde_json.workspace = true
 serde = { workspace = true, features = ["derive"] }
 sha2.workspace = true
-tempfile = "3.24.0"
-tokio-stream.workspace = true
 tokio = { workspace = true, features = [
   "rt-multi-thread",
   "time",
   "macros",
   "fs",
 ] }
-tokio-util = "0.7"
-tonic-reflection.workspace = true
-tonic-types.workspace = true
-tonic = { workspace = true, features = ["tls-aws-lc"] }
 tracing.workspace = true
-walkdir.workspace = true

@@ -82,6 +82,12 @@
             command = "./scripts/update-copyright.sh $@";
             category = "tools";
           }
+          {
+            help = "GIVC explorer";
+            name = "givc-explorer";
+            command = "./scripts/givc-explorer.sh";
+            category = "tools";
+          }
         ];
       };
       pre-commit.settings = {

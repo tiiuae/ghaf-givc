@@ -53,6 +53,7 @@ func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_con
 						Protocol: eventConfig.Transport.Protocol,
 					},
 					TlsConfig: config.Network.TlsConfig,
+					AclConfig: config.AccessControl,
 				}
 
 				var grpcProxyService []givc_types.GrpcServiceRegistration

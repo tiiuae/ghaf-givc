@@ -141,7 +141,6 @@ func main() {
 	// Validate required arguments
 	if *configFile == "" {
 		log.Errorf("Configuration file is required. Use -config flag to specify the path.")
-		log.Errorf("Usage: %s -config <path-to-config.json> [-debug]", filepath.Base(os.Args[0]))
 		os.Exit(1)
 	}
 

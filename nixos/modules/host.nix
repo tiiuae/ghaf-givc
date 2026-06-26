@@ -9,21 +9,27 @@
 }:
 let
   cfg = config.givc.host;
+  rulesFile = "givc-agent-acl/rules.cedar";
+  rulesFilePath = "/etc/${rulesFile}";
   givc-agent = pkgs."givc-agent" or self.packages.${pkgs.system}."givc-agent";
   ota-update = pkgs."ota-update" or self.packages.${pkgs.system}."ota-update";
   inherit (lib)
     mkOption
     mkEnableOption
     mkIf
+    optionals
     types
     literalExpression
     optionalString
     ;
   inherit (builtins) toJSON;
-  inherit (import ./definitions.nix { inherit config lib; })
+  inherit (import ./definitions.nix { inherit config lib pkgs; })
     transportSubmodule
     tlsSubmodule
     policyClientSubmodule
+    agentAclSubmodule
+    agentRulesToCedar
+    validateCedarRules
     ;
   # GIVC agent JSON configuration for host
   agentConfig = {
@@ -33,11 +39,24 @@ let
       subType = 1;
     };
     inherit (cfg) network capabilities;
+    accessControl = {
+      inherit (cfg.accessControl) enable;
+      rulesFile = rulesFilePath;
+    };
   };
+  policyText = agentRulesToCedar cfg.accessControl.agentRules;
+  cedarPolicyFile = pkgs.writeText "policy.cedar" policyText;
+  validatedCedarRules = validateCedarRules cedarPolicyFile;
 in
 {
   options.givc.host = {
     enable = mkEnableOption "givc host agent module, which is responsible for managing system VMs and app VMs.";
+
+    accessControl = mkOption {
+      type = agentAclSubmodule;
+      default = { };
+      description = "Access control settings for the GIVC agent module.";
+    };
 
     network = {
       agent = {
@@ -213,6 +232,21 @@ in
 
     # JSON configuration for GIVC host agent
     environment.etc."givc-agent/config.json".text = toJSON agentConfig;
+    givc.host.accessControl.agentRules = [
+      {
+        permittedVms = [ cfg.network.admin.transport.name ];
+        permittedModules = [
+          "systemd"
+          "locale"
+        ]
+        ++ optionals cfg.capabilities.policy.enable [
+          "policyadmin"
+        ]
+        ++ optionals cfg.capabilities.exec.enable [
+          "exec"
+        ];
+      }
+    ];
 
     systemd.services."givc-${cfg.network.agent.transport.name}" = {
       description = "GIVC remote service manager for the host.";
@@ -255,5 +289,9 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.capabilities.policy.storePath} 0755 1000 100 -"
     ];
+
+    environment.etc."${rulesFile}" = mkIf cfg.accessControl.enable {
+      source = validatedCedarRules;
+    };
   };
 }

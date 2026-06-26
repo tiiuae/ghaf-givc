@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use anyhow::Result;
-use async_trait::async_trait;
 use std::process::Stdio;
 use tokio::process::Command;
+use tonic::async_trait;
 
 use super::pipeline::Pipeline;
 use super::plan::Plan;

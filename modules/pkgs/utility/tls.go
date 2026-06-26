@@ -119,58 +119,85 @@ func TlsClientConfigFromTlsConfig(tlsConfig *tls.Config, serverName string) (*tl
 	return newTlsConfig, nil
 }
 
-// CertIPVerifyInterceptor is a gRPC server interceptor that verifies
-// the peer's IP address matches an IP in their TLS certificate's SubjectAltName.
-//
-// TCP: Verifies peer IP matches certificate SAN.
-// Vsock/Unix: Skips IP check (hypervisor/filesystem provides isolation).
-func CertIPVerifyInterceptor(ctx context.Context, req any,
-	info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-
+// verifyPeerIP contains the shared logic for both unary and stream interceptors.
+func verifyPeerIP(ctx context.Context, addr net.Addr) error {
 	// Extract peer info from context
 	p, ok := peer.FromContext(ctx)
 	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "no peer info available")
+		return status.Error(codes.Unauthenticated, "no peer info available")
 	}
 
 	// Get TLS info from peer
 	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
 	if !ok {
 		// No TLS - skip verification
-		return handler(ctx, req)
+		return nil
 	}
 
 	// Get peer certificate
 	if len(tlsInfo.State.PeerCertificates) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "no peer certificate provided")
+		return status.Error(codes.Unauthenticated, "no peer certificate provided")
 	}
 
 	// Skip IP verification for non-TCP transports
-	network := p.Addr.Network()
+	network := addr.Network()
 	if network == "vsock" || network == "unix" {
-		log.Debugf("[CertIPVerifyInterceptor] %s transport, skipping IP check", network)
-		return handler(ctx, req)
+		log.Debugf("[CertIPVerify] %s transport, skipping IP check", network)
+		return nil
 	}
 
 	cert := tlsInfo.State.PeerCertificates[0]
 
 	// Extract peer IP from connection address
-	peerIP, err := extractIPFromAddr(p.Addr)
+	peerIP, err := extractIPFromAddr(addr)
 	if err != nil {
-		log.Errorf("[CertIPVerifyInterceptor] Failed to extract peer IP: %v", err)
-		return nil, status.Errorf(codes.Unauthenticated, "cannot determine peer IP: %v", err)
+		log.Errorf("[CertIPVerify] Failed to extract peer IP: %v", err)
+		return status.Errorf(codes.Unauthenticated, "cannot determine peer IP: %v", err)
 	}
 
 	// Verify peer IP is in certificate's SubjectAltName
 	if !ipInCertSAN(cert, peerIP) {
-		log.Warnf("[CertIPVerifyInterceptor] IP verification failed: peer IP %s not in certificate SAN IPs %v",
+		log.Warnf("[CertIPVerify] IP verification failed: peer IP %s not in certificate SAN IPs %v",
 			peerIP, cert.IPAddresses)
-		return nil, status.Errorf(codes.PermissionDenied,
+		return status.Errorf(codes.PermissionDenied,
 			"peer IP %s does not match any IP in certificate", peerIP)
 	}
 
-	log.Debugf("[CertIPVerifyInterceptor] IP verification passed for %s", peerIP)
+	log.Debugf("[CertIPVerify] IP verification passed for %s", peerIP)
+	return nil
+}
+
+func CertIPVerifyUnaryInterceptor(ctx context.Context, req any,
+	info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+
+	p, ok := peer.FromContext(ctx)
+	var addr net.Addr
+	if ok {
+		addr = p.Addr
+	}
+
+	if err := verifyPeerIP(ctx, addr); err != nil {
+		return nil, err
+	}
+
 	return handler(ctx, req)
+}
+
+func CertIPVerifyStreamInterceptor(srv any, ss grpc.ServerStream,
+	info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+
+	ctx := ss.Context()
+	p, ok := peer.FromContext(ctx)
+	var addr net.Addr
+	if ok {
+		addr = p.Addr
+	}
+
+	if err := verifyPeerIP(ctx, addr); err != nil {
+		return err
+	}
+
+	return handler(srv, ss)
 }
 
 // extractIPFromAddr extracts the IP address from a net.Addr

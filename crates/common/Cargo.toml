@@ -6,6 +6,9 @@ name = "givc-common"
 publish = false
 version = "0.0.1"
 
+[package.metadata.cargo-machete]
+ignored = ["tonic-prost"]
+
 [dependencies]
 anyhow.workspace = true
 glib = { version = "*", optional = true, features = [] }
