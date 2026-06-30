@@ -40,8 +40,8 @@ impl SecurityInfo {
     }
 
     #[must_use]
-    pub fn hostname(self) -> Option<String> {
-        self.dns_names.into_iter().next()
+    pub fn hostname(&self) -> Option<&str> {
+        self.dns_names.first().map(|s| s.as_str())
     }
 }
 

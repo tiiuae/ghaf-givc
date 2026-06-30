@@ -37,6 +37,7 @@ tokio = { workspace = true, features = [
   "process",
 ] }
 tokio-util = { workspace = true, features = ["io"] }
+tonic = { workspace = true, features = ["tls-aws-lc"] }
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = [
   "env-filter",

@@ -58,8 +58,24 @@ in
                 inherit (adminConfig) name;
                 inherit (adminConfig) addresses;
                 tls.enable = tls;
+                accessControl = {
+                  enable = true;
+                  adminRules = [
+                    {
+                      from = [
+                        "appvm"
+                        "guivm"
+                      ];
+                      permittedRequests = [ "RegisterService" ];
+                    }
+                    {
+                      from = [ "guivm" ];
+                      to = [ "appvm" ];
+                      permittedRequests = [ "StartApplication" ];
+                    }
+                  ];
+                };
               };
-
             };
             guivm =
               { pkgs, ... }:
@@ -99,6 +115,7 @@ in
                     prefixLength = 24;
                   }
                 ];
+
                 givc.sysvm = {
                   enable = true;
                   network.admin.transport = lib.head adminConfig.addresses;
@@ -108,53 +125,65 @@ in
                   };
                   network.tls.enable = tls;
                 };
-              };
-            hostvm = {
-              imports = [
-                self.nixosModules.host
-                ./snakeoil/gen-test-certs.nix
-              ];
-
-              # TLS parameter
-              givc-tls-test = {
-                name = "host";
-                addresses = addrs.host;
-              };
-              networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
-                {
-                  address = addrs.host;
-                  prefixLength = 24;
-                }
-              ];
-              givc.host = {
-                enable = true;
-                network = {
-                  agent.transport = {
-                    name = "ghaf-host";
-                    addr = addrs.host;
-                    port = "9000";
-                    protocol = "tcp";
-                  };
-                  admin.transport = lib.head adminConfig.addresses;
-                  tls.enable = tls;
-                };
-                capabilities = {
-                  services = [
-                    "microvm@appvm.service"
-                    "poweroff.target"
-                    "reboot.target"
-                    "sleep.target"
-                    "suspend.target"
+                environment = {
+                  systemPackages = with pkgs; [
+                    grpcurl
                   ];
                 };
               };
-              systemd.services."microvm@appvm" = {
-                script = ''
-                  # Do nothing script, simulating microvm service
-                  while true; do sleep 10; done
-                '';
+            hostvm =
+              { pkgs, ... }:
+              {
+                imports = [
+                  self.nixosModules.host
+                  ./snakeoil/gen-test-certs.nix
+                ];
+
+                # TLS parameter
+                givc-tls-test = {
+                  name = "host";
+                  addresses = addrs.host;
+                };
+                networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
+                  {
+                    address = addrs.host;
+                    prefixLength = 24;
+                  }
+                ];
+                givc.host = {
+                  enable = true;
+                  network = {
+                    agent.transport = {
+                      name = "ghaf-host";
+                      addr = addrs.host;
+                      port = "9000";
+                      protocol = "tcp";
+                    };
+                    admin.transport = lib.head adminConfig.addresses;
+                    tls.enable = tls;
+                  };
+                  capabilities = {
+                    services = [
+                      "microvm@appvm.service"
+                      "poweroff.target"
+                      "reboot.target"
+                      "sleep.target"
+                      "suspend.target"
+                    ];
+                  };
+                };
+                systemd.services."microvm@appvm" = {
+                  script = ''
+                    # Do nothing script, simulating microvm service
+                    while true; do sleep 10; done
+                  '';
+                };
+                environment = {
+                  systemPackages = with pkgs; [
+                    grpcurl
+                  ];
+                };
               };
-            };
             appvm =
               { pkgs, ... }:
               let
@@ -187,41 +216,64 @@ in
                   }
                 ];
                 services.openssh.enable = true;
-                givc.appvm = {
-                  enable = true;
-                  debug = true;
-                  network = {
-                    agent.transport = {
-                      name = "appvm";
-                      addr = addrs.appvm;
+                givc = {
+                  appvm = {
+                    enable = true;
+                    debug = true;
+                    network = {
+                      agent.transport = {
+                        name = "appvm";
+                        addr = addrs.appvm;
+                      };
+                      admin.transport = lib.head adminConfig.addresses;
+                      tls = {
+                        enable = tls;
+                        caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
+                        certPath = lib.mkForce "/etc/givc/cert.pem";
+                        keyPath = lib.mkForce "/etc/givc/key.pem";
+                      };
                     };
-                    admin.transport = lib.head adminConfig.addresses;
-                    tls = {
-                      enable = tls;
-                      caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
-                      certPath = lib.mkForce "/etc/givc/cert.pem";
-                      keyPath = lib.mkForce "/etc/givc/key.pem";
+                    capabilities = {
+                      applications = [
+                        {
+                          name = "cat";
+                          command = "/run/current-system/sw/bin/cat";
+                          args = [ "file" ];
+                          directories = [
+                            "/etc"
+                            "/tmp"
+                          ];
+                        }
+
+                        {
+                          name = "anothercat";
+                          command = "/run/current-system/sw/bin/cat";
+                          args = [ "file" ];
+                          directories = [
+                            "/etc"
+                            "/tmp"
+                          ];
+                        }
+                      ];
                     };
-                  };
-                  capabilities = {
-                    applications = [
-                      {
-                        name = "cat";
-                        command = "/run/current-system/sw/bin/cat";
-                        args = [ "file" ];
-                        directories = [
-                          "/etc"
-                          "/tmp"
-                        ];
-                      }
-                    ];
+                    accessControl = {
+                      enable = true;
+                      agentRules = [
+                        {
+                          permittedVms = [ "guivm" ];
+                          permittedModules = [ "systemd" ];
+                        }
+                      ];
+                    };
                   };
                 };
               };
           };
           testScript =
-            _:
+            { nodes, ... }:
             let
+              app = nodes.appvm.givc.appvm.network.agent.transport;
+
               cli = "${self'.packages.givc-admin.cli}/bin/givc-cli";
               cliArgs =
                 "--name ${admin.name} --addr ${admin.addr} --port ${admin.port} "
@@ -231,6 +283,8 @@ in
                   else
                     "--notls"
                 }";
+
+              grpcurl = "grpcurl -cacert /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem";
             in
             ''
               with subtest("startup"):
@@ -240,6 +294,8 @@ in
                   guivm.wait_for_unit("givc-guivm.service")
                   appvm.wait_for_unit("multi-user.target")
                   appvm.succeed("sudo -u ghaf touch /tmp/testfile")
+                  appvm.succeed("sudo -u ghaf touch /tmp/admin_forbids")
+                  appvm.succeed("sudo -u ghaf touch /tmp/agent_forbids")
 
               with subtest("start app with correct file path"):
                   guivm.succeed("${cli} ${cliArgs} start app --vm appvm cat -- /tmp/testfile")
@@ -248,6 +304,34 @@ in
               with subtest("fail app start with wrong file path"):
                   guivm.fail("${cli} ${cliArgs} start --vm appvm cat -- /var/log/lastlog")
                   guivm.fail("${cli} ${cliArgs} start --vm appvm cat -- /etc/../bin/sh")
+
+              with subtest("access control test0 (PermissionDenied: direct StartApplication from hostvm to appvm)"):
+                  (exit_code, output) = hostvm.execute(
+                      "${grpcurl} -d '{\"UnitName\": \"anothercat@0.service\"}' "
+                      "${app.addr}:${app.port} systemd.UnitControlService/StartApplication 2>&1"
+                  )  
+
+                  assert exit_code != 0, f"unexpected permission granted by access control policy: {output}"
+                  assert "permission denied by access control policy" in output, f"Expected 'permission denied by access control policy', got: {output}"
+                  print("\033[94m" + "\n-- access control test0 (cedar) completed successfully --\n" + "\033[0m")
+
+              with subtest("agent access control test1 (PermissionGranted: direct start application request from guivm to appvm)"):
+                  (exit_code, output) = guivm.execute(
+                      "${grpcurl} -d '{\"UnitName\": \"anothercat@0.service\"}' "
+                      "${app.addr}:${app.port} systemd.UnitControlService/StartApplication 2>&1"
+                  )
+                  assert exit_code == 0, f"agent access control test1 failed: {output}"
+                  print("\033[94m" + "\n-- access control test1 (cedar) completed successfully --\n" + "\033[0m")
+
+
+              with subtest("access control test2 (get-status to appvm from guivm forbid by admin)"):
+                  (exit_code, output) = guivm.execute(
+                      "${cli} ${cliArgs} get-status appvm multi-user.target 2>&1"
+                  )
+                  assert exit_code != 0, f"unexpected permission granted by admin access control policy: {output}"
+                  assert "permission denied by admin access control policy" in output, f"Expected 'permission denied by admin access control policy', got: {output}"
+                  print("\033[94m" + "\n-- access control test2 (cedar) completed successfully --\n" + "\033[0m")
+
             '';
         };
       };

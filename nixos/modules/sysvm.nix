@@ -9,6 +9,8 @@
 }:
 let
   cfg = config.givc.sysvm;
+  rulesFile = "givc-agent-acl/rules.cedar";
+  rulesFilePath = "/etc/${rulesFile}";
   givc-agent = pkgs."givc-agent" or self.packages.${pkgs.system}."givc-agent";
   inherit (lib)
     mkIf
@@ -23,12 +25,15 @@ let
     literalExpression
     ;
   inherit (builtins) toJSON dirOf;
-  inherit (import ./definitions.nix { inherit config lib; })
+  inherit (import ./definitions.nix { inherit config lib pkgs; })
     transportSubmodule
     proxySubmodule
     tlsSubmodule
     eventSubmodule
     policyClientSubmodule
+    agentAclSubmodule
+    validateCedarRules
+    agentRulesToCedar
     ;
   # GIVC agent JSON configuration for sysvm
   agentConfig = {
@@ -45,7 +50,15 @@ let
         socket = dirOf cfg.notifier.socketPath;
       };
     };
+    accessControl = {
+      inherit (cfg.accessControl) enable;
+      rulesFile = rulesFilePath;
+    };
   };
+  policyText = agentRulesToCedar cfg.accessControl.agentRules;
+  cedarPolicyFile = pkgs.writeText "policy.cedar" policyText;
+  validatedCedarRules = validateCedarRules cedarPolicyFile;
+
 in
 {
   imports = [
@@ -58,6 +71,11 @@ in
       user access to TLS keys for the client to run. This will copy the keys to `/run/givc` and makes it accessible to the group
       `users` (default for regular users in NixOS).
     '';
+    accessControl = mkOption {
+      type = agentAclSubmodule;
+      default = { };
+      description = "Access control settings for the GIVC agent module.";
+    };
 
     network = {
       agent = {
@@ -128,6 +146,7 @@ in
         '';
       };
     };
+
     capabilities = {
       services = mkOption {
         type = types.listOf types.str;
@@ -246,6 +265,10 @@ in
 
     assertions = [
       {
+        assertion = cfg.accessControl.enable -> cfg.network.tls.enable;
+        message = "Access control is only available with TLS enabled.";
+      }
+      {
         assertion = cfg.capabilities.services != [ ];
         message = "A list of services (or targets) is required for this module to run.";
       }
@@ -279,6 +302,45 @@ in
           !cfg.capabilities.eventProxy.enable
           || lists.allUnique (map (p: (strings.toInt p.transport.port)) cfg.capabilities.eventProxy.events);
         message = "EventProxy: Each event proxy instance requires a unique port number.";
+      }
+    ];
+
+    givc.sysvm.accessControl.agentRules = [
+      # For admin-vm
+      {
+        permittedVms = [ cfg.network.admin.transport.name ];
+        permittedModules = [
+          "systemd"
+          "locale"
+        ]
+        ++ optionals cfg.capabilities.ctap.enable [
+          "ctap"
+        ]
+        ++ optionals cfg.capabilities.wifi.enable [
+          "wifi"
+        ]
+        ++ optionals cfg.capabilities.hwid.enable [
+          "hwid"
+        ]
+        ++ optionals cfg.capabilities.policy.enable [
+          "policyadmin"
+        ];
+      }
+    ]
+    ++ optionals cfg.capabilities.socketProxy.enable [
+      {
+        permittedVms = map (p: p.transport.name) cfg.capabilities.socketProxy.sockets;
+        permittedModules = [
+          "socketproxy"
+        ];
+      }
+    ]
+    ++ optionals cfg.capabilities.eventProxy.enable [
+      {
+        permittedVms = map (p: p.transport.name) cfg.capabilities.eventProxy.events;
+        permittedModules = [
+          "eventproxy"
+        ];
       }
     ];
 
@@ -336,5 +398,9 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.capabilities.policy.storePath} 0755 1000 100 -"
     ];
+
+    environment.etc."${rulesFile}" = mkIf cfg.accessControl.enable {
+      source = validatedCedarRules;
+    };
   };
 }

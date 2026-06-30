@@ -82,6 +82,7 @@ func StartSocketService(ctx context.Context, wg *sync.WaitGroup, agentConfig *gi
 						Protocol: proxyConfig.Transport.Protocol,
 					},
 					TlsConfig: agentConfig.Network.TlsConfig,
+					AclConfig: agentConfig.AccessControl,
 				}
 
 				var grpcProxyService []givc_types.GrpcServiceRegistration

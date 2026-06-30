@@ -8,10 +8,14 @@ version = "0.0.1"
 
 [dependencies]
 anyhow.workspace = true
-async-channel.workspace = true
 async-fn-stream = "*"
 async-stream.workspace = true
+bytes.workspace = true
+cedar-policy.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
+http.workspace = true
+http-body-util.workspace = true
+prost-reflect = { workspace = true, features = ["serde"] }
 regex.workspace = true
 serde_json.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -22,19 +26,19 @@ tokio = { workspace = true, features = [
   "macros",
   "fs",
 ] }
-tokio-listener = { version = "0.5.1", features = [
+tokio-listener = { workspace = true, features = [
   "multi-listener",
   "vsock",
   "tonic014",
 ] }
-tokio-vsock = "0.7"
+tokio-vsock.workspace = true
+tonic-middleware.workspace = true
 tonic-reflection.workspace = true
 tonic-types.workspace = true
 tonic = { workspace = true, features = ["tls-aws-lc"] }
 tracing.workspace = true
-tracing-journald = "0.3"
+tracing-journald.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-walkdir.workspace = true
 x509-parser = "0.18"
 lazy-regex = "3.6.0"
 
