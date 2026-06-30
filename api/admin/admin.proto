@@ -136,6 +136,102 @@ message SetGenerationResponse {
     optional string Error = 3;
 }
 
+message RegistryBasicAuth {
+    string Username = 1;
+    string Password = 2;
+}
+
+message RegistryBearerAuth {
+    string Token = 1;
+}
+
+message RegistryCredentials {
+    oneof Auth {
+        RegistryBasicAuth Basic = 1;
+        RegistryBearerAuth Bearer = 2;
+    }
+}
+
+message AvailableUpdate {
+    string Repository = 1;
+    string Tag = 2;
+    string Version = 3;
+    string Hash = 4;
+}
+
+message RegistryDiscoverRequest {
+    string Reference = 1;
+    bool Insecure = 2;
+    optional RegistryCredentials Credentials = 3;
+}
+
+message RegistryDiscoverResponse {
+    repeated AvailableUpdate List = 1;
+}
+
+message RegistryChangelogRequest {
+    string Reference = 1;
+    bool Insecure = 2;
+    optional RegistryCredentials Credentials = 3;
+}
+
+message RegistryChangelogResponse {
+    string Changelog = 1;
+}
+
+message RegistryPullRequest {
+    string Reference = 1;
+    string Destination = 2;
+    bool Validate = 3;
+    bool Insecure = 4;
+    optional RegistryCredentials Credentials = 5;
+}
+
+message RegistryPullResult {
+    string OutputDir = 1;
+    string ManifestPath = 2;
+}
+
+message RegistryPullStarted {
+    string Reference = 1;
+    string Destination = 2;
+}
+
+message RegistryBlobDownloading {
+    string Digest = 1;
+    uint64 Downloaded = 2;
+    optional uint64 Total = 3;
+}
+
+message RegistryPullProgress {
+    oneof Event {
+        RegistryPullStarted PullStarted = 1;
+        RegistryBlobDownloading BlobDownloading = 2;
+        string BlobVerified = 3;
+        string ManifestWritten = 4;
+        string Cancelled = 5;
+        bool Done = 6;
+    }
+}
+
+message RegistryPullResponse {
+    oneof Update {
+        RegistryPullProgress Progress = 1;
+        RegistryPullResult Result = 2;
+    }
+}
+
+message ImageInstallRequest {
+    string Manifest = 1;
+    bool Validate = 2;
+}
+
+message ImageInstallResponse {
+    bool Finished = 1;
+    optional string Output = 2;
+    optional string Error = 3;
+}
+
 message CtapRequest {
     string Req = 1;
     repeated string Args = 2;
@@ -190,6 +286,10 @@ service AdminService {
     // OTA
     rpc ListGenerations(Empty) returns (ListGenerationsResponse) {}
     rpc SetGeneration(SetGenerationRequest) returns (stream SetGenerationResponse) {}
+    rpc Discover(RegistryDiscoverRequest) returns (RegistryDiscoverResponse) {}
+    rpc Changelog(RegistryChangelogRequest) returns (RegistryChangelogResponse) {}
+    rpc Pull(RegistryPullRequest) returns (stream RegistryPullResponse) {}
+    rpc ImageInstall(ImageInstallRequest) returns (stream ImageInstallResponse) {}
 
     // Send user notification
     rpc NotifyUser(UserNotificationRequest) returns (notify.Status) {}
