@@ -145,6 +145,7 @@ pub(crate) fn to_registry_auth(credentials: &RegistryCredentials) -> RegistryAut
 pub(crate) fn build_client(protocol: ClientProtocol) -> Client {
     Client::new(ClientConfig {
         protocol,
+        use_monolithic_push: true,
         ..Default::default()
     })
 }
@@ -322,7 +323,7 @@ fn file_stream_with_progress(
     file: tokio::fs::File,
     kind: MediaType,
     total: u64,
-    feedback: Option<&async_channel::Sender<progress::RegistryEvent>>,
+    feedback: Option<async_channel::Sender<progress::RegistryEvent>>,
 ) -> impl Stream<Item = oci_client::errors::Result<Bytes>> {
     let mut uploaded = 0u64;
     let mut reporter = ProgressReporter::new(PROGRESS_EVENT_STEP);
@@ -331,7 +332,7 @@ fn file_stream_with_progress(
             uploaded += chunk.len() as u64;
             if let Some(reported) = reporter.progress(uploaded) {
                 notify(
-                    feedback,
+                    feedback.as_ref(),
                     progress::RegistryEvent::LayerUploading {
                         kind: kind.clone(),
                         uploaded: reported,
@@ -410,10 +411,15 @@ pub(crate) async fn push_layers_and_config(
         let file = tokio::fs::File::open(&input.path)
             .await
             .with_context(|| format!("opening layer file {}", input.path.display()))?;
-        let stream = file_stream_with_progress(file, input.media_type, total, feedback);
+        let stream = file_stream_with_progress(file, input.media_type, total, feedback.cloned());
 
         let _location = client
-            .push_blob_stream(reference, stream, &digest)
+            .push_blob_stream(
+                reference,
+                stream,
+                &digest,
+                Some(total.try_into().context("Payload too large")?),
+            )
             .await
             .with_context(|| format!("while pushing blob {}", input.path.display()))?;
 
@@ -545,7 +551,7 @@ mod tests {
         let (tx, rx) = unbounded();
 
         let chunks =
-            file_stream_with_progress(file, MediaType::Root, PROGRESS_EVENT_STEP + 1, Some(&tx))
+            file_stream_with_progress(file, MediaType::Root, PROGRESS_EVENT_STEP + 1, Some(tx))
                 .try_collect::<Vec<_>>()
                 .await
                 .expect("stream");
