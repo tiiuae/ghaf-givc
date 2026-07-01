@@ -41,7 +41,7 @@ impl SecurityInfo {
 
     #[must_use]
     pub fn hostname(&self) -> Option<&str> {
-        self.dns_names.first().map(|s| s.as_str())
+        self.dns_names.first().map(String::as_str)
     }
 }
 
