@@ -14,7 +14,7 @@ use super::runtime::Runtime;
 use crate::bootctl::get_bootctl_info;
 use crate::lock::UpdateLock;
 
-pub async fn install_from_manifest_path(
+pub(crate) async fn install_from_manifest_path(
     manifest_path: &Path,
     validate: bool,
     dry_run: bool,
@@ -34,6 +34,10 @@ pub async fn install_from_manifest_path(
     execute_plan(plan, dry_run).await
 }
 
+/// Checks if a manifest at `manifest_path` is valid
+///
+/// # Errors
+/// Fails if the path is invalid, cannot be loaded or is not valid
 pub async fn validate_manifest_path(manifest_path: &Path) -> anyhow::Result<()> {
     let source_dir = manifest_path
         .parent()

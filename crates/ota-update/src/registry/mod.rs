@@ -88,7 +88,7 @@ pub struct PruneOptions {
     pub destination_root: std::path::PathBuf,
 }
 
-pub async fn discover_updates(
+pub(crate) async fn discover_updates(
     options: &DiscoverOptions,
     feedback: Option<&Sender<progress::RegistryEvent>>,
     ct: Option<CancellationToken>,
@@ -142,12 +142,7 @@ pub async fn discover_updates(
                 );
                 anyhow::bail!("discover cancelled")
             }
-            Err(_) => {
-                continue;
-            }
-            Ok(Err(_)) => {
-                continue;
-            }
+            _ => continue,
         };
 
         let Ok(manifest) = Manifest::from_slice(remote.config_json.as_bytes()) else {
@@ -176,6 +171,13 @@ pub async fn discover_updates(
     Ok(updates)
 }
 
+/// Pull an update from remote registry
+///
+/// # Errors
+/// Fails if the download path is invalid, an exclusive update lock cannot be acquired, fetching
+/// the update from registry fails, the operation is cancelled, or the update validation or
+/// installation fails.
+#[allow(clippy::too_many_lines)]
 pub async fn pull_update(
     options: &PullOptions,
     feedback: Option<&Sender<progress::RegistryEvent>>,
@@ -192,12 +194,7 @@ pub async fn pull_update(
     let lock_path = options.destination_root.join(".ota-update.lock");
     let _lock = UpdateLock::acquire(&lock_path, "registry-pull")?;
 
-    let tag = options
-        .reference
-        .tag()
-        .or(options.reference.digest())
-        .context("reference must include tag or digest")?
-        .to_string();
+    let tag = options.reference.tag_or_digest().to_string();
     let output_dir = options
         .destination_root
         .join(options.reference.repository())
@@ -349,7 +346,7 @@ pub async fn pull_update(
     })
 }
 
-pub async fn fetch_changelog(
+pub(crate) async fn fetch_changelog(
     reference: &TaggedReference,
     credentials: &RegistryCredentials,
     client_protocol: ClientProtocol,
@@ -380,7 +377,7 @@ pub async fn fetch_changelog(
     String::from_utf8(bytes).context("changelog blob is not valid UTF-8")
 }
 
-pub async fn prune_downloaded_updates(options: &PruneOptions) -> anyhow::Result<()> {
+pub(crate) async fn prune_downloaded_updates(options: &PruneOptions) -> anyhow::Result<()> {
     const KEEP_PER_REPOSITORY: usize = 2;
 
     if !tokio::fs::try_exists(&options.destination_root).await? {
@@ -426,10 +423,18 @@ pub async fn prune_downloaded_updates(options: &PruneOptions) -> anyhow::Result<
     Ok(())
 }
 
+/// Push an update to registry
+///
+/// # Errors
+/// See `push_update_with_feedback`
 pub async fn push_update(options: &PushOptions) -> anyhow::Result<PushResult> {
     push_update_with_feedback(options, None).await
 }
 
+/// Push an update to registry with progress reporting
+///
+/// # Errors
+/// Fails if the local update cannot be accessed or accessing the registry fails.
 pub async fn push_update_with_feedback(
     options: &PushOptions,
     feedback: Option<&Sender<progress::RegistryEvent>>,
@@ -573,10 +578,10 @@ fn required_binding(
     Ok(make_binding(layer, media_type, local_name))
 }
 
-fn find_layer_by_media_type<'a>(
-    layers: &'a [oras::BlobDescriptor],
+fn find_layer_by_media_type(
+    layers: &[oras::BlobDescriptor],
     media_type: MediaType,
-) -> Option<&'a oras::BlobDescriptor> {
+) -> Option<&oras::BlobDescriptor> {
     layers
         .iter()
         .find(|layer| layer.media_type == media_type.as_ref())
