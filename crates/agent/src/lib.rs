@@ -4,6 +4,7 @@
 use anyhow::Context;
 
 pub mod cli;
+pub mod config;
 pub mod runtime;
 pub mod service;
 
