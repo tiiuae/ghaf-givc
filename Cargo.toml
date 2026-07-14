@@ -2,6 +2,7 @@
 members = [
   "crates/client",
   "crates/common",
+  "crates/agent",
   "crates/admin",
   "crates/ota-update",
   "crates/cachix-client",
