@@ -8,7 +8,9 @@ use tonic::transport::Server;
 use tracing::info;
 
 use crate::config::AgentConfig;
-use crate::service::{UnitControlService, UnitControlServiceServer};
+use crate::servicemanager::{
+    ServiceManager, UnitControlService, UnitControlServiceServer, ZbusBackend,
+};
 use givc_common::pb::reflection::SYSTEMD_DESCRIPTOR;
 
 #[derive(Debug, Clone)]
@@ -49,7 +51,9 @@ impl AgentRuntime {
             .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
             .build_v1()?;
 
-        let unit_service = UnitControlServiceServer::new(UnitControlService::new());
+        let backend = ZbusBackend::new().await?;
+        let manager = ServiceManager::new(self.config.network.agent.services.clone(), backend);
+        let unit_service = UnitControlServiceServer::new(UnitControlService::new(manager));
 
         info!(
             addr = %self.listen,
