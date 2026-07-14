@@ -1378,6 +1378,7 @@ name = "givc-agent"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "clap",
  "givc-common",
  "tokio",
  "tokio-stream",
