@@ -7,7 +7,9 @@ use std::time::Duration;
 use crate::config::ApplicationManifest;
 use anyhow::{Result, bail};
 use givc_common::pb;
+use procfs::Current;
 use regex::Regex;
+use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tonic::{Request, Response, Status};
 
@@ -16,6 +18,7 @@ pub use pb::systemd::unit_control_service_server::UnitControlServiceServer;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackendCall {
     GetUnitSnapshot(String),
+    GetUnitMainPid(String),
     RestartUnit(String),
     StopUnit(String),
     KillUnit(String),
@@ -61,6 +64,7 @@ pub struct RunningUnit {
 #[tonic::async_trait]
 pub trait SystemdBackend: Send + Sync {
     async fn get_unit_snapshot(&self, name: &str) -> Result<Snapshot>;
+    async fn get_unit_main_pid(&self, name: &str) -> Result<u32>;
     async fn list_units_by_patterns(
         &self,
         states: &[String],
@@ -174,6 +178,42 @@ where
 
     pub async fn thaw_unit(&self, name: &str) -> Result<Snapshot> {
         self.thaw_then_snapshot(name).await
+    }
+
+    pub async fn monitor_unit(
+        &self,
+        name: &str,
+    ) -> Result<
+        tokio_stream::wrappers::ReceiverStream<Result<pb::systemd::UnitResourceResponse, Status>>,
+    > {
+        self.ensure_whitelisted(name)?;
+
+        let snapshot = self.backend.get_unit_snapshot(name).await?;
+        if snapshot.active_state != "active" {
+            bail!("unit {} is {}", snapshot.name, snapshot.active_state);
+        }
+
+        let pid = self.backend.get_unit_main_pid(name).await?;
+        if pid == 0 {
+            bail!("failed to unwrap integer value from dbus.Variant")
+        }
+
+        let (tx, rx) = mpsc::channel(8);
+        let unit_name = name.to_owned();
+
+        tokio::spawn(async move {
+            let started = Instant::now();
+            let mut interval = tokio::time::interval(Duration::from_millis(400));
+            for _ in 0..50 {
+                interval.tick().await;
+                let sample = monitor_sample(&unit_name, pid, started).await;
+                if tx.send(sample).await.is_err() {
+                    return;
+                }
+            }
+        });
+
+        Ok(tokio_stream::wrappers::ReceiverStream::new(rx))
     }
 
     pub async fn start_application(
@@ -328,6 +368,34 @@ fn to_unit_response(snapshot: Snapshot) -> pb::systemd::UnitResponse {
     pb::systemd::UnitResponse {
         unit_status: Some(snapshot.into()),
     }
+}
+
+async fn monitor_sample(
+    name: &str,
+    pid: u32,
+    started: Instant,
+) -> Result<pb::systemd::UnitResourceResponse, Status> {
+    let proc = procfs::process::Process::new(pid as i32)
+        .map_err(|err| Status::not_found(format!("cannot monitor unit {name}: {err}")))?;
+    let stat = proc
+        .stat()
+        .map_err(|err| Status::internal(format!("cannot monitor unit {name}: {err}")))?;
+    let meminfo = procfs::Meminfo::current()
+        .map_err(|err| Status::internal(format!("cannot monitor unit {name}: {err}")))?;
+
+    let total_cpu = (stat.utime + stat.stime) as f64 / procfs::ticks_per_second() as f64;
+    let elapsed = started.elapsed().as_secs_f64().max(0.001);
+    let cpu_usage = (total_cpu / elapsed) * 100.0;
+    let memory_usage = if meminfo.mem_total == 0 {
+        0.0
+    } else {
+        (stat.rss as f64 * procfs::page_size() as f64 / meminfo.mem_total as f64 * 100.0) as f32
+    };
+
+    Ok(pb::systemd::UnitResourceResponse {
+        cpu_usage,
+        memory_usage,
+    })
 }
 
 fn build_environment() -> Vec<String> {
@@ -529,6 +597,14 @@ impl SystemdBackend for ZbusBackend {
         self.snapshot_from_unit(name).await
     }
 
+    async fn get_unit_main_pid(&self, name: &str) -> Result<u32> {
+        let unit = self.unit(name).await?;
+        let service =
+            zbus_systemd::systemd1::ServiceProxy::new(&self.conn, unit.inner().path().to_owned())
+                .await?;
+        Ok(service.main_pid().await?)
+    }
+
     async fn list_units_by_patterns(
         &self,
         states: &[String],
@@ -707,9 +783,11 @@ where
 
     async fn monitor_unit(
         &self,
-        _request: Request<pb::systemd::UnitResourceRequest>,
+        request: Request<pb::systemd::UnitResourceRequest>,
     ) -> Result<Response<Self::MonitorUnitStream>, Status> {
-        Err(Status::unimplemented("monitor unit not ported yet"))
+        let unit = request.into_inner().unit_name;
+        let stream = self.manager.monitor_unit(&unit).await.map_err(map_err)?;
+        Ok(Response::new(stream))
     }
 
     async fn start_application(
