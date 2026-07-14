@@ -4,6 +4,7 @@ use givc_agent::config::ApplicationManifest;
 use givc_agent::servicemanager::{
     BackendCall, RunningUnit, ServiceManager, Snapshot, SystemdBackend,
 };
+use tokio_stream::StreamExt;
 
 #[derive(Clone, Default)]
 struct FakeBackend {
@@ -34,6 +35,14 @@ impl SystemdBackend for FakeBackend {
                 path: "/demo".to_owned(),
                 freezer_state: "running".to_owned(),
             }))
+    }
+
+    async fn get_unit_main_pid(&self, name: &str) -> anyhow::Result<u32> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(BackendCall::GetUnitMainPid(name.to_owned()));
+        Ok(std::process::id())
     }
 
     async fn list_units_by_patterns(
@@ -323,4 +332,26 @@ async fn start_application_prefers_merge_candidate() {
 
     assert_eq!(snapshot.name, "test-app@9.service");
     assert_eq!(snapshot.description, "merged");
+}
+
+#[tokio::test(start_paused = true)]
+async fn monitor_unit_streams_samples() {
+    let backend = FakeBackend::default();
+    let manager = ServiceManager::new(vec!["foo.service".to_owned()], vec![], backend.clone());
+
+    let stream = manager.monitor_unit("foo.service").await.unwrap();
+    let handle = tokio::spawn(async move { stream.collect::<Vec<_>>().await });
+    tokio::task::yield_now().await;
+    tokio::time::advance(std::time::Duration::from_secs(21)).await;
+    let samples = handle.await.unwrap();
+
+    assert_eq!(samples.len(), 50);
+    assert_eq!(
+        *backend.calls.lock().unwrap(),
+        vec![
+            BackendCall::GetUnitSnapshot("foo.service".to_owned()),
+            BackendCall::GetUnitMainPid("foo.service".to_owned()),
+        ]
+    );
+    assert!(samples.into_iter().all(|item| item.is_ok()));
 }
