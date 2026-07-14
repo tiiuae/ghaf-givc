@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::config::ApplicationManifest;
 use anyhow::{Result, bail};
 use givc_common::pb;
 use regex::Regex;
+use tokio::time::Instant;
 use tonic::{Request, Response, Status};
 
 pub use pb::systemd::unit_control_service_server::UnitControlServiceServer;
@@ -19,6 +21,17 @@ pub enum BackendCall {
     KillUnit(String),
     FreezeUnit(String),
     ThawUnit(String),
+    StartTransientUnit {
+        name: String,
+        command: Vec<String>,
+    },
+    ListUnitsByPatterns {
+        states: Vec<String>,
+        patterns: Vec<String>,
+    },
+    ListUnitsByNames {
+        names: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,9 +52,22 @@ pub struct ApplicationStartPlan {
     pub command: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunningUnit {
+    pub snapshot: Snapshot,
+    pub exec_start: String,
+}
+
 #[tonic::async_trait]
 pub trait SystemdBackend: Send + Sync {
     async fn get_unit_snapshot(&self, name: &str) -> Result<Snapshot>;
+    async fn list_units_by_patterns(
+        &self,
+        states: &[String],
+        patterns: &[String],
+    ) -> Result<Vec<RunningUnit>>;
+    async fn list_units_by_names(&self, names: &[String]) -> Result<Vec<Snapshot>>;
+    async fn start_transient_unit(&self, name: &str, command: &[String]) -> Result<()>;
     async fn restart_unit(&self, name: &str) -> Result<()>;
     async fn stop_unit(&self, name: &str) -> Result<()>;
     async fn kill_unit(&self, name: &str) -> Result<()>;
@@ -62,6 +88,13 @@ where
 {
     #[must_use]
     pub fn new(whitelist: Vec<String>, applications: Vec<ApplicationManifest>, backend: B) -> Self {
+        let mut whitelist = whitelist;
+        for app in &applications {
+            if !whitelist.iter().any(|candidate| candidate == &app.name) {
+                whitelist.push(app.name.clone());
+            }
+        }
+
         Self {
             whitelist,
             applications,
@@ -143,6 +176,22 @@ where
         self.thaw_then_snapshot(name).await
     }
 
+    pub async fn start_application(
+        &self,
+        service_name: &str,
+        service_args: Vec<String>,
+    ) -> Result<Snapshot> {
+        let plan = self.resolve_application_request(service_name, service_args)?;
+        let merge_candidate = self.find_merge_candidate(&plan).await?;
+
+        self.backend
+            .start_transient_unit(&plan.service_name, &plan.command)
+            .await?;
+
+        self.watch_application(&plan.service_name, merge_candidate)
+            .await
+    }
+
     pub fn resolve_application_request(
         &self,
         service_name: &str,
@@ -181,6 +230,84 @@ where
             command,
         })
     }
+
+    async fn find_merge_candidate(
+        &self,
+        plan: &ApplicationStartPlan,
+    ) -> Result<Option<RunningUnit>> {
+        let states = vec!["active".to_owned()];
+        let patterns = vec!["*@*.service".to_owned()];
+        let running_units = self
+            .backend
+            .list_units_by_patterns(&states, &patterns)
+            .await?;
+
+        let idx = if plan
+            .command
+            .first()
+            .is_some_and(|cmd| cmd.contains("waypipe"))
+            && plan.command.len() > 1
+        {
+            1
+        } else {
+            0
+        };
+
+        Ok(running_units
+            .into_iter()
+            .find(|unit| unit.exec_start.contains(&plan.command[idx])))
+    }
+
+    async fn watch_application(
+        &self,
+        service_name: &str,
+        merge_candidate: Option<RunningUnit>,
+    ) -> Result<Snapshot> {
+        let deadline = if merge_candidate.is_some() {
+            Instant::now() + Duration::from_secs(2)
+        } else {
+            Instant::now()
+        };
+        let synthetic_dead = Snapshot {
+            name: service_name.to_owned(),
+            description: format!("Exited application: {service_name}"),
+            load_state: String::new(),
+            active_state: "inactive".to_owned(),
+            sub_state: "dead".to_owned(),
+            path: String::new(),
+            freezer_state: "error".to_owned(),
+        };
+
+        loop {
+            let units = self
+                .backend
+                .list_units_by_names(&[service_name.to_owned()])
+                .await?;
+            let Some(status) = units.into_iter().next() else {
+                return Ok(merge_candidate
+                    .map(|unit| unit.snapshot)
+                    .unwrap_or(synthetic_dead));
+            };
+
+            match status.active_state.as_str() {
+                "inactive" => {
+                    return Ok(merge_candidate
+                        .map(|unit| unit.snapshot)
+                        .unwrap_or_else(|| Snapshot {
+                            freezer_state: "error".to_owned(),
+                            ..synthetic_dead
+                        }));
+                }
+                "failed" => bail!("application started but failed: {service_name}"),
+                _ => {
+                    if Instant::now() >= deadline {
+                        return Ok(status);
+                    }
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+            }
+        }
+    }
 }
 
 impl From<Snapshot> for pb::systemd::UnitStatus {
@@ -201,6 +328,35 @@ fn to_unit_response(snapshot: Snapshot) -> pb::systemd::UnitResponse {
     pb::systemd::UnitResponse {
         unit_status: Some(snapshot.into()),
     }
+}
+
+fn build_environment() -> Vec<String> {
+    std::env::vars()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect()
+}
+
+fn build_exec_start_value(command: &[String]) -> Result<zbus::zvariant::OwnedValue> {
+    let Some((program, args)) = command.split_first() else {
+        bail!("incorrect application string format")
+    };
+
+    let exec = vec![(
+        program.clone(),
+        args.to_vec(),
+        false,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u32,
+        0i32,
+        0i32,
+    )];
+
+    Ok(zbus::zvariant::OwnedValue::try_from(
+        zbus::zvariant::Value::new(exec),
+    )?)
 }
 
 const APP_ARG_FLAG: &str = "flag";
@@ -308,12 +464,128 @@ impl ZbusBackend {
             freezer_state: unit.freezer_state().await?,
         })
     }
+
+    async fn running_unit_from_list_entry(
+        &self,
+        entry: (
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            zbus::zvariant::OwnedObjectPath,
+            u32,
+            String,
+            zbus::zvariant::OwnedObjectPath,
+        ),
+    ) -> Result<RunningUnit> {
+        let (
+            name,
+            description,
+            load_state,
+            active_state,
+            sub_state,
+            _following,
+            path,
+            _job_id,
+            _job_type,
+            _job_path,
+        ) = entry;
+        let unit = zbus_systemd::systemd1::UnitProxy::new(&self.conn, path.clone()).await?;
+        let service = zbus_systemd::systemd1::ServiceProxy::new(&self.conn, path.clone()).await?;
+        let freezer_state = unit.freezer_state().await?;
+        let exec_start = service
+            .exec_start()
+            .await?
+            .into_iter()
+            .next()
+            .map(|(program, args, ..)| {
+                std::iter::once(program)
+                    .chain(args)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default();
+
+        Ok(RunningUnit {
+            snapshot: Snapshot {
+                name,
+                description,
+                load_state,
+                active_state,
+                sub_state,
+                path: path.to_string(),
+                freezer_state,
+            },
+            exec_start,
+        })
+    }
 }
 
 #[tonic::async_trait]
 impl SystemdBackend for ZbusBackend {
     async fn get_unit_snapshot(&self, name: &str) -> Result<Snapshot> {
         self.snapshot_from_unit(name).await
+    }
+
+    async fn list_units_by_patterns(
+        &self,
+        states: &[String],
+        patterns: &[String],
+    ) -> Result<Vec<RunningUnit>> {
+        let entries = zbus_systemd::systemd1::ManagerProxy::new(&self.conn)
+            .await?
+            .list_units_by_patterns(states.to_vec(), patterns.to_vec())
+            .await?;
+
+        let mut running_units = Vec::with_capacity(entries.len());
+        for entry in entries {
+            running_units.push(self.running_unit_from_list_entry(entry).await?);
+        }
+        Ok(running_units)
+    }
+
+    async fn list_units_by_names(&self, names: &[String]) -> Result<Vec<Snapshot>> {
+        let mut snapshots = Vec::with_capacity(names.len());
+        for name in names {
+            snapshots.push(self.snapshot_from_unit(name).await?);
+        }
+        Ok(snapshots)
+    }
+
+    async fn start_transient_unit(&self, name: &str, command: &[String]) -> Result<()> {
+        let properties = vec![
+            (
+                "Description".to_owned(),
+                zbus::zvariant::OwnedValue::try_from(zbus::zvariant::Value::new(format!(
+                    "Application service for {}",
+                    name.split('@').next().unwrap_or(name)
+                )))?,
+            ),
+            ("ExecStart".to_owned(), build_exec_start_value(command)?),
+            (
+                "Type".to_owned(),
+                zbus::zvariant::OwnedValue::try_from(zbus::zvariant::Value::new("exec"))?,
+            ),
+            (
+                "Environment".to_owned(),
+                zbus::zvariant::OwnedValue::try_from(zbus::zvariant::Value::new(
+                    build_environment(),
+                ))?,
+            ),
+        ];
+
+        let _ = zbus_systemd::systemd1::ManagerProxy::new(&self.conn)
+            .await?
+            .start_transient_unit(
+                name.to_owned(),
+                "replace".to_owned(),
+                properties,
+                Vec::new(),
+            )
+            .await?;
+        Ok(())
     }
 
     async fn restart_unit(&self, name: &str) -> Result<()> {
@@ -442,9 +714,15 @@ where
 
     async fn start_application(
         &self,
-        _request: Request<pb::systemd::AppUnitRequest>,
+        request: Request<pb::systemd::AppUnitRequest>,
     ) -> Result<Response<pb::systemd::UnitResponse>, Status> {
-        Err(Status::unimplemented("application start not ported yet"))
+        let req = request.into_inner();
+        let snapshot = self
+            .manager
+            .start_application(&req.unit_name, req.args)
+            .await
+            .map_err(map_err)?;
+        Ok(Response::new(to_unit_response(snapshot)))
     }
 }
 
