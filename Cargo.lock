@@ -1390,7 +1390,10 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "clap",
+ "givc-client",
  "givc-common",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-stream",
  "tonic",
