@@ -7,26 +7,39 @@ use anyhow::Result;
 use tonic::transport::Server;
 use tracing::info;
 
+use crate::config::AgentConfig;
 use crate::service::{UnitControlService, UnitControlServiceServer};
 use givc_common::pb::reflection::SYSTEMD_DESCRIPTOR;
 
 #[derive(Debug, Clone)]
 pub struct AgentRuntime {
+    config: AgentConfig,
     listen: SocketAddr,
 }
 
 impl Default for AgentRuntime {
     fn default() -> Self {
         Self {
+            config: AgentConfig::default(),
             listen: SocketAddr::from(([127, 0, 0, 1], 9001)),
         }
     }
 }
 
 impl AgentRuntime {
+    /// # Errors
+    /// Fails if endpoint transport cannot be derived.
+    pub fn from_config(config: AgentConfig) -> Result<Self> {
+        let listen = config.listen_addr()?;
+        Ok(Self { config, listen })
+    }
+
     #[must_use]
     pub fn new(listen: SocketAddr) -> Self {
-        Self { listen }
+        Self {
+            config: AgentConfig::default(),
+            listen,
+        }
     }
 
     /// # Errors
@@ -38,7 +51,11 @@ impl AgentRuntime {
 
         let unit_service = UnitControlServiceServer::new(UnitControlService::new());
 
-        info!(addr = %self.listen, "starting givc-agent boilerplate");
+        info!(
+            addr = %self.listen,
+            service = %self.config.identity.service_name,
+            "starting givc-agent"
+        );
 
         Server::builder()
             .add_service(reflect)
