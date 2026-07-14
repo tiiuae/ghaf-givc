@@ -1456,6 +1456,7 @@ dependencies = [
  "futures-util",
  "givc-client",
  "givc-common",
+ "libc",
  "procfs",
  "regex",
  "serde",
