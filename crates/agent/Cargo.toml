@@ -27,3 +27,4 @@ zbus_systemd = { version = "0.26100.0", default-features = false, features = [
   "systemd1",
   "zbus-async-tokio",
 ] }
+url = "2.5.7"
