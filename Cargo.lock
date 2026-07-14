@@ -1466,6 +1466,7 @@ dependencies = [
  "tracing",
  "tracing-journald",
  "tracing-subscriber",
+ "url",
  "zbus",
  "zbus_systemd",
 ]
