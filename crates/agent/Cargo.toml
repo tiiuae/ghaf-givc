@@ -12,6 +12,7 @@ clap = { workspace = true, features = ["derive", "env"] }
 futures-util.workspace = true
 givc-client = { path = "../client" }
 givc-common = { path = "../common" }
+libc = "0.2.177"
 procfs = "0.18.0"
 regex.workspace = true
 serde = { workspace = true, features = ["derive"] }

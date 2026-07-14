@@ -5,6 +5,7 @@ use anyhow::Context;
 
 pub mod cli;
 pub mod config;
+pub mod locale;
 pub mod runtime;
 pub mod service;
 pub mod servicemanager;
