@@ -7,6 +7,7 @@ pub mod cli;
 pub mod config;
 pub mod runtime;
 pub mod service;
+pub mod servicemanager;
 
 /// Init logging.
 ///
