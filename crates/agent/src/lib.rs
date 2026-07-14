@@ -3,6 +3,7 @@
 
 use anyhow::Context;
 
+pub mod cli;
 pub mod runtime;
 pub mod service;
 
@@ -11,13 +12,16 @@ pub mod service;
 /// # Errors
 ///
 /// Will return `Err` if failed to initialize logging.
-pub fn trace_init() -> anyhow::Result<()> {
+pub fn trace_init(debug: bool) -> anyhow::Result<()> {
     use std::env;
     use tracing::Level;
     use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt};
 
-    let env_filter =
-        EnvFilter::try_from_env("GIVC_LOG").unwrap_or_else(|_| EnvFilter::from("info"));
+    let env_filter = if debug && env::var("GIVC_LOG").is_err() {
+        EnvFilter::from("debug")
+    } else {
+        EnvFilter::try_from_env("GIVC_LOG").unwrap_or_else(|_| EnvFilter::from("info"))
+    };
     let is_debug_log_level = env_filter
         .max_level_hint()
         .map_or_else(|| false, |level| level >= Level::DEBUG);
