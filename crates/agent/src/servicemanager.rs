@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use crate::config::ApplicationManifest;
 use anyhow::{Result, bail};
 use givc_common::pb;
 use regex::Regex;
@@ -31,6 +32,13 @@ pub struct Snapshot {
     pub freezer_state: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplicationStartPlan {
+    pub service_name: String,
+    pub app_name: String,
+    pub command: Vec<String>,
+}
+
 #[tonic::async_trait]
 pub trait SystemdBackend: Send + Sync {
     async fn get_unit_snapshot(&self, name: &str) -> Result<Snapshot>;
@@ -44,6 +52,7 @@ pub trait SystemdBackend: Send + Sync {
 #[derive(Clone)]
 pub struct ServiceManager<B> {
     whitelist: Vec<String>,
+    applications: Vec<ApplicationManifest>,
     backend: Arc<B>,
 }
 
@@ -52,9 +61,10 @@ where
     B: SystemdBackend,
 {
     #[must_use]
-    pub fn new(whitelist: Vec<String>, backend: B) -> Self {
+    pub fn new(whitelist: Vec<String>, applications: Vec<ApplicationManifest>, backend: B) -> Self {
         Self {
             whitelist,
+            applications,
             backend: Arc::new(backend),
         }
     }
@@ -132,6 +142,45 @@ where
     pub async fn thaw_unit(&self, name: &str) -> Result<Snapshot> {
         self.thaw_then_snapshot(name).await
     }
+
+    pub fn resolve_application_request(
+        &self,
+        service_name: &str,
+        service_args: Vec<String>,
+    ) -> Result<ApplicationStartPlan> {
+        validate_service_name(service_name)?;
+
+        let app_name = service_name
+            .split_once('@')
+            .map(|(name, _)| name)
+            .unwrap_or(service_name);
+
+        let app = self
+            .applications
+            .iter()
+            .find(|candidate| candidate.name == app_name)
+            .ok_or_else(|| anyhow::anyhow!("application not found in manifest"))?;
+
+        if let Some(arg) = service_args
+            .iter()
+            .find(|arg| !validate_application_arg(arg, app))
+        {
+            bail!("invalid application argument: {}", arg);
+        }
+
+        let command = app
+            .command
+            .split_whitespace()
+            .map(ToOwned::to_owned)
+            .chain(service_args)
+            .collect();
+
+        Ok(ApplicationStartPlan {
+            service_name: service_name.to_owned(),
+            app_name: app_name.to_owned(),
+            command,
+        })
+    }
 }
 
 impl From<Snapshot> for pb::systemd::UnitStatus {
@@ -152,6 +201,76 @@ fn to_unit_response(snapshot: Snapshot) -> pb::systemd::UnitResponse {
     pb::systemd::UnitResponse {
         unit_status: Some(snapshot.into()),
     }
+}
+
+const APP_ARG_FLAG: &str = "flag";
+const APP_ARG_URL: &str = "url";
+const APP_ARG_FILE: &str = "file";
+
+fn validate_service_name(service_name: &str) -> Result<()> {
+    if Regex::new(r"^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+\.service$")?.is_match(service_name) {
+        Ok(())
+    } else {
+        bail!("failure parsing application name")
+    }
+}
+
+fn validate_application_arg(arg: &str, app: &ApplicationManifest) -> bool {
+    (validate_flag(arg) && app.args.iter().any(|ty| ty == APP_ARG_FLAG))
+        || (validate_url(arg) && app.args.iter().any(|ty| ty == APP_ARG_URL))
+        || (validate_file_path(arg, &app.directories)
+            && app.args.iter().any(|ty| ty == APP_ARG_FILE))
+}
+
+fn validate_flag(arg: &str) -> bool {
+    Regex::new(r"^-[-]?[a-zA-Z0-9_-]+$").is_ok_and(|re| re.is_match(arg))
+}
+
+fn validate_url(arg: &str) -> bool {
+    let validation_url = if let Some(after) = arg.strip_prefix("element:") {
+        format!("http://{}", after.trim_start_matches('/'))
+    } else if let Some(after) = arg.strip_prefix("io.element.desktop:") {
+        format!("http://{}", after.trim_start_matches('/'))
+    } else {
+        arg.to_owned()
+    };
+
+    let Ok(parsed) = url::Url::parse(&validation_url) else {
+        return false;
+    };
+
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return false;
+    }
+
+    match url::Url::parse(arg) {
+        Ok(original) => original.username().is_empty() && original.password().is_none(),
+        Err(_) => true,
+    }
+}
+
+fn validate_file_path(arg: &str, directories: &[String]) -> bool {
+    let path = std::path::Path::new(arg);
+    if !path.is_absolute() {
+        return false;
+    }
+
+    if path
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return false;
+    }
+
+    if !directories
+        .iter()
+        .map(std::path::Path::new)
+        .any(|dir| path.starts_with(dir))
+    {
+        return false;
+    }
+
+    std::fs::metadata(arg).is_ok()
 }
 
 #[derive(Debug, Clone)]

@@ -52,7 +52,11 @@ impl AgentRuntime {
             .build_v1()?;
 
         let backend = ZbusBackend::new().await?;
-        let manager = ServiceManager::new(self.config.network.agent.services.clone(), backend);
+        let manager = ServiceManager::new(
+            self.config.network.agent.services.clone(),
+            self.config.capabilities.applications.clone(),
+            backend,
+        );
         let unit_service = UnitControlServiceServer::new(UnitControlService::new(manager));
 
         info!(
