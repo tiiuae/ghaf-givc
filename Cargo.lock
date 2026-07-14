@@ -1368,6 +1368,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "givc-agent"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "givc-common",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-reflection",
+ "tracing",
+ "tracing-journald",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "givc-client"
 version = "0.0.1"
 dependencies = [

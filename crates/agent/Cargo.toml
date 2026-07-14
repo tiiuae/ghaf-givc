@@ -1,0 +1,18 @@
+[package]
+authors = ["Alexander Nikolaev <alexander.nikolaev@unikie.com>"]
+edition = "2024"
+license = "Apache 2.0"
+name = "givc-agent"
+publish = false
+version = "0.0.1"
+
+[dependencies]
+anyhow.workspace = true
+givc-common = { path = "../common" }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
+tokio-stream.workspace = true
+tonic = { workspace = true, features = ["tls-aws-lc"] }
+tonic-reflection.workspace = true
+tracing.workspace = true
+tracing-journald.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
