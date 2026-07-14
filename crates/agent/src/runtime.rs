@@ -11,6 +11,7 @@ use crate::config::AgentConfig;
 use crate::servicemanager::{
     ServiceManager, UnitControlService, UnitControlServiceServer, ZbusBackend,
 };
+use crate::statsmanager::{StatsServer, StatsServiceServer};
 use givc_common::pb::reflection::SYSTEMD_DESCRIPTOR;
 
 #[derive(Debug, Clone)]
@@ -58,6 +59,7 @@ impl AgentRuntime {
             backend,
         );
         let unit_service = UnitControlServiceServer::new(UnitControlService::new(manager));
+        let stats_service = StatsServiceServer::new(StatsServer::new());
 
         info!(
             addr = %self.listen,
@@ -68,6 +70,7 @@ impl AgentRuntime {
         Server::builder()
             .add_service(reflect)
             .add_service(unit_service)
+            .add_service(stats_service)
             .serve(self.listen)
             .await?;
 
