@@ -8,6 +8,7 @@ version = "0.0.1"
 
 [dependencies]
 anyhow.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
 givc-common = { path = "../common" }
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
 tokio-stream.workspace = true
