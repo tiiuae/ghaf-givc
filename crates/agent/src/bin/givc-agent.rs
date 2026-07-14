@@ -7,6 +7,9 @@ use clap::Parser;
 async fn main() -> anyhow::Result<()> {
     let cli = givc_agent::cli::Cli::parse();
     givc_agent::trace_init(cli.debug)?;
+    let config = givc_agent::config::AgentConfig::load(&cli.config)?;
     tracing::info!(config = %cli.config.display(), "givc-agent cli parsed");
-    givc_agent::runtime::AgentRuntime::default().serve().await
+    givc_agent::runtime::AgentRuntime::from_config(config)?
+        .serve()
+        .await
 }
