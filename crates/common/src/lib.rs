@@ -46,6 +46,7 @@ pub mod pb {
     }
     pub mod reflection {
         pub const ADMIN_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("admin_descriptor");
+        pub const EXEC_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("exec_descriptor");
         pub const CTAP_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("ctap_descriptor");
         pub const NOTIFY_DESCRIPTOR: &[u8] =
             tonic::include_file_descriptor_set!("notify_descriptor");

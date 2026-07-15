@@ -9,6 +9,7 @@ use tracing::info;
 
 use crate::config::AgentConfig;
 use crate::ctap::{CtapService, CtapServiceServer};
+use crate::exec::{ExecService, ExecServiceServer};
 use crate::hwid::{HwIdServer, HwidServiceServer};
 use crate::locale::{LocaleClientServer, LocaleServer};
 use crate::notifier::{UserNotificationServiceServer, UserNotifierServer};
@@ -17,7 +18,8 @@ use crate::servicemanager::{
 };
 use crate::statsmanager::{StatsServer, StatsServiceServer};
 use givc_common::pb::reflection::{
-    CTAP_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR, NOTIFY_DESCRIPTOR, SYSTEMD_DESCRIPTOR,
+    CTAP_DESCRIPTOR, EXEC_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR, NOTIFY_DESCRIPTOR,
+    SYSTEMD_DESCRIPTOR,
 };
 
 #[derive(Debug, Clone)]
@@ -56,6 +58,7 @@ impl AgentRuntime {
     pub async fn serve(self) -> Result<()> {
         let reflect = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(CTAP_DESCRIPTOR)
+            .register_encoded_file_descriptor_set(EXEC_DESCRIPTOR)
             .register_encoded_file_descriptor_set(HWID_DESCRIPTOR)
             .register_encoded_file_descriptor_set(LOCALE_DESCRIPTOR)
             .register_encoded_file_descriptor_set(NOTIFY_DESCRIPTOR)
@@ -68,6 +71,7 @@ impl AgentRuntime {
             self.config.capabilities.applications.clone(),
             backend,
         );
+        let exec_service = ExecServiceServer::new(ExecService::new());
         let ctap_service = CtapServiceServer::new(CtapService::new());
         let unit_service = UnitControlServiceServer::new(UnitControlService::new(manager));
         let hwid_service = HwidServiceServer::new(HwIdServer::new(
@@ -87,6 +91,7 @@ impl AgentRuntime {
 
         Server::builder()
             .add_service(reflect)
+            .add_service(exec_service)
             .add_service(ctap_service)
             .add_service(unit_service)
             .add_service(hwid_service)
