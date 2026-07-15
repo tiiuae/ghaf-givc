@@ -11,12 +11,13 @@ use crate::config::AgentConfig;
 use crate::ctap::{CtapService, CtapServiceServer};
 use crate::hwid::{HwIdServer, HwidServiceServer};
 use crate::locale::{LocaleClientServer, LocaleServer};
+use crate::notifier::{UserNotificationServiceServer, UserNotifierServer};
 use crate::servicemanager::{
     ServiceManager, UnitControlService, UnitControlServiceServer, ZbusBackend,
 };
 use crate::statsmanager::{StatsServer, StatsServiceServer};
 use givc_common::pb::reflection::{
-    CTAP_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR, SYSTEMD_DESCRIPTOR,
+    CTAP_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR, NOTIFY_DESCRIPTOR, SYSTEMD_DESCRIPTOR,
 };
 
 #[derive(Debug, Clone)]
@@ -57,6 +58,7 @@ impl AgentRuntime {
             .register_encoded_file_descriptor_set(CTAP_DESCRIPTOR)
             .register_encoded_file_descriptor_set(HWID_DESCRIPTOR)
             .register_encoded_file_descriptor_set(LOCALE_DESCRIPTOR)
+            .register_encoded_file_descriptor_set(NOTIFY_DESCRIPTOR)
             .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
             .build_v1()?;
 
@@ -72,6 +74,9 @@ impl AgentRuntime {
             self.config.capabilities.hwid.interface.clone(),
         )?);
         let locale_service = LocaleClientServer::new(LocaleServer::new());
+        let notifier_service = UserNotificationServiceServer::new(UserNotifierServer::new(
+            self.config.capabilities.notifier.socket.clone(),
+        ));
         let stats_service = StatsServiceServer::new(StatsServer::new());
 
         info!(
@@ -86,6 +91,7 @@ impl AgentRuntime {
             .add_service(unit_service)
             .add_service(hwid_service)
             .add_service(locale_service)
+            .add_service(notifier_service)
             .add_service(stats_service)
             .serve(self.listen)
             .await?;
