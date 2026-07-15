@@ -4,22 +4,29 @@
 use std::net::SocketAddr;
 
 use anyhow::Result;
+use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 use tracing::info;
+use tracing::warn;
 
 use crate::config::AgentConfig;
 use crate::ctap::{CtapService, CtapServiceServer};
+use crate::eventproxy;
 use crate::exec::{ExecService, ExecServiceServer};
 use crate::hwid::{HwIdServer, HwidServiceServer};
 use crate::locale::{LocaleClientServer, LocaleServer};
 use crate::notifier::{UserNotificationServiceServer, UserNotifierServer};
+use crate::policyadmin::{PolicyAdminServer, PolicyAdminServerServer};
+use crate::registration::start_registration_worker;
 use crate::servicemanager::{
     ServiceManager, UnitControlService, UnitControlServiceServer, ZbusBackend,
 };
+use crate::socketproxy;
 use crate::statsmanager::{StatsServer, StatsServiceServer};
+use crate::wifimanager::{WifiService, WifiServiceServerServer};
 use givc_common::pb::reflection::{
-    CTAP_DESCRIPTOR, EXEC_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR, NOTIFY_DESCRIPTOR,
-    SYSTEMD_DESCRIPTOR,
+    CTAP_DESCRIPTOR, EVENT_DESCRIPTOR, EXEC_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR,
+    NOTIFY_DESCRIPTOR, POLICYADMIN_DESCRIPTOR, SOCKET_DESCRIPTOR, SYSTEMD_DESCRIPTOR,
 };
 
 #[derive(Debug, Clone)]
@@ -56,16 +63,27 @@ impl AgentRuntime {
     /// # Errors
     /// Fails if server setup or serving fails.
     pub async fn serve(self) -> Result<()> {
+        let config = self.config.clone();
+        eventproxy::start_event_proxy_services(&config).await?;
+        socketproxy::start_socket_proxy_services(&config).await?;
+
+        let backend = ZbusBackend::new().await?;
+        let reg_backend = backend.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        start_registration_worker(config.clone(), reg_backend, started_rx);
+
         let reflect = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(CTAP_DESCRIPTOR)
+            .register_encoded_file_descriptor_set(EVENT_DESCRIPTOR)
             .register_encoded_file_descriptor_set(EXEC_DESCRIPTOR)
             .register_encoded_file_descriptor_set(HWID_DESCRIPTOR)
             .register_encoded_file_descriptor_set(LOCALE_DESCRIPTOR)
             .register_encoded_file_descriptor_set(NOTIFY_DESCRIPTOR)
+            .register_encoded_file_descriptor_set(POLICYADMIN_DESCRIPTOR)
+            .register_encoded_file_descriptor_set(SOCKET_DESCRIPTOR)
             .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
             .build_v1()?;
 
-        let backend = ZbusBackend::new().await?;
         let manager = ServiceManager::new(
             self.config.network.agent.services.clone(),
             self.config.capabilities.applications.clone(),
@@ -73,6 +91,21 @@ impl AgentRuntime {
         );
         let exec_service = ExecServiceServer::new(ExecService::new());
         let ctap_service = CtapServiceServer::new(CtapService::new());
+        let policyadmin_service = PolicyAdminServerServer::new(PolicyAdminServer::new(
+            self.config.capabilities.policy.store_path.clone(),
+            self.config.capabilities.policy.policies.clone(),
+        ));
+        let wifi_service = if self.config.capabilities.wifi.enabled {
+            match WifiService::new().await {
+                Ok(service) => Some(WifiServiceServerServer::new(service)),
+                Err(err) => {
+                    tracing::warn!(error = %err, "wifi service disabled: failed to initialize");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let unit_service = UnitControlServiceServer::new(UnitControlService::new(manager));
         let hwid_service = HwidServiceServer::new(HwIdServer::new(
             self.config.capabilities.hwid.interface.clone(),
@@ -89,17 +122,24 @@ impl AgentRuntime {
             "starting givc-agent"
         );
 
-        Server::builder()
+        let listener = tokio::net::TcpListener::bind(self.listen).await?;
+        let _ = started_tx.send(());
+        let listener = TcpListenerStream::new(listener);
+
+        let mut server = Server::builder()
             .add_service(reflect)
             .add_service(exec_service)
             .add_service(ctap_service)
+            .add_service(policyadmin_service)
             .add_service(unit_service)
             .add_service(hwid_service)
             .add_service(locale_service)
             .add_service(notifier_service)
-            .add_service(stats_service)
-            .serve(self.listen)
-            .await?;
+            .add_service(stats_service);
+        if let Some(wifi_service) = wifi_service {
+            server = server.add_service(wifi_service);
+        }
+        server.serve_with_incoming(listener).await?;
 
         Ok(())
     }
