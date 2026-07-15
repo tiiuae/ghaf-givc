@@ -168,7 +168,7 @@ impl NetworkManagerBackend {
 
     async fn wait_for_activation(&self, active_path: &OwnedObjectPath) -> Result<()> {
         let active = self.proxy(active_path, IFACE_CONNECTION_ACTIVE).await?;
-        for _ in 0..100 {
+        loop {
             let state: u32 = active.get_property("State").await?;
             match state {
                 NM_ACTIVE_CONNECTION_STATE_UNKNOWN => {
@@ -186,7 +186,6 @@ impl NetworkManagerBackend {
             }
             sleep(Duration::from_millis(100)).await;
         }
-        bail!("timed out waiting for wifi activation")
     }
 
     async fn disconnect(&self) -> Result<String> {
