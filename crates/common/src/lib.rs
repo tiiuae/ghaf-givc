@@ -41,10 +41,14 @@ pub mod pb {
     pub mod ctap {
         tonic::include_proto!("ctap");
     }
+    pub mod hwid {
+        tonic::include_proto!("hwid");
+    }
     pub mod reflection {
         pub const ADMIN_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("admin_descriptor");
         pub const LOCALE_DESCRIPTOR: &[u8] =
             tonic::include_file_descriptor_set!("locale_descriptor");
+        pub const HWID_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("hwid_descriptor");
         pub const SYSTEMD_DESCRIPTOR: &[u8] =
             tonic::include_file_descriptor_set!("systemd_descriptor");
     }
