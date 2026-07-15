@@ -44,10 +44,25 @@ pub mod pb {
     pub mod hwid {
         tonic::include_proto!("hwid");
     }
+    pub mod socketproxy {
+        tonic::include_proto!("socketproxy");
+    }
+    pub mod eventproxy {
+        tonic::include_proto!("eventproxy");
+    }
+    pub mod wifi {
+        tonic::include_proto!("wifimanager");
+    }
     pub mod reflection {
         pub const ADMIN_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("admin_descriptor");
         pub const EXEC_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("exec_descriptor");
         pub const CTAP_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("ctap_descriptor");
+        pub const POLICYADMIN_DESCRIPTOR: &[u8] =
+            tonic::include_file_descriptor_set!("policyadmin_descriptor");
+        pub const SOCKET_DESCRIPTOR: &[u8] =
+            tonic::include_file_descriptor_set!("socket_descriptor");
+        pub const EVENT_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("event_descriptor");
+        pub const WIFI_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("wifi_descriptor");
         pub const NOTIFY_DESCRIPTOR: &[u8] =
             tonic::include_file_descriptor_set!("notify_descriptor");
         pub const LOCALE_DESCRIPTOR: &[u8] =
