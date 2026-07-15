@@ -8,13 +8,16 @@ use tonic::transport::Server;
 use tracing::info;
 
 use crate::config::AgentConfig;
+use crate::ctap::{CtapService, CtapServiceServer};
 use crate::hwid::{HwIdServer, HwidServiceServer};
 use crate::locale::{LocaleClientServer, LocaleServer};
 use crate::servicemanager::{
     ServiceManager, UnitControlService, UnitControlServiceServer, ZbusBackend,
 };
 use crate::statsmanager::{StatsServer, StatsServiceServer};
-use givc_common::pb::reflection::{HWID_DESCRIPTOR, LOCALE_DESCRIPTOR, SYSTEMD_DESCRIPTOR};
+use givc_common::pb::reflection::{
+    CTAP_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR, SYSTEMD_DESCRIPTOR,
+};
 
 #[derive(Debug, Clone)]
 pub struct AgentRuntime {
@@ -51,6 +54,7 @@ impl AgentRuntime {
     /// Fails if server setup or serving fails.
     pub async fn serve(self) -> Result<()> {
         let reflect = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(CTAP_DESCRIPTOR)
             .register_encoded_file_descriptor_set(HWID_DESCRIPTOR)
             .register_encoded_file_descriptor_set(LOCALE_DESCRIPTOR)
             .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
@@ -62,6 +66,7 @@ impl AgentRuntime {
             self.config.capabilities.applications.clone(),
             backend,
         );
+        let ctap_service = CtapServiceServer::new(CtapService::new());
         let unit_service = UnitControlServiceServer::new(UnitControlService::new(manager));
         let hwid_service = HwidServiceServer::new(HwIdServer::new(
             self.config.capabilities.hwid.interface.clone(),
@@ -77,6 +82,7 @@ impl AgentRuntime {
 
         Server::builder()
             .add_service(reflect)
+            .add_service(ctap_service)
             .add_service(unit_service)
             .add_service(hwid_service)
             .add_service(locale_service)
