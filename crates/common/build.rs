@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "stats",
         "notify",
         "ctap",
+        "hwid",
         "policyadmin",
     ] {
         tonic_prost_build::configure()
