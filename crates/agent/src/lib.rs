@@ -6,14 +6,19 @@ use anyhow::Context;
 pub mod cli;
 pub mod config;
 pub mod ctap;
+pub mod eventproxy;
 pub mod exec;
 pub mod hwid;
 pub mod locale;
 pub mod notifier;
+pub mod policyadmin;
+pub mod registration;
 pub mod runtime;
 pub mod service;
 pub mod servicemanager;
+pub mod socketproxy;
 pub mod statsmanager;
+pub mod wifimanager;
 
 /// Init logging.
 ///
