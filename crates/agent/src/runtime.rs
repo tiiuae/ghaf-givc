@@ -27,6 +27,7 @@ use crate::wifimanager::{WifiService, WifiServiceServerServer};
 use givc_common::pb::reflection::{
     CTAP_DESCRIPTOR, EVENT_DESCRIPTOR, EXEC_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR,
     NOTIFY_DESCRIPTOR, POLICYADMIN_DESCRIPTOR, SOCKET_DESCRIPTOR, SYSTEMD_DESCRIPTOR,
+    WIFI_DESCRIPTOR,
 };
 
 #[derive(Debug, Clone)]
@@ -81,6 +82,7 @@ impl AgentRuntime {
             .register_encoded_file_descriptor_set(NOTIFY_DESCRIPTOR)
             .register_encoded_file_descriptor_set(POLICYADMIN_DESCRIPTOR)
             .register_encoded_file_descriptor_set(SOCKET_DESCRIPTOR)
+            .register_encoded_file_descriptor_set(WIFI_DESCRIPTOR)
             .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
             .build_v1()?;
 
