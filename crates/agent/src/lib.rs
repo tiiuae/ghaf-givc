@@ -8,6 +8,7 @@ pub mod config;
 pub mod ctap;
 pub mod hwid;
 pub mod locale;
+pub mod notifier;
 pub mod runtime;
 pub mod service;
 pub mod servicemanager;
