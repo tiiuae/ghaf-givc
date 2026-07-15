@@ -122,7 +122,7 @@ impl AgentRuntime {
             "starting givc-agent"
         );
 
-        let listener = tokio::net::TcpListener::bind(self.listen).await?;
+        let listener = bind_listener_with_retry(self.listen).await?;
         let _ = started_tx.send(());
         let listener = TcpListenerStream::new(listener);
 
@@ -143,4 +143,21 @@ impl AgentRuntime {
 
         Ok(())
     }
+}
+
+async fn bind_listener_with_retry(listen: SocketAddr) -> Result<tokio::net::TcpListener> {
+    const LISTENER_RETRIES: usize = 20;
+
+    for attempt in 0..LISTENER_RETRIES {
+        match tokio::net::TcpListener::bind(listen).await {
+            Ok(listener) => return Ok(listener),
+            Err(err) if attempt + 1 < LISTENER_RETRIES => {
+                warn!(addr = %listen, error = %err, "error starting listener for GRPC server, retrying");
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    unreachable!("listener retry loop should always return")
 }
