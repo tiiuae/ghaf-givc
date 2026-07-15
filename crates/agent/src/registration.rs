@@ -103,11 +103,16 @@ async fn register_services(config: &AgentConfig, backend: &ZbusBackend) -> Resul
 }
 
 fn admin_client(config: &AgentConfig) -> Result<AdminClient> {
+    let admin_tls_name = if config.network.admin.transport.name.is_empty() {
+        "admin.ghaf".to_owned()
+    } else {
+        config.network.admin.transport.name.clone()
+    };
     let admin_tls = config
         .network
         .tls_config
         .clone()
-        .map(|tls| (config.network.admin.transport.name.clone(), tls));
+        .map(|tls| (admin_tls_name, tls));
     Ok(AdminClient::from_endpoint_address(
         endpoint_address(&config.network.admin.transport)?,
         admin_tls,
