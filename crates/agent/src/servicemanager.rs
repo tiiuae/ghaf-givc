@@ -506,9 +506,12 @@ impl ZbusBackend {
     /// # Errors
     /// Fails if system bus connection cannot be established.
     pub async fn new() -> Result<Self> {
-        Ok(Self {
-            conn: zbus::Connection::system().await?,
-        })
+        let conn = if unsafe { libc::geteuid() } == 0 {
+            zbus::Connection::system().await?
+        } else {
+            zbus::Connection::session().await?
+        };
+        Ok(Self { conn })
     }
 
     async fn manager(&self) -> Result<zbus_systemd::systemd1::ManagerProxy<'_>> {
@@ -516,7 +519,7 @@ impl ZbusBackend {
     }
 
     async fn unit(&self, name: &str) -> Result<zbus_systemd::systemd1::UnitProxy<'_>> {
-        let path = self.manager().await?.get_unit(name.to_owned()).await?;
+        let path = self.manager().await?.load_unit(name.to_owned()).await?;
         Ok(zbus_systemd::systemd1::UnitProxy::new(&self.conn, path).await?)
     }
 
