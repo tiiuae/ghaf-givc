@@ -3,18 +3,19 @@ module givc
 go 1.25.0
 
 require (
-	github.com/cedar-policy/cedar-go v1.6.0
+	github.com/cedar-policy/cedar-go v1.8.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
-	github.com/holoplot/go-evdev v0.0.0-20250804134636-ab1d56a1fe83
+	github.com/holoplot/go-evdev v0.0.0-20260504100651-66d1748fe847
 	github.com/jbdemonte/virtual-device v1.2.1
 	github.com/linuxkit/virtsock v0.0.0-20241009230534-cb6a20cc0422
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/sirupsen/logrus v1.9.4
+	github.com/spiffe/go-spiffe/v2 v2.7.0
 	golang.org/x/net v0.57.0
 	golang.org/x/sync v0.22.0
 	google.golang.org/grpc v1.82.1
@@ -22,7 +23,9 @@ require (
 )
 
 require (
+	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
