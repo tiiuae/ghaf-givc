@@ -4,10 +4,11 @@
 use anyhow::Context;
 use clap::Parser;
 use givc::admin;
-use givc::endpoint::TlsConfig;
 use givc::utils::access_control::Authorizer;
-use givc::utils::auth::Authenticator;
+use givc::utils::authenticator::Authenticator;
+use givc_common::authn::TlsConfig;
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
+use givc_common::tls_stream::incoming_tls_stream;
 use std::path::PathBuf;
 use tonic::transport::Server;
 use tonic_middleware::RequestInterceptorLayer;
@@ -34,6 +35,19 @@ struct Cli {
 
     #[arg(long, env = "HOST_KEY")]
     host_key: Option<PathBuf>,
+
+    #[arg(long, env = "AUTH_TYPE", default_value = "legacy")]
+    auth_type: String,
+
+    #[arg(
+        long,
+        env = "SPIRE_AGENT_SOCKET",
+        default_value = "unix:///run/spire/agent-socket"
+    )]
+    spire_agent_socket: String,
+
+    #[arg(long, env = "TRUST_DOMAIN", default_value = "ghaf.ssrc.tii.ae")]
+    trust_domain: String,
 
     #[arg(long, env = "GIVC_MONITORING", default_value_t = true)]
     monitoring: bool,
@@ -66,19 +80,28 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     givc::trace_init()?;
     let cli = Cli::parse();
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     debug!("CLI is {:#?}", cli);
 
-    let mut builder = Server::builder();
+    let builder = Server::builder();
 
     let tls = if cli.use_tls {
-        let tls_conf = TlsConfig {
-            ca_cert_file_path: cli.ca_cert.context("CA_CERT required")?,
-            cert_file_path: cli.host_cert.context("HOST_CERT required")?,
-            key_file_path: cli.host_key.context("HOST_KEY required")?,
-            tls_name: None,
+        let tls_conf = match cli.auth_type.to_lowercase().as_str() {
+            "spire" => {
+                info!(
+                    "givc-admin using spire svid,{:?} {:?}",
+                    cli.trust_domain, cli.spire_agent_socket
+                );
+                TlsConfig::from_spire_agent(cli.spire_agent_socket, cli.trust_domain).await?
+            }
+            _ => TlsConfig::from_certs_and_key(
+                cli.ca_cert.context("CA_CERT required")?,
+                cli.host_cert.context("HOST_CERT required")?,
+                cli.host_key.context("HOST_KEY required")?,
+                None,
+            )?,
         };
-        builder = builder.tls_config(tls_conf.server_config()?)?;
         Some(tls_conf)
     } else {
         None
@@ -89,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
         .build_v1()?;
 
     let admin_impl = admin::server::AdminService::new(
-        tls,
+        tls.clone(),
         cli.monitoring,
         cli.policy_admin,
         cli.policy_store,
@@ -100,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
 
     let authenticator = Authenticator {
         use_tls: cli.use_tls,
+        is_spire: cli.auth_type.to_lowercase() == "spire",
     };
 
     let listener = tokio_listener::Listener::bind_multiple(
@@ -110,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     info!("Starting givc-admin with dynamic logging...");
+    let tls_stream = incoming_tls_stream(listener, tls);
 
     if cli.access_control {
         let cedar_path = cli
@@ -122,14 +147,14 @@ async fn main() -> anyhow::Result<()> {
             .layer(RequestInterceptorLayer::new(authorizer))
             .add_service(reflect)
             .add_service(admin_service_svc)
-            .serve_with_incoming(listener)
+            .serve_with_incoming(tls_stream)
             .await?;
     } else {
         builder
             .layer(RequestInterceptorLayer::new(authenticator))
             .add_service(reflect)
             .add_service(admin_service_svc)
-            .serve_with_incoming(listener)
+            .serve_with_incoming(tls_stream)
             .await?;
     }
 
