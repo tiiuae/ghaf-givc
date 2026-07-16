@@ -6,6 +6,7 @@ import "locale/locale.proto";
 import "systemd/systemd.proto";
 import "notify/notify.proto";
 import "ctap/ctap.proto";
+import "vm/vm.proto";
 
 package admin;
 
@@ -199,4 +200,7 @@ service AdminService {
 
     // Get host sysinfo values in one call
     rpc Sysinfo(Empty) returns (stats.SysinfoResponse) {}
+
+    // Set VM memory limits
+    rpc VMSize(vm.VMSizeRequest) returns (vm.VMSizeResponse) {}
 }

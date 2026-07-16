@@ -1,0 +1,30 @@
+// Stats Service API
+syntax = "proto3";
+option go_package = "givc/modules/api/vm";
+import "stats/stats.proto";
+
+package vm;
+
+// Empty stats request message
+message VMStatsRequest {
+    string Name = 1;
+}
+
+message VMSizeRequest {
+    string Vm = 1;
+    optional uint64 Minimum = 2;
+    optional uint64 Maximum = 3;
+}
+
+message VMSizeResponse {
+    uint64 Minimum = 1;
+    uint64 Maximum = 2;
+    uint64 Size = 3;
+}
+
+service VMService {
+    // Get VM memory statistics
+    rpc GetStats(VMStatsRequest) returns (stats.MemoryStats) {}
+    // Set VM memory limtss
+    rpc SetVMSize(VMSizeRequest) returns (VMSizeResponse) {}
+}

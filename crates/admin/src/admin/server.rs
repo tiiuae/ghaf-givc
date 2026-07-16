@@ -25,7 +25,8 @@ use crate::pb::{
     self, ApplicationRequest, ApplicationResponse, Empty, ListGenerationsResponse, LocaleRequest,
     QueryListResponse, RegistryRequest, RegistryResponse, SetGenerationRequest,
     SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest, UnitStatusRequest,
-    WatchItem, ctap::CtapRequest, ctap::CtapResponse,
+    WatchItem, ctap::CtapRequest, ctap::CtapResponse, vm::VmSizeRequest, vm::VmSizeResponse,
+    vm::VmStatsRequest,
 };
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
@@ -850,6 +851,20 @@ impl pb::admin_service_server::AdminService for AdminService {
         request: tonic::Request<pb::StatsRequest>,
     ) -> tonic::Result<tonic::Response<pb::stats::StatsResponse>> {
         escalate(request, async move |req| {
+            let bal_stats = if let Ok(host_mgr) =
+                self.inner.agent_endpoint("givc-ghaf-host.service")
+                && let Ok(host_conn) = host_mgr.connect().await
+                && let Ok(stats) = pb::vm::vm_service_client::VmServiceClient::new(host_conn)
+                    .get_stats(VmStatsRequest {
+                        name: req.vm_name.clone(),
+                    })
+                    .await
+            {
+                Some(stats.into_inner())
+            } else {
+                None
+            };
+
             let vm_name = VmName::Vm(&req.vm_name).agent_service();
             let vm = self
                 .inner
@@ -859,13 +874,18 @@ impl pb::admin_service_server::AdminService for AdminService {
                         .then(|| self.inner.endpoint(re))
                 })
                 .with_context(|| format!("VM {vm_name} not found"))??;
-            Ok(vm
+            let stats = vm
                 .connect()
                 .await
                 .map(pb::stats::stats_service_client::StatsServiceClient::new)?
                 .get_stats(pb::stats::StatsRequest {})
                 .await?
-                .into_inner())
+                .into_inner();
+
+            Ok(pb::stats::StatsResponse {
+                memory: bal_stats.or(stats.memory),
+                ..stats
+            })
         })
         .await
     }
@@ -957,6 +977,23 @@ impl pb::admin_service_server::AdminService for AdminService {
             let mut client = pb::ctap::ctap_client::CtapClient::new(gui_vm_mgr.connect().await?);
 
             Ok(client.ctap(req).await?.into_inner())
+        })
+        .await
+    }
+
+    async fn vm_size(
+        &self,
+        request: tonic::Request<VmSizeRequest>,
+    ) -> Result<tonic::Response<VmSizeResponse>, tonic::Status> {
+        escalate(request, async move |req| {
+            let host_mgr = self
+                .inner
+                .agent_endpoint("givc-ghaf-host.service")
+                .context("Host not found")?;
+            let mut client =
+                pb::vm::vm_service_client::VmServiceClient::new(host_mgr.connect().await?);
+
+            Ok(client.set_vm_size(req).await?.into_inner())
         })
         .await
     }
