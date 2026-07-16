@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use givc_client::AdminClient;
 use givc_common::address::EndpointAddress;
 use givc_common::types::{EndpointEntry, UnitStatus};
@@ -43,7 +43,7 @@ async fn register_agent_with_retry(config: &AgentConfig, backend: &ZbusBackend) 
         match register_agent(config, backend).await {
             Ok(()) => return Ok(()),
             Err(err) => {
-                warn!(error = %err, "error registering agent, retrying...");
+                warn!("error registering agent, retrying: {err:#}");
                 sleep(Duration::from_secs(1)).await;
             }
         }
@@ -57,15 +57,19 @@ async fn register_agent(config: &AgentConfig, backend: &ZbusBackend) -> Result<(
     }
 
     let admin = admin_client(config)?;
-    let unit_status = backend.get_unit_snapshot(&agent_service_name).await?;
+    let unit_status = backend
+        .get_unit_snapshot(&agent_service_name)
+        .await
+        .with_context(|| format!("failed to read unit snapshot for {agent_service_name}"))?;
     admin
         .register_service(
-            agent_service_name,
+            agent_service_name.clone(),
             config.identity.r#type.try_into()?,
             endpoint_entry(&config.network.agent)?,
             snapshot_to_unit_status(unit_status),
         )
-        .await?;
+        .await
+        .with_context(|| format!("failed to register {agent_service_name} in admin"))?;
     info!("successfully registered agent");
     Ok(())
 }
@@ -88,7 +92,7 @@ async fn register_services(config: &AgentConfig, backend: &ZbusBackend) -> Resul
                     )
                     .await
                 {
-                    warn!(service = %service, error = %err, "error registering service");
+                    warn!("error registering service {service}: {err:#}");
                     continue;
                 }
                 info!(service = %service, "successfully registered service");
@@ -108,11 +112,10 @@ fn admin_client(config: &AgentConfig) -> Result<AdminClient> {
     } else {
         config.network.admin.transport.name.clone()
     };
-    let admin_tls = config
-        .network
-        .tls_config
-        .clone()
-        .map(|tls| (admin_tls_name, tls));
+    let admin_tls = config.network.tls_config.clone().map(|mut tls| {
+        tls.tls_name = Some(admin_tls_name.clone());
+        (admin_tls_name.clone(), tls)
+    });
     Ok(AdminClient::from_endpoint_address(
         endpoint_address(&config.network.admin.transport)?,
         admin_tls,
