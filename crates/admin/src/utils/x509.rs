@@ -55,6 +55,15 @@ impl TryFrom<&[u8]> for SecurityInfo {
                 for name in &san.general_names {
                     match name {
                         GeneralName::DNSName(s) => this.dns_names.push((*s).to_string()),
+                        GeneralName::URI(s) => {
+                            if s.starts_with("spiffe://") {
+                                let path = &s["spiffe://".len()..];
+                                let parts: Vec<&str> = path.split('/').collect();
+                                if parts.len() >= 2 {
+                                    this.dns_names.push(parts[1].to_string());
+                                }
+                            }
+                        }
                         GeneralName::IPAddress(b) if b.len() == 4 => {
                             let b = <[u8; 4]>::try_from(*b).unwrap();
                             let ip = IpAddr::from(b);

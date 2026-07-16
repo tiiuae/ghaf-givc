@@ -13,7 +13,8 @@ use tokio::sync::Mutex;
 use tonic::{Code, Response, Status};
 use tracing::{debug, error, info, trace};
 
-use givc_client::endpoint::{EndpointConfig, TlsConfig};
+use givc_client::endpoint::EndpointConfig;
+use givc_common::authn::TlsConfig;
 use givc_common::query::QueryResult;
 use givc_policyadmin::policy::run_policy_admin;
 use givc_policyadmin::policy_manager::{PolicyManager, Update, UpdateReceiver};
