@@ -376,8 +376,8 @@ in
       serviceConfig = {
         Type = "exec";
         ExecStart =
-          "${givc-agent}/bin/givc-agent -config /etc/givc-agent/config.json"
-          + optionalString cfg.debug " -debug";
+          "${givc-agent}/bin/givc-agent --config /etc/givc-agent/config.json"
+          + optionalString cfg.debug " --debug";
         Restart = "on-failure";
         TimeoutStopSec = 5;
         RestartSec = 1;
