@@ -102,7 +102,11 @@ impl AgentRuntime {
         let listener = bind_listener_with_retry(self.listen).await?;
         let _ = started_tx.send(());
 
-        let mut server = Server::builder().add_service(reflect);
+        let mut builder = Server::builder();
+        if let Some(tls) = &self.config.network.tls_config {
+            builder = builder.tls_config(tls.server_config()?)?;
+        }
+        let mut server = builder.add_service(reflect);
 
         if self.config.capabilities.exec.enabled {
             server = server.add_service(ExecServiceServer::new(ExecService::new()));
