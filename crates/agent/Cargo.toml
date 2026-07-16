@@ -18,6 +18,7 @@ regex.workspace = true
 sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+http.workspace = true
 tokio = { workspace = true, features = [
   "macros",
   "net",
@@ -27,10 +28,12 @@ tokio = { workspace = true, features = [
 ] }
 tokio-stream = { workspace = true, features = ["net"] }
 tonic = { workspace = true, features = ["tls-aws-lc"] }
+tonic-middleware.workspace = true
 tonic-reflection.workspace = true
 tracing.workspace = true
 tracing-journald.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+x509-parser = "0.18"
 zbus = { version = "5.17.0", default-features = false, features = ["tokio"] }
 zbus_systemd = { version = "0.26100.0", default-features = false, features = [
   "systemd1",
