@@ -4,10 +4,8 @@
 use std::net::SocketAddr;
 
 use anyhow::Result;
-use tokio_stream::wrappers::TcpListenerStream;
-use tonic::transport::Server;
+use tonic::transport::{Server, server::TcpIncoming};
 use tracing::info;
-use tracing::warn;
 
 use crate::config::AgentConfig;
 use crate::ctap::{CtapService, CtapServiceServer};
@@ -65,14 +63,23 @@ impl AgentRuntime {
     /// Fails if server setup or serving fails.
     pub async fn serve(self) -> Result<()> {
         let config = self.config.clone();
-        eventproxy::start_event_proxy_services(&config).await?;
-        socketproxy::start_socket_proxy_services(&config).await?;
+        if config.capabilities.event_proxy.enabled {
+            eventproxy::start_event_proxy_services(&config).await?;
+        }
+        if config.capabilities.socket_proxy.enabled {
+            socketproxy::start_socket_proxy_services(&config).await?;
+        }
 
         let backend = ZbusBackend::new().await?;
         let reg_backend = backend.clone();
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         start_registration_worker(config.clone(), reg_backend, started_rx);
 
+        let manager = ServiceManager::new(
+            self.config.network.agent.services.clone(),
+            self.config.capabilities.applications.clone(),
+            backend,
+        );
         let reflect = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(CTAP_DESCRIPTOR)
             .register_encoded_file_descriptor_set(EVENT_DESCRIPTOR)
@@ -86,38 +93,6 @@ impl AgentRuntime {
             .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
             .build_v1()?;
 
-        let manager = ServiceManager::new(
-            self.config.network.agent.services.clone(),
-            self.config.capabilities.applications.clone(),
-            backend,
-        );
-        let exec_service = ExecServiceServer::new(ExecService::new());
-        let ctap_service = CtapServiceServer::new(CtapService::new());
-        let policyadmin_service = PolicyAdminServerServer::new(PolicyAdminServer::new(
-            self.config.capabilities.policy.store_path.clone(),
-            self.config.capabilities.policy.policies.clone(),
-        ));
-        let wifi_service = if self.config.capabilities.wifi.enabled {
-            match WifiService::new().await {
-                Ok(service) => Some(WifiServiceServerServer::new(service)),
-                Err(err) => {
-                    tracing::warn!(error = %err, "wifi service disabled: failed to initialize");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        let unit_service = UnitControlServiceServer::new(UnitControlService::new(manager));
-        let hwid_service = HwidServiceServer::new(HwIdServer::new(
-            self.config.capabilities.hwid.interface.clone(),
-        )?);
-        let locale_service = LocaleClientServer::new(LocaleServer::new());
-        let notifier_service = UserNotificationServiceServer::new(UserNotifierServer::new(
-            self.config.capabilities.notifier.socket.clone(),
-        ));
-        let stats_service = StatsServiceServer::new(StatsServer::new());
-
         info!(
             addr = %self.listen,
             service = %self.config.identity.service_name,
@@ -126,21 +101,67 @@ impl AgentRuntime {
 
         let listener = bind_listener_with_retry(self.listen).await?;
         let _ = started_tx.send(());
-        let listener = TcpListenerStream::new(listener);
 
-        let mut server = Server::builder()
-            .add_service(reflect)
-            .add_service(exec_service)
-            .add_service(ctap_service)
-            .add_service(policyadmin_service)
-            .add_service(unit_service)
-            .add_service(hwid_service)
-            .add_service(locale_service)
-            .add_service(notifier_service)
-            .add_service(stats_service);
-        if let Some(wifi_service) = wifi_service {
-            server = server.add_service(wifi_service);
+        let mut server = Server::builder().add_service(reflect);
+
+        if self.config.capabilities.exec.enabled {
+            server = server.add_service(ExecServiceServer::new(ExecService::new()));
         }
+        if self.config.capabilities.ctap.enabled {
+            server = server.add_service(CtapServiceServer::new(CtapService::new()));
+        }
+        let policyadmin_service: Option<PolicyAdminServerServer<_>> =
+            if self.config.capabilities.policy.enabled {
+                Some(PolicyAdminServerServer::new(PolicyAdminServer::new(
+                    self.config.capabilities.policy.store_path.clone(),
+                    self.config.capabilities.policy.policies.clone(),
+                )))
+            } else {
+                None
+            };
+        server = server.add_optional_service(policyadmin_service);
+
+        server = server.add_service(UnitControlServiceServer::new(UnitControlService::new(
+            manager,
+        )));
+
+        let hwid_service: Option<HwidServiceServer<_>> = if self.config.capabilities.hwid.enabled {
+            Some(HwidServiceServer::new(HwIdServer::new(
+                self.config.capabilities.hwid.interface.clone(),
+            )?))
+        } else {
+            None
+        };
+        server = server.add_optional_service(hwid_service);
+
+        server = server.add_service(LocaleClientServer::new(LocaleServer::new()));
+
+        let notifier_service: Option<UserNotificationServiceServer<_>> =
+            if self.config.capabilities.notifier.enabled {
+                Some(UserNotificationServiceServer::new(UserNotifierServer::new(
+                    self.config.capabilities.notifier.socket.clone(),
+                )))
+            } else {
+                None
+            };
+        server = server.add_optional_service(notifier_service);
+
+        server = server.add_service(StatsServiceServer::new(StatsServer::new()));
+
+        let wifi_service: Option<WifiServiceServerServer<_>> =
+            if self.config.capabilities.wifi.enabled {
+                match WifiService::new().await {
+                    Ok(service) => Some(WifiServiceServerServer::new(service)),
+                    Err(err) => {
+                        tracing::warn!(error = %err, "wifi service disabled: failed to initialize");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+        server = server.add_optional_service(wifi_service);
+        let listener = TcpIncoming::from(listener);
         server.serve_with_incoming(listener).await?;
 
         Ok(())
@@ -154,7 +175,7 @@ async fn bind_listener_with_retry(listen: SocketAddr) -> Result<tokio::net::TcpL
         match tokio::net::TcpListener::bind(listen).await {
             Ok(listener) => return Ok(listener),
             Err(err) if attempt + 1 < LISTENER_RETRIES => {
-                warn!(addr = %listen, error = %err, "error starting listener for GRPC server, retrying");
+                tracing::warn!(addr = %listen, error = %err, "error starting listener for GRPC server, retrying");
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
             Err(err) => return Err(err.into()),
