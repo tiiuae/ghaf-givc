@@ -214,6 +214,47 @@ impl TlsConfigJson {
     }
 }
 
+fn null_to_empty_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    Option::<Vec<T>>::deserialize(deserializer).map(|value| value.unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_null_collection_fields_as_empty() {
+        let json = r#"{
+            "identity": {"name": "vm", "type": 1, "subType": 2, "parent": "parent"},
+            "network": {
+                "admin": {"transport": {"addr": "127.0.0.1", "port": "9000", "protocol": "tcp"}},
+                "agent": {"transport": {"addr": "127.0.0.1", "port": "9001", "protocol": "tcp"}},
+                "tls": {"enable": false}
+            },
+            "capabilities": {
+                "services": [],
+                "applications": [],
+                "exec": {"enable": false},
+                "wifi": {"enable": false},
+                "ctap": {"enable": false},
+                "hwid": {"enable": false, "interface": ""},
+                "notifier": {"enable": false, "socket": ""},
+                "eventProxy": {"enable": false, "events": null},
+                "socketProxy": {"enable": false, "sockets": null},
+                "policy": {"enable": false, "storePath": "", "policies": {}}
+            }
+        }"#;
+
+        let config: AgentConfig = serde_json::from_str(json).expect("config should parse");
+        assert!(config.capabilities.event_proxy.events.is_empty());
+        assert!(config.capabilities.socket_proxy.sockets.is_empty());
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct AccessControlConfig {
     #[serde(rename = "enable", default)]
@@ -226,12 +267,14 @@ pub struct AccessControlConfig {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct CapabilitiesConfig {
     #[serde(default)]
+    #[serde(deserialize_with = "null_to_empty_vec")]
     pub services: Vec<String>,
 
     #[serde(rename = "vmServices", default)]
     pub vm_services: VmServicesConfig,
 
     #[serde(default)]
+    #[serde(deserialize_with = "null_to_empty_vec")]
     pub applications: Vec<ApplicationManifest>,
 
     #[serde(default)]
@@ -268,9 +311,11 @@ pub struct VmServicesConfig {
     pub admin_vm: String,
 
     #[serde(rename = "systemVms", default)]
+    #[serde(deserialize_with = "null_to_empty_vec")]
     pub sys_vms: Vec<String>,
 
     #[serde(rename = "appVms", default)]
+    #[serde(deserialize_with = "null_to_empty_vec")]
     pub app_vms: Vec<String>,
 }
 
@@ -283,9 +328,11 @@ pub struct ApplicationManifest {
     pub command: String,
 
     #[serde(default)]
+    #[serde(deserialize_with = "null_to_empty_vec")]
     pub args: Vec<String>,
 
     #[serde(default)]
+    #[serde(deserialize_with = "null_to_empty_vec")]
     pub directories: Vec<String>,
 }
 
@@ -319,6 +366,7 @@ pub struct EventProxyConfig {
     pub enabled: bool,
 
     #[serde(default)]
+    #[serde(deserialize_with = "null_to_empty_vec")]
     pub events: Vec<EventConfig>,
 }
 
@@ -340,6 +388,7 @@ pub struct SocketProxyConfig {
     pub enabled: bool,
 
     #[serde(default)]
+    #[serde(deserialize_with = "null_to_empty_vec")]
     pub sockets: Vec<ProxyConfig>,
 }
 
