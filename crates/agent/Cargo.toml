@@ -1,0 +1,43 @@
+[package]
+authors = ["Alexander Nikolaev <alexander.nikolaev@unikie.com>"]
+edition = "2024"
+license = "Apache 2.0"
+name = "givc-agent"
+publish = false
+version = "0.0.1"
+
+[dependencies]
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+futures-util.workspace = true
+givc-client = { path = "../client" }
+givc-common = { path = "../common" }
+libc = "0.2.177"
+procfs = "0.18.0"
+regex.workspace = true
+sha2.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+http.workspace = true
+tokio = { workspace = true, features = [
+  "macros",
+  "net",
+  "rt-multi-thread",
+  "time",
+  "test-util",
+] }
+tokio-stream = { workspace = true, features = ["net"] }
+tonic = { workspace = true, features = ["tls-aws-lc"] }
+tonic-middleware.workspace = true
+tonic-reflection.workspace = true
+tracing.workspace = true
+tracing-journald.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+x509-parser = "0.18"
+zbus = { version = "5.17.0", default-features = false, features = ["tokio"] }
+zbus_systemd = { version = "0.26100.0", default-features = false, features = [
+  "systemd1",
+  "zbus-async-tokio",
+] }
+tokio-vsock.workspace = true
+url = "2.5.7"
