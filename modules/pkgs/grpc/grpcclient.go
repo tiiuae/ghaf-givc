@@ -21,7 +21,6 @@ import (
 	"google.golang.org/grpc"
 
 	grpc_codes "google.golang.org/grpc/codes"
-	grpc_creds "google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	grpc_metadata "google.golang.org/grpc/metadata"
 )
@@ -39,21 +38,17 @@ func NewClient(cfg *types.EndpointConfig) (*grpc.ClientConn, error) {
 
 	options := []grpc.DialOption{}
 
-	// Create client tls config
-	tlsConfig, err := givc_util.TlsClientConfigFromTlsConfig(cfg.TlsConfig, cfg.Transport.Name)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create TLS client config: %v", err)
-	}
+	options = append(options, grpc.WithAuthority(cfg.Transport.Name))
 
 	// Setup TLS credentials
-	var tlsCredentials grpc.DialOption
-	if tlsConfig != nil {
-		tlsCredentials = grpc.WithTransportCredentials(grpc_creds.NewTLS(tlsConfig))
+	var tlsDialOption grpc.DialOption
+	if cfg.TlsCred != nil {
+		tlsDialOption = grpc.WithTransportCredentials(cfg.TlsCred.GetClientCredentials(cfg.Transport.Name))
 	} else {
-		tlsCredentials = grpc.WithTransportCredentials(insecure.NewCredentials())
+		tlsDialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
 		log.Warning("TLS configuration not provided, using insecure connection")
 	}
-	options = append(options, tlsCredentials)
+	options = append(options, tlsDialOption)
 
 	// Setup GRPC config
 	interceptors := []grpc.UnaryClientInterceptor{

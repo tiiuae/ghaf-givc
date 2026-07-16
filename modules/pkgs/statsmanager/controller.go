@@ -340,11 +340,11 @@ func detectSecureBoot() *bool {
 			if !found || !strings.EqualFold(strings.TrimSpace(key), "Secure Boot") {
 				continue
 			}
-			valueLower := strings.ToLower(strings.TrimSpace(value))
-			if strings.Contains(valueLower, "enable") {
+			switch strings.ToLower(strings.TrimSpace(value)) {
+			case "enabled":
 				b := true
 				return &b
-			} else if strings.Contains(valueLower, "disable") {
+			case "disabled":
 				b := false
 				return &b
 			}
