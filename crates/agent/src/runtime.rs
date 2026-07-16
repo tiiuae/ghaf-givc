@@ -5,8 +5,10 @@ use std::net::SocketAddr;
 
 use anyhow::Result;
 use tonic::transport::{Server, server::TcpIncoming};
+use tonic_middleware::RequestInterceptorLayer;
 use tracing::info;
 
+use crate::auth::Authenticator;
 use crate::config::AgentConfig;
 use crate::ctap::{CtapService, CtapServiceServer};
 use crate::eventproxy;
@@ -102,58 +104,68 @@ impl AgentRuntime {
         let listener = bind_listener_with_retry(self.listen).await?;
         let _ = started_tx.send(());
 
-        let mut builder = Server::builder();
+        let authenticator = RequestInterceptorLayer::new(Authenticator {
+            use_tls: self.config.network.tls_config.is_some(),
+        });
+
+        let listener = TcpIncoming::from(listener);
         if let Some(tls) = &self.config.network.tls_config {
-            builder = builder.tls_config(tls.server_config()?)?;
-        }
-        let mut server = builder.add_service(reflect);
+            let mut server = Server::builder()
+                .tls_config(tls.server_config()?)?
+                .layer(authenticator)
+                .add_service(reflect);
 
-        if self.config.capabilities.exec.enabled {
-            server = server.add_service(ExecServiceServer::new(ExecService::new()));
-        }
-        if self.config.capabilities.ctap.enabled {
-            server = server.add_service(CtapServiceServer::new(CtapService::new()));
-        }
-        let policyadmin_service: Option<PolicyAdminServerServer<_>> =
-            if self.config.capabilities.policy.enabled {
-                Some(PolicyAdminServerServer::new(PolicyAdminServer::new(
-                    self.config.capabilities.policy.store_path.clone(),
-                    self.config.capabilities.policy.policies.clone(),
-                )))
-            } else {
-                None
-            };
-        server = server.add_optional_service(policyadmin_service);
+            if self.config.capabilities.exec.enabled {
+                server = server.add_service(ExecServiceServer::new(ExecService::new()));
+            }
+            if self.config.capabilities.ctap.enabled {
+                server = server.add_service(CtapServiceServer::new(CtapService::new()));
+            }
+            let policyadmin_service: Option<PolicyAdminServerServer<_>> =
+                if self.config.capabilities.policy.enabled {
+                    Some(PolicyAdminServerServer::new(PolicyAdminServer::new(
+                        self.config.capabilities.policy.store_path.clone(),
+                        self.config.capabilities.policy.policies.clone(),
+                    )))
+                } else {
+                    None
+                };
+            server = server.add_optional_service(policyadmin_service);
 
-        server = server.add_service(UnitControlServiceServer::new(UnitControlService::new(
-            manager,
-        )));
+            server = server.add_service(UnitControlServiceServer::new(UnitControlService::new(
+                manager,
+            )));
 
-        let hwid_service: Option<HwidServiceServer<_>> = if self.config.capabilities.hwid.enabled {
-            Some(HwidServiceServer::new(HwIdServer::new(
-                self.config.capabilities.hwid.interface.clone(),
-            )?))
-        } else {
-            None
-        };
-        server = server.add_optional_service(hwid_service);
+            let hwid_service: Option<HwidServiceServer<_>> =
+                if self.config.capabilities.hwid.enabled {
+                    Some(HwidServiceServer::new(HwIdServer::new(
+                        self.config.capabilities.hwid.interface.clone(),
+                    )?))
+                } else {
+                    None
+                };
+            server = server.add_optional_service(hwid_service);
 
-        server = server.add_service(LocaleClientServer::new(LocaleServer::new()));
+            server = server.add_service(LocaleClientServer::new(LocaleServer::new()));
 
-        let notifier_service: Option<UserNotificationServiceServer<_>> =
-            if self.config.capabilities.notifier.enabled {
-                Some(UserNotificationServiceServer::new(UserNotifierServer::new(
-                    self.config.capabilities.notifier.socket.clone(),
-                )))
-            } else {
-                None
-            };
-        server = server.add_optional_service(notifier_service);
+            let notifier_service: Option<UserNotificationServiceServer<_>> =
+                if self.config.capabilities.notifier.enabled {
+                    Some(UserNotificationServiceServer::new(UserNotifierServer::new(
+                        self.config.capabilities.notifier.socket.clone(),
+                    )))
+                } else {
+                    None
+                };
+            server = server.add_optional_service(notifier_service);
 
-        server = server.add_service(StatsServiceServer::new(StatsServer::new()));
+            server = server.add_service(StatsServiceServer::new(StatsServer::new()));
 
-        let wifi_service: Option<WifiServiceServerServer<_>> =
-            if self.config.capabilities.wifi.enabled {
+            let wifi_service: Option<WifiServiceServerServer<_>> = if self
+                .config
+                .capabilities
+                .wifi
+                .enabled
+            {
                 match WifiService::new().await {
                     Ok(service) => Some(WifiServiceServerServer::new(service)),
                     Err(err) => {
@@ -164,9 +176,75 @@ impl AgentRuntime {
             } else {
                 None
             };
-        server = server.add_optional_service(wifi_service);
-        let listener = TcpIncoming::from(listener);
-        server.serve_with_incoming(listener).await?;
+            server = server.add_optional_service(wifi_service);
+            server.serve_with_incoming(listener).await?;
+        } else {
+            let mut server = Server::builder().layer(authenticator).add_service(reflect);
+
+            if self.config.capabilities.exec.enabled {
+                server = server.add_service(ExecServiceServer::new(ExecService::new()));
+            }
+            if self.config.capabilities.ctap.enabled {
+                server = server.add_service(CtapServiceServer::new(CtapService::new()));
+            }
+            let policyadmin_service: Option<PolicyAdminServerServer<_>> =
+                if self.config.capabilities.policy.enabled {
+                    Some(PolicyAdminServerServer::new(PolicyAdminServer::new(
+                        self.config.capabilities.policy.store_path.clone(),
+                        self.config.capabilities.policy.policies.clone(),
+                    )))
+                } else {
+                    None
+                };
+            server = server.add_optional_service(policyadmin_service);
+
+            server = server.add_service(UnitControlServiceServer::new(UnitControlService::new(
+                manager,
+            )));
+
+            let hwid_service: Option<HwidServiceServer<_>> =
+                if self.config.capabilities.hwid.enabled {
+                    Some(HwidServiceServer::new(HwIdServer::new(
+                        self.config.capabilities.hwid.interface.clone(),
+                    )?))
+                } else {
+                    None
+                };
+            server = server.add_optional_service(hwid_service);
+
+            server = server.add_service(LocaleClientServer::new(LocaleServer::new()));
+
+            let notifier_service: Option<UserNotificationServiceServer<_>> =
+                if self.config.capabilities.notifier.enabled {
+                    Some(UserNotificationServiceServer::new(UserNotifierServer::new(
+                        self.config.capabilities.notifier.socket.clone(),
+                    )))
+                } else {
+                    None
+                };
+            server = server.add_optional_service(notifier_service);
+
+            server = server.add_service(StatsServiceServer::new(StatsServer::new()));
+
+            let wifi_service: Option<WifiServiceServerServer<_>> = if self
+                .config
+                .capabilities
+                .wifi
+                .enabled
+            {
+                match WifiService::new().await {
+                    Ok(service) => Some(WifiServiceServerServer::new(service)),
+                    Err(err) => {
+                        tracing::warn!(error = %err, "wifi service disabled: failed to initialize");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            server = server.add_optional_service(wifi_service);
+            server.serve_with_incoming(listener).await?;
+        }
 
         Ok(())
     }
