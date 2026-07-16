@@ -123,6 +123,7 @@ in
         };
       };
       systemd.services."microvm@app-vm" = {
+        wantedBy = [ "multi-user.target" ];
         script = ''
           # Do nothing script, simulating microvm service
           while true; do sleep 10; done
