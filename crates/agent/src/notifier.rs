@@ -82,11 +82,11 @@ fn notification_to_json(notification: &pb::notify::UserNotification) -> String {
         .map(|level| level.as_str_name())
         .unwrap_or("NORMAL");
     serde_json::json!({
-        "event": notification.event,
-        "title": notification.title,
-        "urgency": urgency,
-        "icon": notification.icon,
-        "message": notification.message,
+        "Event": notification.event,
+        "Title": notification.title,
+        "Urgency": urgency,
+        "Icon": notification.icon,
+        "Message": notification.message,
     })
     .to_string()
 }
@@ -117,8 +117,8 @@ mod tests {
             icon: "icon".to_owned(),
             message: "msg".to_owned(),
         });
-        assert!(json.contains(r#""event":"event""#));
-        assert!(json.contains(r#""urgency":"CRITICAL""#));
+        assert!(json.contains(r#""Event":"event""#));
+        assert!(json.contains(r#""Urgency":"CRITICAL""#));
     }
 
     #[test]
