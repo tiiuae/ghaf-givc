@@ -8,7 +8,7 @@ use clap::Parser;
 #[derive(Debug, Parser)]
 #[command(name = "givc-agent", about = "A givc agent")]
 pub struct Cli {
-    #[arg(long, env = "CONFIG")]
+    #[arg(long, short, env = "CONFIG")]
     pub config: PathBuf,
 
     #[arg(long, env = "DEBUG", default_value_t = false)]
