@@ -109,11 +109,11 @@ where
     #[must_use]
     pub fn is_unit_whitelisted(&self, name: &str) -> bool {
         self.whitelist.iter().any(|candidate| {
-            candidate == name
-                || candidate.strip_suffix(".service").is_some_and(|base| {
-                    let pattern = format!(r"^{}@[0-9]+\.service$", regex::escape(base));
-                    Regex::new(&pattern).is_ok_and(|re| re.is_match(name))
-                })
+            candidate == name || {
+                let base = candidate.strip_suffix(".service").unwrap_or(candidate);
+                let pattern = format!(r"^{}@[0-9]+\.service$", regex::escape(base));
+                Regex::new(&pattern).is_ok_and(|re| re.is_match(name))
+            }
         })
     }
 
@@ -134,7 +134,7 @@ where
     async fn stop_then_snapshot(&self, name: &str) -> Result<Snapshot> {
         self.ensure_whitelisted(name)?;
         self.backend.stop_unit(name).await?;
-        self.backend.get_unit_snapshot(name).await
+        self.wait_for_exitted_snapshot(name).await
     }
 
     async fn freeze_then_snapshot(&self, name: &str) -> Result<Snapshot> {
@@ -152,7 +152,30 @@ where
     async fn kill_then_snapshot(&self, name: &str) -> Result<Snapshot> {
         self.ensure_whitelisted(name)?;
         self.backend.kill_unit(name).await?;
-        self.backend.get_unit_snapshot(name).await
+        self.wait_for_exitted_snapshot(name).await
+    }
+
+    async fn wait_for_exitted_snapshot(&self, name: &str) -> Result<Snapshot> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut last_snapshot = synthetic_dead_snapshot(name);
+
+        loop {
+            match self.backend.get_unit_snapshot(name).await {
+                Ok(snapshot) => {
+                    last_snapshot = snapshot.clone();
+                    if snapshot.active_state == "inactive" && snapshot.sub_state == "dead" {
+                        return Ok(snapshot);
+                    }
+                }
+                Err(_) => return Ok(synthetic_dead_snapshot(name)),
+            }
+
+            if Instant::now() >= deadline {
+                return Ok(last_snapshot);
+            }
+
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
     }
 
     pub async fn get_unit_status(&self, name: &str) -> Result<Snapshot> {
@@ -370,6 +393,18 @@ fn to_unit_response(snapshot: Snapshot) -> pb::systemd::UnitResponse {
     }
 }
 
+fn synthetic_dead_snapshot(name: &str) -> Snapshot {
+    Snapshot {
+        name: name.to_owned(),
+        description: String::new(),
+        load_state: String::new(),
+        active_state: "inactive".to_owned(),
+        sub_state: "dead".to_owned(),
+        path: String::new(),
+        freezer_state: String::new(),
+    }
+}
+
 async fn monitor_sample(
     name: &str,
     pid: u32,
@@ -398,29 +433,12 @@ async fn monitor_sample(
     })
 }
 
-fn build_environment() -> Vec<String> {
-    std::env::vars()
-        .map(|(key, value)| format!("{key}={value}"))
-        .collect()
-}
-
 fn build_exec_start_value(command: &[String]) -> Result<zbus::zvariant::OwnedValue> {
     let Some((program, args)) = command.split_first() else {
         bail!("incorrect application string format")
     };
 
-    let exec = vec![(
-        program.clone(),
-        args.to_vec(),
-        false,
-        0u64,
-        0u64,
-        0u64,
-        0u64,
-        0u32,
-        0i32,
-        0i32,
-    )];
+    let exec = vec![(program.clone(), command.to_vec(), false)];
 
     Ok(zbus::zvariant::OwnedValue::try_from(
         zbus::zvariant::Value::new(exec),
@@ -634,26 +652,7 @@ impl SystemdBackend for ZbusBackend {
     }
 
     async fn start_transient_unit(&self, name: &str, command: &[String]) -> Result<()> {
-        let properties = vec![
-            (
-                "Description".to_owned(),
-                zbus::zvariant::OwnedValue::try_from(zbus::zvariant::Value::new(format!(
-                    "Application service for {}",
-                    name.split('@').next().unwrap_or(name)
-                )))?,
-            ),
-            ("ExecStart".to_owned(), build_exec_start_value(command)?),
-            (
-                "Type".to_owned(),
-                zbus::zvariant::OwnedValue::try_from(zbus::zvariant::Value::new("exec"))?,
-            ),
-            (
-                "Environment".to_owned(),
-                zbus::zvariant::OwnedValue::try_from(zbus::zvariant::Value::new(
-                    build_environment(),
-                ))?,
-            ),
-        ];
+        let properties = vec![("ExecStart".to_owned(), build_exec_start_value(command)?)];
 
         let _ = zbus_systemd::systemd1::ManagerProxy::new(&self.conn)
             .await?

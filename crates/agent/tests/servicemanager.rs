@@ -10,6 +10,7 @@ use tokio_stream::StreamExt;
 struct FakeBackend {
     calls: Arc<std::sync::Mutex<Vec<BackendCall>>>,
     snapshots: Arc<std::sync::Mutex<std::collections::HashMap<String, Snapshot>>>,
+    snapshot_sequence: Arc<std::sync::Mutex<std::collections::VecDeque<Snapshot>>>,
     running_units: Arc<std::sync::Mutex<Vec<RunningUnit>>>,
 }
 
@@ -20,6 +21,9 @@ impl SystemdBackend for FakeBackend {
             .lock()
             .unwrap()
             .push(BackendCall::GetUnitSnapshot(name.to_owned()));
+        if let Some(snapshot) = self.snapshot_sequence.lock().unwrap().pop_front() {
+            return Ok(snapshot);
+        }
         Ok(self
             .snapshots
             .lock()
@@ -137,6 +141,14 @@ fn whitelist_matches_instance_names() {
     assert!(!manager.is_unit_whitelisted("bar@1.service"));
 }
 
+#[test]
+fn whitelist_matches_bare_names() {
+    let backend = FakeBackend::default();
+    let manager = ServiceManager::new(vec!["foot".to_owned()], vec![], backend);
+
+    assert!(manager.is_unit_whitelisted("foot@0.service"));
+}
+
 #[tokio::test]
 async fn start_unit_restarts_whitelisted_unit() {
     let backend = FakeBackend::default();
@@ -149,6 +161,46 @@ async fn start_unit_restarts_whitelisted_unit() {
         *backend.calls.lock().unwrap(),
         vec![
             BackendCall::RestartUnit("foo.service".to_owned()),
+            BackendCall::GetUnitSnapshot("foo.service".to_owned()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn stop_unit_waits_for_exit_snapshot() {
+    let backend = FakeBackend::default();
+    backend.snapshot_sequence.lock().unwrap().extend([
+        Snapshot {
+            name: "foo.service".to_owned(),
+            description: "demo".to_owned(),
+            load_state: "loaded".to_owned(),
+            active_state: "active".to_owned(),
+            sub_state: "running".to_owned(),
+            path: "/demo".to_owned(),
+            freezer_state: "running".to_owned(),
+        },
+        Snapshot {
+            name: "foo.service".to_owned(),
+            description: "demo".to_owned(),
+            load_state: "loaded".to_owned(),
+            active_state: "inactive".to_owned(),
+            sub_state: "dead".to_owned(),
+            path: "/demo".to_owned(),
+            freezer_state: "running".to_owned(),
+        },
+    ]);
+
+    let manager = ServiceManager::new(vec!["foo.service".to_owned()], vec![], backend.clone());
+
+    let snapshot = manager.stop_unit("foo.service").await.unwrap();
+
+    assert_eq!(snapshot.active_state, "inactive");
+    assert_eq!(snapshot.sub_state, "dead");
+    assert_eq!(
+        *backend.calls.lock().unwrap(),
+        vec![
+            BackendCall::StopUnit("foo.service".to_owned()),
+            BackendCall::GetUnitSnapshot("foo.service".to_owned()),
             BackendCall::GetUnitSnapshot("foo.service".to_owned()),
         ]
     );
