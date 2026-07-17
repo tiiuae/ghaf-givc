@@ -453,6 +453,10 @@ fn endpoint_from_transport(
     transport: &crate::config::TransportConfig,
     tls: Option<givc_client::endpoint::TlsConfig>,
 ) -> Result<ClientEndpointConfig> {
+    let mut tls = tls;
+    if let Some(tls_config) = tls.as_mut() {
+        tls_config.tls_name = Some(transport.name.clone());
+    }
     let address = match transport.protocol.as_str() {
         "tcp" => EndpointAddress::Tcp {
             addr: transport.address.clone(),
@@ -759,5 +763,32 @@ mod tests {
         assert_eq!(msg.r#type, u32::from(EV_KEY));
         assert_eq!(msg.code, u32::from(BTN_LEFT));
         assert_eq!(msg.timestamp, 1_000_002_000);
+    }
+
+    #[test]
+    fn endpoint_propagates_tls_name() {
+        let transport = crate::config::TransportConfig {
+            protocol: "tcp".to_owned(),
+            address: "192.0.2.20".to_owned(),
+            port: "9014".to_owned(),
+            name: "gui-vm".to_owned(),
+        };
+        let tls = Some(givc_client::endpoint::TlsConfig {
+            ca_cert_file_path: Default::default(),
+            cert_file_path: Default::default(),
+            key_file_path: Default::default(),
+            tls_name: None,
+        });
+
+        let endpoint = endpoint_from_transport(&transport, tls).unwrap();
+
+        assert_eq!(endpoint.transport.tls_name, "gui-vm");
+        assert_eq!(
+            endpoint
+                .tls
+                .as_ref()
+                .and_then(|tls| tls.tls_name.as_deref()),
+            Some("gui-vm")
+        );
     }
 }
