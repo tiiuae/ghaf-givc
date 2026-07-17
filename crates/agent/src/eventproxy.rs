@@ -15,6 +15,7 @@ use anyhow::{Context, Result, bail};
 use givc_client::endpoint::EndpointConfig as ClientEndpointConfig;
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
+use givc_common::pb::reflection::EVENT_DESCRIPTOR;
 use givc_common::types::TransportConfig as CommonTransportConfig;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
@@ -339,10 +340,18 @@ async fn start_event_proxy_service(config: &AgentConfig, event: EventConfig) -> 
     if !event.producer {
         let listen_addr = event_server_addr(config, &event)?;
         let grpc_service = EventProxyServerServer::new(EventProxyServer { controller });
+        let reflect = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(EVENT_DESCRIPTOR)
+            .build_v1()?;
+        let mut server = Server::builder();
+        if let Some(tls) = &config.network.tls_config {
+            server = server.tls_config(tls.server_config()?)?;
+        }
         tokio::spawn(async move {
             info!(addr = %listen_addr, device = %event.device, "event: server starting");
-            if let Err(err) = Server::builder()
+            if let Err(err) = server
                 .add_service(grpc_service)
+                .add_service(reflect)
                 .serve(listen_addr)
                 .await
             {
