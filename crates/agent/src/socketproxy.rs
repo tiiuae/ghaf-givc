@@ -295,13 +295,13 @@ async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) ->
     if proxy.server {
         let listen_addr = socket_proxy_listen_addr(config, &proxy)?;
         let grpc_service = SocketProxyServerServer::new(socket_service.clone());
+        let mut server = Server::builder();
+        if let Some(tls) = &config.network.tls_config {
+            server = server.tls_config(tls.server_config()?)?;
+        }
         tokio::spawn(async move {
             info!(addr = %listen_addr, socket = %proxy.socket, "socket-proxy: server starting");
-            if let Err(err) = Server::builder()
-                .add_service(grpc_service)
-                .serve(listen_addr)
-                .await
-            {
+            if let Err(err) = server.add_service(grpc_service).serve(listen_addr).await {
                 error!(error = %err, "socket-proxy: server failed");
             }
         });
@@ -331,10 +331,16 @@ async fn run_socket_proxy_client(
             Err(err) => {
                 warn!(error = %err, "socket-proxy: remote connect failed");
                 consecutive_failures += 1;
-                if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                let delay = if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
+                    warn!(
+                        retries = SOCKET_PROXY_MAX_RETRIES,
+                        "socket-proxy: still waiting for remote proxy"
+                    );
+                    5
+                } else {
+                    1
+                };
+                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
                 continue;
             }
         };
@@ -347,10 +353,16 @@ async fn run_socket_proxy_client(
             Err(err) => {
                 warn!(error = %err, "socket-proxy: local accept failed");
                 consecutive_failures += 1;
-                if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                let delay = if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
+                    warn!(
+                        retries = SOCKET_PROXY_MAX_RETRIES,
+                        "socket-proxy: still waiting for local socket"
+                    );
+                    5
+                } else {
+                    1
+                };
+                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
                 continue;
             }
         };
@@ -364,10 +376,16 @@ async fn run_socket_proxy_client(
             Err(err) => {
                 warn!(error = %err, "socket-proxy: remote transfer failed");
                 consecutive_failures += 1;
-                if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                let delay = if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
+                    warn!(
+                        retries = SOCKET_PROXY_MAX_RETRIES,
+                        "socket-proxy: still waiting for remote transfer"
+                    );
+                    5
+                } else {
+                    1
+                };
+                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
                 continue;
             }
         };
@@ -383,8 +401,6 @@ async fn run_socket_proxy_client(
 
         let _ = send_task.await;
     }
-
-    bail!("socket-proxy client failed after {SOCKET_PROXY_MAX_RETRIES} retries")
 }
 
 fn socket_proxy_endpoint_config(
