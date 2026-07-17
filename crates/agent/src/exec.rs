@@ -90,11 +90,13 @@ impl pb::exec::exec_server::Exec for ExecService {
             stdin_pipe = Some(Arc::new(Mutex::new(stdin)));
         }
 
-        let _ = tx.blocking_send(Ok(pb::exec::CommandResponse {
-            event: Some(pb::exec::command_response::Event::Started(
-                pb::exec::StartedEvent { pid },
-            )),
-        }));
+        let _ = tx
+            .send(Ok(pb::exec::CommandResponse {
+                event: Some(pb::exec::command_response::Event::Started(
+                    pb::exec::StartedEvent { pid },
+                )),
+            }))
+            .await;
 
         if let Some(mut stdout) = child.stdout.take() {
             let tx = tx.clone();
