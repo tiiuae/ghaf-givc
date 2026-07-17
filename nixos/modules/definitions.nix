@@ -18,6 +18,7 @@ let
     concatStringsSep
     optionalString
     optionals
+    strings
     ;
 
   transportSubmodule = types.submodule {
@@ -106,10 +107,40 @@ let
         '';
       };
       permittedRequests = mkOption {
-        type = types.listOf types.str;
+        type = types.listOf (
+          types.coercedTo types.str
+            (method: {
+              inherit method;
+              api = null;
+              arguments = { };
+            })
+            (
+              types.submodule {
+                options = {
+                  api = mkOption {
+                    type = types.nullOr types.str;
+                    default = null;
+                    description = "Optional request API or service name.";
+                  };
+                  method = mkOption {
+                    type = types.str;
+                    description = "Request method name.";
+                  };
+                  arguments = mkOption {
+                    type = types.attrsOf types.str;
+                    default = { };
+                    description = "Exact-match request arguments.";
+                  };
+                };
+              }
+            )
+        );
         default = [ ];
         description = ''
-          A list of specific gRPC methods that the callers listed in `from` are allowed to execute.
+          A list of request selectors that the callers listed in `from` are allowed to execute.
+
+          Each item can be a plain method name string or a structured request selector with
+          `api`, `method`, and exact-match `arguments`.
 
           Example Proxy Rule:
             `from = [ "gui-vm" ]; to = [ "app-vm" ]; permittedRequests = [ "StartApplication" ];`
@@ -118,6 +149,10 @@ let
           Example Consumer Rule:
             `from = [ "gui-vm" ]; to = [ ]; permittedRequests = [ "RegisterService" ];`
             (Allows `gui-vm` to call `RegisterService` directly on the Admin server)
+
+          Example Structured Rule:
+            `from = [ "gui-vm" ]; to = [ "net-vm" ]; permittedRequests = [ { api = "Exec"; method = "RunCommand"; arguments = { "start.command" = "ota-update"; }; } ];`
+            (Allows `gui-vm` to call `Exec/RunCommand` on `net-vm` only for `ota-update`)
         '';
       };
     };
@@ -195,8 +230,58 @@ in
       map (
         rule:
         let
+          pascalCasePart =
+            part:
+            if part == "" then
+              ""
+            else
+              strings.toUpper (builtins.substring 0 1 part)
+              + builtins.substring 1 (builtins.stringLength part - 1) part;
+          normalizeContextPath =
+            path:
+            concatStringsSep "." (
+              let
+                segments = strings.splitString "." path;
+              in
+              lib.imap0 (idx: segment: if idx == 0 then pascalCasePart segment else segment) segments
+            );
           srcConditions = map (src: ''principal == Source::"${src}"'') rule.from;
-          reqConditions = map (req: ''action == Command::"${req}"'') rule.permittedRequests;
+          requestToCondition =
+            req:
+            let
+              argumentCondition =
+                argName: argValue:
+                let
+                  pathSegments = strings.splitString "." (normalizeContextPath argName);
+                  hasChecks = lib.imap0 (
+                    idx: segment:
+                    if idx == 0 then
+                      ''context has "${segment}"''
+                    else
+                      ''context.${concatStringsSep "." (lib.take idx pathSegments)} has "${segment}"''
+                  ) pathSegments;
+                in
+                concatStringsSep " && " (
+                  hasChecks
+                  ++ [
+                    "context.${concatStringsSep "." pathSegments} == ${builtins.toJSON argValue}"
+                  ]
+                );
+              argumentConditions = lib.mapAttrsToList argumentCondition req.arguments;
+              combinedArguments =
+                if req.arguments == { } then
+                  ""
+                else
+                  " &&\n                (" + concatStringsSep " && " argumentConditions + ")";
+            in
+            "action == Command::${builtins.toJSON req.method}"
+            + optionalString (
+              req.api != null
+            ) ''&& context has "service" && context.service == ${builtins.toJSON req.api}''
+            + combinedArguments;
+          reqConditions = map (
+            req: if builtins.isString req then ''action == Command::"${req}"'' else requestToCondition req
+          ) rule.permittedRequests;
           targetConditions = map (tgt: ''context.VmName == "${tgt}"'') rule.to;
 
           conditions = [
