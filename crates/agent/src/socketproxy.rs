@@ -26,6 +26,7 @@ use crate::config::{AgentConfig, ProxyConfig};
 pub use pb::socketproxy::socket_stream_server::SocketStreamServer as SocketProxyServerServer;
 
 const SOCKET_READ_CHUNK_SIZE: usize = 32 * 1024;
+const SOCKET_PROXY_MAX_RETRIES: usize = 10;
 
 #[derive(Debug)]
 pub struct SocketProxyController {
@@ -322,25 +323,39 @@ async fn run_socket_proxy_client(
     service: SocketProxyService,
     endpoint: EndpointConfig,
 ) -> Result<()> {
+    let mut consecutive_failures = 0usize;
+
     loop {
         let channel = match endpoint.connect().await {
             Ok(channel) => channel,
             Err(err) => {
                 warn!(error = %err, "socket-proxy: remote connect failed");
+                consecutive_failures += 1;
+                if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
+                    break;
+                }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 continue;
             }
         };
+
+        consecutive_failures = 0;
 
         let mut client = pb::socketproxy::socket_stream_client::SocketStreamClient::new(channel);
         let conn = match service.socket_controller.accept().await {
             Ok(conn) => conn,
             Err(err) => {
                 warn!(error = %err, "socket-proxy: local accept failed");
+                consecutive_failures += 1;
+                if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
+                    break;
+                }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 continue;
             }
         };
+
+        consecutive_failures = 0;
 
         let (tx, rx) = mpsc::channel(32);
         let request = ReceiverStream::new(rx);
@@ -348,10 +363,16 @@ async fn run_socket_proxy_client(
             Ok(response) => response.into_inner(),
             Err(err) => {
                 warn!(error = %err, "socket-proxy: remote transfer failed");
+                consecutive_failures += 1;
+                if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
+                    break;
+                }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 continue;
             }
         };
+
+        consecutive_failures = 0;
 
         let service_for_task = service.clone();
         let send_task = tokio::spawn(async move {
@@ -362,6 +383,8 @@ async fn run_socket_proxy_client(
 
         let _ = send_task.await;
     }
+
+    bail!("socket-proxy client failed after {SOCKET_PROXY_MAX_RETRIES} retries")
 }
 
 fn socket_proxy_endpoint_config(
@@ -369,6 +392,10 @@ fn socket_proxy_endpoint_config(
     proxy: &ProxyConfig,
 ) -> Result<EndpointConfig> {
     let transport = proxy.transport.clone();
+    let mut tls = config.network.tls_config.clone();
+    if let Some(tls_config) = tls.as_mut() {
+        tls_config.tls_name = Some(transport.name.clone());
+    }
     let address = match transport.protocol.as_str() {
         "tcp" => EndpointAddress::Tcp {
             addr: transport.address,
@@ -397,7 +424,7 @@ fn socket_proxy_endpoint_config(
             address,
             tls_name: transport.name,
         },
-        tls: config.network.tls_config.clone(),
+        tls,
     })
 }
 
@@ -461,5 +488,42 @@ mod tests {
             socket: "unused".to_owned(),
         };
         assert!(socket_proxy_listen_addr(&config, &proxy).is_err());
+    }
+
+    #[test]
+    fn socket_proxy_propagates_tls_name() {
+        let config = AgentConfig {
+            network: crate::config::NetworkConfig {
+                tls_config: Some(givc_client::endpoint::TlsConfig {
+                    ca_cert_file_path: Default::default(),
+                    cert_file_path: Default::default(),
+                    key_file_path: Default::default(),
+                    tls_name: None,
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let proxy = ProxyConfig {
+            transport: crate::config::TransportConfig {
+                protocol: "tcp".to_owned(),
+                address: "192.0.2.10".to_owned(),
+                port: "9013".to_owned(),
+                name: "app-vm".to_owned(),
+            },
+            server: false,
+            socket: "unused".to_owned(),
+        };
+
+        let endpoint = socket_proxy_endpoint_config(&config, &proxy).unwrap();
+
+        assert_eq!(endpoint.transport.tls_name, "app-vm");
+        assert_eq!(
+            endpoint
+                .tls
+                .as_ref()
+                .and_then(|tls| tls.tls_name.as_deref()),
+            Some("app-vm")
+        );
     }
 }
