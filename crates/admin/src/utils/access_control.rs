@@ -37,9 +37,13 @@ pub struct Authorizer {
 }
 
 impl Authorizer {
+    /// Create new authorizer for `acl_file`
+    ///
+    /// # Errors
+    /// Returns error if internal initialization or file read fails
     pub fn new(acl_file: &Path) -> anyhow::Result<Self> {
         let pool = DescriptorPool::decode(ADMIN_DESCRIPTOR)
-            .expect("Failed to decode ADMIN_DESCRIPTOR; check your reflection setup.");
+            .context("Failed to decode ADMIN_DESCRIPTOR; check your reflection setup.")?;
 
         // Direct execution without matching or unwrapping
         let policy_text = fs::read_to_string(acl_file)
@@ -53,15 +57,15 @@ impl Authorizer {
         )));
 
         Ok(Self {
-            pool: pool,
+            pool,
             policy_state,
-            type_source: EntityTypeName::from_str("Source").expect("valid type name"),
-            type_action: EntityTypeName::from_str("Command").expect("valid type name"),
-            type_module: EntityTypeName::from_str("Module").expect("valid type name"),
+            type_source: EntityTypeName::from_str("Source").context("valid type name")?,
+            type_action: EntityTypeName::from_str("Command").context("valid type name")?,
+            type_module: EntityTypeName::from_str("Module").context("valid type name")?,
         })
     }
 
-    pub fn authorize(
+    fn authorize(
         &self,
         source: &str,
         full_service_name: &str,
@@ -69,10 +73,7 @@ impl Authorizer {
         mut context_json: serde_json::Value,
     ) -> Result<(), Status> {
         let (module_name, service_name) = full_service_name.split_once('.').ok_or_else(|| {
-            Status::internal(format!(
-                "Invalid service name format: {}",
-                full_service_name
-            ))
+            Status::internal(format!("Invalid service name format: {full_service_name}"))
         })?;
 
         if module_name.trim().is_empty()
@@ -81,8 +82,7 @@ impl Authorizer {
             || source.trim().is_empty()
         {
             return Err(Status::internal(format!(
-                "Invalid service name format (empty tokens): {}",
-                full_service_name
+                "Invalid service name format (empty tokens): {full_service_name}"
             )));
         }
 
@@ -95,7 +95,7 @@ impl Authorizer {
         }
 
         let context = CedarContext::from_json_value(context_json, None)
-            .map_err(|e| Status::internal(format!("Invalid Cedar context: {}", e)))?;
+            .map_err(|e| Status::internal(format!("Invalid Cedar context: {e}")))?;
 
         let principal =
             EntityUid::from_type_name_and_id(self.type_source.clone(), EntityId::new(source));
@@ -143,15 +143,15 @@ impl RequestInterceptor for Authorizer {
             .and_then(|sec_info| sec_info.hostname().map(String::from))
             .ok_or_else(|| {
                 error!("SecurityInfo extension or hostname is missing");
-                Status::internal(format!(
-                    "Cedar authorization denied: SecurityInfo extension or hostname is missing"
-                ))
+                Status::internal(
+                    "Cedar authorization denied: SecurityInfo extension or hostname is missing",
+                )
             })?;
 
         let (parts, mut body) = req.into_parts();
         let path = parts.uri.path();
 
-        if let Some((service_name, method_name)) = parse_grpc_path(&path) {
+        if let Some((service_name, method_name)) = parse_grpc_path(path) {
             if let Some(service) = self.pool.get_service_by_name(service_name)
                 && let Some(method) = service.methods().find(|m| m.name() == method_name)
                 && !method.is_client_streaming()
@@ -159,7 +159,7 @@ impl RequestInterceptor for Authorizer {
                 let body_bytes = body
                     .collect()
                     .await
-                    .map_err(|e| Status::internal(format!("Failed to buffer body: {}", e)))?
+                    .map_err(|e| Status::internal(format!("Failed to buffer body: {e}")))?
                     .to_bytes();
 
                 let mut buf = body_bytes.clone();
@@ -173,8 +173,8 @@ impl RequestInterceptor for Authorizer {
                         Status::internal(format!("Failed to decode: {err}"))
                     })?;
                     let cedar_context_json = serde_json::to_value(&msg)
-                        .inspect_err(|e| error!("Failed to serialize to cedar context JSON: {}", e))
-                        .unwrap_or(serde_json::Value::Object(Default::default()));
+                        .inspect_err(|e| error!("Failed to serialize to cedar context JSON: {e}"))
+                        .unwrap_or(serde_json::json!({}));
 
                     self.authorize(&source, service_name, method_name, cedar_context_json)?;
 
@@ -184,14 +184,12 @@ impl RequestInterceptor for Authorizer {
                 body = Body::new(Full::new(body_bytes));
             }
 
-            let context_json = serde_json::Value::Object(Default::default());
+            let context_json = serde_json::json!({});
             self.authorize(&source, service_name, method_name, context_json)?;
             return Ok(HttpRequest::from_parts(parts, body));
         }
 
-        Err(Status::internal(format!(
-            "Cedar authorization denied: Bad request"
-        )))
+        Err(Status::internal("Cedar authorization denied: Bad request"))
     }
 }
 

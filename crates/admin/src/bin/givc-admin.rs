@@ -13,6 +13,7 @@ use tonic::transport::Server;
 use tonic_middleware::RequestInterceptorLayer;
 use tracing::{debug, info};
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Parser)]
 #[command(name = "givc-admin", about = "A givc admin")]
 struct Cli {
@@ -130,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
             .add_service(admin_service_svc)
             .serve_with_incoming(listener)
             .await?;
-    };
+    }
 
     Ok(())
 }

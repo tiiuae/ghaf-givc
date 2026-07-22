@@ -45,6 +45,6 @@ tracing-subscriber = { workspace = true, features = [
   "time",
   "local-time",
 ] }
-oci-client = { git = "https://github.com/vadika/rust-oci-client", branch = "avoid-double-hash-on-push" }
+oci-client = { git = "https://github.com/oras-project/rust-oci-client" }
 
 cachix-client = { path = "../cachix-client", features = ["nixos"] }

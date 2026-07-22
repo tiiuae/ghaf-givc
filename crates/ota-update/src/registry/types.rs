@@ -20,15 +20,16 @@ impl UntaggedReference {
         self.0
     }
 
+    #[must_use]
     pub fn repository_path(&self) -> String {
         format!("{}/{}", self.0.resolve_registry(), self.0.repository())
     }
 
-    pub fn for_tag(&self, tag: &str) -> anyhow::Result<TaggedReference> {
+    pub(crate) fn for_tag(&self, tag: &str) -> anyhow::Result<TaggedReference> {
         let value = format!("{}:{}", self.repository_path(), tag);
-        value.parse().map_err(|err: anyhow::Error| {
-            err.context(format!("invalid tag reference generated from {tag}"))
-        })
+        value
+            .parse()
+            .with_context(|| format!("invalid tag reference generated from {tag}"))
     }
 }
 
@@ -46,8 +47,17 @@ impl TaggedReference {
         self.0
     }
 
+    #[must_use]
     pub fn repository_path(&self) -> String {
-        format!("{}/{}", self.0.resolve_registry(), self.0.repository())
+        format!("{}/{}", self.resolve_registry(), self.repository())
+    }
+
+    #[must_use]
+    pub fn tag_or_digest(&self) -> &str {
+        if let Some(rv) = self.tag().or(self.digest()) {
+            return rv;
+        }
+        unreachable!();
     }
 }
 

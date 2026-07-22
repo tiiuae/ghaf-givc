@@ -3233,7 +3233,7 @@ dependencies = [
 [[package]]
 name = "oci-client"
 version = "0.17.0"
-source = "git+https://github.com/vadika/rust-oci-client?branch=avoid-double-hash-on-push#dc875c011f71be87b3a9dfd7adabf9de8145deb0"
+source = "git+https://github.com/oras-project/rust-oci-client#7f8200640b5ca80543421c7ac7c4457a9d1de9e2"
 dependencies = [
  "bytes",
  "chrono",

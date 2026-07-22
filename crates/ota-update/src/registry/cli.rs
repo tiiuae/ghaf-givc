@@ -110,7 +110,7 @@ pub enum RegistryAction {
 }
 
 impl RegistryCommand {
-    #[allow(clippy::missing_errors_doc)]
+    #[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
     pub async fn handle(self) -> anyhow::Result<()> {
         let credentials = self.credentials();
         let client_protocol = if self.insecure {

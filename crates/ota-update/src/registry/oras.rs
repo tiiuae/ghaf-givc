@@ -145,6 +145,7 @@ pub(crate) fn to_registry_auth(credentials: &RegistryCredentials) -> RegistryAut
 pub(crate) fn build_client(protocol: ClientProtocol) -> Client {
     Client::new(ClientConfig {
         protocol,
+        use_monolithic_push: true,
         ..Default::default()
     })
 }
@@ -183,9 +184,9 @@ pub(crate) async fn fetch_manifest_and_config(
 
         let tag = reference
             .tag()
-            .map(ToString::to_string)
-            .or_else(|| reference.digest().map(ToString::to_string))
-            .unwrap_or_else(|| "latest".to_string());
+            .or(reference.digest())
+            .unwrap_or("latest")
+            .to_string();
 
         Ok(RemoteImage {
             repository: repository_path(reference),
@@ -245,7 +246,7 @@ where
                 .context("while writing blob chunk")?;
             downloaded += chunk.len() as u64;
             if let Some(reported) = reporter.progress(downloaded) {
-                on_progress(reported, total)
+                on_progress(reported, total);
             }
         }
         out.flush().await.context("while flushing blob file")?;
@@ -303,7 +304,7 @@ async fn digest_and_size(path: &Path) -> anyhow::Result<(String, u64)> {
         .with_context(|| format!("opening file {}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut size = 0u64;
-    let mut buf = [0u8; 64 * 1024];
+    let mut buf = vec![0u8; 64 * 1024];
     loop {
         let n = file
             .read(&mut buf)
@@ -322,7 +323,7 @@ fn file_stream_with_progress(
     file: tokio::fs::File,
     kind: MediaType,
     total: u64,
-    feedback: Option<&async_channel::Sender<progress::RegistryEvent>>,
+    feedback: Option<async_channel::Sender<progress::RegistryEvent>>,
 ) -> impl Stream<Item = oci_client::errors::Result<Bytes>> {
     let mut uploaded = 0u64;
     let mut reporter = ProgressReporter::new(PROGRESS_EVENT_STEP);
@@ -331,14 +332,14 @@ fn file_stream_with_progress(
             uploaded += chunk.len() as u64;
             if let Some(reported) = reporter.progress(uploaded) {
                 notify(
-                    feedback,
+                    feedback.as_ref(),
                     progress::RegistryEvent::LayerUploading {
-                        kind: kind.clone(),
+                        kind,
                         uploaded: reported,
                         total: Some(total),
                     },
-                )
-            };
+                );
+            }
         })
         .map_err(Into::into)
 }
@@ -351,7 +352,7 @@ where
         tokio::select! {
             biased;
             result = future => result,
-            _ = ct.cancelled() => Err(CancellationError.into()),
+            () = ct.cancelled() => Err(CancellationError.into()),
         }
     } else {
         future.await
@@ -410,10 +411,15 @@ pub(crate) async fn push_layers_and_config(
         let file = tokio::fs::File::open(&input.path)
             .await
             .with_context(|| format!("opening layer file {}", input.path.display()))?;
-        let stream = file_stream_with_progress(file, input.media_type, total, feedback);
+        let stream = file_stream_with_progress(file, input.media_type, total, feedback.cloned());
 
         let _location = client
-            .push_blob_stream(reference, stream, &digest)
+            .push_blob_stream(
+                reference,
+                stream,
+                &digest,
+                Some(total.try_into().context("Payload too large")?),
+            )
             .await
             .with_context(|| format!("while pushing blob {}", input.path.display()))?;
 
@@ -428,7 +434,7 @@ pub(crate) async fn push_layers_and_config(
         layer_descriptors.push(OciDescriptor {
             media_type: input.media_type.as_ref().to_string(),
             digest,
-            size: total as i64,
+            size: total.try_into().context("Payload too large")?,
             annotations: input.annotations,
             ..Default::default()
         });
@@ -438,7 +444,7 @@ pub(crate) async fn push_layers_and_config(
     let config_descriptor = OciDescriptor {
         media_type: config_media_type.as_ref().to_string(),
         digest: config_digest,
-        size: config_bytes.len() as i64,
+        size: config_bytes.len().try_into().context("Payload too large")?,
         annotations: None,
         ..Default::default()
     };
@@ -545,7 +551,7 @@ mod tests {
         let (tx, rx) = unbounded();
 
         let chunks =
-            file_stream_with_progress(file, MediaType::Root, PROGRESS_EVENT_STEP + 1, Some(&tx))
+            file_stream_with_progress(file, MediaType::Root, PROGRESS_EVENT_STEP + 1, Some(tx))
                 .try_collect::<Vec<_>>()
                 .await
                 .expect("stream");
