@@ -3,6 +3,7 @@
 
 pub mod access_control;
 pub mod auth;
+pub mod grpc_interceptor;
 pub mod naming;
 pub mod tonic;
 pub mod vsock;

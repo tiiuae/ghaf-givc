@@ -4,6 +4,7 @@
 use anyhow::bail;
 use async_channel::Receiver;
 use gethostname::gethostname;
+use std::future::Future;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -19,7 +20,13 @@ use givc_common::types::{EndpointEntry, TransportConfig, UnitStatus, UnitType};
 
 use crate::endpoint::{EndpointConfig, TlsConfig};
 use crate::error::StatusWrapExt;
-use crate::stream::drain_stream_with_callback;
+use crate::stream::{check_trailers, drain_stream_with_callback};
+
+#[derive(Clone, Debug)]
+pub enum RegistryAuth {
+    Basic { username: String, password: String },
+    Bearer { token: String },
+}
 
 type Client = pb::admin_service_client::AdminServiceClient<Channel>;
 
@@ -533,6 +540,127 @@ impl AdminClient {
         Ok(())
     }
 
+    /// Discover OTA updates in a registry repository.
+    /// # Errors
+    /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
+    pub async fn discover_updates(
+        &self,
+        reference: String,
+        auth: Option<RegistryAuth>,
+        insecure: bool,
+    ) -> anyhow::Result<Vec<pb::admin::AvailableUpdate>> {
+        let request = pb::admin::RegistryDiscoverRequest {
+            reference,
+            insecure,
+            credentials: Self::registry_credentials(auth),
+        };
+        Ok(self
+            .connect_to()
+            .await?
+            .discover(request)
+            .await
+            .rewrap_err()?
+            .into_inner()
+            .list)
+    }
+
+    /// Fetch changelog text for a specific registry tag.
+    /// # Errors
+    /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
+    pub async fn fetch_changelog(
+        &self,
+        reference: String,
+        auth: Option<RegistryAuth>,
+        insecure: bool,
+    ) -> anyhow::Result<String> {
+        let request = pb::admin::RegistryChangelogRequest {
+            reference,
+            insecure,
+            credentials: Self::registry_credentials(auth),
+        };
+        Ok(self
+            .connect_to()
+            .await?
+            .changelog(request)
+            .await
+            .rewrap_err()?
+            .into_inner()
+            .changelog)
+    }
+
+    /// Pull OTA update artifacts from a registry repository.
+    /// # Errors
+    /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
+    pub async fn pull_update<F, Fut>(
+        &self,
+        reference: String,
+        destination: String,
+        validate: bool,
+        auth: Option<RegistryAuth>,
+        insecure: bool,
+        mut on_progress: F,
+    ) -> anyhow::Result<pb::admin::RegistryPullResult>
+    where
+        F: FnMut(pb::admin::RegistryPullProgress) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        let request = pb::admin::RegistryPullRequest {
+            reference,
+            destination,
+            validate,
+            insecure,
+            credentials: Self::registry_credentials(auth),
+        };
+        let mut stream = self
+            .connect_to()
+            .await?
+            .pull(request)
+            .await
+            .rewrap_err()?
+            .into_inner();
+
+        let mut result = None;
+        while let Some(message) = stream.message().await.rewrap_err()? {
+            match message.update {
+                Some(pb::registry_pull_response::Update::Progress(progress)) => {
+                    on_progress(progress).await;
+                }
+                Some(pb::registry_pull_response::Update::Result(done)) => {
+                    result = Some(done);
+                }
+                None => {}
+            }
+        }
+
+        check_trailers(stream).await?;
+        result.ok_or_else(|| anyhow::anyhow!("pull stream completed without a result"))
+    }
+
+    /// Install image on ghaf-host from a manifest path.
+    /// # Errors
+    /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
+    pub async fn image_install(&self, manifest: String, validate: bool) -> anyhow::Result<()> {
+        let request = pb::admin::ImageInstallRequest { manifest, validate };
+        let response = self
+            .connect_to()
+            .await?
+            .image_install(request)
+            .await
+            .rewrap_err()?;
+        let stream = response.into_inner();
+        drain_stream_with_callback(stream, async move |next| {
+            if let Some(out) = next.output {
+                info!("image_install: {out}");
+            }
+            if let Some(err) = next.error {
+                info!("image_install err: {err}");
+            }
+            Ok(())
+        })
+        .await?;
+        Ok(())
+    }
+
     /// Run a CTAP authentication request
     /// # Errors
     /// Fails if there was an error while accessing the authentication token
@@ -546,5 +674,21 @@ impl AdminClient {
         let response = self.connect_to().await?.ctap(req).await?.into_inner();
 
         Ok(response.output)
+    }
+
+    fn registry_credentials(auth: Option<RegistryAuth>) -> Option<pb::admin::RegistryCredentials> {
+        let auth = auth?;
+        let auth = match auth {
+            RegistryAuth::Basic { username, password } => {
+                pb::registry_credentials::Auth::Basic(pb::admin::RegistryBasicAuth {
+                    username,
+                    password,
+                })
+            }
+            RegistryAuth::Bearer { token } => {
+                pb::registry_credentials::Auth::Bearer(pb::admin::RegistryBearerAuth { token })
+            }
+        };
+        Some(pb::admin::RegistryCredentials { auth: Some(auth) })
     }
 }

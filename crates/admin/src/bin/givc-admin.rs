@@ -7,6 +7,7 @@ use givc::admin;
 use givc::endpoint::TlsConfig;
 use givc::utils::access_control::Authorizer;
 use givc::utils::auth::Authenticator;
+use givc::utils::grpc_interceptor::GrpcInterceptorLayer;
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use std::path::PathBuf;
 use tonic::transport::Server;
@@ -119,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
         let authorizer = Authorizer::new(cedar_path)?;
         builder
             .layer(RequestInterceptorLayer::new(authenticator))
-            .layer(RequestInterceptorLayer::new(authorizer))
+            .layer(GrpcInterceptorLayer::new([ADMIN_DESCRIPTOR], authorizer)?)
             .add_service(reflect)
             .add_service(admin_service_svc)
             .serve_with_incoming(listener)

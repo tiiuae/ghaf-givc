@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use anyhow;
+use anyhow::{self, Context};
 use std::pin::Pin;
 use tonic::{Code, Response, Status};
 use tonic_types::{ErrorDetails, StatusExt};
@@ -56,4 +56,51 @@ pub async fn escalate<T, R>(
 ) -> Result<tonic::Response<R>, tonic::Status> {
     let result = fun(req.into_inner()).await;
     result.map(Response::new).wrap_error()
+}
+
+pub(crate) trait AnyTonic<T, E>: Sized {
+    fn status<C: std::fmt::Display + Sync + Send + 'static>(self, msg: C) -> tonic::Result<T>;
+    fn with_status<C: std::fmt::Display + Sync + Send + 'static>(
+        self,
+        f: impl Fn() -> C,
+    ) -> tonic::Result<T>;
+}
+
+impl<T> AnyTonic<T, anyhow::Error> for Result<T, anyhow::Error> {
+    fn status<C: std::fmt::Display + Sync + Send + 'static>(self, msg: C) -> tonic::Result<T> {
+        self.context(msg).map_err(wrap_error)
+    }
+
+    fn with_status<C: std::fmt::Display + Sync + Send + 'static>(
+        self,
+        f: impl Fn() -> C,
+    ) -> tonic::Result<T> {
+        self.with_context(f).map_err(wrap_error)
+    }
+}
+
+impl<T> AnyTonic<T, std::convert::Infallible> for Option<T> {
+    fn status<C: std::fmt::Display + Sync + Send + 'static>(self, msg: C) -> tonic::Result<T> {
+        self.context(msg).map_err(wrap_error)
+    }
+
+    fn with_status<C: std::fmt::Display + Sync + Send + 'static>(
+        self,
+        f: impl Fn() -> C,
+    ) -> tonic::Result<T> {
+        self.with_context(f).map_err(wrap_error)
+    }
+}
+
+impl AnyTonic<bool, std::convert::Infallible> for bool {
+    fn status<C: std::fmt::Display + Sync + Send + 'static>(self, msg: C) -> tonic::Result<bool> {
+        self.then_some(true).context(msg).map_err(wrap_error)
+    }
+
+    fn with_status<C: std::fmt::Display + Sync + Send + 'static>(
+        self,
+        f: impl Fn() -> C,
+    ) -> tonic::Result<bool> {
+        self.then_some(true).with_context(f).map_err(wrap_error)
+    }
 }

@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use givc::endpoint::TlsConfig;
 use givc::types::UnitType;
 use givc::utils::vsock::parse_vsock_addr;
-use givc_client::client::AdminClient;
+use givc_client::{AdminClient, RegistryAuth};
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
 use lazy_regex::regex;
@@ -86,6 +86,63 @@ enum UpdateSub {
     Cachix(CachixOptions),
 }
 
+#[derive(Debug, Args, Default)]
+struct RegistryAuthArgs {
+    #[arg(long)]
+    username: Option<String>,
+
+    #[arg(long)]
+    password: Option<String>,
+
+    #[arg(long, conflicts_with_all = ["username", "password"])]
+    token: Option<String>,
+
+    #[arg(long, default_value_t = false)]
+    insecure: bool,
+}
+
+impl RegistryAuthArgs {
+    fn auth(&self) -> anyhow::Result<Option<RegistryAuth>> {
+        if let Some(token) = &self.token {
+            return Ok(Some(RegistryAuth::Bearer {
+                token: token.clone(),
+            }));
+        }
+
+        match (&self.username, &self.password) {
+            (Some(username), Some(password)) => Ok(Some(RegistryAuth::Basic {
+                username: username.clone(),
+                password: password.clone(),
+            })),
+            (None, None) => Ok(None),
+            _ => anyhow::bail!("registry basic auth requires both --username and --password"),
+        }
+    }
+}
+
+#[derive(Debug, Subcommand)]
+enum RegistrySub {
+    Discover {
+        reference: String,
+        #[command(flatten)]
+        auth: RegistryAuthArgs,
+    },
+    Changelog {
+        reference: String,
+        #[command(flatten)]
+        auth: RegistryAuthArgs,
+    },
+    Pull {
+        reference: String,
+        #[arg(long, default_value = "/persist/sysupdate")]
+        destination: String,
+        #[arg(long, default_value_t = false)]
+        validate: bool,
+        #[command(flatten)]
+        auth: RegistryAuthArgs,
+    },
+}
+
 #[derive(Debug, Parser)]
 struct Notification {
     vm: String,
@@ -163,6 +220,15 @@ enum Commands {
     Update {
         #[command(subcommand)]
         update: UpdateSub,
+    },
+    Registry {
+        #[command(subcommand)]
+        registry: RegistrySub,
+    },
+    ImageInstall {
+        manifest: String,
+        #[arg(long, default_value_t = false)]
+        validate: bool,
     },
     Test {
         #[command(subcommand)]
@@ -306,6 +372,47 @@ impl UpdateSub {
     }
 }
 
+impl RegistrySub {
+    async fn handle(self, admin: AdminClient) -> anyhow::Result<()> {
+        match self {
+            RegistrySub::Discover { reference, auth } => {
+                let updates = admin
+                    .discover_updates(reference, auth.auth()?, auth.insecure)
+                    .await?;
+                println!("{updates:#?}");
+            }
+            RegistrySub::Changelog { reference, auth } => {
+                let changelog = admin
+                    .fetch_changelog(reference, auth.auth()?, auth.insecure)
+                    .await?;
+                println!("{changelog}");
+            }
+            RegistrySub::Pull {
+                reference,
+                destination,
+                validate,
+                auth,
+            } => {
+                let result = admin
+                    .pull_update(
+                        reference,
+                        destination,
+                        validate,
+                        auth.auth()?,
+                        auth.insecure,
+                        |progress| {
+                            print_registry_pull_progress(progress);
+                            std::future::ready(())
+                        },
+                    )
+                    .await?;
+                println!("{result:#?}");
+            }
+        }
+        Ok(())
+    }
+}
+
 async fn ctap(admin: AdminClient, operation: String) -> anyhow::Result<()> {
     let mut payload = vec![];
     tokio::io::stdin().read_to_end(&mut payload).await?;
@@ -333,6 +440,39 @@ async fn notify_user(admin: AdminClient, notification: Notification) -> anyhow::
         .await?;
     print!("{reply:?}");
     Ok(())
+}
+
+fn print_registry_pull_progress(progress: pb::admin::RegistryPullProgress) {
+    use pb::registry_pull_progress::Event;
+
+    match progress.event {
+        Some(Event::PullStarted(started)) => {
+            println!(
+                "pull started: reference={} destination={}",
+                started.reference, started.destination
+            );
+        }
+        Some(Event::BlobDownloading(blob)) => {
+            if let Some(total) = blob.total {
+                println!("downloading {}: {}/{}", blob.digest, blob.downloaded, total);
+            } else {
+                println!("downloading {}: {}", blob.digest, blob.downloaded);
+            }
+        }
+        Some(Event::BlobVerified(digest)) => {
+            println!("blob verified: {digest}");
+        }
+        Some(Event::ManifestWritten(path)) => {
+            println!("manifest written: {path}");
+        }
+        Some(Event::Cancelled(reason)) => {
+            println!("cancelled: {reason}");
+        }
+        Some(Event::Done(done)) => {
+            println!("done: {done}");
+        }
+        None => {}
+    }
 }
 
 async fn sysinfo(admin: AdminClient) -> anyhow::Result<()> {
@@ -450,6 +590,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::Update { update } => update.handle(admin).await?,
+        Commands::Registry { registry } => registry.handle(admin).await?,
+        Commands::ImageInstall { manifest, validate } => {
+            admin.image_install(manifest, validate).await?;
+        }
     }
 
     Ok(())
