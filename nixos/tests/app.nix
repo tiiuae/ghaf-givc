@@ -226,12 +226,7 @@ in
                         addr = addrs.appvm;
                       };
                       admin.transport = lib.head adminConfig.addresses;
-                      tls = {
-                        enable = tls;
-                        caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
-                        certPath = lib.mkForce "/etc/givc/cert.pem";
-                        keyPath = lib.mkForce "/etc/givc/key.pem";
-                      };
+                      tls.enable = tls;
                     };
                     capabilities = {
                       applications = [
@@ -293,6 +288,7 @@ in
                   guivm.wait_for_unit("multi-user.target")
                   guivm.wait_for_unit("givc-guivm.service")
                   appvm.wait_for_unit("multi-user.target")
+                  hostvm.wait_for_unit("multi-user.target")
                   appvm.succeed("sudo -u ghaf touch /tmp/testfile")
                   appvm.succeed("sudo -u ghaf touch /tmp/admin_forbids")
                   appvm.succeed("sudo -u ghaf touch /tmp/agent_forbids")
