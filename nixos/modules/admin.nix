@@ -31,6 +31,7 @@ let
     adminAclSubmodule
     adminRulesToCedar
     validateCedarRules
+    waitForSpireAgent
     ;
   tcpAddresses = lib.filter (addr: addr.protocol == "tcp") cfg.addresses;
   unixAddresses = lib.filter (addr: addr.protocol == "unix") cfg.addresses;
@@ -141,20 +142,33 @@ in
 
     tls = mkOption {
       type = tlsSubmodule;
-      default = { };
+      default = {
+        type = "legacy";
+        legacy = {
+          caCertPath = "/etc/givc/ca-cert.pem";
+          certPath = "/etc/givc/cert.pem";
+          keyPath = "/etc/givc/key.pem";
+        };
+      };
       defaultText = literalExpression ''
         tls = {
           enable = true;
-          caCertPath = "/etc/givc/ca-cert.pem";
-          certPath = /etc/givc/cert.pem";
-          keyPath = "/etc/givc/key.pem";
+          type = "legacy";
+          legacy = {
+            caCertPath = "/run/givc/ca-cert.pem";
+            certPath = "/run/givc/cert.pem";
+            keyPath = "/run/givc/key.pem";
+          };
         };'';
       example = literalExpression ''
         tls = {
           enable = true;
-          caCertPath = "/etc/ssl/certs/ca-certificates.crt";
-          certPath = "/etc/ssl/certs/server.crt";
-          keyPath = "/etc/ssl/private/server.key";
+          type = "legacy";
+          legacy = {
+            caCertPath = "/etc/ssl/certs/ca-certificates.crt";
+            certPath = "/etc/ssl/certs/server.crt";
+            keyPath = "/etc/ssl/private/server.key";
+          };
         };'';
       description = ''
         TLS options for gRPC connections. It is enabled by default to discourage unprotected connections,
@@ -253,7 +267,13 @@ in
       }
       {
         assertion =
-          !(cfg.tls.enable && (cfg.tls.caCertPath == "" || cfg.tls.certPath == "" || cfg.tls.keyPath == ""));
+          !(
+            cfg.tls.enable
+            && cfg.tls.type == "legacy"
+            && (
+              cfg.tls.legacy.caCertPath == "" || cfg.tls.legacy.certPath == "" || cfg.tls.legacy.keyPath == ""
+            )
+          );
         message = "The TLS option requires paths' to CA certificate, service certificate, and service key.";
       }
       {
@@ -314,9 +334,13 @@ in
           Restart = "on-failure";
           TimeoutStopSec = 5;
           RestartSec = 1;
-          ExecStartPre = mkIf (
-            cfg.policyAdmin.enable && cfg.policyAdmin.factoryPolicies.enable
-          ) "-!${lib.getExe preStartScript}";
+          ExecStartPre =
+            (lib.optional (
+              cfg.policyAdmin.enable && cfg.policyAdmin.factoryPolicies.enable
+            ) "-!${lib.getExe preStartScript}")
+            ++ (lib.optional (cfg.tls.enable && cfg.tls.type == "spire") (
+              lib.getExe (waitForSpireAgent cfg.tls.spire.agentSocketPath)
+            ));
         };
         environment = {
           "NAME" = "${cfg.name}";
@@ -329,15 +353,21 @@ in
           "POLICY_STORE" = "${cfg.policyAdmin.storePath}";
           "ACCESS_CONTROL" = "${trivial.boolToString cfg.accessControl.enable}";
           "CEDAR_FILE" = "${rulesFilePath}";
+          "AUTH_TYPE" = "${cfg.tls.type}";
         }
-        // attrsets.optionalAttrs cfg.tls.enable {
-          "CA_CERT" = "${cfg.tls.caCertPath}";
-          "HOST_CERT" = "${cfg.tls.certPath}";
-          "HOST_KEY" = "${cfg.tls.keyPath}";
+        // attrsets.optionalAttrs (cfg.tls.enable && cfg.tls.type == "legacy") {
+          "CA_CERT" = "${cfg.tls.legacy.caCertPath}";
+          "HOST_CERT" = "${cfg.tls.legacy.certPath}";
+          "HOST_KEY" = "${cfg.tls.legacy.keyPath}";
         }
+        // attrsets.optionalAttrs (cfg.tls.enable && cfg.tls.type == "spire") {
+          "SPIRE_AGENT_SOCKET" = "unix://${cfg.tls.spire.agentSocketPath}";
+          "TRUST_DOMAIN" = "${cfg.tls.spire.trustDomain}";
+        }
+
         // attrsets.optionalAttrs cfg.debug {
           "RUST_BACKTRACE" = "1";
-          "GIVC_LOG" = "givc=info";
+          "GIVC_LOG" = "givc=debug,info";
         };
       };
     networking.firewall.allowedTCPPorts = unique (map (addr: strings.toInt addr.port) tcpAddresses);
