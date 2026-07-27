@@ -11,5 +11,6 @@
     ./ota-update-mocked.nix
     ./ota-update-image.nix
     ./event.nix
+    ./authn.nix
   ];
 }
