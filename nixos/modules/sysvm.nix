@@ -375,6 +375,7 @@ in
       wantedBy = [ "givc-setup.target" ];
       serviceConfig = {
         Type = "exec";
+        ExecStartPre = "${pkgs.coreutils}/bin/cat /etc/givc-agent/config.json";
         ExecStart =
           "${givc-agent}/bin/givc-agent --config /etc/givc-agent/config.json"
           + optionalString cfg.debug " --debug";
