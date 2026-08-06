@@ -111,7 +111,11 @@ impl TryFrom<pb::RegistryRequest> for RegistryEntry {
             .transport
             .context("endpoint missing")
             .and_then(EndpointEntry::try_from)?;
-        let watch = (ty.service == ServiceType::Mgr) || (ty.vm == VmType::AppVM);
+        // Units an agent exposes via `capabilities.services` are not watched, as
+        // there is nothing to recover: they are started on request and may be
+        // one-shot. Matches sysvm, whose SysVM/Svc units were never watched.
+        let watch = (ty.service == ServiceType::Mgr)
+            || (ty.vm == VmType::AppVM && ty.service != ServiceType::Svc);
         Ok(Self {
             name: req.name,
             status,
