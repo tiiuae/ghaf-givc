@@ -145,7 +145,7 @@ impl AdminClient {
         service_name: String,
         vm_name: String,
     ) -> anyhow::Result<pb::admin::StartResponse> {
-        let request = pb::admin::StartServiceRequest {
+        let request = pb::admin::ServiceRequest {
             service_name,
             vm_name,
         };
@@ -156,6 +156,23 @@ impl AdminClient {
             .await
             .rewrap_err()?;
         Ok(response.into_inner())
+    }
+
+    /// Stop service (unit) on a target VM via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
+    pub async fn stop_service(&self, service_name: String, vm_name: String) -> anyhow::Result<()> {
+        let request = pb::admin::ServiceRequest {
+            service_name,
+            vm_name,
+        };
+        let _response = self
+            .connect_to()
+            .await?
+            .stop_service(request)
+            .await
+            .rewrap_err()?;
+        Ok(())
     }
 
     /// Stop app via admin server
