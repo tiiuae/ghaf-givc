@@ -1,5 +1,5 @@
 syntax = "proto3";
-option go_package = "./exec";
+option go_package = "givc/modules/api/exec";
 package exec;
 
 // Define the request to execute a subprocess command

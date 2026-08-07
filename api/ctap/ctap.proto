@@ -1,5 +1,5 @@
 syntax = "proto3";
-option go_package = "./ctap";
+option go_package = "givc/modules/api/ctap";
 package ctap;
 
 message CtapRequest {
