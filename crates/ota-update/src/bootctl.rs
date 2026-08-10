@@ -29,7 +29,8 @@ pub struct BootctlItem {
     pub version: String,
     pub machine_id: Option<String>,
     pub options: String,
-    pub linux: PathBuf,
+    pub linux: Option<PathBuf>,
+    pub efi: Option<PathBuf>,
     pub initrd: Option<Vec<PathBuf>>,
     #[serde(default)]
     pub is_reported: bool,
@@ -134,5 +135,49 @@ mod tests {
         assert!(!parsed[0].is_reported);
         assert!(!parsed[0].is_default);
         assert!(!parsed[0].is_selected);
+    }
+
+    #[test]
+    fn parse_bootctl_status_type1_efi() {
+        let json = r#"
+[
+        {
+                "type" : "type1",
+                "source" : "esp",
+                "id" : "nixos-5df2b0bb7cd2f44dfc0a617e1a96941c62c9568011d9fffd55167b58f3918467.conf",
+                "path" : "/boot/loader/entries/nixos-5df2b0bb7cd2f44dfc0a617e1a96941c62c9568011d9fffd55167b58f3918467.conf",
+                "root" : "/boot",
+                "title" : "NixOS",
+                "showTitle" : "NixOS",
+                "sortKey" : "nixos",
+                "version" : "Generation 1 NixOS Zokor 26.11.20260726.624af66 (Linux 7.1.5), built on 2026-08-03",
+                "options" : "init=/nix/store/pnjl18q8cf6zldlby67ass93drm18gm2-nixos-system-ghaf-host-26.11.20260726.624af66/init quiet udev.log_priority=3 bgrt_disable=1",
+                "efi" : "/EFI/nixos/nixos-5df2b0bb7cd2f44dfc0a617e1a96941c62c9568011d9fffd55167b58f3918467.efi",
+                "isReported" : true,
+                "isDefault" : true,
+                "isSelected" : true,
+                "addons" : null,
+                "cmdline" : "init=/nix/store/pnjl18q8cf6zldlby67ass93drm18gm2-nixos-system-ghaf-host-26.11.20260726.624af66/init quiet udev.log_priority=3 bgrt_disable=1"
+        },
+        {
+                "type" : "auto",
+                "source" : "esp",
+                "id" : "auto-reboot-to-firmware-setup",
+                "path" : "/sys/firmware/efi/efivars/LoaderEntries-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f",
+                "title" : "Reboot Into Firmware Interface",
+                "showTitle" : "Reboot Into Firmware Interface",
+                "isReported" : true,
+                "isDefault" : false,
+                "isSelected" : false,
+                "addons" : null
+        }
+]
+        "#;
+
+        let parsed = parse_bootctl(json).expect("bootctl JSON should parse");
+
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0].is_reported);
+        assert!(parsed[0].is_default);
     }
 }
