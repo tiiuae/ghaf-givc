@@ -160,6 +160,19 @@ in
         '';
       };
 
+      services = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = literalExpression ''services = [ "maintenance-task.service" ];'';
+        description = ''
+          List of systemd units for the manager to administrate. Expects a space separated list.
+          Should be a unit file of type 'service' or 'target'.
+
+          > **Note**
+          > The `appvm` agent runs as a user service, hence these must be user units.
+        '';
+      };
+
       socketProxy = {
         enable = mkEnableOption "socket proxy functionality.";
         sockets = mkOption {
@@ -255,8 +268,8 @@ in
         message = "Access control is only available with TLS enabled.";
       }
       {
-        assertion = cfg.capabilities.applications != [ ];
-        message = "A list of services (or targets) is required for this module to run.";
+        assertion = cfg.capabilities.applications != [ ] || cfg.capabilities.services != [ ];
+        message = "A list of applications, or services (or targets), is required for this module to run.";
       }
       {
         assertion =

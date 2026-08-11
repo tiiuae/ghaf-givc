@@ -6,6 +6,7 @@
     ./admin.nix
     ./dbus.nix
     ./app.nix
+    ./appvm-services.nix
     ./ota-update.nix
     ./ota-update-image.nix
     ./event.nix
