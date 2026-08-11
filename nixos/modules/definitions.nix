@@ -411,11 +411,24 @@ in
           Transport configuration of the input proxy module of type `transportSubmodule`.
         '';
       };
-      producer = mkOption {
-        description = ''
-          Whether the module runs as producer or consumer
-        '';
-        type = types.bool;
+      producer = {
+        enable = mkOption {
+          description = "Enable the module to run as a producer.";
+          type = types.bool;
+          default = false;
+        };
+      };
+      consumer = {
+        enable = mkOption {
+          description = "Enable the module to run as a consumer.";
+          type = types.bool;
+          default = false;
+        };
+        permittedSource = mkOption {
+          description = "Name of the VM allowed to send events to this consumer.";
+          type = types.nullOr types.str;
+          default = null;
+        };
       };
       device = mkOption {
         default = "";

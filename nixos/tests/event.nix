@@ -75,6 +75,9 @@ in
 
               givc.sysvm = {
                 enable = true;
+                accessControl = {
+                  enable = true;
+                };
                 network = {
                   admin.transport = lib.head adminConfig.addresses;
                   agent.transport = {
@@ -94,7 +97,8 @@ in
                           port = "9015";
                           protocol = "tcp";
                         };
-                        producer = true;
+                        producer.enable = true;
+                        consumer.enable = false;
                         device = "wireless controller";
                       }
                     ];
@@ -158,6 +162,9 @@ in
 
               givc.appvm = {
                 enable = true;
+                accessControl = {
+                  enable = true;
+                };
                 network = {
                   admin.transport = lib.head adminConfig.addresses;
                   agent.transport = {
@@ -182,7 +189,9 @@ in
                           port = "9015";
                           protocol = "tcp";
                         };
-                        producer = false;
+                        producer.enable = false;
+                        consumer.enable = true;
+                        consumer.permittedSource = "audio-vm";
                       }
                     ];
                   };
