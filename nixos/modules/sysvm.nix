@@ -231,7 +231,8 @@ in
                   protocol = "tcp";
                 };
                 # producer of input events
-                producer = true;
+                producer.enable = true;
+                consumer.enable = false;
                 device = "wireless controller";
               }
             ];
@@ -335,14 +336,21 @@ in
         ];
       }
     ]
-    ++ optionals cfg.capabilities.eventProxy.enable [
-      {
-        permittedVms = map (p: p.transport.name) cfg.capabilities.eventProxy.events;
-        permittedModules = [
-          "eventproxy"
-        ];
-      }
-    ];
+    ++ optionals cfg.capabilities.eventProxy.enable (
+      let
+        consumerEvents = builtins.filter (
+          e: e.consumer.enable && e.consumer.permittedSource != null
+        ) cfg.capabilities.eventProxy.events;
+      in
+      optionals (consumerEvents != [ ]) [
+        {
+          permittedVms = map (e: e.consumer.permittedSource) consumerEvents;
+          permittedModules = [
+            "eventproxy"
+          ];
+        }
+      ]
+    );
 
     systemd.targets.givc-setup = {
       enable = true;

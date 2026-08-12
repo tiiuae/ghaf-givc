@@ -51,12 +51,22 @@ type ProxyConfig struct {
 	Socket    string `json:"socket"`
 }
 
+type ProducerConfig struct {
+	Enable bool `json:"enable"`
+}
+
+type ConsumerConfig struct {
+	Enable          bool    `json:"enable"`
+	PermittedSource *string `json:"permittedSource,omitempty"`
+}
+
 // EventConfig represents the configuration for a proxy, including transport settings,
 // whether it is a server, the socket path, and TLS configuration.
 type EventConfig struct {
-	Transport TransportConfig
-	Producer  bool `json:"producer"`
-	Device    string
+	Transport TransportConfig `json:"transport"`
+	Producer  ProducerConfig  `json:"producer"`
+	Consumer  ConsumerConfig  `json:"consumer"`
+	Device    string          `json:"device"`
 }
 
 // Policy configuration

@@ -30,7 +30,7 @@ func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_con
 		}
 
 		// Setup the event proxy server
-		if !eventConfig.Producer {
+		if eventConfig.Consumer.Enable {
 			log.Infof("event: configuring event proxy server: %v", eventConfig)
 
 			wg.Add(1)
@@ -70,7 +70,7 @@ func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_con
 				log.Infof("event: server goroutine finished")
 
 			}(eventConfig)
-		} else {
+		} else if eventConfig.Producer.Enable {
 
 			wg.Add(1)
 			go func(eventConfig givc_types.EventConfig) {
