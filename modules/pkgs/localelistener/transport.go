@@ -47,10 +47,9 @@ func NewLocaleServer() (*LocaleServer, error) {
 func (s *LocaleServer) LocaleSet(ctx context.Context, req *givc_locale.LocaleMessage) (*givc_locale.Empty, error) {
 	log.Infof("Incoming notification of changes locale\n")
 
-	err := s.Controller.SetLocale(context.Background(), req.Assignments)
-	if err != nil {
-		log.Infof("[SetLocale] Error setting locale: %v\n", err)
-		return nil, fmt.Errorf("cannot set locale")
+	if err := s.Controller.SetLocale(ctx, req.Assignments); err != nil {
+		log.Errorf("[LocaleSet] Error setting locale: %v", err)
+		return nil, fmt.Errorf("cannot set locale: %w", err)
 	}
 
 	return &givc_locale.Empty{}, nil
@@ -60,10 +59,10 @@ func (s *LocaleServer) LocaleSet(ctx context.Context, req *givc_locale.LocaleMes
 func (s *LocaleServer) TimezoneSet(ctx context.Context, req *givc_locale.TimezoneMessage) (*givc_locale.Empty, error) {
 	log.Infof("Incoming notification of set timezone\n")
 
-	err := s.Controller.SetTimezone(context.Background(), req.Timezone)
-	if err != nil {
-		log.Infof("[SetLocale] Error setting timezone: %v\n", err)
-		return nil, fmt.Errorf("cannot set timezone")
+	// Same as LocaleSet above; the label also said "[SetLocale]".
+	if err := s.Controller.SetTimezone(ctx, req.Timezone); err != nil {
+		log.Errorf("[TimezoneSet] Error setting timezone: %v", err)
+		return nil, fmt.Errorf("cannot set timezone: %w", err)
 	}
 
 	return &givc_locale.Empty{}, nil

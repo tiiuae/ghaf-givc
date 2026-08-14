@@ -72,8 +72,12 @@ func (c *LocaleController) SetTimezone(ctx context.Context, timezone string) err
 		return fmt.Errorf("invalid timezone")
 	}
 
+	// Report the failure instead of warning and returning success: SetLocale
+	// already propagates localectl's error, and a caller told "ok" when the
+	// timezone was not applied has no way to notice.
 	if err := exec.Command("timedatectl", "set-timezone", timezone).Run(); err != nil {
-		log.Warningf("Failed to set timezone: %s", err)
+		log.Errorf("Failed to set timezone.\nCommand: timedatectl set-timezone %s\nError: %v", timezone, err)
+		return err
 	}
 
 	return nil

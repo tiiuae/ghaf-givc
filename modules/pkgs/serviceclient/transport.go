@@ -82,7 +82,7 @@ func RegisterRemoteService(cfg *types.EndpointConfig, reg *givc_admin.RegistryRe
 	ctx := context.Background()
 	resp, err := client.RegisterService(ctx, reg)
 	if err != nil {
-		log.Errorf("Not the response we hoped for: %v", err)
+		log.Debugf("Registration attempt failed: %v", err)
 		return nil, err
 	}
 	log.Infoln(resp)
