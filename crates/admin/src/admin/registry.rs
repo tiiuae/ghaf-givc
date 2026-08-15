@@ -13,6 +13,23 @@ use super::entry::RegistryEntry;
 use crate::types::{UnitStatus, UnitType};
 use crate::utils::naming::parse_vm_name;
 
+/// Marker for "the registry has no entry under this name".
+///
+/// Attached as anyhow context by [`Registry::by_name`] so the error can be
+/// recognised by type rather than by matching on its message. During startup a
+/// client may poll admin for a VM's agent before that VM has registered, which
+/// is expected rather than a fault.
+#[derive(Clone, Debug)]
+pub(crate) struct NotRegistered(pub String);
+
+impl std::fmt::Display for NotRegistered {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Service {} not registered", self.0)
+    }
+}
+
+impl std::error::Error for NotRegistered {}
+
 #[derive(Clone, Debug)]
 pub struct Registry {
     /// The shared state is guarded by a mutex. This is a `std::sync::Mutex` and
@@ -74,7 +91,7 @@ impl Registry {
         state
             .get(name)
             .cloned()
-            .with_context(|| format!("Service {name} not registered"))
+            .with_context(|| NotRegistered(name.to_owned()))
     }
 
     pub(crate) fn find_names(&self, name: &str) -> anyhow::Result<Vec<String>> {
