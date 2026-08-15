@@ -563,13 +563,26 @@ impl pb::admin_service_server::AdminService for AdminService {
                     }
                     let mut client =
                         pb::locale::locale_client_client::LocaleClientClient::new(conn);
-                    let localemsg = pb::locale::LocaleMessage {
-                        assignments: locale_assigns,
-                    };
-                    let _ = client.locale_set(localemsg).await;
 
-                    let timezonemsg = pb::locale::TimezoneMessage { timezone };
-                    let _ = client.timezone_set(timezonemsg).await;
+                    // Only propagate state we actually have. Both fields default to
+                    // empty when /etc/locale-givc.conf and /etc/timezone.conf are
+                    // empty or absent, which is the normal state of a freshly
+                    // installed system.
+                    if locale_assigns.is_empty() {
+                        debug!("locale: nothing set yet, not propagating to '{vm_name}'");
+                    } else {
+                        let localemsg = pb::locale::LocaleMessage {
+                            assignments: locale_assigns,
+                        };
+                        let _ = client.locale_set(localemsg).await;
+                    }
+
+                    if timezone.is_empty() {
+                        debug!("timezone: nothing set yet, not propagating to '{vm_name}'");
+                    } else {
+                        let timezonemsg = pb::locale::TimezoneMessage { timezone };
+                        let _ = client.timezone_set(timezonemsg).await;
+                    }
                 }
             });
         }
