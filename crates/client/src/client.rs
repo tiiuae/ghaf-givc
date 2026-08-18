@@ -10,6 +10,7 @@ use tonic::transport::Channel;
 use tracing::{debug, info};
 
 use givc_common::address::EndpointAddress;
+use givc_common::authn::TlsConfig;
 use givc_common::pb;
 use givc_common::pb::Generation;
 pub use givc_common::pb::stats::StatsResponse;
@@ -17,7 +18,7 @@ pub use givc_common::pb::stats::SysinfoResponse as Sysinfo;
 pub use givc_common::query::{Event, QueryResult};
 use givc_common::types::{EndpointEntry, TransportConfig, UnitStatus, UnitType};
 
-use crate::endpoint::{EndpointConfig, TlsConfig};
+use crate::endpoint::EndpointConfig;
 use crate::error::StatusWrapExt;
 use crate::stream::drain_stream_with_callback;
 
@@ -144,7 +145,7 @@ impl AdminClient {
         service_name: String,
         vm_name: String,
     ) -> anyhow::Result<pb::admin::StartResponse> {
-        let request = pb::admin::StartServiceRequest {
+        let request = pb::admin::ServiceRequest {
             service_name,
             vm_name,
         };
@@ -155,6 +156,23 @@ impl AdminClient {
             .await
             .rewrap_err()?;
         Ok(response.into_inner())
+    }
+
+    /// Stop service (unit) on a target VM via admin server
+    /// # Errors
+    /// Fails if error happens during RPC
+    pub async fn stop_service(&self, service_name: String, vm_name: String) -> anyhow::Result<()> {
+        let request = pb::admin::ServiceRequest {
+            service_name,
+            vm_name,
+        };
+        let _response = self
+            .connect_to()
+            .await?
+            .stop_service(request)
+            .await
+            .rewrap_err()?;
+        Ok(())
     }
 
     /// Stop app via admin server

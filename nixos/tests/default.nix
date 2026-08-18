@@ -10,5 +10,6 @@
     ./ota-update.nix
     ./ota-update-image.nix
     ./event.nix
+    ./authn.nix
   ];
 }

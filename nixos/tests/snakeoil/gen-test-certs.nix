@@ -49,9 +49,16 @@ in
           echo "${builtins.readFile ./ca-cert.pem}" > /etc/givc/ca-cert.pem;
           echo "${builtins.readFile ./ca-key.pem}" > /etc/givc/ca-key.pem;
 
+          # Save current time and set system clock back to ensure certificate is valid immediately
+          current_time=$(date +%m%d%H%M%Y.%S)
+          date -s "1 hour ago"
+
           ${pkgs.openssl}/bin/openssl genpkey -algorithm ED25519 -out "$path"/key.pem
           ${pkgs.openssl}/bin/openssl req -new -key "$path"/key.pem -out "$path"/"$name"-csr.pem -subj "/CN=''${name}" -addext "$alttext" -addext "$EXT_KEY_USAGE"
           ${pkgs.openssl}/bin/openssl x509 -req -in "$path"/"$name"-csr.pem -CA "$path"/ca-cert.pem -CAkey "$path"/ca-key.pem -CAcreateserial -out "$path"/cert.pem -extfile <(printf "%s" "$alttext") -days $VALIDITY
+
+          # Restore system clock
+          date "$current_time"
 
           chmod -R 777 "$path"
         '';

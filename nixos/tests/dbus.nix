@@ -441,12 +441,7 @@ in
                     addr = addrs.appvm;
                     name = "app-vm";
                   };
-                  tls = {
-                    enable = tls;
-                    caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
-                    certPath = lib.mkForce "/etc/givc/cert.pem";
-                    keyPath = lib.mkForce "/etc/givc/key.pem";
-                  };
+                  tls.enable = tls;
                 };
                 capabilities = {
                   socketProxy = {

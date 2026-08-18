@@ -42,7 +42,7 @@ message StartVMRequest {
     string VmName = 1;              // Name of the VM to start
 }
 
-message StartServiceRequest {
+message ServiceRequest {
     string ServiceName = 1;         // Name of the service to start
     string VmName = 2;              // Name of the VM hosting service
 }
@@ -155,7 +155,9 @@ service AdminService {
     // Start a VM
     rpc StartVM(StartVMRequest) returns (StartResponse) {}
     // Start a remote service
-    rpc StartService(StartServiceRequest) returns (StartResponse) {}
+    rpc StartService(ServiceRequest) returns (StartResponse) {}
+    // Stop a remote service (unit) on a target VM
+    rpc StopService(ServiceRequest) returns (ApplicationResponse) {}
     // Pause (freeze) a remote application
     rpc PauseApplication(ApplicationRequest) returns (ApplicationResponse) {}
     // Resume (un-freeze) a remote application

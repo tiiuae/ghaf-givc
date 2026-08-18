@@ -311,20 +311,54 @@ in
         default = true;
         description = "Enable the TLS module. Defaults to 'true' and should only be disabled for debugging.";
       };
-      caCertPath = mkOption {
-        description = "Path to the CA certificate file.";
-        type = types.str;
-        default = "/etc/givc/ca-cert.pem";
+      type = mkOption {
+        type = types.enum [
+          "legacy"
+          "spire"
+        ];
+        default = "legacy";
+        description = "TLS configuration type: 'legacy' for file-based certificates or 'spire' for SPIRE-based certificate management.";
       };
-      certPath = mkOption {
-        description = "Path to the service certificate file.";
-        type = types.str;
-        default = "/etc/givc/cert.pem";
+      legacy = mkOption {
+        description = "Configuration for legacy file-based TLS.";
+        default = { };
+        type = types.submodule {
+          options = {
+            caCertPath = mkOption {
+              description = "Path to the CA certificate file.";
+              type = types.str;
+              default = "/etc/givc/ca-cert.pem";
+            };
+            certPath = mkOption {
+              description = "Path to the service certificate file.";
+              type = types.str;
+              default = "/etc/givc/cert.pem";
+            };
+            keyPath = mkOption {
+              description = "Path to the service key file.";
+              type = types.str;
+              default = "/etc/givc/key.pem";
+            };
+          };
+        };
       };
-      keyPath = mkOption {
-        description = "Path to the service key file.";
-        type = types.str;
-        default = "/etc/givc/key.pem";
+      spire = mkOption {
+        description = "Configuration for SPIRE-based TLS.";
+        default = { };
+        type = types.submodule {
+          options = {
+            agentSocketPath = mkOption {
+              description = "Path to the SPIRE agent socket.";
+              type = types.str;
+              default = "/run/spire/agent-socket";
+            };
+            trustDomain = mkOption {
+              description = "The SPIFFE trust domain.";
+              type = types.str;
+              default = "ghaf.ssrc.tii.ae";
+            };
+          };
+        };
       };
     };
   };
@@ -457,4 +491,21 @@ in
   };
 
   inherit transportSubmodule;
+
+  waitForSpireAgent =
+    socketPath:
+    pkgs.writeShellApplication {
+      name = "wait-for-spire-socket";
+      runtimeInputs = [ pkgs.spire ];
+      text = ''
+        until [ -S "${socketPath}" ]; do
+          echo "Waiting for SPIRE agent socket file at ${socketPath}..."
+          sleep 1
+        done
+        until spire-agent healthcheck -socketPath "${socketPath}" >/dev/null 2>&1; do
+          echo "Waiting for SPIRE agent healthcheck at ${socketPath}..."
+          sleep 1
+        done
+      '';
+    };
 }

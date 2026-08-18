@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/cedar-policy/cedar-go"
@@ -38,13 +39,37 @@ func MapRequestToContext(req proto.Message) (cedartypes.RecordMap, error) {
 	return rm, nil
 }
 
+func extractTLSInfo(authInfo credentials.AuthInfo) (credentials.TLSInfo, bool) {
+	if authInfo == nil {
+		return credentials.TLSInfo{}, false
+	}
+	if tlsInfo, ok := authInfo.(credentials.TLSInfo); ok {
+		return tlsInfo, true
+	}
+	// Try reflection for anonymous/embedded fields (e.g. spiffeAuthInfo wrapping TLSInfo)
+	val := reflect.ValueOf(authInfo)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	if val.Kind() == reflect.Struct {
+		for i := 0; i < val.NumField(); i++ {
+			field := val.Field(i)
+			if tlsInfo, ok := field.Interface().(credentials.TLSInfo); ok {
+				return tlsInfo, true
+			}
+		}
+	}
+	return credentials.TLSInfo{}, false
+}
+
 func getSource(ctx context.Context) (string, error) {
 	p, ok := peer.FromContext(ctx)
 	if !ok {
 		return "", fmt.Errorf("no peer info available in context")
 	}
 
-	if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok && len(tlsInfo.State.PeerCertificates) > 0 {
+	tlsInfo, ok := extractTLSInfo(p.AuthInfo)
+	if ok && len(tlsInfo.State.PeerCertificates) > 0 {
 		cert := tlsInfo.State.PeerCertificates[0]
 		if len(cert.DNSNames) > 0 {
 			name := cert.DNSNames[0]
@@ -56,6 +81,21 @@ func getSource(ctx context.Context) (string, error) {
 			log.Infof("Authorizing with principal from certificate SAN DNSName: %s", name)
 			return name, nil
 		}
+		if len(cert.URIs) > 0 {
+			for _, uri := range cert.URIs {
+				if uri.Scheme == "spiffe" {
+					trimmedPath := strings.TrimPrefix(uri.Path, "/")
+					parts := strings.Split(trimmedPath, "/")
+					if len(parts) >= 1 && parts[0] != "" {
+						name := parts[0]
+						log.Infof("Authorizing with principal from SPIFFE URI: %s", name)
+						return name, nil
+					}
+				}
+			}
+		}
+	} else {
+		log.Errorf("getSource: no TLSInfo or peer certificates. AuthInfo: %v", p.AuthInfo)
 	}
 
 	return "", fmt.Errorf("unable to determine source principal from peer connection")
@@ -79,7 +119,7 @@ func NewAccessController(policyPath string) (grpc.UnaryServerInterceptor, grpc.S
 
 		var source string
 		if source, err = getSource(ctx); err != nil {
-			return status.Errorf(codes.PermissionDenied, "Cedar: unknow source! error: %v", err)
+			return status.Errorf(codes.PermissionDenied, "Cedar: unknown source! error: %v", err)
 		}
 
 		trimmedMethod := strings.TrimPrefix(fullMethod, "/")

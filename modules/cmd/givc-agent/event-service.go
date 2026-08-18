@@ -52,7 +52,7 @@ func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_con
 						Port:     eventConfig.Transport.Port,
 						Protocol: eventConfig.Transport.Protocol,
 					},
-					TlsConfig: config.Network.TlsConfig,
+					TlsCred:   config.Network.TlsCred,
 					AclConfig: config.AccessControl,
 				}
 
@@ -86,7 +86,7 @@ func StartEventService(ctx context.Context, wg *sync.WaitGroup, config *givc_con
 				// Configure client endpoint
 				eventClient := &givc_types.EndpointConfig{
 					Transport: eventConfig.Transport,
-					TlsConfig: config.Network.TlsConfig,
+					TlsCred:   config.Network.TlsCred,
 				}
 
 				err = eventProxyServer.StreamEventsToRemote(ctx, eventClient, eventConfig.Device)

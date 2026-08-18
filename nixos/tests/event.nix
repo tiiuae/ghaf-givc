@@ -173,9 +173,6 @@ in
                   };
                   tls = {
                     enable = tls;
-                    caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
-                    certPath = lib.mkForce "/etc/givc/cert.pem";
-                    keyPath = lib.mkForce "/etc/givc/key.pem";
                   };
                 };
                 capabilities = {
@@ -207,7 +204,7 @@ in
             grpcurl_cmd = "/run/current-system/sw/bin/grpcurl ";
             grpcurl_args =
               if tls then
-                "-cacert ${nodes.appvm.givc.appvm.network.tls.caCertPath} -cert ${nodes.appvm.givc.appvm.network.tls.certPath} -key ${nodes.appvm.givc.appvm.network.tls.keyPath}"
+                "-cacert /etc/givc/ca-cert.pem  -cert /etc/givc/cert.pem  -key /etc/givc/key.pem"
               else
                 "-plaintext";
             grpcurl_addr = "${(builtins.elemAt nodes.appvm.givc.appvm.capabilities.eventProxy.events 0).transport.addr}:${(builtins.elemAt nodes.appvm.givc.appvm.capabilities.eventProxy.events 0).transport.port}";

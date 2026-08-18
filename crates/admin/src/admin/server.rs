@@ -13,7 +13,8 @@ use tokio::sync::Mutex;
 use tonic::{Code, Response, Status};
 use tracing::{debug, error, info, trace};
 
-use givc_client::endpoint::{EndpointConfig, TlsConfig};
+use givc_client::endpoint::EndpointConfig;
+use givc_common::authn::TlsConfig;
 use givc_common::query::QueryResult;
 use givc_policyadmin::policy::run_policy_admin;
 use givc_policyadmin::policy_manager::{PolicyManager, Update, UpdateReceiver};
@@ -294,6 +295,24 @@ impl AdminServiceImpl {
                 Err(e)
             }
         }
+    }
+
+    async fn stop_unit_on_vm(&self, unit: &str, vmname: &str) -> anyhow::Result<()> {
+        let vmservice = VmName::Vm(vmname).agent_service();
+
+        /* Return error if the vm is not registered */
+        let endpoint = self
+            .agent_endpoint(&vmservice)
+            .with_context(|| format!("{vmservice} not registered"))?;
+        let client = SystemDClient::new(endpoint);
+
+        /* Stop the unit on the remote VM */
+        let status = client.stop_remote(unit.into()).await?;
+        if !status.is_exitted() {
+            bail!("Failed to stop {unit} on {vmname}");
+        }
+        info!("Service {unit} stopped on {vmname}");
+        Ok(())
     }
 
     async fn start_vm(&self, name: &str) -> anyhow::Result<()> {
@@ -619,7 +638,7 @@ impl pb::admin_service_server::AdminService for AdminService {
 
     async fn start_service(
         &self,
-        request: tonic::Request<givc_common::pb::StartServiceRequest>,
+        request: tonic::Request<givc_common::pb::ServiceRequest>,
     ) -> std::result::Result<tonic::Response<StartResponse>, tonic::Status> {
         escalate(request, async move |req| {
             let registry_id = self
@@ -627,6 +646,19 @@ impl pb::admin_service_server::AdminService for AdminService {
                 .start_unit_on_vm(&req.service_name, &req.vm_name)
                 .await?;
             Ok(StartResponse { registry_id })
+        })
+        .await
+    }
+
+    async fn stop_service(
+        &self,
+        request: tonic::Request<givc_common::pb::ServiceRequest>,
+    ) -> std::result::Result<tonic::Response<ApplicationResponse>, tonic::Status> {
+        escalate(request, async move |req| {
+            self.inner
+                .stop_unit_on_vm(&req.service_name, &req.vm_name)
+                .await?;
+            app_success()
         })
         .await
     }
