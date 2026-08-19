@@ -13,6 +13,8 @@ pub struct CommandSpec {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pipeline {
     pub stages: Vec<CommandSpec>,
+    /// When false stages form a pipe. When true they execute sequentially.
+    pub sequential: bool,
 }
 
 impl CommandSpec {
@@ -58,11 +60,19 @@ impl Pipeline {
     pub fn new(first: CommandSpec) -> Self {
         Self {
             stages: vec![first],
+            sequential: false,
         }
     }
 
     #[must_use]
     pub fn pipe(mut self, next: CommandSpec) -> Self {
+        self.stages.push(next);
+        self
+    }
+
+    #[must_use]
+    pub fn then(mut self, next: CommandSpec) -> Self {
+        self.sequential = true;
         self.stages.push(next);
         self
     }
@@ -85,7 +95,7 @@ impl Pipeline {
                 s
             })
             .collect::<Vec<_>>()
-            .join(" | ")
+            .join(if self.sequential { " && " } else { " | " })
     }
 }
 

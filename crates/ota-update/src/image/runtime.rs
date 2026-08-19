@@ -7,7 +7,7 @@ use super::lvm::Volume;
 use super::manifest::Manifest;
 use super::pipeline::{CommandSpec, Pipeline};
 use super::slot::{Slot, SlotClass};
-use super::uki::{BootEntry, BootEntryKind, UkiEntry};
+use super::uki::{BootCounter, BootEntry, BootEntryKind, UkiEntry};
 use crate::bootctl::BootctlItem;
 use anyhow::{Context, Result, bail, ensure};
 use std::fmt::Write;
@@ -35,6 +35,9 @@ pub struct KernelParams {
 #[allow(clippy::large_enum_variant)]
 pub enum SlotSelection {
     AlreadyInstalled,
+    FinalizeBoot {
+        boot_id: String,
+    },
     Selected {
         slot: SlotGroup,
         /// Optional lvcreate steps to run before writing data
@@ -55,17 +58,89 @@ impl Runtime {
         cmdline: &str,
         bootctl: Vec<BootctlItem>,
     ) -> Result<Self> {
+        let kernel = KernelParams::from_cmdline(cmdline)?;
         let (slots, volumes) = Slot::from_volumes(volumes);
         let boot_entries = BootEntry::from_bootctl(bootctl);
         let (managed, unmanaged) = boot_entries.into_iter().partition(BootEntry::is_managed);
-        let slotgroups = SlotGroup::group_volumes(slots, managed)?;
+        let slotgroups =
+            Self::recover_partial_commit(SlotGroup::group_volumes(slots, managed)?, &kernel)?;
         Ok(Self {
             slotgroups,
             volumes,
-            kernel: KernelParams::from_cmdline(cmdline)?,
+            kernel,
             boot_entries: unmanaged,
             boot: "/boot".into(), // FIXME: detect /boot if possible
         })
+    }
+
+    fn recover_partial_commit(
+        mut groups: Vec<SlotGroup>,
+        kernel: &KernelParams,
+    ) -> Result<Vec<SlotGroup>> {
+        let storage: Vec<_> = groups
+            .iter()
+            .enumerate()
+            .filter(|(_, group)| group.root.is_some() || group.verity.is_some())
+            .map(|(index, _)| index)
+            .collect();
+        if storage.len() <= 2 {
+            return Ok(groups);
+        }
+        ensure!(
+            storage.len() == 3,
+            "strict A/B layout has more than one recoverable partial slot"
+        );
+        let active: Vec<_> = storage
+            .iter()
+            .copied()
+            .filter(|index| groups[*index].is_complete() && groups[*index].is_active(kernel))
+            .collect();
+        ensure!(
+            active.len() == 1,
+            "cannot identify one active slot while recovering staging LVs"
+        );
+        let partial: Vec<_> = storage
+            .into_iter()
+            .filter(|index| *index != active[0])
+            .collect();
+        ensure!(
+            partial
+                .iter()
+                .all(|index| !groups[*index].is_complete() && groups[*index].boot.is_none()),
+            "ambiguous incomplete installation; refusing automatic recovery"
+        );
+        let id = partial
+            .iter()
+            .find_map(|index| groups[*index].empty_id().map(ToOwned::to_owned))
+            .unwrap_or_else(|| "recovery".into());
+        let mut root = None;
+        let mut verity = None;
+        for index in &partial {
+            if let Some(slot) = groups[*index].root.clone() {
+                ensure!(root.is_none(), "multiple root LVs in partial installation");
+                root = Some(slot.into_empty(id.clone()));
+            }
+            if let Some(slot) = groups[*index].verity.clone() {
+                ensure!(
+                    verity.is_none(),
+                    "multiple verity LVs in partial installation"
+                );
+                verity = Some(slot.into_empty(id.clone()));
+            }
+        }
+        ensure!(
+            root.is_some() && verity.is_some(),
+            "partial installation lacks a root/verity pair"
+        );
+        for index in partial.into_iter().rev() {
+            groups.remove(index);
+        }
+        groups.push(SlotGroup {
+            root,
+            verity,
+            boot: None,
+        });
+        Ok(groups)
     }
 
     pub fn slots_by_class<'a>(
@@ -86,44 +161,224 @@ impl Runtime {
     pub(crate) fn select_update_slot(&self, manifest: &Manifest) -> Result<SlotSelection> {
         let slots = self.slot_groups();
         let target = manifest.to_version();
+        let storage_slots: Vec<_> = slots
+            .iter()
+            .filter(|slot| slot.root.is_some() || slot.verity.is_some())
+            .collect();
+        ensure!(
+            storage_slots.len() <= 2,
+            "strict A/B layout violated: found {} storage slot groups",
+            storage_slots.len()
+        );
+        let active = self.active_slot()?;
+
+        let incomplete: Vec<_> = storage_slots
+            .iter()
+            .copied()
+            .filter(|slot| !slot.is_complete())
+            .collect();
+        if let [partial] = incomplete.as_slice() {
+            ensure!(
+                storage_slots.len() == 2
+                    && storage_slots.iter().any(|slot| std::ptr::eq(*slot, active))
+                    && !std::ptr::eq(*partial, active),
+                "incomplete A/B slot detected without exactly one active peer"
+            );
+            let (slot, pre_steps) =
+                self.complete_partial_staging_slot(partial, manifest, target)?;
+            return Ok(SlotSelection::Selected { slot, pre_steps });
+        }
+        ensure!(
+            incomplete.is_empty(),
+            "ambiguous incomplete A/B layout; manual recovery is required before installation"
+        );
 
         // 1. Target already installed (complete used slot)
-        if slots
-            .iter()
-            .any(|slot| slot.is_used() && slot.is_complete() && slot.version() == Some(&target))
-        {
-            return Ok(SlotSelection::AlreadyInstalled);
+        if let Some(slot) = slots.iter().find(|slot| {
+            slot.is_used()
+                && slot.is_complete()
+                && slot.boot.is_some()
+                && slot.version() == Some(&target)
+        }) {
+            let boot = slot.boot.as_ref().expect("checked above");
+            if boot.is_default {
+                return Ok(SlotSelection::AlreadyInstalled);
+            }
+            return Ok(SlotSelection::FinalizeBoot {
+                boot_id: boot.id.clone(),
+            });
         }
 
         // 2. Find first suitable empty slot
-        if let Some(slot) = slots
+        if let Some(slot) = storage_slots
             .iter()
             .find(|slot| slot.is_empty() && !slot.is_active(&self.kernel) && slot.is_complete())
         {
-            // Resize if the slot is too small for the new image
-            let pre_steps = Self::resize_steps_for_slot(slot, manifest);
-            let slot = slot.attach_uki(UkiEntry {
-                version: target,
-                boot_counter: None,
-            })?;
+            let (slot, pre_steps) = self.stage_slot(slot, manifest, target)?;
             return Ok(SlotSelection::Selected { slot, pre_steps });
         }
 
-        // 3. No empty slot — create one sized for the manifest
-        let (slot, pre_steps) = self.create_empty_slot(manifest)?;
-        let slot = slot.attach_uki(UkiEntry {
-            version: target,
-            boot_counter: None,
-        })?;
+        // 3. A first update creates the one allowed inactive slot.
+        if storage_slots.len() == 1 {
+            let (slot, pre_steps) = self.create_empty_slot(manifest)?;
+            let slot = slot.attach_uki(Self::trial_uki(target))?;
+            return Ok(SlotSelection::Selected { slot, pre_steps });
+        }
+
+        // 4. Both A/B slots exist: reuse the inactive one automatically.
+        let inactive = storage_slots
+            .into_iter()
+            .find(|slot| !std::ptr::eq(*slot, active))
+            .context("no inactive A/B slot available")?;
+        let (slot, pre_steps) = self.stage_slot(inactive, manifest, target)?;
         Ok(SlotSelection::Selected { slot, pre_steps })
+    }
+
+    fn complete_partial_staging_slot(
+        &self,
+        partial: &SlotGroup,
+        manifest: &Manifest,
+        target: Version,
+    ) -> Result<(SlotGroup, Vec<Pipeline>)> {
+        ensure!(
+            partial.boot.is_none() && partial.is_empty(),
+            "incomplete inactive slot is not an uncommitted staging slot"
+        );
+        ensure!(
+            partial.root.is_some() ^ partial.verity.is_some(),
+            "recoverable staging slot must contain exactly one LV"
+        );
+        let id = partial.empty_id().context("staging LV has no identifier")?;
+        let existing = partial
+            .root
+            .as_ref()
+            .or(partial.verity.as_ref())
+            .expect("checked exactly one LV");
+        let existing_prefix = existing.kind().to_string();
+        ensure!(
+            existing.volume().lv_name == format!("{existing_prefix}_staging_{id}"),
+            "incomplete inactive slot is not an uncommitted staging slot"
+        );
+
+        let active = self.active_slot()?;
+        let active_root = active.root.as_ref().context("active slot has no root")?;
+        let active_verity = active
+            .verity
+            .as_ref()
+            .context("active slot has no verity")?;
+        ensure!(
+            active_root.volume().vg_name == active_verity.volume().vg_name
+                && existing.volume().vg_name == active_root.volume().vg_name,
+            "staging LV is not in the active A/B volume group"
+        );
+
+        let mut pre_steps = Self::resize_steps_for_slot(partial, manifest);
+        let (missing_prefix, missing_size) = if partial.root.is_none() {
+            ("root", manifest.store.unpacked_size)
+        } else {
+            ("verity", manifest.verity.unpacked_size)
+        };
+        let missing_name = format!("{missing_prefix}_staging_{id}");
+        let vg = existing.volume().vg_name.clone();
+        pre_steps.push(
+            CommandSpec::new("lvcreate")
+                .arg("--yes")
+                .args(["--wipesignatures", "y"])
+                .args(["-L", &format!("{missing_size}b")])
+                .args(["-n", &missing_name])
+                .arg(&vg)
+                .into(),
+        );
+
+        let missing = Volume {
+            lv_name: missing_name,
+            vg_name: vg,
+            lv_attr: None,
+            lv_size_bytes: Some(missing_size),
+        };
+        let (mut parsed, unparsed) = Slot::from_volumes([missing]);
+        ensure!(
+            unparsed.is_empty() && parsed.len() == 1,
+            "failed to construct missing staging LV"
+        );
+        let missing = parsed.remove(0);
+        let completed = SlotGroup {
+            root: partial.root.clone().or_else(|| Some(missing.clone())),
+            verity: partial.verity.clone().or(Some(missing)),
+            boot: None,
+        }
+        .attach_uki(Self::trial_uki(target))?;
+        Ok((completed, pre_steps))
+    }
+
+    fn trial_uki(version: Version) -> UkiEntry {
+        UkiEntry {
+            version,
+            boot_counter: Some(BootCounter {
+                remaining: 3,
+                used: None,
+            }),
+        }
+    }
+
+    fn stage_slot(
+        &self,
+        slot: &SlotGroup,
+        manifest: &Manifest,
+        target: Version,
+    ) -> Result<(SlotGroup, Vec<Pipeline>)> {
+        let id = slot
+            .empty_id()
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| target.hash.clone().unwrap_or_else(|| "inactive".into()));
+        let mut pre_steps = Self::resize_steps_for_slot(slot, manifest);
+        if let Some(boot) = &slot.boot {
+            pre_steps.push(boot.to_remove());
+        }
+
+        let mut staged = Vec::new();
+        for source in [slot.root.as_ref(), slot.verity.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            let prefix = source.kind().to_string();
+            let stage_name = format!("{prefix}_staging_{id}");
+            if source.volume().lv_name != stage_name {
+                pre_steps.push(source.volume().rename_to(&stage_name));
+            }
+            let volume = Volume {
+                lv_name: stage_name,
+                vg_name: source.volume().vg_name.clone(),
+                lv_attr: source.volume().lv_attr.clone(),
+                lv_size_bytes: source.volume().lv_size_bytes,
+            };
+            let (mut parsed, unparsed) = Slot::from_volumes([volume]);
+            ensure!(
+                unparsed.is_empty() && parsed.len() == 1,
+                "failed to construct staging slot"
+            );
+            staged.push(parsed.remove(0));
+        }
+        let mut staged = staged.into_iter();
+        let group = SlotGroup {
+            root: staged.next(),
+            verity: staged.next(),
+            boot: None,
+        }
+        .attach_uki(Self::trial_uki(target))?;
+        Ok((group, pre_steps))
     }
 
     /// Generate `lvresize` steps for an existing empty slot if its LVs are
     /// smaller than the unpacked images in the manifest.
     fn resize_steps_for_slot(slot: &SlotGroup, manifest: &Manifest) -> Vec<Pipeline> {
         [
-            slot.root.as_ref().zip(manifest.store.unpacked_size),
-            slot.verity.as_ref().zip(manifest.verity.unpacked_size),
+            slot.root
+                .as_ref()
+                .map(|slot| (slot, manifest.store.unpacked_size)),
+            slot.verity
+                .as_ref()
+                .map(|slot| (slot, manifest.verity.unpacked_size)),
         ]
         .into_iter()
         .flatten()
@@ -161,12 +416,12 @@ impl Runtime {
         let lv_specs = [
             (
                 "root",
-                manifest.store.unpacked_size,
+                Some(manifest.store.unpacked_size),
                 active_root.lv_size_bytes,
             ),
             (
                 "verity",
-                manifest.verity.unpacked_size,
+                Some(manifest.verity.unpacked_size),
                 active_verity.lv_size_bytes,
             ),
         ];
@@ -180,7 +435,7 @@ impl Runtime {
                     "cannot determine {prefix} LV size: no unpacked_size in manifest and no active {prefix} size"
                 )
             })?;
-            let lv_name = format!("{prefix}_empty_{empty_id}");
+            let lv_name = format!("{prefix}_staging_{empty_id}");
 
             pre_steps.push(
                 CommandSpec::new("lvcreate")
@@ -596,11 +851,20 @@ mod tests {
 
     #[test]
     fn select_slot_noop_if_version_already_installed() {
+        let mut installed = groups(&vec![
+            "root_1.2.3_deadbeefdeadbeef",
+            "verity_1.2.3_deadbeefdeadbeef",
+        ]);
+        installed[0].boot = Some(
+            Runtime::trial_uki(Version::new(
+                "1.2.3".into(),
+                Some("deadbeefdeadbeef".into()),
+            ))
+            .into(),
+        );
+        installed[0].boot.as_mut().unwrap().is_default = true;
         let rt = Runtime {
-            slotgroups: groups(&vec![
-                "root_1.2.3_deadbeefdeadbeef",
-                "verity_1.2.3_deadbeefdeadbeef",
-            ]),
+            slotgroups: installed,
             kernel: KernelParams {
                 revision: Some("1.2.3".into()),
                 store_hash: Some("deadbeefdeadbeef".into()),
@@ -641,47 +905,125 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_empty_slot_is_not_selected() {
+    fn incomplete_non_staging_slot_is_not_selected() {
         let rt = Runtime {
-            slotgroups: groups(&vec!["root_empty_01"]),
+            slotgroups: groups(&vec![
+                "root_1.0.0_aaaaaaaaaaaaaaaa",
+                "verity_1.0.0_aaaaaaaaaaaaaaaa",
+                "root_empty_01",
+            ]),
+            kernel: KernelParams {
+                revision: Some("1.0.0".into()),
+                store_hash: Some("aaaaaaaaaaaaaaaa".into()),
+            },
             ..Runtime::default()
         };
 
-        let m = manifest("1.0.0", "aaaaaaaaaaaaaaaa");
+        let m = manifest("2.0.0", "bbbbbbbbbbbbbbbb");
 
-        // The incomplete empty slot (root only, no verity) is skipped.
-        // Then create_empty_slot is attempted but fails because there
-        // is no active slot to derive sizes from.
         let err = rt.select_update_slot(&m).unwrap_err();
         assert!(
-            err.to_string().contains("no active slot"),
+            err.to_string().contains("not an uncommitted staging slot"),
             "unexpected error: {err}"
         );
     }
 
-    // Few empty slots, choose any free of them
-    // NOTE: We don't check determinism, only fact of successful choice
     #[test]
-    fn one_of_multiple_empty_slots_is_selected() {
+    fn completes_root_only_staging_slot_after_power_cut() {
         let rt = Runtime {
             slotgroups: groups(&vec![
+                "root_1.0.0_aaaaaaaaaaaaaaaa",
+                "verity_1.0.0_aaaaaaaaaaaaaaaa",
+                "root_staging_0",
+            ]),
+            kernel: KernelParams {
+                revision: Some("1.0.0".into()),
+                store_hash: Some("aaaaaaaaaaaaaaaa".into()),
+            },
+            ..Runtime::default()
+        };
+
+        let SlotSelection::Selected { slot, pre_steps } = rt
+            .select_update_slot(&manifest("2.0.0", "bbbbbbbbbbbbbbbb"))
+            .expect("recover root-only staging slot")
+        else {
+            panic!("selected slot expected")
+        };
+        assert_eq!(
+            slot.root.as_ref().unwrap().volume().lv_name,
+            "root_staging_0"
+        );
+        assert_eq!(
+            slot.verity.as_ref().unwrap().volume().lv_name,
+            "verity_staging_0"
+        );
+        assert_eq!(pre_steps.len(), 1);
+        let command = pre_steps[0].format_shell();
+        assert!(command.contains("lvcreate"));
+        assert!(command.contains("verity_staging_0"));
+        assert!(!command.contains("root_1.0.0_aaaaaaaaaaaaaaaa"));
+        assert!(!command.contains("verity_1.0.0_aaaaaaaaaaaaaaaa"));
+    }
+
+    #[test]
+    fn completes_verity_only_staging_slot_after_power_cut() {
+        let rt = Runtime {
+            slotgroups: groups(&vec![
+                "root_1.0.0_aaaaaaaaaaaaaaaa",
+                "verity_1.0.0_aaaaaaaaaaaaaaaa",
+                "verity_staging_0",
+            ]),
+            kernel: KernelParams {
+                revision: Some("1.0.0".into()),
+                store_hash: Some("aaaaaaaaaaaaaaaa".into()),
+            },
+            ..Runtime::default()
+        };
+
+        let SlotSelection::Selected { slot, pre_steps } = rt
+            .select_update_slot(&manifest("2.0.0", "bbbbbbbbbbbbbbbb"))
+            .expect("recover verity-only staging slot")
+        else {
+            panic!("selected slot expected")
+        };
+        assert_eq!(
+            slot.root.as_ref().unwrap().volume().lv_name,
+            "root_staging_0"
+        );
+        assert_eq!(
+            slot.verity.as_ref().unwrap().volume().lv_name,
+            "verity_staging_0"
+        );
+        assert_eq!(pre_steps.len(), 1);
+        let command = pre_steps[0].format_shell();
+        assert!(command.contains("lvcreate"));
+        assert!(command.contains("root_staging_0"));
+        assert!(!command.contains("root_1.0.0_aaaaaaaaaaaaaaaa"));
+        assert!(!command.contains("verity_1.0.0_aaaaaaaaaaaaaaaa"));
+    }
+
+    #[test]
+    fn rejects_more_than_two_storage_slots() {
+        let rt = Runtime {
+            slotgroups: groups(&vec![
+                "root_1.0.0_aaaaaaaaaaaaaaaa",
+                "verity_1.0.0_aaaaaaaaaaaaaaaa",
                 "root_empty_01",
                 "verity_empty_01",
                 "root_empty_02",
                 "verity_empty_02",
             ]),
-            kernel: KernelParams::default(),
+            kernel: KernelParams {
+                revision: Some("1.0.0".into()),
+                store_hash: Some("aaaaaaaaaaaaaaaa".into()),
+            },
             ..Runtime::default()
         };
 
         let m = manifest("1.0.0", "aaaaaaaaaaaaaaaa");
 
-        let SlotSelection::Selected { slot, .. } =
-            rt.select_update_slot(&m).expect("slot expected")
-        else {
-            panic!("Selected() expected")
-        };
-        assert!(slot.is_empty());
+        let error = rt.select_update_slot(&m).unwrap_err();
+        assert!(error.to_string().contains("strict A/B layout"));
     }
 
     #[test]
@@ -728,6 +1070,93 @@ mod tests {
     }
 
     #[test]
+    fn reuses_the_inactive_slot_when_both_slots_exist() {
+        let rt = Runtime {
+            slotgroups: groups(&vec![
+                "root_1.0.0_aaaaaaaaaaaaaaaa",
+                "verity_1.0.0_aaaaaaaaaaaaaaaa",
+                "root_2.0.0_bbbbbbbbbbbbbbbb",
+                "verity_2.0.0_bbbbbbbbbbbbbbbb",
+            ]),
+            kernel: KernelParams {
+                revision: Some("2.0.0".into()),
+                store_hash: Some("bbbbbbbbbbbbbbbb".into()),
+            },
+            ..Runtime::default()
+        };
+        let manifest = manifest("3.0.0", "cccccccccccccccc");
+        let SlotSelection::Selected { slot, pre_steps } =
+            rt.select_update_slot(&manifest).expect("inactive slot")
+        else {
+            panic!("selected slot expected")
+        };
+        assert_eq!(
+            slot.root.as_ref().unwrap().volume().lv_name,
+            "root_staging_cccccccccccccccc"
+        );
+        assert!(pre_steps.iter().any(|step| {
+            step.format_shell()
+                .contains("root_1.0.0_aaaaaaaaaaaaaaaa root_staging_cccccccccccccccc")
+        }));
+        assert!(
+            pre_steps
+                .iter()
+                .all(|step| !step.format_shell().contains("root_2.0.0_bbbbbbbbbbbbbbbb"))
+        );
+    }
+
+    #[test]
+    fn recovers_a_power_cut_between_final_lv_renames() {
+        let volumes = [
+            "root_1.0.0_aaaaaaaaaaaaaaaa",
+            "verity_1.0.0_aaaaaaaaaaaaaaaa",
+            "root_2.0.0_bbbbbbbbbbbbbbbb",
+            "verity_staging_bbbbbbbbbbbbbbbb",
+        ]
+        .into_iter()
+        .map(Volume::new)
+        .collect();
+        let cmdline = format!("ghaf.revision=1.0.0 ghaf.storehash={}", "a".repeat(64));
+        let runtime = Runtime::new(volumes, &cmdline, vec![]).unwrap();
+        assert_eq!(runtime.slot_groups().len(), 2);
+        let recovered = runtime
+            .slot_groups()
+            .iter()
+            .find(|group| !group.is_active(&runtime.kernel))
+            .unwrap();
+        assert!(recovered.is_complete() && recovered.is_empty());
+    }
+
+    #[test]
+    fn resumes_at_default_commit_after_uki_installation() {
+        let mut slotgroups = groups(&[
+            "root_1.0.0_aaaaaaaaaaaaaaaa",
+            "verity_1.0.0_aaaaaaaaaaaaaaaa",
+            "root_2.0.0_bbbbbbbbbbbbbbbb",
+            "verity_2.0.0_bbbbbbbbbbbbbbbb",
+        ]);
+        slotgroups[1].boot = Some(
+            Runtime::trial_uki(Version::new(
+                "2.0.0".into(),
+                Some("bbbbbbbbbbbbbbbb".into()),
+            ))
+            .into(),
+        );
+        let runtime = Runtime {
+            slotgroups,
+            kernel: KernelParams {
+                revision: Some("1.0.0".into()),
+                store_hash: Some("aaaaaaaaaaaaaaaa".into()),
+            },
+            ..Runtime::default()
+        };
+        let selection = runtime
+            .select_update_slot(&manifest("2.0.0", "bbbbbbbbbbbbbbbb"))
+            .unwrap();
+        assert!(matches!(selection, SlotSelection::FinalizeBoot { .. }));
+    }
+
+    #[test]
     fn resizes_small_empty_slot() {
         // Empty slot exists but is smaller than the manifest's unpacked_size
         let mut small_root = Volume::new("root_empty_0");
@@ -736,10 +1165,18 @@ mod tests {
         small_verity.lv_size_bytes = Some(10_000_000); // 10 MB — too small
 
         let (slots, _) = Slot::from_volumes(vec![small_root, small_verity]);
-        let slotgroups = SlotGroup::group_volumes(slots, vec![]).unwrap();
+        let mut slotgroups = groups(&vec![
+            "root_1.0.0_aaaaaaaaaaaaaaaa",
+            "verity_1.0.0_aaaaaaaaaaaaaaaa",
+        ]);
+        slotgroups.extend(SlotGroup::group_volumes(slots, vec![]).unwrap());
 
         let rt = Runtime {
             slotgroups,
+            kernel: KernelParams {
+                revision: Some("1.0.0".into()),
+                store_hash: Some("aaaaaaaaaaaaaaaa".into()),
+            },
             ..Runtime::default()
         };
 
@@ -752,7 +1189,7 @@ mod tests {
         };
 
         // Should have lvresize steps
-        assert_eq!(pre_steps.len(), 2, "expected 2 lvresize steps");
+        assert_eq!(pre_steps.len(), 4, "expected resize and staging steps");
         let cmds: Vec<_> = pre_steps.iter().map(|s| s.format_shell()).collect();
         assert!(
             cmds[0].contains("lvresize"),
@@ -775,10 +1212,18 @@ mod tests {
         big_verity.lv_size_bytes = Some(100_000_000); // 100 MB — big enough
 
         let (slots, _) = Slot::from_volumes(vec![big_root, big_verity]);
-        let slotgroups = SlotGroup::group_volumes(slots, vec![]).unwrap();
+        let mut slotgroups = groups(&vec![
+            "root_1.0.0_aaaaaaaaaaaaaaaa",
+            "verity_1.0.0_aaaaaaaaaaaaaaaa",
+        ]);
+        slotgroups.extend(SlotGroup::group_volumes(slots, vec![]).unwrap());
 
         let rt = Runtime {
             slotgroups,
+            kernel: KernelParams {
+                revision: Some("1.0.0".into()),
+                store_hash: Some("aaaaaaaaaaaaaaaa".into()),
+            },
             ..Runtime::default()
         };
 
@@ -790,7 +1235,7 @@ mod tests {
             panic!("Selected expected")
         };
 
-        assert!(pre_steps.is_empty(), "no resize needed");
+        assert_eq!(pre_steps.len(), 2, "only staging renames are needed");
     }
 
     #[test]
