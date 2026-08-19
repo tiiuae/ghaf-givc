@@ -11,6 +11,9 @@ pub enum MediaType {
     #[strum(serialize = "application/vnd.ghaf.ota.manifest.v1+json")]
     #[serde(rename = "application/vnd.ghaf.ota.manifest.v1+json")]
     Manifest,
+    #[strum(serialize = "application/vnd.ghaf.ota.manifest-signature.v1+ed25519")]
+    #[serde(rename = "application/vnd.ghaf.ota.manifest-signature.v1+ed25519")]
+    Signature,
     #[strum(serialize = "application/vnd.ghaf.ota.uki.v1+efi")]
     #[serde(rename = "application/vnd.ghaf.ota.uki.v1+efi")]
     Uki,
