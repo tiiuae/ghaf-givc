@@ -20,18 +20,21 @@ pub struct File {
     #[serde(rename = "sha256")]
     #[serde_as(as = "serde_with::hex::Hex")]
     pub sha256sum: [u8; 32],
-    /// Decompressed size in bytes (for zstd-compressed files).
-    /// Used to correctly size LVM volumes before writing.
-    #[serde(default)]
-    pub unpacked_size: Option<u64>,
+    /// On-disk artifact size before decompression.
+    pub packed_size: u64,
+    /// Decompressed size in bytes (equal to packed_size when uncompressed).
+    pub unpacked_size: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Manifest {
     pub meta: HashMap<String, String>,
-    #[serde(default)]
     pub manifest_version: u32,
-    pub system: Option<String>,
+    /// Nix platform retained for compatibility and artifact discovery.
+    pub system: String,
+    /// Exact board/update target used for authorization.
+    pub target: String,
+    pub generation: u64,
     pub version: String,
     pub root_verity_hash: String,
     pub kernel: File,
@@ -47,14 +50,9 @@ impl Manifest {
     }
 
     pub(crate) fn from_slice(content: &[u8]) -> anyhow::Result<Self> {
-        let this = serde_json::from_slice(content).context("Deserializing manifest")?;
+        let this: Self = serde_json::from_slice(content).context("Deserializing manifest")?;
+        this.validate_structure()?;
         Ok(this)
-    }
-
-    pub(crate) fn write_to_file(&self, filename: &Path) -> anyhow::Result<()> {
-        let content = serde_json::to_vec_pretty(self).context("Serializing manifest")?;
-        std::fs::write(filename, content)
-            .with_context(|| format!("writing manifest to {}", filename.display()))
     }
 
     pub(crate) fn normalize_paths(&mut self) -> anyhow::Result<()> {
@@ -69,23 +67,79 @@ impl Manifest {
         &self.root_verity_hash[..16]
     }
 
+    pub(crate) fn validate_structure(&self) -> anyhow::Result<()> {
+        ensure!(self.manifest_version == 2, "manifest_version must be 2");
+        ensure!(!self.system.trim().is_empty(), "manifest system is empty");
+        ensure!(!self.target.trim().is_empty(), "manifest target is empty");
+        ensure!(self.generation > 0, "manifest generation must be positive");
+        ensure!(!self.version.trim().is_empty(), "manifest version is empty");
+        ensure!(
+            self.root_verity_hash.len() == 64
+                && self.root_verity_hash.chars().all(|c| c.is_ascii_hexdigit()),
+            "root_verity_hash must be exactly 64 hexadecimal characters"
+        );
+        for (name, artifact) in [
+            ("kernel", &self.kernel),
+            ("root", &self.store),
+            ("verity", &self.verity),
+        ] {
+            ensure!(
+                artifact.packed_size > 0,
+                "{name} packed_size must be positive"
+            );
+            ensure!(
+                artifact.unpacked_size > 0,
+                "{name} unpacked_size must be positive"
+            );
+        }
+        Ok(())
+    }
+
+    pub(crate) fn validate_policy(
+        &self,
+        expected_target: &str,
+        accepted_generation: u64,
+        #[cfg(feature = "debug-downgrade")] allow_downgrade: bool,
+    ) -> anyhow::Result<()> {
+        ensure!(
+            self.target == expected_target,
+            "wrong update target: expected {expected_target}, got {}",
+            self.target
+        );
+        ensure!(
+            {
+                #[cfg(feature = "debug-downgrade")]
+                {
+                    allow_downgrade || self.generation > accepted_generation
+                }
+                #[cfg(not(feature = "debug-downgrade"))]
+                {
+                    self.generation > accepted_generation
+                }
+            },
+            "update generation {} is not newer than accepted generation {accepted_generation}",
+            self.generation
+        );
+        Ok(())
+    }
+
     #[must_use]
     pub fn to_version(&self) -> Version {
         Version::new(self.version.clone(), Some(self.hash_fragment().to_string()))
     }
 
     // Validate, if all files mentioned in manifest exists (and have matching hash)
-    pub(crate) async fn validate(&self, base_dir: &Path, checksum: bool) -> anyhow::Result<()> {
+    pub(crate) async fn validate(&self, base_dir: &Path) -> anyhow::Result<()> {
         self.kernel
-            .validate(base_dir, checksum)
+            .validate(base_dir)
             .await
             .context("while validating kernel")?;
         self.store
-            .validate(base_dir, checksum)
+            .validate(base_dir)
             .await
             .context("while validating store image")?;
         self.verity
-            .validate(base_dir, checksum)
+            .validate(base_dir)
             .await
             .context("while validating verity image")?;
         Ok(())
@@ -110,8 +164,12 @@ impl File {
         Ok(())
     }
 
-    async fn validate(&self, base_dir: &Path, checksum: bool) -> anyhow::Result<()> {
+    async fn validate(&self, base_dir: &Path) -> anyhow::Result<()> {
         let full_name = self.full_name(base_dir);
+        self.validate_path(&full_name).await
+    }
+
+    pub(crate) async fn validate_path(&self, full_name: &Path) -> anyhow::Result<()> {
         if !tokio::fs::try_exists(&full_name).await? {
             anyhow::bail!("Missing file {full_name}", full_name = full_name.display())
         }
@@ -121,16 +179,21 @@ impl File {
         if !metadata.is_file() {
             anyhow::bail!("Not a regular file {}", full_name.display());
         }
-        if checksum {
-            let actual = read_sha256(&full_name).await?;
-            ensure!(
-                actual == self.sha256sum,
-                "Checksum mismatch for {name}: expected {expected}, got {actual}",
-                name = full_name.display(),
-                expected = hex::encode(self.sha256sum),
-                actual = hex::encode(actual),
-            );
-        }
+        ensure!(
+            metadata.len() == self.packed_size,
+            "Size mismatch for {}: expected {}, got {}",
+            full_name.display(),
+            self.packed_size,
+            metadata.len()
+        );
+        let actual = read_sha256(full_name).await?;
+        ensure!(
+            actual == self.sha256sum,
+            "Checksum mismatch for {name}: expected {expected}, got {actual}",
+            name = full_name.display(),
+            expected = hex::encode(self.sha256sum),
+            actual = hex::encode(actual),
+        );
         Ok(())
     }
 }
@@ -161,4 +224,60 @@ fn normalize_relative_path(value: &str) -> anyhow::Result<String> {
 
     let normalized: OsString = out.into_os_string();
     Ok(normalized.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::image::test::manifest;
+
+    #[test]
+    fn target_and_generation_policy_fail_closed() {
+        let manifest = manifest(
+            "2.0.0",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        manifest
+            .validate_policy(
+                "test-target",
+                1,
+                #[cfg(feature = "debug-downgrade")]
+                false,
+            )
+            .unwrap();
+        assert!(
+            manifest
+                .validate_policy(
+                    "wrong-target",
+                    1,
+                    #[cfg(feature = "debug-downgrade")]
+                    false,
+                )
+                .is_err()
+        );
+        assert!(
+            manifest
+                .validate_policy(
+                    "test-target",
+                    2,
+                    #[cfg(feature = "debug-downgrade")]
+                    false,
+                )
+                .is_err()
+        );
+        #[cfg(feature = "debug-downgrade")]
+        manifest.validate_policy("test-target", 2, true).unwrap();
+    }
+
+    #[test]
+    fn rejects_legacy_manifest_and_short_root_hash() {
+        let mut manifest = manifest(
+            "2.0.0",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        manifest.manifest_version = 1;
+        assert!(manifest.validate_structure().is_err());
+        manifest.manifest_version = 2;
+        manifest.root_verity_hash = "aaaa".into();
+        assert!(manifest.validate_structure().is_err());
+    }
 }

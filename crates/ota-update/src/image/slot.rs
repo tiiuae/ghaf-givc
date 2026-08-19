@@ -63,7 +63,7 @@ impl Slot {
 
         ensure!(!name.is_empty(), "name is empty");
 
-        let status = if version_raw == "empty" {
+        let status = if version_raw == "empty" || version_raw == "staging" {
             Status::Empty(match hash_or_id {
                 Some(id) => EmptyId::Known(id.to_string()),
                 None => EmptyId::Legacy,
