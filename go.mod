@@ -3,7 +3,7 @@ module givc
 go 1.25.0
 
 require (
-	github.com/cedar-policy/cedar-go v1.6.0
+	github.com/cedar-policy/cedar-go v1.8.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
