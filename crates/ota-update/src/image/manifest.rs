@@ -215,7 +215,68 @@ fn normalize_relative_path(value: &str) -> anyhow::Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use sha2::{Digest, Sha256};
+    use tempfile::tempdir;
+
+    use super::*;
     use crate::image::test::manifest;
+
+    fn sha256(bytes: &[u8]) -> [u8; 32] {
+        Sha256::digest(bytes).into()
+    }
+
+    #[tokio::test]
+    async fn validate_manifest_rejects_traversal_artifact_paths() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().join("bundle");
+        std::fs::create_dir(&base).unwrap();
+
+        let escaped = dir.path().join("kernel.bin");
+        let kernel_bytes = b"kernel payload";
+        std::fs::write(&escaped, kernel_bytes).unwrap();
+
+        let manifest = Manifest {
+            meta: HashMap::new(),
+            manifest_version: 2,
+            target: "test-target".into(),
+            generation: 2,
+            version: "2.0.0".into(),
+            root_verity_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .into(),
+            kernel: File {
+                name: PathBuf::from("../kernel.bin").to_string_lossy().into_owned(),
+                sha256sum: sha256(kernel_bytes),
+                packed_size: kernel_bytes.len() as u64,
+                unpacked_size: kernel_bytes.len() as u64,
+            },
+            store: File {
+                name: "root.raw".into(),
+                sha256sum: sha256(b"root payload"),
+                packed_size: 12,
+                unpacked_size: 12,
+            },
+            verity: File {
+                name: "verity.raw".into(),
+                sha256sum: sha256(b"verity payload"),
+                packed_size: 14,
+                unpacked_size: 14,
+            },
+        };
+
+        std::fs::write(base.join("manifest.json"), serde_json::to_vec(&manifest).unwrap())
+            .unwrap();
+        std::fs::write(base.join("root.raw"), b"root payload").unwrap();
+        std::fs::write(base.join("verity.raw"), b"verity payload").unwrap();
+
+        let err = crate::image::install::validate_manifest_path(&base.join("manifest.json"))
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("parent dir '..' is not allowed"));
+    }
 
     #[test]
     fn target_and_generation_policy_fail_closed() {

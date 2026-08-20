@@ -1106,7 +1106,7 @@ mod tests {
     }
 
     #[test]
-    fn recovers_a_power_cut_between_final_lv_renames() {
+    fn recovers_a_power_cut_after_root_rename() {
         let volumes = [
             "root_1.0.0_aaaaaaaaaaaaaaaa",
             "verity_1.0.0_aaaaaaaaaaaaaaaa",
@@ -1118,13 +1118,24 @@ mod tests {
         .collect();
         let cmdline = format!("ghaf.revision=1.0.0 ghaf.storehash={}", "a".repeat(64));
         let runtime = Runtime::new(volumes, &cmdline, vec![]).unwrap();
-        assert_eq!(runtime.slot_groups().len(), 2);
-        let recovered = runtime
-            .slot_groups()
-            .iter()
-            .find(|group| !group.is_active(&runtime.kernel))
-            .unwrap();
-        assert!(recovered.is_complete() && recovered.is_empty());
+        let selection = runtime
+            .select_update_slot(&manifest("2.0.0", "bbbbbbbbbbbbbbbb"))
+            .expect("recover after root rename");
+        let SlotSelection::Selected { slot, pre_steps } = selection else {
+            panic!("selected slot expected")
+        };
+        assert_eq!(
+            slot.root.as_ref().unwrap().volume().lv_name,
+            "root_staging_bbbbbbbbbbbbbbbb"
+        );
+        assert_eq!(
+            slot.verity.as_ref().unwrap().volume().lv_name,
+            "verity_staging_bbbbbbbbbbbbbbbb"
+        );
+        assert!(pre_steps.iter().any(|step| {
+            step.format_shell()
+                .contains("root_2.0.0_bbbbbbbbbbbbbbbb root_staging_bbbbbbbbbbbbbbbb")
+        }));
     }
 
     #[test]
