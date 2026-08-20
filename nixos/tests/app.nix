@@ -65,6 +65,7 @@ in
                       from = [
                         "appvm"
                         "guivm"
+                        "ghaf-host"
                       ];
                       permittedRequests = [ "RegisterService" ];
                     }
@@ -72,6 +73,12 @@ in
                       from = [ "guivm" ];
                       to = [ "appvm" ];
                       permittedRequests = [ "StartApplication" ];
+                    }
+                    {
+                      from = [ "guivm" ];
+                      to = [ "ghaf-host" ];
+
+                      permittedRequests = [ "StopService" ];
                     }
                   ];
                 };
@@ -141,7 +148,7 @@ in
 
                 # TLS parameter
                 givc-tls-test = {
-                  name = "host";
+                  name = "ghaf-host";
                   addresses = addrs.host;
                 };
                 networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
@@ -164,7 +171,7 @@ in
                   };
                   capabilities = {
                     services = [
-                      "microvm@appvm.service"
+                      "host-test.service"
                       "poweroff.target"
                       "reboot.target"
                       "sleep.target"
@@ -172,9 +179,9 @@ in
                     ];
                   };
                 };
-                systemd.services."microvm@appvm" = {
+                systemd.services."host-test" = {
                   script = ''
-                    # Do nothing script, simulating microvm service
+                    # Do nothing script, simulating a systemd service
                     while true; do sleep 10; done
                   '';
                 };
@@ -287,12 +294,14 @@ in
               grpcurl = "grpcurl -cacert /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem";
             in
             ''
+              import time
               with subtest("startup"):
                   adminvm.wait_for_unit("givc-admin.service")
                   adminvm.wait_for_unit("multi-user.target")
                   guivm.wait_for_unit("multi-user.target")
                   guivm.wait_for_unit("givc-guivm.service")
                   appvm.wait_for_unit("multi-user.target")
+                  hostvm.wait_for_unit("multi-user.target")
                   appvm.succeed("sudo -u ghaf touch /tmp/testfile")
                   appvm.succeed("sudo -u ghaf touch /tmp/admin_forbids")
                   appvm.succeed("sudo -u ghaf touch /tmp/agent_forbids")
@@ -332,6 +341,13 @@ in
                   assert "permission denied by admin access control policy" in output, f"Expected 'permission denied by admin access control policy', got: {output}"
                   print("\033[94m" + "\n-- access control test2 (cedar) completed successfully --\n" + "\033[0m")
 
+              with subtest("stop service on target vm"):
+                  hostvm.succeed("systemctl start host-test.service")
+                  hostvm.succeed("systemctl is-active host-test.service")
+                  guivm.succeed("${cli} ${cliArgs} stop service host-test.service --vm ghaf-host")
+                  time.sleep(2)
+                  hostvm.fail("systemctl is-active host-test.service")
+                  print("\033[94m" + "\n-- stop service test completed successfully --\n" + "\033[0m")
             '';
         };
       };

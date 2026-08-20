@@ -242,7 +242,7 @@
                   foot = by_name("foot@0.service", json.loads(js))
                   assert foot["status"] == "Running"
 
-                  print(hostvm.succeed("${cli} ${cliArgs} stop foot@0.service"))
+                  print(hostvm.succeed("${cli} ${cliArgs} stop app foot@0.service"))
                   appvm.fail("pgrep foot")
 
               with subtest("clear exit and restart"):

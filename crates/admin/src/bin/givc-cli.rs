@@ -80,6 +80,28 @@ impl StartSub {
 }
 
 #[derive(Debug, Subcommand)]
+enum StopSub {
+    App {
+        app: String,
+    },
+    Service {
+        servicename: String,
+        #[arg(long)]
+        vm: String,
+    },
+}
+
+impl StopSub {
+    async fn stop(self, admin: AdminClient) -> anyhow::Result<()> {
+        match self {
+            StopSub::App { app } => admin.stop(app).await?,
+            StopSub::Service { servicename, vm } => admin.stop_service(servicename, vm).await?,
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Subcommand)]
 enum UpdateSub {
     Query(QueryUpdates),
     List,
@@ -108,7 +130,8 @@ enum Commands {
         start: StartSub,
     },
     Stop {
-        app: String,
+        #[command(subcommand)]
+        stop: StopSub,
     },
     Pause {
         app: String,
@@ -381,7 +404,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Test { test } => test.handle(admin).await?,
         Commands::Start { start } => start.start(admin).await?,
-        Commands::Stop { app } => admin.stop(app).await?,
+        Commands::Stop { stop } => stop.stop(admin).await?,
         Commands::Pause { app } => admin.pause(app).await?,
         Commands::Resume { app } => admin.resume(app).await?,
         Commands::Reboot {} => admin.reboot().await?,
