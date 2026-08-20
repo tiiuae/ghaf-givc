@@ -90,7 +90,8 @@ pub(crate) async fn validate_signed_manifest_path(
     // Verify the exact bytes before deserializing them. Re-serializing JSON here
     // would make the signed representation ambiguous.
     verify_files(manifest_path, validation.signature, validation.trusted_key)?;
-    let manifest = Manifest::from_file(manifest_path)?;
+    let mut manifest = Manifest::from_file(manifest_path)?;
+    manifest.normalize_paths()?;
     let accepted = read_accepted_generation(validation.accepted_generation_file)?;
     ensure!(
         !validation.allow_downgrade || cfg!(feature = "debug-downgrade"),
@@ -112,7 +113,9 @@ pub async fn validate_manifest_path(manifest_path: &Path) -> anyhow::Result<()> 
     let source_dir = manifest_path
         .parent()
         .context("manifest path has no parent directory")?;
-    Manifest::from_file(manifest_path)?
+    let mut manifest = Manifest::from_file(manifest_path)?;
+    manifest.normalize_paths()?;
+    manifest
         .validate(source_dir)
         .await
         .context("while validating manifest artifacts")
