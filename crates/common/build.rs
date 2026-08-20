@@ -14,7 +14,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "stats",
         "notify",
         "ctap",
+        "hwid",
         "policyadmin",
+        "socket",
+        "event",
+        "wifi",
     ] {
         tonic_prost_build::configure()
             .file_descriptor_set_path(out_dir.join(format!("{pkg}_descriptor.bin")))
