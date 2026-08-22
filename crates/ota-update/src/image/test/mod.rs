@@ -24,6 +24,12 @@ pub fn make_test_runtime_installed() -> Runtime {
     Runtime::new(volumes, &KERNEL_CMDLINE, bootctl).unwrap()
 }
 
+pub fn make_test_runtime_installed_with_legacy_active() -> Runtime {
+    let bootctl = parse_bootctl(&BOOTCTL).unwrap();
+    let volumes = parse_lvs_json(&LVS_INSTALLED).unwrap();
+    Runtime::new(volumes, "root=fstab", bootctl).unwrap()
+}
+
 pub fn make_test_manifest() -> Manifest {
     serde_json::from_str(&MANIFEST).unwrap()
 }

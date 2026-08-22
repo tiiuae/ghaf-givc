@@ -16,7 +16,17 @@ pub struct Plan {
 }
 
 impl Plan {
+    #[cfg(test)]
     pub(crate) fn install(rt: &Runtime, m: &Manifest, source: &Path) -> anyhow::Result<Self> {
+        Self::install_with_uki(rt, m, source, &m.kernel.full_name(source))
+    }
+
+    pub(crate) fn install_with_uki(
+        rt: &Runtime,
+        m: &Manifest,
+        source: &Path,
+        uki_source: &Path,
+    ) -> anyhow::Result<Self> {
         let selection = rt.select_update_slot(m)?;
 
         match selection {
@@ -25,8 +35,17 @@ impl Plan {
                 Ok(Plan { steps: vec![] })
             }
 
+            SlotSelection::FinalizeBoot { boot_id } => Ok(Plan {
+                steps: vec![
+                    CommandSpec::new("bootctl")
+                        .arg("set-default")
+                        .arg(Self::trial_default_pattern(&boot_id)?)
+                        .into(),
+                ],
+            }),
+
             SlotSelection::Selected { slot, pre_steps } => {
-                let mut plan = Plan::install_into_slot(rt, m, &slot, source)?;
+                let mut plan = Plan::install_into_slot(rt, m, &slot, source, uki_source)?;
                 // Prepend lvcreate steps (if any) before the dd/rename steps
                 plan.steps.splice(0..0, pre_steps);
                 Ok(plan)
@@ -39,6 +58,7 @@ impl Plan {
         m: &Manifest,
         slot: &SlotGroup,
         source: &Path,
+        uki_source: &Path,
     ) -> anyhow::Result<Self> {
         let mut steps = Vec::new();
 
@@ -49,16 +69,52 @@ impl Plan {
         steps.push(Self::install_volume(verity.volume(), &m.verity, source));
         steps.push(Self::finalize_flush(root.volume()));
         steps.push(Self::finalize_flush(verity.volume()));
+        steps.push(
+            CommandSpec::new("veritysetup")
+                .arg("verify")
+                .arg_path(root.volume().device_file())
+                .arg_path(verity.volume().device_file())
+                .arg(&m.root_verity_hash)
+                .into(),
+        );
 
         // FIXME: clone!
         steps.push(root.clone().into_version(m.to_version())?.rename());
         steps.push(verity.clone().into_version(m.to_version())?.rename());
-        steps.push(Self::install_uki(slot, &m.kernel, &rt.boot, source)?);
+        steps.push(Self::install_uki(slot, &rt.boot, uki_source)?);
         if rt.active_slot()?.is_legacy() {
             steps.extend(Self::legacy_bootloader_migration(rt));
         }
+        let boot_id = slot
+            .boot
+            .as_ref()
+            .context("cannot determine installed UKI entry")?
+            .id
+            .clone();
+        // Select this trial with a glob rather than its exact entry ID. An
+        // exact LoaderEntryDefault keeps winning after its boot counter reaches
+        // zero, while a glob lets systemd-boot fall back once the counted entry
+        // is exhausted. The glob must still be candidate-specific: a broad
+        // `ghaf-*.efi` default can select an older entry when two updates have
+        // the same OS version and their hash fragments sort differently. The
+        // health gate promotes a successful trial by setting its exact entry as
+        // the default. This is the only boot-state commit and must remain last.
+        steps.push(
+            CommandSpec::new("bootctl")
+                .arg("set-default")
+                .arg(Self::trial_default_pattern(&boot_id)?)
+                .into(),
+        );
 
         Ok(Plan { steps })
+    }
+
+    fn trial_default_pattern(boot_id: &str) -> anyhow::Result<String> {
+        if !boot_id.starts_with("ghaf-") || !boot_id.ends_with(".efi") {
+            bail!("refusing to activate trial outside the Ghaf A/B UKI namespace: {boot_id}");
+        }
+
+        Ok(format!("{}*.efi", boot_id.trim_end_matches(".efi")))
     }
 
     fn install_volume(volume: &Volume, file: &File, source: &Path) -> Pipeline {
@@ -83,12 +139,7 @@ impl Plan {
         }
     }
 
-    fn install_uki(
-        slot: &SlotGroup,
-        file: &File,
-        boot: &str,
-        source: &Path,
-    ) -> anyhow::Result<Pipeline> {
+    fn install_uki(slot: &SlotGroup, boot: &str, uki_source: &Path) -> anyhow::Result<Pipeline> {
         let uki_name = slot
             .boot
             .as_ref()
@@ -96,12 +147,26 @@ impl Plan {
             .map(ToString::to_string)
             .context("cannot determine UKI name for slot")?;
 
+        let destination = format!("{boot}/EFI/Linux/{uki_name}");
+        let temporary = format!("{destination}.tmp");
         Ok(Pipeline::new(
+            CommandSpec::new("mkdir")
+                .arg("-p")
+                .arg(format!("{boot}/EFI/Linux")),
+        )
+        .then(
             CommandSpec::new("install")
                 .arg("-m")
                 .arg("0644")
-                .arg_path(file.full_name(source))
-                .arg(format!("{boot}/EFI/Linux/{uki_name}")),
+                .arg_path(uki_source)
+                .arg(&temporary),
+        )
+        .then(CommandSpec::new("sync").arg("-f").arg(&temporary))
+        .then(CommandSpec::new("mv").arg(&temporary).arg(&destination))
+        .then(
+            CommandSpec::new("sync")
+                .arg("-f")
+                .arg(format!("{boot}/EFI/Linux")),
         ))
     }
 
@@ -109,16 +174,12 @@ impl Plan {
         vec![
             CommandSpec::new("sed")
                 .arg("-i")
-                .arg("s/^default .*/default @saved/")
+                .arg("s/^default .*/default ghaf-*.efi/")
                 .arg(format!("{}/loader/loader.conf", rt.boot))
                 .into(),
             CommandSpec::new("rm")
                 .arg("-f")
                 .arg(format!("{}/loader/entries.srel", rt.boot))
-                .into(),
-            CommandSpec::new("bootctl")
-                .arg("set-default")
-                .arg("auto")
                 .into(),
         ]
     }
@@ -213,20 +274,67 @@ mod tests {
         let rt = make_test_runtime();
         let m = make_test_manifest();
         let expected = &[
-            "zstdcat /sysupdate/ghaf_root_25.12.1_44cc41b403a2d323.raw.zst | dd of=/dev/mapper/pool-root_empty bs=4M status=progress",
-            "zstdcat /sysupdate/ghaf_verity_25.12.1_44cc41b403a2d323.raw.zst | dd of=/dev/mapper/pool-verity_empty bs=4M status=progress",
-            "blockdev --flushbufs /dev/mapper/pool-root_empty",
-            "blockdev --flushbufs /dev/mapper/pool-verity_empty",
-            "lvrename pool root_empty root_25.12.1_44cc41b403a2d323",
-            "lvrename pool verity_empty verity_25.12.1_44cc41b403a2d323",
-            "install -m 0644 /sysupdate/ghaf_kernel_25.12.1_44cc41b403a2d323.efi /boot/EFI/Linux/ghaf-25.12.1-44cc41b403a2d323.efi",
-            "sed -i 's/^default .*/default @saved/' /boot/loader/loader.conf",
+            "lvrename pool root_empty root_staging_44cc41b403a2d323",
+            "lvrename pool verity_empty verity_staging_44cc41b403a2d323",
+            "zstdcat /sysupdate/ghaf_root_25.12.1_44cc41b403a2d323.raw.zst | dd of=/dev/mapper/pool-root_staging_44cc41b403a2d323 bs=4M status=progress",
+            "zstdcat /sysupdate/ghaf_verity_25.12.1_44cc41b403a2d323.raw.zst | dd of=/dev/mapper/pool-verity_staging_44cc41b403a2d323 bs=4M status=progress",
+            "blockdev --flushbufs /dev/mapper/pool-root_staging_44cc41b403a2d323",
+            "blockdev --flushbufs /dev/mapper/pool-verity_staging_44cc41b403a2d323",
+            "veritysetup verify /dev/mapper/pool-root_staging_44cc41b403a2d323 /dev/mapper/pool-verity_staging_44cc41b403a2d323 44cc41b403a2d323a68f42941131169899545eaceebe332e24426e9ff7d7f3bc",
+            "lvrename pool root_staging_44cc41b403a2d323 root_25.12.1_44cc41b403a2d323",
+            "lvrename pool verity_staging_44cc41b403a2d323 verity_25.12.1_44cc41b403a2d323",
+            "mkdir -p /boot/EFI/Linux && install -m 0644 /sysupdate/ghaf_kernel_25.12.1_44cc41b403a2d323.efi /boot/EFI/Linux/ghaf-25.12.1-44cc41b403a2d323+3.efi.tmp && sync -f /boot/EFI/Linux/ghaf-25.12.1-44cc41b403a2d323+3.efi.tmp && mv /boot/EFI/Linux/ghaf-25.12.1-44cc41b403a2d323+3.efi.tmp /boot/EFI/Linux/ghaf-25.12.1-44cc41b403a2d323+3.efi && sync -f /boot/EFI/Linux",
+            "sed -i 's/^default .*/default ghaf-*.efi/' /boot/loader/loader.conf",
             "rm -f /boot/loader/entries.srel",
-            "bootctl set-default auto",
+            "bootctl set-default 'ghaf-25.12.1-44cc41b403a2d323*.efi'",
         ];
 
         let plan = Plan::install(&rt, &m, &Path::new("/sysupdate")).expect("install failed");
         assert_eq!(plan.into_script(), expected)
+    }
+
+    #[test]
+    fn install_uses_explicit_private_uki_snapshot() {
+        let rt = make_test_runtime();
+        let m = make_test_manifest();
+        let plan = Plan::install_with_uki(
+            &rt,
+            &m,
+            Path::new("/sysupdate"),
+            Path::new("/run/ota-update-uki-private/candidate.efi"),
+        )
+        .expect("install failed")
+        .into_script();
+
+        let install = plan
+            .iter()
+            .find(|step| step.contains("/EFI/Linux/") && step.contains("install -m 0644"))
+            .expect("UKI installation step");
+        assert!(install.contains("/run/ota-update-uki-private/candidate.efi"));
+        assert!(!install.contains("/sysupdate/ghaf_kernel_"));
+    }
+
+    #[test]
+    fn finalize_existing_trial_sets_candidate_specific_default() {
+        let rt = make_test_runtime_installed_with_legacy_active();
+        let m = manifest("25.12.1", "deadbeefdeadbeef");
+
+        let plan = Plan::install(&rt, &m, Path::new("/sysupdate")).expect("install failed");
+
+        assert_eq!(
+            plan.into_script(),
+            ["bootctl set-default 'ghaf-25.12.1-deadbeefdeadbeef*.efi'"]
+        );
+    }
+
+    #[test]
+    fn trial_activation_rejects_non_ab_boot_entry() {
+        assert_eq!(
+            Plan::trial_default_pattern("ghaf-25.12.1-deadbeefdeadbeef.efi").unwrap(),
+            "ghaf-25.12.1-deadbeefdeadbeef*.efi"
+        );
+        assert!(Plan::trial_default_pattern("ghaf_kernel_25.12.1_deadbeef.efi").is_err());
+        assert!(Plan::trial_default_pattern("nixos-generation-1.conf").is_err());
     }
 
     #[test]

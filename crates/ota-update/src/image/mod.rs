@@ -11,6 +11,7 @@ pub mod manifest;
 pub mod pipeline;
 pub mod plan;
 pub mod runtime;
+pub(crate) mod signature;
 pub mod slot;
 pub mod uki;
 pub mod version;

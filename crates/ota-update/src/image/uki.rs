@@ -28,6 +28,7 @@ pub struct BootEntry {
     pub id: String,
 
     pub kind: BootEntryKind,
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -119,10 +120,17 @@ impl BootEntry {
     pub fn from_bootctl(items: Vec<BootctlItem>) -> impl Iterator<Item = Self> {
         items.into_iter().filter_map(|item| {
             let id = item.id;
+            let is_default = item.is_default;
 
             let kind = match item.r#type.as_str() {
                 // UKI entries
-                "type2" => match id.parse() {
+                "type2" => match item
+                    .path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(&id)
+                    .parse()
+                {
                     Ok(uki) => BootEntryKind::Managed(uki),
                     Err(_) => BootEntryKind::Unmanaged,
                 },
@@ -134,7 +142,11 @@ impl BootEntry {
                 _ => return None,
             };
 
-            Some(BootEntry { id, kind })
+            Some(BootEntry {
+                id,
+                kind,
+                is_default,
+            })
         })
     }
 
@@ -178,13 +190,21 @@ impl BootEntry {
 impl From<UkiEntry> for BootEntry {
     fn from(uki: UkiEntry) -> Self {
         BootEntry {
-            id: uki.to_string(),
+            id: uki.boot_id(),
             kind: BootEntryKind::Managed(uki),
+            is_default: false,
         }
     }
 }
 
 impl UkiEntry {
+    /// Stable systemd-boot entry ID. Boot-count suffixes are part of the
+    /// physical filename, but are not part of the ID accepted by bootctl.
+    #[must_use]
+    pub fn boot_id(&self) -> String {
+        format!("ghaf-{:#}.efi", self.version)
+    }
+
     #[must_use]
     pub fn full_name<P: AsRef<Path>>(&self, base_dir: P) -> PathBuf {
         base_dir.as_ref().join(self.to_string())
@@ -279,5 +299,11 @@ mod tests {
 
         let parsed = name.parse().unwrap();
         assert_eq!(uki, parsed);
+    }
+
+    #[test]
+    fn boot_id_omits_trial_counters() {
+        let uki: UkiEntry = "ghaf-1.2.3-deadbeefdeadbeef+3-1.efi".parse().unwrap();
+        assert_eq!(uki.boot_id(), "ghaf-1.2.3-deadbeefdeadbeef.efi");
     }
 }
