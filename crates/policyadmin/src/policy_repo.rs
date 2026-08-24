@@ -83,7 +83,7 @@ impl PolicyRepoMonitor {
                         "url",
                     );
 
-                    if remote_url.is_some_and(|u| *u == monitor.url) {
+                    if remote_url.is_some_and(|u| u == monitor.url) {
                         let mut state = monitor.state.lock().unwrap();
                         let head = repo.head_id()?;
                         state.new_head = Some(head.detach());
