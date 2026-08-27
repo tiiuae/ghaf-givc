@@ -1772,7 +1772,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c91d8cffac8849493a82233811bd02b2b183b8cf39bf704de0fa0841b737595"
 dependencies = [
  "bstr",
- "hashbrown 0.17.1",
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -2867,9 +2867,9 @@ dependencies = [
 
 [[package]]
 name = "jsonwebtoken"
-version = "10.4.0"
+version = "11.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eba32bfb4ffdeaca3e34431072faf01745c9b26d25504aa7a6cf5684334fc4fc"
+checksum = "881733cbc631fc9e472e24447ce32a64bedf2da498d6d8570b08edc87de71f65"
 dependencies = [
  "aws-lc-rs",
  "base64",
@@ -3275,7 +3275,7 @@ dependencies = [
 [[package]]
 name = "oci-client"
 version = "0.17.0"
-source = "git+https://github.com/oras-project/rust-oci-client#7f8200640b5ca80543421c7ac7c4457a9d1de9e2"
+source = "git+https://github.com/oras-project/rust-oci-client#463cfc118a0cc4a8adc867a19eabddd18da1b6dd"
 dependencies = [
  "bytes",
  "chrono",
@@ -3284,7 +3284,6 @@ dependencies = [
  "http",
  "http-auth",
  "jsonwebtoken",
- "lazy_static",
  "oci-spec",
  "olpc-cjson",
  "regex",
