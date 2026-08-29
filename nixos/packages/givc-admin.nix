@@ -25,10 +25,23 @@ let
     strictDeps = true;
 
     nativeBuildInputs = [ protobuf ];
-    buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
+    buildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
       # Additional darwin specific inputs can be set here
       pkgs.libiconv
     ];
+
+    # Pin the tree hash of every git dependency in Cargo.lock. Without these,
+    # crane resolves each one with `builtins.fetchGit { allRefs = true; }` at
+    # evaluation time, which mirrors every ref the remote advertises -- GitHub
+    # serves refs/pull/* -- and prints the whole fetch to the eval log. Given a
+    # hash, crane uses a plain fetchgit derivation instead, so the checkout is
+    # substitutable and evaluation stays offline.
+    # Regenerate after any cargo update that moves a revision: crane reports the
+    # expected value as a hash mismatch.
+    outputHashes = {
+      "git+https://github.com/oras-project/rust-oci-client#7f8200640b5ca80543421c7ac7c4457a9d1de9e2" =
+        "sha256-QjucurMMhQQJcgZor5TdRbvYJcidCeDyME8aPXdvfjM=";
+    };
   };
 
   givc = craneLib.buildPackage (
