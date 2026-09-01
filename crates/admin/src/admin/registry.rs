@@ -3,6 +3,7 @@
 
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::{Context, anyhow, bail};
 use givc_common::query::{Event, QueryResult};
@@ -75,6 +76,42 @@ impl Registry {
             .get(name)
             .cloned()
             .with_context(|| format!("Service {name} not registered"))
+    }
+
+    /// Wait for an entry to appear without racing its registration event.
+    pub(crate) async fn wait_for(
+        &self,
+        name: &str,
+        wait: Duration,
+    ) -> anyhow::Result<RegistryEntry> {
+        // Subscribe before checking the map. An entry registered between these
+        // operations is then visible either in the map or through the receiver.
+        let (_, mut events) = self.subscribe();
+        if let Ok(entry) = self.by_name(name) {
+            return Ok(entry);
+        }
+
+        tokio::time::timeout(wait, async {
+            loop {
+                match events.recv().await {
+                    Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                        if let Ok(entry) = self.by_name(name) {
+                            return Ok(entry);
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        bail!("Registry event stream closed while waiting for {name}");
+                    }
+                }
+            }
+        })
+        .await
+        .with_context(|| {
+            format!(
+                "Timed out after {} seconds waiting for {name} to register",
+                wait.as_secs()
+            )
+        })?
     }
 
     pub(crate) fn find_names(&self, name: &str) -> anyhow::Result<Vec<String>> {
@@ -201,6 +238,38 @@ mod tests {
         assert!(r.by_name(&foo_key).is_err());
         assert!(r.deregister(&foo_key).is_err()); // fail to dereg second time
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_registration() -> anyhow::Result<()> {
+        let registry = Registry::new();
+        let delayed_registry = registry.clone();
+        let expected = RegistryEntry::dummy("delayed".to_string());
+        let delayed_entry = expected.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            delayed_registry.register(delayed_entry);
+        });
+
+        let actual = registry.wait_for("delayed", Duration::from_secs(1)).await?;
+        assert_eq!(actual, expected);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_registration_times_out() {
+        let registry = Registry::new();
+        let error = registry
+            .wait_for("missing", Duration::from_millis(10))
+            .await
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("waiting for missing to register")
+        );
     }
 
     #[test]
