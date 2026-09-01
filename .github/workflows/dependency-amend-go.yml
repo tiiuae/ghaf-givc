@@ -54,5 +54,6 @@ jobs:
           git config user.name "dependabot[bot]"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git add nixos/packages/givc-agent.nix
-          git commit -m "chore(deps): update vendorHash for updated Go dependencies"
+          # [dependabot skip] lets dependabot auto-rebase the PR
+          git commit -m "chore(deps): update vendorHash for updated Go dependencies [dependabot skip]"
           git push origin HEAD:${{ github.head_ref }}

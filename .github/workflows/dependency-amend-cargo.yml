@@ -61,5 +61,6 @@ jobs:
           git config user.name "dependabot[bot]"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git add nixos/packages/givc-admin.nix
-          git commit -m "chore(deps): update outputHashes for updated Cargo git dependencies"
+          # [dependabot skip] lets dependabot auto-rebase the PR
+          git commit -m "chore(deps): update outputHashes for updated Cargo git dependencies [dependabot skip]"
           git push origin HEAD:${{ github.head_ref }}
