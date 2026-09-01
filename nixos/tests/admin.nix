@@ -85,6 +85,7 @@
                   if not succeed and not ret:
                       return None
 
+                  assert isinstance(ret, str)
                   parsed = json.loads(ret)
                   return parsed
 
