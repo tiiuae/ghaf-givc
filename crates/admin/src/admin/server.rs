@@ -35,6 +35,7 @@ use crate::utils::tonic::{Stream, escalate};
 pub use pb::admin_service_server::AdminServiceServer;
 
 const VM_STARTUP_TIME: Duration = Duration::new(10, 0);
+const AGENT_REGISTRATION_TIMEOUT: Duration = Duration::new(60, 0);
 const TIMEZONE_CONF: &str = "/etc/timezone.conf";
 const LOCALE_CONF: &str = "/etc/locale-givc.conf";
 
@@ -472,9 +473,10 @@ impl AdminServiceImpl {
             self.start_vm(&vm_name)
                 .await
                 .with_context(|| format!("Starting vm for {name}"))?;
-            let _ = self
-                .registry
-                .by_name(&systemd_agent_name)
+            info!("Waiting for {systemd_agent_name} to register");
+            self.registry
+                .wait_for(&systemd_agent_name, AGENT_REGISTRATION_TIMEOUT)
+                .await
                 .context("after starting VM")?;
         }
         let endpoint = self
