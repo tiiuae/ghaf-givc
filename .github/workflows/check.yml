@@ -16,9 +16,10 @@ jobs:
   run-checks:
     runs-on: ${{ matrix.os }}
     concurrency:
-      group: nix-checks-${{ matrix.arch }}
-      cancel-in-progress: false
+      group: nix-checks-${{ matrix.arch }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: "x86_64-linux"
@@ -37,17 +38,25 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install nix
         uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
-        with:
-          enable_kvm: true
-          extra_nix_config: "system-features = nixos-test benchmark big-parallel kvm"
       - name: Check .nix formatting
         run: nix fmt -- --fail-on-change
-      - name: Check nix flake show runs successfully
-        run: nix flake show --system ${{ matrix.arch }}
-      - name: Run nix flake check
+      - name: Check flake
+        run: nix flake check --no-build --system ${{ matrix.arch }}
+      - name: Build all packages
         run: |
-          if [ "${{ matrix.arch }}" = "x86_64-linux" ]; then
-            nix flake check --system ${{ matrix.arch }} --max-jobs 1
-          else
-            nix flake check --system ${{ matrix.arch }}
+          set -euo pipefail
+          arch="${{ matrix.arch }}"
+          mapfile -t names < <(
+            nix eval --raw ".#packages.$arch" \
+              --apply 'ps: builtins.concatStringsSep "\n" (builtins.attrNames ps)'
+          )
+          if [ "${#names[@]}" -eq 0 ]; then
+            echo "::error::No packages found under .#packages.$arch" >&2
+            exit 1
           fi
+          installables=()
+          for name in "${names[@]}"; do
+            installables+=(".#packages.$arch.$name")
+          done
+          echo "Building ${#installables[@]} packages: ${installables[*]}"
+          nix build --no-link --print-build-logs "${installables[@]}"

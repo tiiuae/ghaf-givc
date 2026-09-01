@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Runs a nix flake check. This will trigger all VM based tests on x86,
+# aarch64 nested virtualization is not supported in GH runner. Limits
+# the x86 test execution to a single job.
+
+name: flake check
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    types:
+      # `labeled` starts a full nix flake check; the others keep it running on new
+      # commits, or pick up a PR opened with the label already applied
+      - labeled
+      - synchronize
+      - opened
+      - reopened
+  schedule:
+    # Nightly regression net on main, 04:37 UTC
+    - cron: "37 4 * * *"
+permissions:
+  contents: read
+
+jobs:
+  flake-check:
+    # Explicit allowlist, triggers on specified workflows
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'pull_request' &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'ci:full-check') ||
+      (github.event.action != 'labeled' &&
+       contains(github.event.pull_request.labels.*.name, 'ci:full-check')))
+    runs-on: ${{ matrix.os }}
+    concurrency:
+      group: nix-flake-check-${{ matrix.arch }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: "x86_64-linux"
+            os: "ubuntu-latest"
+          - arch: "aarch64-linux"
+            os: "ubuntu-24.04-arm"
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Platform
+        run: uname -a
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          enable_kvm: true
+          extra_nix_config: "system-features = nixos-test benchmark big-parallel kvm"
+      - name: Run nix flake check
+        run: |
+          if [ "${{ matrix.arch }}" = "x86_64-linux" ]; then
+            nix flake check --system ${{ matrix.arch }} --max-jobs 1
+          else
+            nix flake check --system ${{ matrix.arch }}
+          fi
