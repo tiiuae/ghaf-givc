@@ -201,6 +201,21 @@ in
 
     };
 
+    closureUpdates = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Whether this host performs closure-based OTA updates
+        (`ota-update cachix` / `local`), which shell out to `nix build` and so
+        require the Nix binary on the target.
+
+        Set false on image-based (dm-verity A/B) systems, where updates replace
+        whole root images and the store is read-only: `ota-update image` needs
+        no Nix, and leaving it enabled ships a package manager -- with store
+        write capability -- on an appliance that cannot use it.
+      '';
+    };
+
     debug = mkEnableOption ''
       enable appvm GIVC agent debug logging. This increases the verbosity of the logs.
 
@@ -276,10 +291,11 @@ in
       path = [
         config.system.path
         ota-update
-        pkgs.nix
-        pkgs.nixos-rebuild
         pkgs.openssh
-      ];
+      ]
+      # Only the closure-update path invokes `nix build`; the image path shells
+      # out to lvs/bootctl/zstd only.
+      ++ lib.optional cfg.closureUpdates pkgs.nix;
     };
     networking.firewall.allowedTCPPorts =
       let
@@ -288,7 +304,6 @@ in
       [ port ];
     environment.systemPackages = [
       ota-update
-      pkgs.nixos-rebuild # Need for ota-update
     ];
     systemd.tmpfiles.rules = [
       "d ${cfg.capabilities.policy.storePath} 0755 1000 100 -"
