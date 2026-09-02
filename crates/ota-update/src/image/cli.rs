@@ -12,24 +12,30 @@ use clap::{Args, Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Args)]
+/// Security policy for signed image updates.
+///
+/// SECURITY: the key, certificate, target, and accepted-generation path are
+/// full trust anchors. Keep their CLI/environment values under the control of
+/// the privileged update service; never forward them from an unprivileged RPC
+/// caller.
 pub struct TrustArgs {
     /// Detached raw Ed25519 signature (defaults to MANIFEST.sig)
     #[arg(long)]
     signature: Option<PathBuf>,
 
-    /// Trusted raw/hex Ed25519 public key
+    /// Trusted raw/hex Ed25519 public key (security policy, not update input)
     #[arg(long, env = "GHAF_UPDATE_TRUSTED_KEY")]
     trusted_key: PathBuf,
 
-    /// db certificate used to verify the UKI Authenticode signature
+    /// Trusted db certificate for UKI Authenticode (security policy, not update input)
     #[arg(long, env = "GHAF_UKI_TRUSTED_CERT")]
     uki_trusted_cert: PathBuf,
 
-    /// Exact device/update target identifier
+    /// Exact trusted device/update target identifier (security policy)
     #[arg(long, env = "GHAF_UPDATE_TARGET")]
     target: String,
 
-    /// Generation advanced by ghaf-boot-health after blessing
+    /// Trusted rollback state advanced by ghaf-boot-health after blessing
     #[arg(
         long,
         env = "GHAF_ACCEPTED_GENERATION_FILE",

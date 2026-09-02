@@ -91,14 +91,39 @@ async fn snapshot_validated_uki(
         .context("creating private directory under /run")?;
     let path = directory.path().join("candidate.efi");
     let source = manifest.kernel.full_name(source_dir);
-    tokio::fs::copy(&source, &path)
-        .await
-        .with_context(|| format!("copying {} to private snapshot", source.display()))?;
+    if let Err(error) = tokio::fs::copy(&source, &path).await {
+        let available = available_run_bytes()
+            .await
+            .map_or_else(|| "unknown".to_string(), |bytes| bytes.to_string());
+        return Err(error).with_context(|| {
+            format!(
+                "copying {} ({} bytes) to private /run snapshot; /run available bytes: {available}",
+                source.display(),
+                manifest.kernel.packed_size
+            )
+        });
+    }
     validate_uki_path(manifest, &path, cert).await?;
     Ok(UkiSnapshot {
         _directory: directory,
         path,
     })
+}
+
+async fn available_run_bytes() -> Option<u64> {
+    let output = Command::new("df")
+        .args(["--output=avail", "--block-size=1", "/run"])
+        .output()
+        .await
+        .ok()?;
+    output.status.success().then_some(())?;
+    String::from_utf8(output.stdout)
+        .ok()?
+        .lines()
+        .nth(1)?
+        .trim()
+        .parse()
+        .ok()
 }
 
 pub(crate) async fn validate_signed_manifest_path(
@@ -111,8 +136,10 @@ pub(crate) async fn validate_signed_manifest_path(
 
     // Verify the exact bytes before deserializing them. Re-serializing JSON here
     // would make the signed representation ambiguous.
-    verify_files(manifest_path, validation.signature, validation.trusted_key)?;
-    let manifest = Manifest::from_file(manifest_path)?;
+    let manifest_bytes = verify_files(manifest_path, validation.signature, validation.trusted_key)?;
+    // Deserialize the same bytes that crossed the signature boundary. Reading
+    // the path again here would allow a manifest replacement race.
+    let manifest = Manifest::from_slice(&manifest_bytes)?;
     let accepted = read_accepted_generation(validation.accepted_generation_file)?;
     manifest.validate_policy(
         validation.target,
@@ -142,14 +169,16 @@ pub async fn validate_manifest_path(manifest_path: &Path) -> anyhow::Result<()> 
 }
 
 fn read_accepted_generation(path: &Path) -> anyhow::Result<u64> {
-    match std::fs::read_to_string(path) {
-        Ok(value) => value
-            .trim()
-            .parse()
-            .with_context(|| format!("parsing accepted generation in {}", path.display())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
-        Err(error) => Err(error).with_context(|| format!("reading {}", path.display())),
-    }
+    let value = std::fs::read_to_string(path).with_context(|| {
+        format!(
+            "reading accepted generation from {}; provision this file with generation 0 before the first update",
+            path.display()
+        )
+    })?;
+    value
+        .trim()
+        .parse()
+        .with_context(|| format!("parsing accepted generation in {}", path.display()))
 }
 
 async fn validate_uki(manifest: &Manifest, source_dir: &Path, cert: &Path) -> anyhow::Result<()> {
@@ -192,19 +221,32 @@ async fn validate_uki_path(manifest: &Manifest, uki: &Path, cert: &Path) -> anyh
 }
 
 fn validate_uki_cmdline(manifest: &Manifest, cmdline: &str) -> anyhow::Result<()> {
+    let store_hash = unique_cmdline_value(cmdline, "ghaf.storehash")?;
     ensure!(
-        cmdline
-            .split_whitespace()
-            .any(|arg| arg == format!("ghaf.storehash={}", manifest.root_verity_hash)),
+        store_hash == manifest.root_verity_hash,
         "UKI embedded root hash does not match manifest"
     );
+    let generation = unique_cmdline_value(cmdline, "ghaf.generation")?;
     ensure!(
-        cmdline
-            .split_whitespace()
-            .any(|arg| arg == format!("ghaf.generation={}", manifest.generation)),
+        generation == manifest.generation.to_string(),
         "UKI embedded generation does not match manifest"
     );
     Ok(())
+}
+
+fn unique_cmdline_value<'a>(cmdline: &'a str, key: &str) -> anyhow::Result<&'a str> {
+    let prefix = format!("{key}=");
+    let mut values = cmdline
+        .split(|character: char| character.is_ascii_whitespace() || character == '\0')
+        .filter_map(|argument| argument.strip_prefix(&prefix));
+    let value = values
+        .next()
+        .with_context(|| format!("UKI embedded command line is missing {key}"))?;
+    ensure!(
+        values.next().is_none(),
+        "UKI embedded command line contains duplicate {key} arguments"
+    );
+    Ok(value)
 }
 
 pub(crate) async fn populate_runtime() -> anyhow::Result<Runtime> {
@@ -248,6 +290,7 @@ mod tests {
             manifest.root_verity_hash, manifest.generation
         );
         validate_uki_cmdline(&manifest, &valid).unwrap();
+        validate_uki_cmdline(&manifest, &format!("{valid}\0\0\0")).unwrap();
         assert!(validate_uki_cmdline(&manifest, "ghaf.storehash=bad ghaf.generation=2").is_err());
         assert!(
             validate_uki_cmdline(
@@ -259,5 +302,28 @@ mod tests {
             )
             .is_err()
         );
+        assert!(
+            validate_uki_cmdline(
+                &manifest,
+                &format!(
+                    "{valid} ghaf.storehash={} ghaf.generation={}",
+                    manifest.root_verity_hash, manifest.generation
+                )
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn accepted_generation_state_must_exist_and_parse() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("accepted-generation");
+        assert!(read_accepted_generation(&path).is_err());
+
+        std::fs::write(&path, "7\n").unwrap();
+        assert_eq!(read_accepted_generation(&path).unwrap(), 7);
+
+        std::fs::write(&path, "not-a-number\n").unwrap();
+        assert!(read_accepted_generation(&path).is_err());
     }
 }

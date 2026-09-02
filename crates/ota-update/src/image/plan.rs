@@ -79,6 +79,12 @@ impl Plan {
         steps.push(Self::install_volume(verity.volume(), &m.verity, source));
         steps.push(Self::finalize_flush(root.volume()));
         steps.push(Self::finalize_flush(verity.volume()));
+        // SECURITY: root/verity source files are read after their signed hashes
+        // were checked and can therefore be swapped only into a denial of
+        // service. This verifies the resulting pair against the signed root
+        // hash before either staging LV is renamed into an installed slot.
+        // Deployments should still keep the artifact directory root-owned and
+        // mode 0700 to prevent an unprivileged update DoS.
         steps.push(
             CommandSpec::new("veritysetup")
                 .arg("verify")

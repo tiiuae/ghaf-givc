@@ -241,7 +241,13 @@ impl Runtime {
         target: Version,
     ) -> Result<(SlotGroup, Vec<Pipeline>)> {
         ensure!(
-            partial.boot.is_none() && partial.is_empty(),
+            partial.boot.is_none()
+                && partial.is_empty()
+                && partial
+                    .root
+                    .as_ref()
+                    .or(partial.verity.as_ref())
+                    .is_some_and(Slot::is_staging),
             "incomplete inactive slot is not an uncommitted staging slot"
         );
         ensure!(

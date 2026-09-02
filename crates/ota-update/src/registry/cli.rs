@@ -68,7 +68,7 @@ pub enum RegistryAction {
         #[arg(long, default_value = "/persist/sysupdate")]
         destination: String,
 
-        /// Validate pulled artifacts
+        /// Validate manifest structure and artifact sizes/hashes (not signatures or authenticity)
         #[arg(long, conflicts_with = "no_validate")]
         validate: bool,
 
@@ -76,8 +76,8 @@ pub enum RegistryAction {
         #[arg(long, conflicts_with = "validate")]
         no_validate: bool,
 
-        /// Apply installation immediately after successful pull
-        #[arg(long)]
+        /// Removed: install signed updates with `ota-update image install`
+        #[arg(long, hide = true)]
         install: bool,
     },
 
@@ -112,6 +112,11 @@ pub enum RegistryAction {
 impl RegistryCommand {
     #[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
     pub async fn handle(self) -> anyhow::Result<()> {
+        if matches!(&self.action, RegistryAction::Pull { install: true, .. }) {
+            anyhow::bail!(
+                "registry --install is disabled for signed manifest v2; pull the artifacts and use `ota-update image install` with an authenticated detached signature"
+            );
+        }
         let credentials = self.credentials();
         let client_protocol = if self.insecure {
             ClientProtocol::Http

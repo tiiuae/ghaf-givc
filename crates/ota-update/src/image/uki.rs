@@ -103,7 +103,8 @@ impl FromStr for UkiEntry {
             (stem, None)
         };
 
-        let (version, hash) = core.split_once('-').context("missing version/hash")?;
+        // The artifact hash cannot contain '-', while prerelease versions can.
+        let (version, hash) = core.rsplit_once('-').context("missing version/hash")?;
 
         if version == "empty" {
             bail!("UKI version must not be 'empty'");
@@ -246,6 +247,23 @@ mod tests {
         let c = uki.boot_counter.unwrap();
         assert_eq!(c.remaining, 3);
         assert_eq!(c.used, Some(1));
+    }
+
+    #[test]
+    fn parse_prerelease_uki_with_counters() {
+        let uki = UkiEntry::from_str("ghaf-25.12.1-rc1-deadbeefdeadbeef+3.efi").unwrap();
+        assert_eq!(
+            uki.version,
+            Version::new("25.12.1-rc1".into(), Some("deadbeefdeadbeef".into()))
+        );
+        assert_eq!(
+            uki.boot_counter,
+            Some(BootCounter {
+                remaining: 3,
+                used: None
+            })
+        );
+        assert_eq!(uki.to_string(), "ghaf-25.12.1-rc1-deadbeefdeadbeef+3.efi");
     }
 
     #[test]

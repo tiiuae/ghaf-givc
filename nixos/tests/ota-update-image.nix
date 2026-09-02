@@ -35,6 +35,7 @@ _: {
                 pkgs.efibootmgr
                 pkgs.lvm2
                 pkgs.jq
+                pkgs.openssl
                 pkgs.sbsigntool
                 pkgs.zstd
                 self'.packages.givc-admin.ota
@@ -95,6 +96,10 @@ _: {
               target = "test-target";
               artifactId = "artifact";
               trustArgs = "--signature ${suDir}/manifest.json.sig --trusted-key ${suDir}/update.pub --uki-trusted-cert ${suDir}/db.crt --target ${target} --accepted-generation-file /var/lib/ota-test/accepted-generation";
+              tamperedTrustArgs = "--signature /tmp/tampered-manifest/manifest.json.sig --trusted-key ${suDir}/update.pub --uki-trusted-cert ${suDir}/db.crt --target ${target} --accepted-generation-file /var/lib/ota-test/accepted-generation";
+              badSignatureTrustArgs = "--signature /tmp/bad-manifest.sig --trusted-key ${suDir}/update.pub --uki-trusted-cert ${suDir}/db.crt --target ${target} --accepted-generation-file /var/lib/ota-test/accepted-generation";
+              wrongTargetTrustArgs = "--signature ${suDir}/manifest.json.sig --trusted-key ${suDir}/update.pub --uki-trusted-cert ${suDir}/db.crt --target wrong-target --accepted-generation-file /var/lib/ota-test/accepted-generation";
+              rogueCertTrustArgs = "--signature ${suDir}/manifest.json.sig --trusted-key ${suDir}/update.pub --uki-trusted-cert /tmp/rogue-db.crt --target ${target} --accepted-generation-file /var/lib/ota-test/accepted-generation";
 
               # Small but cryptographically real artifacts: dm-verity data, a
               # signed PE image with .cmdline, and detached Ed25519 manifest.
@@ -198,6 +203,38 @@ _: {
                   status = machine.succeed("${ota-update} image status")
                   print(f"Status before install:\n{status}")
                   assert "empty" in status
+
+              machine.succeed("install -d -m 0700 /var/lib/ota-test")
+
+              with subtest("missing anti-rollback state is rejected"):
+                  machine.fail("${ota-update} image install --manifest ${suDir}/manifest.json ${trustArgs}")
+                  machine.succeed("printf '1\\n' > /var/lib/ota-test/accepted-generation && chmod 0600 /var/lib/ota-test/accepted-generation")
+
+              with subtest("tampered manifest is rejected"):
+                  machine.succeed("rm -rf /tmp/tampered-manifest && cp -a ${suDir} /tmp/tampered-manifest && chmod -R u+w /tmp/tampered-manifest")
+                  machine.succeed("jq '.version = \"25.12.1-tampered\"' /tmp/tampered-manifest/manifest.json > /tmp/tampered-manifest/manifest.new && mv /tmp/tampered-manifest/manifest.new /tmp/tampered-manifest/manifest.json")
+                  machine.fail("${ota-update} image install --manifest /tmp/tampered-manifest/manifest.json ${tamperedTrustArgs}")
+
+              with subtest("bad detached signature is rejected"):
+                  machine.succeed("cp ${suDir}/manifest.json.sig /tmp/bad-manifest.sig && printf x >> /tmp/bad-manifest.sig")
+                  machine.fail("${ota-update} image install --manifest ${suDir}/manifest.json ${badSignatureTrustArgs}")
+
+              with subtest("wrong update target is rejected"):
+                  machine.fail("${ota-update} image install --manifest ${suDir}/manifest.json ${wrongTargetTrustArgs}")
+
+              with subtest("rollback generation is rejected"):
+                  machine.succeed("printf '${toString generation}\\n' > /var/lib/ota-test/accepted-generation")
+                  machine.fail("${ota-update} image install --manifest ${suDir}/manifest.json ${trustArgs}")
+                  machine.succeed("printf '1\\n' > /var/lib/ota-test/accepted-generation")
+
+              with subtest("UKI signed by an untrusted certificate is rejected"):
+                  machine.succeed("openssl req -new -x509 -newkey rsa:2048 -sha256 -nodes -subj '/CN=Rogue OTA db/' -days 1 -keyout /tmp/rogue-db.key -out /tmp/rogue-db.crt")
+                  machine.fail("${ota-update} image install --manifest ${suDir}/manifest.json ${rogueCertTrustArgs}")
+
+              with subtest("rejected updates do not mutate slots"):
+                  output = machine.succeed("lvs --noheadings -o lv_name pool | sort")
+                  assert "root_empty" in output and "verity_empty" in output
+                  machine.fail("test -e /boot/EFI/Linux/ghaf-${version}-*.efi")
 
               with subtest("dry-run install"):
                   output = machine.succeed("${ota-update} image --dry-run install --manifest ${suDir}/manifest.json ${trustArgs}")

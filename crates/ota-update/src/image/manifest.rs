@@ -70,9 +70,15 @@ impl Manifest {
     pub(crate) fn validate_structure(&self) -> anyhow::Result<()> {
         ensure!(self.manifest_version == 2, "manifest_version must be 2");
         ensure!(!self.system.trim().is_empty(), "manifest system is empty");
-        ensure!(!self.target.trim().is_empty(), "manifest target is empty");
+        ensure!(
+            is_safe_identifier(&self.target),
+            "manifest target must contain only ASCII letters, digits, '.', '_' or '-'"
+        );
         ensure!(self.generation > 0, "manifest generation must be positive");
-        ensure!(!self.version.trim().is_empty(), "manifest version is empty");
+        ensure!(
+            is_safe_identifier(&self.version),
+            "manifest version must contain only ASCII letters, digits, '.', '_' or '-'"
+        );
         ensure!(
             self.root_verity_hash.len() == 64
                 && self.root_verity_hash.chars().all(|c| c.is_ascii_hexdigit()),
@@ -144,6 +150,13 @@ impl Manifest {
             .context("while validating verity image")?;
         Ok(())
     }
+}
+
+fn is_safe_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
 impl File {
@@ -278,6 +291,24 @@ mod tests {
         assert!(manifest.validate_structure().is_err());
         manifest.manifest_version = 2;
         manifest.root_verity_hash = "aaaa".into();
+        assert!(manifest.validate_structure().is_err());
+    }
+
+    #[test]
+    fn rejects_unsafe_target_and_version_identifiers() {
+        let mut manifest = manifest(
+            "25.12.1-rc1",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        manifest.validate_structure().unwrap();
+
+        manifest.target = "../other-target".into();
+        assert!(manifest.validate_structure().is_err());
+        manifest.target = "test-target".into();
+
+        manifest.version = "version with spaces".into();
+        assert!(manifest.validate_structure().is_err());
+        manifest.version.clear();
         assert!(manifest.validate_structure().is_err());
     }
 }

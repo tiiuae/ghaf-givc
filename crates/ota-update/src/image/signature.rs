@@ -3,13 +3,19 @@
 
 use std::path::Path;
 
-use anyhow::{Context, ensure};
+use anyhow::{Context, bail, ensure};
 use ring::signature::{ED25519, UnparsedPublicKey};
 
 fn decode_public_key(bytes: &[u8]) -> anyhow::Result<[u8; 32]> {
+    let trimmed = bytes.trim_ascii();
+    if trimmed.iter().all(u8::is_ascii_hexdigit) {
+        if trimmed.len() == 64 {
+            return hex::FromHex::from_hex(trimmed).context("decoding hex Ed25519 key");
+        }
+        bail!("hex Ed25519 key must be exactly 64 characters");
+    }
     bytes
         .try_into()
-        .or_else(|_| hex::FromHex::from_hex(bytes.trim_ascii()))
         .context("trusted Ed25519 key must be 32 raw bytes or 64 hex characters")
 }
 
@@ -32,14 +38,15 @@ pub(crate) fn verify_files(
     manifest: &Path,
     signature: &Path,
     trusted_key: &Path,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<u8>> {
     let manifest_bytes = std::fs::read(manifest)
         .with_context(|| format!("reading manifest {}", manifest.display()))?;
     let signature_bytes = std::fs::read(signature)
         .with_context(|| format!("reading signature {}", signature.display()))?;
     let key_bytes = std::fs::read(trusted_key)
         .with_context(|| format!("reading trusted key {}", trusted_key.display()))?;
-    verify_detached(&manifest_bytes, &signature_bytes, &key_bytes)
+    verify_detached(&manifest_bytes, &signature_bytes, &key_bytes)?;
+    Ok(manifest_bytes)
 }
 
 #[cfg(test)]
@@ -55,6 +62,8 @@ mod tests {
 
         let encoded = format!("  {}\n", hex::encode(key));
         assert_eq!(decode_public_key(encoded.as_bytes()).unwrap(), key);
+
+        assert!(decode_public_key(&b"ab".repeat(16)).is_err());
     }
 
     #[test]

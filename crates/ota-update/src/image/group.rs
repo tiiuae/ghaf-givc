@@ -197,7 +197,7 @@ impl SlotGroup {
 
         // empty group must not have UKI
         ensure!(
-            self.is_empty() && self.boot.is_some(),
+            !(self.is_empty() && self.boot.is_some()),
             "empty slot group contains UKI"
         );
 
@@ -303,6 +303,20 @@ mod tests {
         let ids: Vec<_> = groups.iter().map(|g| g.empty_id()).collect();
         assert!(ids.contains(&Some("0")));
         assert!(ids.contains(&Some("1")));
+    }
+
+    #[test]
+    fn staging_and_empty_slots_with_same_id_do_not_group() {
+        let slots = slots(&["root_staging_0", "verity_empty_0"]);
+
+        let groups = SlotGroup::group_volumes(slots, vec![]).unwrap();
+
+        assert_eq!(groups.len(), 2);
+        assert!(
+            groups
+                .iter()
+                .any(|group| { group.root.as_ref().is_some_and(Slot::is_staging) })
+        );
     }
 
     #[test]

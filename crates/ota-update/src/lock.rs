@@ -3,14 +3,12 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Context;
-use fs2::FileExt;
 
 pub(crate) struct UpdateLock {
     _file: File,
-    path: PathBuf,
 }
 
 impl UpdateLock {
@@ -24,7 +22,7 @@ impl UpdateLock {
             .open(&path)
             .with_context(|| format!("opening lock file {}", path.display()))?;
 
-        file.try_lock_exclusive().with_context(|| {
+        file.try_lock().with_context(|| {
             format!(
                 "another ota-update instance is already running (lock: {})",
                 path.display()
@@ -39,13 +37,10 @@ impl UpdateLock {
         file.sync_data()
             .with_context(|| format!("sync lock file {}", path.display()))?;
 
-        Ok(Self { _file: file, path })
-    }
-}
-
-impl Drop for UpdateLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        // Keep the inode in place permanently. Unlinking a flock-style lock on
+        // drop lets another process create and lock a different inode while a
+        // waiter still holds a descriptor to the old one.
+        Ok(Self { _file: file })
     }
 }
 
