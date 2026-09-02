@@ -61,10 +61,9 @@ pub(crate) async fn install_from_manifest_path(
     let source_dir = manifest_path
         .parent()
         .context("manifest path has no parent directory")?;
-    let uki_snapshot =
-        snapshot_validated_uki(manifest.manifest(), source_dir, validation.uki_trusted_cert)
-            .await
-            .context("creating private UKI snapshot")?;
+    let uki_snapshot = snapshot_validated_uki(&manifest, source_dir, validation.uki_trusted_cert)
+        .await
+        .context("creating private UKI snapshot")?;
     let plan = Plan::install_with_uki(&rt, &manifest, source_dir, uki_snapshot.path())?;
     execute_plan(plan, dry_run).await
 }
@@ -81,10 +80,11 @@ impl UkiSnapshot {
 }
 
 async fn snapshot_validated_uki(
-    manifest: &Manifest,
+    signed: &SignedManifest,
     source_dir: &Path,
     cert: &Path,
 ) -> anyhow::Result<UkiSnapshot> {
+    let manifest = signed.manifest();
     let directory = tempfile::Builder::new()
         .prefix("ota-update-uki-")
         .tempdir_in("/run")

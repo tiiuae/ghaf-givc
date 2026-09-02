@@ -113,14 +113,14 @@ async fn run_stages(stages: &[CommandSpec]) -> Result<()> {
         children.push((description, child));
     }
 
-    let mut failure = None;
+    let mut result = Ok(());
     for (description, child) in &mut children {
         let status = child
             .wait()
             .await
             .with_context(|| format!("waiting for {description}"))?;
-        if !status.success() && failure.is_none() {
-            failure = Some(anyhow::anyhow!(
+        if !status.success() && result.is_ok() {
+            result = Err(anyhow::anyhow!(
                 "command failed (exit={}): {description}",
                 status.code().unwrap_or(-1)
             ));
@@ -129,10 +129,7 @@ async fn run_stages(stages: &[CommandSpec]) -> Result<()> {
     while let Some(pump) = pumps.join_next().await {
         pump.context("pipeline copy task failed")??;
     }
-    if let Some(error) = failure {
-        return Err(error);
-    }
-    Ok(())
+    result
 }
 
 #[cfg(test)]

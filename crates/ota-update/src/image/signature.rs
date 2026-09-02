@@ -6,19 +6,11 @@ use std::path::Path;
 use anyhow::{Context, ensure};
 use ring::signature::{ED25519, UnparsedPublicKey};
 
-fn decode_public_key(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
-    if bytes.len() == 32 {
-        return Ok(bytes.to_vec());
-    }
-    let text =
-        std::str::from_utf8(bytes).context("trusted Ed25519 key is neither raw nor UTF-8 hex")?;
-    let decoded = hex::decode(text.trim())
-        .context("trusted Ed25519 key must be 32 raw bytes or 64 hex characters")?;
-    ensure!(
-        decoded.len() == 32,
-        "trusted Ed25519 key must contain exactly 32 bytes"
-    );
-    Ok(decoded)
+fn decode_public_key(bytes: &[u8]) -> anyhow::Result<[u8; 32]> {
+    bytes
+        .try_into()
+        .or_else(|_| hex::FromHex::from_hex(bytes.trim_ascii()))
+        .context("trusted Ed25519 key must be 32 raw bytes or 64 hex characters")
 }
 
 pub(crate) fn verify_detached(
@@ -55,6 +47,15 @@ mod tests {
     use super::*;
     use ring::rand::SystemRandom;
     use ring::signature::{Ed25519KeyPair, KeyPair};
+
+    #[test]
+    fn decodes_raw_and_hex_public_keys() {
+        let key = [0xabu8; 32];
+        assert_eq!(decode_public_key(&key).unwrap(), key);
+
+        let encoded = format!("  {}\n", hex::encode(key));
+        assert_eq!(decode_public_key(encoded.as_bytes()).unwrap(), key);
+    }
 
     #[test]
     fn accepts_valid_signature_and_rejects_tampering() {
