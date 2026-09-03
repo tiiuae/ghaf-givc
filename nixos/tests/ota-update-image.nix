@@ -233,9 +233,12 @@ _: {
               with subtest("wrong update target is rejected"):
                   machine.fail("${ota-update} image install --manifest ${suDir}/manifest.json ${wrongTargetTrustArgs}")
 
-              with subtest("rollback generation is rejected"):
+              with subtest("rollback generation is rejected before artifact hashing"):
                   machine.succeed("printf '${toString generation}\\n' > /var/lib/ota-test/accepted-generation")
-                  machine.fail("${ota-update} image install --manifest ${suDir}/manifest.json ${trustArgs}")
+                  machine.succeed("rm -rf /tmp/rollback-manifest && mkdir /tmp/rollback-manifest && cp ${suDir}/manifest.json /tmp/rollback-manifest/")
+                  machine.fail("${ota-update} image install --manifest /tmp/rollback-manifest/manifest.json ${trustArgs} 2>/tmp/rollback-error")
+                  machine.succeed("grep -Fxq 'Error: update generation ${toString generation} is not newer than accepted generation ${toString generation}' /tmp/rollback-error")
+                  machine.fail("grep -F 'Missing file' /tmp/rollback-error")
                   machine.succeed("printf '1\\n' > /var/lib/ota-test/accepted-generation")
 
               with subtest("UKI signed by an untrusted certificate is rejected"):

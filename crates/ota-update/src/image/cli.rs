@@ -23,7 +23,7 @@ pub struct TrustArgs {
     #[arg(long)]
     signature: Option<PathBuf>,
 
-    /// Trusted raw/hex Ed25519 public key (security policy, not update input)
+    /// Trusted Ed25519 key: 32 raw bytes without a newline, or 64 hex characters
     #[arg(long, env = "GHAF_UPDATE_TRUSTED_KEY")]
     trusted_key: PathBuf,
 

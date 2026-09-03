@@ -3,7 +3,6 @@
 
 use super::Version;
 use super::pipeline::{CommandSpec, Pipeline};
-use super::slot::Slot;
 use crate::bootctl::BootctlItem;
 use anyhow::{Context, Result, bail};
 use std::fmt;
@@ -175,11 +174,6 @@ impl BootEntry {
     }
 
     #[must_use]
-    pub fn matches(&self, slot: &Slot) -> bool {
-        matches!(&self.kind, BootEntryKind::Managed(uki) if uki.matches(slot))
-    }
-
-    #[must_use]
     pub fn to_remove(&self) -> Pipeline {
         CommandSpec::new("bootctl")
             .arg("unlink")
@@ -209,11 +203,6 @@ impl UkiEntry {
     #[must_use]
     pub fn full_name<P: AsRef<Path>>(&self, base_dir: P) -> PathBuf {
         base_dir.as_ref().join(self.to_string())
-    }
-
-    #[must_use]
-    pub fn matches(&self, slot: &Slot) -> bool {
-        slot.version() == Some(&self.version)
     }
 }
 
