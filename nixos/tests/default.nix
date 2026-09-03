@@ -8,6 +8,7 @@
     ./app.nix
     ./appvm-services.nix
     ./ota-update.nix
+    ./ota-update-mocked.nix
     ./ota-update-image.nix
     ./event.nix
   ];

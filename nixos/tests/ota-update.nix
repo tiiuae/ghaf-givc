@@ -25,7 +25,7 @@ let
           # FIXME: Proper retrieve address, or move it to shared-configs.nix
           192.168.101.200 test-updates.example.com
         '';
-        givc.host.capabilities.exec.enable = true;
+        givc.host.capabilities.update.enable = true;
       };
     updatevm =
       { pkgs, config, ... }:
