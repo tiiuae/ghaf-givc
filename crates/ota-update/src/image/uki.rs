@@ -9,6 +9,17 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+pub(crate) fn validate_file_path(path: impl AsRef<Path>) -> bool {
+    let path = path.as_ref();
+    let Some(name) = path.file_name() else {
+        return false;
+    };
+    name.as_encoded_bytes().starts_with(b"ghaf-")
+        && path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("efi"))
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum BootEntryKind {
     /// Ghaf-managed UKI
