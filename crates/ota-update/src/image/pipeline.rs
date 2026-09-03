@@ -70,6 +70,10 @@ impl Pipeline {
         }
     }
 
+    /// Add a parallel stage to `Pipeline` processing previous stage's output
+    ///
+    /// # Panics
+    /// Sequential and parallel stages cannot be mixed in same `Pipeline`
     #[must_use]
     pub fn pipe(mut self, next: CommandSpec) -> Self {
         assert_ne!(
@@ -82,6 +86,10 @@ impl Pipeline {
         self
     }
 
+    /// Add a sequential stage to `Pipeline` running after previous stage
+    ///
+    /// # Panics
+    /// Sequential and parallel stages cannot be mixed in same `Pipeline`
     #[must_use]
     pub fn then(mut self, next: CommandSpec) -> Self {
         assert_ne!(

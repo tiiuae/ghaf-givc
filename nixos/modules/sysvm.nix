@@ -243,6 +243,10 @@ in
         };
       };
 
+      exec.enable = mkEnableOption ''
+        exec API
+      '';
+
       ctap.enable = mkEnableOption ''
         CTAP interaction module for security token proxy host
       '';
@@ -316,6 +320,9 @@ in
         ]
         ++ optionals cfg.capabilities.ctap.enable [
           "ctap"
+        ]
+        ++ optionals cfg.capabilities.exec.enable [
+          "exec"
         ]
         ++ optionals cfg.capabilities.wifi.enable [
           "wifi"

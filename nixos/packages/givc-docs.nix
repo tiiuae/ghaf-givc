@@ -125,6 +125,7 @@ stdenv.mkDerivation {
       "socket"
       "stats"
       "systemd"
+      "update"
     ]}
 
     # Generate go documentation

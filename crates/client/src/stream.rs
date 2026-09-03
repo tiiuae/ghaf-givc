@@ -7,7 +7,7 @@ use tokio_stream::StreamExt;
 use tonic::{Code, Status, Streaming};
 
 /// Check "trailer status" in stream (if exists) and escalate it as an `Err`
-pub(crate) async fn check_trailers<T>(mut stream: Streaming<T>) -> anyhow::Result<()> {
+pub async fn check_trailers<T>(mut stream: Streaming<T>) -> anyhow::Result<()> {
     if let Some(trailers) = stream.trailers().await? {
         let headers = trailers.into_headers();
         if let Some(status) = Status::from_header_map(&headers) {

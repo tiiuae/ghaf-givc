@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "notify",
         "ctap",
         "policyadmin",
+        "update",
     ] {
         tonic_prost_build::configure()
             .file_descriptor_set_path(out_dir.join(format!("{pkg}_descriptor.bin")))

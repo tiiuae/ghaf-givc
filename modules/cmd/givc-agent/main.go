@@ -19,7 +19,6 @@ import (
 
 	givc_config "givc/modules/pkgs/config"
 	givc_ctap "givc/modules/pkgs/ctap"
-	givc_exec "givc/modules/pkgs/exec"
 	givc_grpc "givc/modules/pkgs/grpc"
 	givc_hwidmanager "givc/modules/pkgs/hwidmanager"
 	givc_localelistener "givc/modules/pkgs/localelistener"
@@ -29,6 +28,7 @@ import (
 	givc_servicemanager "givc/modules/pkgs/servicemanager"
 	givc_statsmanager "givc/modules/pkgs/statsmanager"
 	givc_types "givc/modules/pkgs/types"
+	givc_update "givc/modules/pkgs/update"
 	givc_wifimanager "givc/modules/pkgs/wifimanager"
 
 	log "github.com/sirupsen/logrus"
@@ -79,12 +79,12 @@ func setupGRPCServices(agentEndpointConfig *givc_types.EndpointConfig, config *g
 
 	// Capability-based services
 	if config.Capabilities.Exec.Enabled {
-		execServer, err := givc_exec.NewExecServer()
+		updateServer, err := givc_update.NewUpdateServer()
 		if err != nil {
-			log.Errorf("Cannot create exec server: %v", err)
+			log.Errorf("Cannot create update server: %v", err)
 		} else {
-			log.Warnf("Exec capability enabled - allows remote command execution!")
-			grpcServices = append(grpcServices, execServer)
+			log.Warnf("Update capability enabled - allows remote update execution!")
+			grpcServices = append(grpcServices, updateServer)
 		}
 	}
 
