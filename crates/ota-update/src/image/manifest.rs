@@ -22,7 +22,7 @@ pub struct File {
     pub sha256sum: [u8; 32],
     /// On-disk artifact size before decompression.
     pub packed_size: u64,
-    /// Decompressed size in bytes (equal to packed_size when uncompressed).
+    /// Decompressed size in bytes (equal to `packed_size` when uncompressed).
     pub unpacked_size: u64,
 }
 

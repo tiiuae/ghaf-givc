@@ -39,9 +39,9 @@ type CapabilitiesConfig struct {
 
 	Applications []givc_types.ApplicationManifest `json:"applications"`
 
-	Exec struct {
+	Update struct {
 		Enabled bool `json:"enable"`
-	} `json:"exec"`
+	} `json:"update"`
 
 	Wifi struct {
 		Enabled bool `json:"enable"`

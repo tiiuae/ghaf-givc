@@ -1,0 +1,151 @@
+// Update Service API
+syntax = "proto3";
+option go_package = "givc/modules/api/update";
+
+package update;
+
+message Empty {
+}
+
+message Generation {
+    int32 Generation = 1;                // Numeric generation identifier
+    string Date = 2;                     // Build or activation date
+    string NixosVersion = 3;             // NixOS release version
+    string KernelVersion = 4;            // Kernel version string
+    string ConfigurationRevision = 5;    // Configuration revision hash
+    repeated string Specialisations = 6;  // Enabled specialisations
+    bool Current = 7;                    // True if this is the active generation
+    string StorePath = 8;                // Nix store path for the generation
+}
+
+message ListGenerationsResponse {
+    repeated Generation List = 1; // List of installed generations
+}
+
+message SetGenerationRequest {
+    oneof Update {
+        Cachix Cachix = 1; // Cachix-based update payload
+    }
+}
+
+message Cachix {
+    string Pin = 1;                    // Pinned release name
+    optional string CachixHost = 2; // API url for cachix
+    string Cache = 3;                  // Cachix cache name
+    optional string Token = 4;        // Optional API token
+}
+
+message SetGenerationResponse {
+    bool Finished = 1;                 // True when the command completed
+    optional string Output = 2;        // Standard output from the command
+    optional string Error = 3;         // Standard error from the command
+}
+
+message RegistryBasicAuth {
+    string Username = 1;               // Registry username
+    string Password = 2;               // Registry password
+}
+
+message RegistryBearerAuth {
+    string Token = 1;                  // Registry bearer token
+}
+
+message RegistryCredentials {
+    oneof Auth {
+        RegistryBasicAuth Basic = 1;   // Basic auth credentials
+        RegistryBearerAuth Bearer = 2; // Bearer auth credentials
+    }
+}
+
+message AvailableUpdate {
+    string Repository = 1;             // OCI repository name
+    string Tag = 2;                    // Update tag
+    string Version = 3;                // Update version
+    string Hash = 4;                   // Artifact hash
+}
+
+message RegistryDiscoverRequest {
+    string Reference = 1;              // OCI reference to search
+    bool Insecure = 2;                 // Use HTTP instead of HTTPS
+    optional RegistryCredentials Credentials = 3; // Optional registry credentials
+}
+
+message RegistryDiscoverResponse {
+    repeated AvailableUpdate List = 1; // Matching update entries
+}
+
+message RegistryChangelogRequest {
+    string Reference = 1;              // OCI reference to inspect
+    bool Insecure = 2;                 // Use HTTP instead of HTTPS
+    optional RegistryCredentials Credentials = 3; // Optional registry credentials
+}
+
+message RegistryChangelogResponse {
+    string Changelog = 1;             // Changelog text
+}
+
+message RegistryPullRequest {
+    string Reference = 1;              // OCI tag reference to pull
+    string Destination = 2;            // Destination directory
+    bool Insecure = 4;                 // Use HTTP instead of HTTPS
+    optional RegistryCredentials Credentials = 5; // Optional registry credentials
+}
+
+message RegistryPullResult {
+    string OutputDir = 1;              // Output directory
+    string ManifestPath = 2;           // Written manifest path
+}
+
+message RegistryPullStarted {
+    string Reference = 1;              // OCI reference being pulled
+    string Destination = 2;            // Destination directory
+}
+
+message RegistryBlobDownloading {
+    string Digest = 1;                 // Blob digest
+    uint64 Downloaded = 2;             // Downloaded byte count
+    optional uint64 Total = 3;         // Total byte count, if known
+}
+
+message RegistryPullProgress {
+    oneof Event {
+        RegistryPullStarted PullStarted = 1;          // Pull started
+        RegistryBlobDownloading BlobDownloading = 2;  // Blob download progress
+        string BlobVerified = 3;                      // Verified blob digest
+        string ManifestWritten = 4;                   // Manifest file path
+        string Cancelled = 5;                         // Cancellation reason
+        bool Done = 6;                                // True when finished
+    }
+}
+
+message RegistryPullResponse {
+    oneof Update {
+        RegistryPullProgress Progress = 1; // Progress event
+        RegistryPullResult Result = 2;     // Final result
+    }
+}
+
+message ImageInstallRequest {
+    string Manifest = 1;               // Manifest path
+}
+
+message ImageInstallResponse {
+    bool Finished = 1;                 // True when the command completed
+    optional string Output = 2;        // Standard output from the command
+    optional string Error = 3;         // Standard error from the command
+}
+
+service Update {
+    // List installed generations (updates)
+    rpc ListGenerations(Empty) returns (ListGenerationsResponse) {}
+    // Discover available OTA updates in an OCI repository
+    rpc Discover(RegistryDiscoverRequest) returns (RegistryDiscoverResponse) {}
+    // Fetch changelog text for a specific registry tag
+    rpc Changelog(RegistryChangelogRequest) returns (RegistryChangelogResponse) {}
+    // Pull OTA update artifacts from an OCI repository
+    rpc Pull(RegistryPullRequest) returns (stream RegistryPullResponse) {}
+    // Install image on ghaf-host from a manifest path
+    rpc ImageInstall(ImageInstallRequest) returns (stream ImageInstallResponse) {}
+    // Install a pinned release from Cachix
+    rpc InstallCachix(Cachix) returns (stream SetGenerationResponse) {}
+}

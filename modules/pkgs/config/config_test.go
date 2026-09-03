@@ -53,7 +53,7 @@ func TestLoadConfig(t *testing.T) {
 					"command": "/bin/app1"
 				}
 			],
-			"exec": {"enable": true},
+			"update": {"enable": true},
 			"wifi": {"enable": false},
 			"ctap": {"enable": false},
 			"hwid": {"enable": true, "interface": "eth0"},
@@ -113,8 +113,8 @@ func TestLoadConfig(t *testing.T) {
 	if len(config.Capabilities.Applications) != 1 {
 		t.Errorf("Capabilities.Applications len = %d, want 1", len(config.Capabilities.Applications))
 	}
-	if config.Capabilities.Exec.Enabled != true {
-		t.Errorf("Capabilities.Exec.Enabled = %v, want true", config.Capabilities.Exec.Enabled)
+	if config.Capabilities.Update.Enabled != true {
+		t.Errorf("Capabilities.Update.Enabled = %v, want true", config.Capabilities.Update.Enabled)
 	}
 	if config.Capabilities.Hwid.Interface != "eth0" {
 		t.Errorf("Capabilities.Hwid.Interface = %s, want eth0", config.Capabilities.Hwid.Interface)

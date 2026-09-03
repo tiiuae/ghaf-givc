@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use super::MediaType;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum RegistryEvent {
     DiscoverStarted {

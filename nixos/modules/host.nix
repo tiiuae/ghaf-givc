@@ -188,9 +188,8 @@ in
         };
       };
 
-      exec.enable = mkEnableOption ''
-        execution module for (arbitrary) commands on the host via the GIVC agent. Please be aware that this
-        introduces significant security implications as currently, no protection measures are implemented.
+      update.enable = mkEnableOption ''
+        update module for OTA-related actions on the host via the GIVC agent.
       '';
 
       policy = mkOption {
@@ -261,8 +260,8 @@ in
         ++ optionals cfg.capabilities.policy.enable [
           "policyadmin"
         ]
-        ++ optionals cfg.capabilities.exec.enable [
-          "exec"
+        ++ optionals cfg.capabilities.update.enable [
+          "update"
         ];
       }
     ];

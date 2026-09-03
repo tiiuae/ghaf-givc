@@ -118,6 +118,10 @@ let
           Example Consumer Rule:
             `from = [ "gui-vm" ]; to = [ ]; permittedRequests = [ "RegisterService" ];`
             (Allows `gui-vm` to call `RegisterService` directly on the Admin server)
+
+          Example Structured Rule:
+            `from = [ "gui-vm" ]; to = [ "net-vm" ]; permittedRequests = [ { api = "Update"; method = "Discover"; arguments = { "Reference" = "ghaf-updates"; }; } ];`
+            (Allows `gui-vm` to call `Update/Discover` on `net-vm` only for the `ghaf-updates` reference)
         '';
       };
     };

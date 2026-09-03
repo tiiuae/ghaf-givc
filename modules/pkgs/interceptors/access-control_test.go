@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"givc/modules/api/systemd"
+	updatepb "givc/modules/api/update"
 	"net"
 	"os"
 	"path/filepath"
@@ -169,6 +170,83 @@ func TestAclPolicy(t *testing.T) {
 			principal:  "compromised-vm",
 			method:     "/stats.Metrics/GetStats",
 			req:        &systemd.UnitRequest{},
+			shouldPass: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := createCtx(tc.principal)
+			info := &grpc.UnaryServerInfo{FullMethod: tc.method}
+
+			_, err := unaryInterceptor(ctx, tc.req, info, dummyHandler)
+			if tc.shouldPass && err != nil {
+				t.Errorf("Expected request to be permitted, got error: %v", err)
+			} else if !tc.shouldPass && err == nil {
+				t.Errorf("Expected request to be denied, but it was permitted")
+			}
+		})
+	}
+}
+
+func TestAclPolicyUpdateRequestSelector(t *testing.T) {
+	policyContent := `
+	permit (
+		principal == Source::"gui-vm",
+		action == Command::"Discover",
+		resource == Module::"update"
+	) when {
+		context.Reference == "ghaf-updates"
+	};
+	`
+	tempDir := t.TempDir()
+	policyPath := filepath.Join(tempDir, "policy.cedar")
+	if err := os.WriteFile(policyPath, []byte(policyContent), 0644); err != nil {
+		t.Fatalf("Failed to write mock policy: %v", err)
+	}
+
+	unaryInterceptor, _, err := NewAccessController(policyPath)
+	if err != nil {
+		t.Fatalf("Failed to initialize AccessController: %v", err)
+	}
+
+	dummyHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return "success", nil
+	}
+
+	createCtx := func(principal string) context.Context {
+		tlsInfo := credentials.TLSInfo{
+			State: tls.ConnectionState{
+				PeerCertificates: []*x509.Certificate{{DNSNames: []string{principal}}},
+			},
+		}
+		p := &peer.Peer{Addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1")}, AuthInfo: tlsInfo}
+		return peer.NewContext(context.Background(), p)
+	}
+
+	tests := []struct {
+		name       string
+		principal  string
+		method     string
+		req        interface{}
+		shouldPass bool
+	}{
+		{
+			name:      "Structured selector matches update request",
+			principal: "gui-vm",
+			method:    "/update.Update/Discover",
+			req: &updatepb.RegistryDiscoverRequest{
+				Reference: "ghaf-updates",
+			},
+			shouldPass: true,
+		},
+		{
+			name:      "Structured selector rejects other reference",
+			principal: "gui-vm",
+			method:    "/update.Update/Discover",
+			req: &updatepb.RegistryDiscoverRequest{
+				Reference: "other-reference",
+			},
 			shouldPass: false,
 		},
 	}
