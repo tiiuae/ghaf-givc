@@ -17,6 +17,8 @@ use tracing::debug;
 use givc_common::address::EndpointAddress;
 use givc_common::types::TransportConfig;
 
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Debug, Clone)]
 pub struct TlsConfig {
     pub ca_cert_file_path: PathBuf,
@@ -101,7 +103,7 @@ impl EndpointConfig {
         let url = transport_config_to_url(&self.transport.address, self.tls.is_some());
         debug!("Connecting to {url}, TLS name {:?}", &self.tls);
         let mut endpoint = Endpoint::try_from(url.clone())?
-            .connect_timeout(Duration::from_millis(300))
+            .connect_timeout(CONNECT_TIMEOUT)
             .concurrency_limit(30);
         if let Some(tls) = &self.tls {
             endpoint = endpoint.tls_config(tls.client_config()?)?;
