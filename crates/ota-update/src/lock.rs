@@ -22,11 +22,14 @@ impl UpdateLock {
             .open(&path)
             .with_context(|| format!("opening lock file {}", path.display()))?;
 
-        file.try_lock().with_context(|| {
-            format!(
+        file.try_lock().map_err(|error| match error {
+            std::fs::TryLockError::WouldBlock => anyhow::anyhow!(
                 "another ota-update instance is already running (lock: {})",
                 path.display()
-            )
+            ),
+            std::fs::TryLockError::Error(error) => {
+                anyhow::Error::new(error).context(format!("locking {}", path.display()))
+            }
         })?;
 
         let owner = lock_owner_text(purpose);

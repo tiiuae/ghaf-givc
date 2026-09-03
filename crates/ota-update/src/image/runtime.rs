@@ -6,7 +6,7 @@ use super::group::SlotGroup;
 use super::lvm::Volume;
 use super::manifest::Manifest;
 use super::pipeline::{CommandSpec, Pipeline};
-use super::slot::{Slot, SlotClass};
+use super::slot::Slot;
 use super::uki::{BootCounter, BootEntry, BootEntryKind, UkiEntry};
 use crate::bootctl::BootctlItem;
 use anyhow::{Context, Result, bail, ensure};
@@ -143,16 +143,6 @@ impl Runtime {
             boot: None,
         });
         Ok(groups)
-    }
-
-    pub fn slots_by_class<'a>(
-        &'a self,
-        groups: &'a [SlotGroup],
-        class: SlotClass,
-    ) -> impl Iterator<Item = &'a SlotGroup> {
-        groups
-            .iter()
-            .filter(move |g| g.classify(&self.kernel) == class)
     }
 
     #[must_use]

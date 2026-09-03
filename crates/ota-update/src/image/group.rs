@@ -3,7 +3,7 @@
 
 use super::Version;
 use super::runtime::KernelParams;
-use super::slot::{Kind, Slot, SlotClass};
+use super::slot::{Kind, Slot};
 use super::uki::{BootEntry, UkiEntry};
 use anyhow::{Result, ensure};
 
@@ -168,62 +168,6 @@ impl SlotGroup {
             // Empty slots are never active
             _ => false,
         }
-    }
-
-    pub(crate) fn validate(&self) -> anyhow::Result<()> {
-        // root <-> verity must match
-        if let (Some(root), Some(verity)) = (&self.root, &self.verity) {
-            ensure!(
-                root.matches(verity),
-                "root and verity slots do not match: {root} vs {verity}"
-            );
-        }
-
-        // UKI must match slots
-        if let Some(boot) = &self.boot {
-            if let Some(root) = &self.root {
-                ensure!(
-                    boot.matches(root),
-                    "UKI does not match root slot: {boot} vs {root}"
-                );
-            }
-            if let Some(verity) = &self.verity {
-                ensure!(
-                    boot.matches(verity),
-                    "UKI does not match verity slot: {boot} vs {verity}"
-                );
-            }
-        }
-
-        // empty group must not have UKI
-        ensure!(
-            !(self.is_empty() && self.boot.is_some()),
-            "empty slot group contains UKI"
-        );
-
-        Ok(())
-    }
-
-    /// Classify slot state based on runtime kernel parameters.
-    #[must_use]
-    pub fn classify(&self, kernel: &KernelParams) -> SlotClass {
-        // Structural validation always comes first
-        if self.validate().is_err() {
-            return SlotClass::Broken;
-        }
-
-        // Active slot (includes legacy-active case)
-        if self.is_active(kernel) {
-            return SlotClass::Active;
-        }
-
-        // Empty but valid slot
-        if self.is_empty() {
-            return SlotClass::Empty;
-        }
-
-        // Installed but not active
-        SlotClass::Inactive
     }
 
     pub(crate) fn attach_uki(&self, uki: UkiEntry) -> Result<SlotGroup> {

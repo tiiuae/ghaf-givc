@@ -35,21 +35,6 @@ pub struct Slot {
     volume: Volume,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlotClass {
-    /// Slot is structurally invalid
-    Broken,
-
-    /// Slot is currently active (booted)
-    Active,
-
-    /// Slot is valid but empty (no version)
-    Empty,
-
-    /// Slot is valid, installed, but not active
-    Inactive,
-}
-
 impl Slot {
     fn decode_status(value: &str) -> Result<(Kind, Status)> {
         // split from the right: [name]_[version]_[hash?]

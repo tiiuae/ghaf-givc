@@ -206,6 +206,9 @@ _: {
 
               machine.succeed("install -d -m 0700 /var/lib/ota-test")
 
+              with subtest("artifact validation does not require anti-rollback state"):
+                  machine.succeed("${ota-update} image validate --manifest ${suDir}/manifest.json ${trustArgs}")
+
               with subtest("missing anti-rollback state is rejected"):
                   machine.fail("${ota-update} image install --manifest ${suDir}/manifest.json ${trustArgs}")
                   machine.succeed("printf '1\\n' > /var/lib/ota-test/accepted-generation && chmod 0600 /var/lib/ota-test/accepted-generation")
@@ -216,6 +219,14 @@ _: {
                   machine.fail("${ota-update} image install --manifest /tmp/tampered-manifest/manifest.json ${tamperedTrustArgs}")
 
               with subtest("bad detached signature is rejected"):
+                  machine.succeed(
+                      "cp ${suDir}/manifest.json.sig /tmp/bad-manifest.sig"
+                      " && printf '\\xff' | dd of=/tmp/bad-manifest.sig bs=1 seek=0 count=1 conv=notrunc"
+                      " && test \"$(stat -c %s /tmp/bad-manifest.sig)\" -eq 64"
+                  )
+                  machine.fail("${ota-update} image install --manifest ${suDir}/manifest.json ${badSignatureTrustArgs}")
+
+              with subtest("oversized detached signature is rejected"):
                   machine.succeed("cp ${suDir}/manifest.json.sig /tmp/bad-manifest.sig && printf x >> /tmp/bad-manifest.sig")
                   machine.fail("${ota-update} image install --manifest ${suDir}/manifest.json ${badSignatureTrustArgs}")
 

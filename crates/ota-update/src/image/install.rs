@@ -28,9 +28,8 @@ pub(crate) struct ValidationConfig<'a> {
     pub allow_downgrade: bool,
 }
 
-/// A manifest that crossed the signature, policy, artifact, and UKI trust
-/// boundary. Installation planning accepts this type rather than a parsed,
-/// potentially unsigned `Manifest`.
+/// A manifest authorized for installation after signature, target, artifact,
+/// UKI, and device accepted-generation validation.
 pub(crate) struct SignedManifest(Manifest);
 
 impl SignedManifest {
@@ -48,6 +47,25 @@ impl SignedManifest {
     }
 }
 
+/// A signed manifest whose target and artifacts are valid, but which has not
+/// yet been authorized against device rollback state.
+pub(crate) struct ValidatedManifest(Manifest);
+
+impl ValidatedManifest {
+    fn authorize_install(
+        self,
+        validation: &ValidationConfig<'_>,
+    ) -> anyhow::Result<SignedManifest> {
+        let accepted = read_accepted_generation(validation.accepted_generation_file)?;
+        self.0.validate_generation(
+            accepted,
+            #[cfg(feature = "debug-downgrade")]
+            validation.allow_downgrade,
+        )?;
+        Ok(SignedManifest::new(self.0))
+    }
+}
+
 pub(crate) async fn install_from_manifest_path(
     manifest_path: &Path,
     validation: &ValidationConfig<'_>,
@@ -56,7 +74,9 @@ pub(crate) async fn install_from_manifest_path(
     // Lock before reading runtime state. Otherwise two installers can both select
     // the same inactive slot from a stale discovery snapshot.
     let _lock = UpdateLock::acquire("/run/ota-update.lock", "image-install")?;
-    let manifest = validate_signed_manifest_path(manifest_path, validation).await?;
+    let manifest = validate_signed_manifest_path(manifest_path, validation)
+        .await?
+        .authorize_install(validation)?;
     let rt = populate_runtime().await?;
     let source_dir = manifest_path
         .parent()
@@ -129,7 +149,7 @@ async fn available_run_bytes() -> Option<u64> {
 pub(crate) async fn validate_signed_manifest_path(
     manifest_path: &Path,
     validation: &ValidationConfig<'_>,
-) -> anyhow::Result<SignedManifest> {
+) -> anyhow::Result<ValidatedManifest> {
     let source_dir = manifest_path
         .parent()
         .context("manifest path has no parent directory")?;
@@ -140,19 +160,13 @@ pub(crate) async fn validate_signed_manifest_path(
     // Deserialize the same bytes that crossed the signature boundary. Reading
     // the path again here would allow a manifest replacement race.
     let manifest = Manifest::from_slice(&manifest_bytes)?;
-    let accepted = read_accepted_generation(validation.accepted_generation_file)?;
-    manifest.validate_policy(
-        validation.target,
-        accepted,
-        #[cfg(feature = "debug-downgrade")]
-        validation.allow_downgrade,
-    )?;
+    manifest.validate_target(validation.target)?;
     manifest
         .validate(source_dir)
         .await
         .context("while validating manifest artifacts")?;
     validate_uki(&manifest, source_dir, validation.uki_trusted_cert).await?;
-    Ok(SignedManifest::new(manifest))
+    Ok(ValidatedManifest(manifest))
 }
 
 /// Validate manifest v2 structure and artifact hashes without authorizing an

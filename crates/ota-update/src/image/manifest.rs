@@ -101,17 +101,20 @@ impl Manifest {
         Ok(())
     }
 
-    pub(crate) fn validate_policy(
-        &self,
-        expected_target: &str,
-        accepted_generation: u64,
-        #[cfg(feature = "debug-downgrade")] allow_downgrade: bool,
-    ) -> anyhow::Result<()> {
+    pub(crate) fn validate_target(&self, expected_target: &str) -> anyhow::Result<()> {
         ensure!(
             self.target == expected_target,
             "wrong update target: expected {expected_target}, got {}",
             self.target
         );
+        Ok(())
+    }
+
+    pub(crate) fn validate_generation(
+        &self,
+        accepted_generation: u64,
+        #[cfg(feature = "debug-downgrade")] allow_downgrade: bool,
+    ) -> anyhow::Result<()> {
         ensure!(
             {
                 #[cfg(feature = "debug-downgrade")]
@@ -249,28 +252,18 @@ mod tests {
             "2.0.0",
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         );
+        manifest.validate_target("test-target").unwrap();
         manifest
-            .validate_policy(
-                "test-target",
+            .validate_generation(
                 1,
                 #[cfg(feature = "debug-downgrade")]
                 false,
             )
             .unwrap();
+        assert!(manifest.validate_target("wrong-target").is_err());
         assert!(
             manifest
-                .validate_policy(
-                    "wrong-target",
-                    1,
-                    #[cfg(feature = "debug-downgrade")]
-                    false,
-                )
-                .is_err()
-        );
-        assert!(
-            manifest
-                .validate_policy(
-                    "test-target",
+                .validate_generation(
                     2,
                     #[cfg(feature = "debug-downgrade")]
                     false,
@@ -278,7 +271,7 @@ mod tests {
                 .is_err()
         );
         #[cfg(feature = "debug-downgrade")]
-        manifest.validate_policy("test-target", 2, true).unwrap();
+        manifest.validate_generation(2, true).unwrap();
     }
 
     #[test]

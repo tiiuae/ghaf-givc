@@ -119,7 +119,7 @@ impl ImageUpdate {
             ImageAction::Validate { manifest, trust } => {
                 let signature = trust.signature_path(&manifest);
                 validate_signed_manifest_path(&manifest, &trust.validation(&signature)).await?;
-                println!("Manifest, signature, policy, artifacts, and UKI validation successful.");
+                println!("Manifest, signature, target, artifacts, and UKI validation successful.");
                 Ok(())
             }
             ImageAction::Remove { version, hash } => {
