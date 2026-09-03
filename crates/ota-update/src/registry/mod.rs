@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use tokio::time::{Duration, timeout};
 use tokio_util::sync::CancellationToken;
 
-use crate::image::install::install_from_manifest_path;
+use crate::image::install::default_signature_path;
 use crate::image::manifest::Manifest;
 use crate::lock::UpdateLock;
 pub use media_type::MediaType;
@@ -306,9 +306,12 @@ pub async fn pull_update(
         );
     }
 
+    // The detached Ed25519 signature authenticates the exact manifest bytes.
+    // Preserve the OCI config verbatim instead of reserializing the parsed
+    // structure, which would invalidate an otherwise correct signature.
     let manifest_path = output_dir.join("manifest.json");
-    manifest
-        .write_to_file(&manifest_path)
+    tokio::fs::write(&manifest_path, remote.config_json.as_bytes())
+        .await
         .with_context(|| format!("writing manifest file {}", manifest_path.display()))?;
     notify(
         feedback,
@@ -319,21 +322,15 @@ pub async fn pull_update(
 
     if options.validate {
         manifest
-            .validate(&output_dir, true)
+            .validate(&output_dir)
             .await
             .context("while validating pulled artifacts")?;
     }
 
     if options.install {
-        notify(
-            feedback,
-            progress::RegistryEvent::InstallStarted {
-                manifest: manifest_path.display().to_string(),
-            },
+        anyhow::bail!(
+            "registry --install is disabled for signed manifest v2; pull the artifacts and use `ota-update image install` with an authenticated detached signature"
         );
-        install_from_manifest_path(&manifest_path, options.validate, false)
-            .await
-            .context("while installing pulled manifest")?;
     }
 
     println!("manifest path: {}", manifest_path.display());
@@ -408,7 +405,7 @@ pub(crate) async fn prune_downloaded_updates(options: &PruneOptions) -> anyhow::
         }
 
         if !tags.is_empty() {
-            tags.sort_by(|a, b| b.1.cmp(&a.1));
+            tags.sort_by_key(|item| std::cmp::Reverse(item.1));
             for (path, _) in tags.into_iter().skip(KEEP_PER_REPOSITORY) {
                 tokio::fs::remove_dir_all(&path)
                     .await
@@ -449,7 +446,7 @@ pub async fn push_update_with_feedback(
         .parent()
         .context("manifest path has no parent directory")?;
     manifest
-        .validate(base_dir, true)
+        .validate(base_dir)
         .await
         .context("while validating manifest content")?;
 
@@ -465,6 +462,10 @@ pub async fn push_update_with_feedback(
     layers.push(layer_input_with_title(
         manifest.verity.full_name(base_dir),
         MediaType::Verity,
+    )?);
+    layers.push(layer_input_with_title(
+        default_signature_path(&options.manifest_path),
+        MediaType::Signature,
     )?);
 
     if let Some(changelog_path) = &options.changelog_path {
@@ -555,6 +556,11 @@ fn select_artifact_bindings(
         required_binding(layers, MediaType::Uki, manifest.kernel.name.clone())?,
         required_binding(layers, MediaType::Root, manifest.store.name.clone())?,
         required_binding(layers, MediaType::Verity, manifest.verity.name.clone())?,
+        required_binding(
+            layers,
+            MediaType::Signature,
+            "manifest.json.sig".to_string(),
+        )?,
     ];
 
     if let Some(layer) = find_layer_by_media_type(layers, MediaType::Changelog) {
@@ -669,29 +675,82 @@ mod tests {
     fn select_artifact_bindings_returns_error_when_required_layer_missing() {
         let manifest = Manifest {
             meta: Default::default(),
-            manifest_version: 1,
-            system: None,
+            manifest_version: 2,
+            system: "aarch64-linux".to_string(),
+            target: "test-target".to_string(),
+            generation: 1,
             version: "1.0".to_string(),
-            root_verity_hash: "0123456789abcdef0123456789abcdef".to_string(),
+            root_verity_hash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             kernel: crate::image::manifest::File {
                 name: "kernel.efi".to_string(),
                 sha256sum: [0; 32],
-                unpacked_size: None,
+                packed_size: 1,
+                unpacked_size: 1,
             },
             store: crate::image::manifest::File {
                 name: "root.raw".to_string(),
                 sha256sum: [0; 32],
-                unpacked_size: None,
+                packed_size: 1,
+                unpacked_size: 1,
             },
             verity: crate::image::manifest::File {
                 name: "verity.raw".to_string(),
                 sha256sum: [0; 32],
-                unpacked_size: None,
+                packed_size: 1,
+                unpacked_size: 1,
             },
         };
         let layers = vec![descriptor(MediaType::Uki)];
         let err = select_artifact_bindings(&manifest, &layers).expect_err("must fail");
         assert!(err.to_string().contains("missing required artifact layer"));
+    }
+
+    #[test]
+    fn select_artifact_bindings_requires_and_names_manifest_signature() {
+        let manifest = Manifest {
+            meta: Default::default(),
+            manifest_version: 2,
+            system: "aarch64-linux".to_string(),
+            target: "test-target".to_string(),
+            generation: 1,
+            version: "1.0".to_string(),
+            root_verity_hash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            kernel: crate::image::manifest::File {
+                name: "kernel.efi".to_string(),
+                sha256sum: [0; 32],
+                packed_size: 1,
+                unpacked_size: 1,
+            },
+            store: crate::image::manifest::File {
+                name: "root.raw".to_string(),
+                sha256sum: [0; 32],
+                packed_size: 1,
+                unpacked_size: 1,
+            },
+            verity: crate::image::manifest::File {
+                name: "verity.raw".to_string(),
+                sha256sum: [0; 32],
+                packed_size: 1,
+                unpacked_size: 1,
+            },
+        };
+        let mut layers = vec![
+            descriptor(MediaType::Uki),
+            descriptor(MediaType::Root),
+            descriptor(MediaType::Verity),
+        ];
+        let err = select_artifact_bindings(&manifest, &layers).expect_err("signature required");
+        assert!(err.to_string().contains("manifest-signature"));
+
+        layers.push(descriptor(MediaType::Signature));
+        let bindings = select_artifact_bindings(&manifest, &layers).expect("complete bindings");
+        let signature = bindings
+            .iter()
+            .find(|binding| binding.kind == MediaType::Signature)
+            .expect("signature binding");
+        assert_eq!(signature.local_name, "manifest.json.sig");
     }
 
     #[tokio::test]

@@ -6,6 +6,9 @@ name = "ota-update"
 publish = false
 version = "0.0.1"
 
+[features]
+debug-downgrade = []
+
 [dependencies]
 anyhow.workspace = true
 async-trait = "*"
@@ -14,7 +17,6 @@ bootspec.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 async-channel.workspace = true
 futures-util.workspace = true
-fs2 = "*" # For locking
 regex.workspace = true
 reqwest = { workspace = true, default-features = false, features = [
   "json",
@@ -26,6 +28,12 @@ shell-escape = "*"
 serde_with = { version = "*", features = ["hex"] }
 hex = "0.4"
 memmap2 = "0.9"
+object = { version = "0.37", default-features = false, features = [
+  "read_core",
+  "pe",
+  "std",
+] }
+ring = "0.17"
 sha2 = { workspace = true, features = ["asm"] }
 strum = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
@@ -39,12 +47,13 @@ tokio = { workspace = true, features = [
 tokio-util = { workspace = true, features = ["io"] }
 tonic = { workspace = true, features = ["tls-aws-lc"] }
 tracing.workspace = true
+tempfile = "3"
 tracing-subscriber = { workspace = true, features = [
   "env-filter",
   "tracing-log",
   "time",
   "local-time",
 ] }
-oci-client = { git = "https://github.com/oras-project/rust-oci-client" }
+oci-client = { git = "https://github.com/oras-project/rust-oci-client", rev = "7f8200640b5ca80543421c7ac7c4457a9d1de9e2" }
 
 cachix-client = { path = "../cachix-client", features = ["nixos"] }

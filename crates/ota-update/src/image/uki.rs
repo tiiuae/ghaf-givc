@@ -3,7 +3,6 @@
 
 use super::Version;
 use super::pipeline::{CommandSpec, Pipeline};
-use super::slot::Slot;
 use crate::bootctl::BootctlItem;
 use anyhow::{Context, Result, bail};
 use std::fmt;
@@ -28,6 +27,7 @@ pub struct BootEntry {
     pub id: String,
 
     pub kind: BootEntryKind,
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,7 +102,8 @@ impl FromStr for UkiEntry {
             (stem, None)
         };
 
-        let (version, hash) = core.split_once('-').context("missing version/hash")?;
+        // The artifact hash cannot contain '-', while prerelease versions can.
+        let (version, hash) = core.rsplit_once('-').context("missing version/hash")?;
 
         if version == "empty" {
             bail!("UKI version must not be 'empty'");
@@ -119,10 +120,17 @@ impl BootEntry {
     pub fn from_bootctl(items: Vec<BootctlItem>) -> impl Iterator<Item = Self> {
         items.into_iter().filter_map(|item| {
             let id = item.id;
+            let is_default = item.is_default;
 
             let kind = match item.r#type.as_str() {
                 // UKI entries
-                "type2" => match id.parse() {
+                "type2" => match item
+                    .path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(&id)
+                    .parse()
+                {
                     Ok(uki) => BootEntryKind::Managed(uki),
                     Err(_) => BootEntryKind::Unmanaged,
                 },
@@ -134,7 +142,11 @@ impl BootEntry {
                 _ => return None,
             };
 
-            Some(BootEntry { id, kind })
+            Some(BootEntry {
+                id,
+                kind,
+                is_default,
+            })
         })
     }
 
@@ -162,11 +174,6 @@ impl BootEntry {
     }
 
     #[must_use]
-    pub fn matches(&self, slot: &Slot) -> bool {
-        matches!(&self.kind, BootEntryKind::Managed(uki) if uki.matches(slot))
-    }
-
-    #[must_use]
     pub fn to_remove(&self) -> Pipeline {
         CommandSpec::new("bootctl")
             .arg("unlink")
@@ -178,21 +185,24 @@ impl BootEntry {
 impl From<UkiEntry> for BootEntry {
     fn from(uki: UkiEntry) -> Self {
         BootEntry {
-            id: uki.to_string(),
+            id: uki.boot_id(),
             kind: BootEntryKind::Managed(uki),
+            is_default: false,
         }
     }
 }
 
 impl UkiEntry {
+    /// Stable systemd-boot entry ID. Boot-count suffixes are part of the
+    /// physical filename, but are not part of the ID accepted by bootctl.
     #[must_use]
-    pub fn full_name<P: AsRef<Path>>(&self, base_dir: P) -> PathBuf {
-        base_dir.as_ref().join(self.to_string())
+    pub fn boot_id(&self) -> String {
+        format!("ghaf-{:#}.efi", self.version)
     }
 
     #[must_use]
-    pub fn matches(&self, slot: &Slot) -> bool {
-        slot.version() == Some(&self.version)
+    pub fn full_name<P: AsRef<Path>>(&self, base_dir: P) -> PathBuf {
+        base_dir.as_ref().join(self.to_string())
     }
 }
 
@@ -226,6 +236,23 @@ mod tests {
         let c = uki.boot_counter.unwrap();
         assert_eq!(c.remaining, 3);
         assert_eq!(c.used, Some(1));
+    }
+
+    #[test]
+    fn parse_prerelease_uki_with_counters() {
+        let uki = UkiEntry::from_str("ghaf-25.12.1-rc1-deadbeefdeadbeef+3.efi").unwrap();
+        assert_eq!(
+            uki.version,
+            Version::new("25.12.1-rc1".into(), Some("deadbeefdeadbeef".into()))
+        );
+        assert_eq!(
+            uki.boot_counter,
+            Some(BootCounter {
+                remaining: 3,
+                used: None
+            })
+        );
+        assert_eq!(uki.to_string(), "ghaf-25.12.1-rc1-deadbeefdeadbeef+3.efi");
     }
 
     #[test]
@@ -279,5 +306,11 @@ mod tests {
 
         let parsed = name.parse().unwrap();
         assert_eq!(uki, parsed);
+    }
+
+    #[test]
+    fn boot_id_omits_trial_counters() {
+        let uki: UkiEntry = "ghaf-1.2.3-deadbeefdeadbeef+3-1.efi".parse().unwrap();
+        assert_eq!(uki.boot_id(), "ghaf-1.2.3-deadbeefdeadbeef.efi");
     }
 }

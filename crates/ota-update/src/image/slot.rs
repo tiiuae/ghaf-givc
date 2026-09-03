@@ -25,6 +25,7 @@ enum EmptyId {
 enum Status {
     Used(Version),
     Empty(EmptyId),
+    Staging(EmptyId),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -32,21 +33,6 @@ pub struct Slot {
     kind: Kind,
     status: Status,
     volume: Volume,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlotClass {
-    /// Slot is structurally invalid
-    Broken,
-
-    /// Slot is currently active (booted)
-    Active,
-
-    /// Slot is valid but empty (no version)
-    Empty,
-
-    /// Slot is valid, installed, but not active
-    Inactive,
 }
 
 impl Slot {
@@ -63,16 +49,17 @@ impl Slot {
 
         ensure!(!name.is_empty(), "name is empty");
 
-        let status = if version_raw == "empty" {
-            Status::Empty(match hash_or_id {
-                Some(id) => EmptyId::Known(id.to_string()),
-                None => EmptyId::Legacy,
-            })
-        } else {
-            Status::Used(Version::new(
+        let empty_id = || match hash_or_id {
+            Some(id) => EmptyId::Known(id.to_string()),
+            None => EmptyId::Legacy,
+        };
+        let status = match version_raw {
+            "empty" => Status::Empty(empty_id()),
+            "staging" => Status::Staging(empty_id()),
+            _ => Status::Used(Version::new(
                 version_raw.to_string(),
                 hash_or_id.map(ToString::to_string),
-            ))
+            )),
         };
 
         let kind = name.parse()?;
@@ -120,6 +107,8 @@ impl fmt::Display for Slot {
             }
             Status::Empty(EmptyId::Known(id)) => write!(f, "{kind}_empty_{id}"),
             Status::Empty(EmptyId::Legacy) => write!(f, "{kind}_empty"),
+            Status::Staging(EmptyId::Known(id)) => write!(f, "{kind}_staging_{id}"),
+            Status::Staging(EmptyId::Legacy) => write!(f, "{kind}_staging"),
         }
     }
 }
@@ -128,7 +117,12 @@ impl fmt::Display for Slot {
 impl Slot {
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        matches!(&self.status, Status::Empty(_))
+        matches!(&self.status, Status::Empty(_) | Status::Staging(_))
+    }
+
+    #[must_use]
+    pub fn is_staging(&self) -> bool {
+        matches!(&self.status, Status::Staging(_))
     }
 
     #[must_use]
@@ -184,7 +178,9 @@ impl Slot {
     #[must_use]
     pub fn empty_id(&self) -> Option<&str> {
         match &self.status {
-            Status::Empty(EmptyId::Known(known)) => Some(known),
+            Status::Empty(EmptyId::Known(known)) | Status::Staging(EmptyId::Known(known)) => {
+                Some(known)
+            }
             _ => None,
         }
     }
@@ -324,6 +320,26 @@ mod tests {
 
         let rendered = slots[0].to_string();
         assert_eq!(rendered, original);
+    }
+
+    #[test]
+    fn slot_display_roundtrip_staging() {
+        let original = "root_staging_deadbeef";
+        let (slots, _) = Slot::from_volumes(vec![Volume::new(original)]);
+
+        assert!(slots[0].is_empty());
+        assert!(slots[0].is_staging());
+        assert_eq!(slots[0].empty_id(), Some("deadbeef"));
+        assert_eq!(slots[0].to_string(), original);
+    }
+
+    #[test]
+    fn staging_and_empty_slots_do_not_match() {
+        let (slots, _) = Slot::from_volumes(vec![
+            Volume::new("root_staging_0"),
+            Volume::new("verity_empty_0"),
+        ]);
+        assert!(!slots[0].matches(&slots[1]));
     }
 
     // Invarians of API

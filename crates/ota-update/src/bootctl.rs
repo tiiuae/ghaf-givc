@@ -80,16 +80,25 @@ pub async fn get_bootctl_info() -> anyhow::Result<BootctlInfo> {
 /// # Errors
 /// * Throw out JSON parsing error
 pub fn parse_bootctl(json: impl AsRef<[u8]>) -> anyhow::Result<BootctlInfo> {
-    // Design defence:
-    // we have our struct matching only NixOS boot records, so filter out all with sort_key != "nixos" before deserializing
-    // otherwise entries from memtest, dual boot, whatever else break deserializing.
+    // Design defence: our struct matches NixOS records and Ghaf-managed type2
+    // records. Filter everything else before deserializing so entries from
+    // memtest, dual boot, firmware setup, and similar cannot break discovery.
     let info: Vec<serde_json::Value> =
         serde_json::from_slice(json.as_ref()).context("Parsing bootctl output")?;
     let info = info
         .into_iter()
         .filter(|item| {
-            item.get("sortKey")
-                .is_some_and(|val| val.as_str() == Some("nixos"))
+            let nixos = item
+                .get("sortKey")
+                .is_some_and(|val| val.as_str() == Some("nixos"));
+            let managed_uki = item.get("type").and_then(|val| val.as_str()) == Some("type2")
+                && item
+                    .get("path")
+                    .and_then(|val| val.as_str())
+                    .and_then(|path| Path::new(path).file_name())
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("ghaf-") && name.ends_with(".efi"));
+            nixos || managed_uki
         })
         .collect();
     let info = serde_json::from_value(info).context("While decoding bootctl json output")?;
@@ -179,5 +188,36 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert!(parsed[0].is_reported);
         assert!(parsed[0].is_default);
+    }
+
+    #[test]
+    fn parse_managed_uki_with_non_nixos_sort_key() {
+        let json = r#"
+[
+    {
+        "type": "type2",
+        "source": "esp",
+        "id": "ghaf-25.12.1-deadbeefdeadbeef+3.efi",
+        "path": "/boot/EFI/Linux/ghaf-25.12.1-deadbeefdeadbeef+3.efi",
+        "root": "/boot",
+        "title": "Ghaf",
+        "showTitle": "Ghaf",
+        "sortKey": "ghaf",
+        "version": "25.12.1",
+        "options": "ghaf.storehash=deadbeefdeadbeef",
+        "efi": "/EFI/Linux/ghaf-25.12.1-deadbeefdeadbeef+3.efi",
+        "addons": null,
+        "cmdline": "ghaf.storehash=deadbeefdeadbeef"
+    },
+    {
+        "type": "auto",
+        "id": "auto-reboot-to-firmware-setup"
+    }
+]
+"#;
+
+        let parsed = parse_bootctl(json).expect("managed Ghaf UKI should parse");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].sort_key, "ghaf");
     }
 }

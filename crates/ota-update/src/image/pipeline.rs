@@ -12,7 +12,15 @@ pub struct CommandSpec {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pipeline {
-    pub stages: Vec<CommandSpec>,
+    stages: Vec<CommandSpec>,
+    mode: PipelineMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PipelineMode {
+    Single,
+    Piped,
+    Sequential,
 }
 
 impl CommandSpec {
@@ -58,11 +66,30 @@ impl Pipeline {
     pub fn new(first: CommandSpec) -> Self {
         Self {
             stages: vec![first],
+            mode: PipelineMode::Single,
         }
     }
 
     #[must_use]
     pub fn pipe(mut self, next: CommandSpec) -> Self {
+        assert_ne!(
+            self.mode,
+            PipelineMode::Sequential,
+            "cannot append a pipe stage to a sequential pipeline"
+        );
+        self.mode = PipelineMode::Piped;
+        self.stages.push(next);
+        self
+    }
+
+    #[must_use]
+    pub fn then(mut self, next: CommandSpec) -> Self {
+        assert_ne!(
+            self.mode,
+            PipelineMode::Piped,
+            "cannot append a sequential stage to a piped pipeline"
+        );
+        self.mode = PipelineMode::Sequential;
         self.stages.push(next);
         self
     }
@@ -70,6 +97,16 @@ impl Pipeline {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.stages.is_empty()
+    }
+
+    #[must_use]
+    pub(crate) fn stages(&self) -> &[CommandSpec] {
+        &self.stages
+    }
+
+    #[must_use]
+    pub(crate) fn is_sequential(&self) -> bool {
+        self.mode == PipelineMode::Sequential
     }
 
     #[must_use]
@@ -85,7 +122,7 @@ impl Pipeline {
                 s
             })
             .collect::<Vec<_>>()
-            .join(" | ")
+            .join(if self.is_sequential() { " && " } else { " | " })
     }
 }
 
@@ -99,5 +136,13 @@ mod tests {
             .pipe(CommandSpec::new("dd").arg("of=/dev/null"));
 
         assert_eq!(p.format_shell(), "zstdcat root.zst | dd of=/dev/null");
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot append a sequential stage to a piped pipeline")]
+    fn rejects_mixed_pipe_and_sequence() {
+        let _ = Pipeline::new(CommandSpec::new("producer"))
+            .pipe(CommandSpec::new("consumer"))
+            .then(CommandSpec::new("commit"));
     }
 }
