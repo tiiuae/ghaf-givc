@@ -1,13 +1,12 @@
 # SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 # SPDX-License-Identifier: Apache-2.0
 
-name: Amend Dependabot Go PRs
+name: Amend Dependabot Cargo PRs
 
 on:
   pull_request:
     paths:
-      - 'go.mod'
-      - 'go.sum'
+      - 'Cargo.lock'
 
 jobs:
   amend:
@@ -27,33 +26,41 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Go Setup
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '>=1.24'
-
-      - name: Go Version
-        run: go version
+      - name: Check whether any pinned git revision moved
+        id: guard
+        run: |
+          set -euo pipefail
+          locked=$(sed -nE 's|^source = "git\+(.*)"$|\1|p' Cargo.lock | sort)
+          pinned=$(sed -nE 's|^[[:space:]]*"git\+([^"]*)".*|\1|p' nixos/packages/givc-admin.nix | sort)
+          if [ "$locked" = "$pinned" ]; then
+            echo "outputHashes pins are up to date, nothing to amend"
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install nix
+        if: steps.guard.outputs.stale == 'true'
         uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
-      - name: Replace go vendor hash
+      - name: Replace cargo git dependency output hashes
+        if: steps.guard.outputs.stale == 'true'
         run: |
-          ./scripts/update-vendorHash.sh
+          nix shell nixpkgs#nix-prefetch-git --command ./scripts/update-outputHashes.sh
 
       - name: Commit & push changes
+        if: steps.guard.outputs.stale == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if git diff --quiet; then
+          if git diff --quiet -- nixos/packages/givc-admin.nix; then
             echo "No changes to commit."
             exit 0
           fi
           git config user.email "<49699333+dependabot[bot]@users.noreply.github.com>"
           git config user.name "dependabot[bot]"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-          git add nixos/packages/givc-agent.nix
+          git add nixos/packages/givc-admin.nix
           # [dependabot skip] lets dependabot auto-rebase the PR
-          git commit -m "chore(deps): update vendorHash for updated Go dependencies [dependabot skip]"
+          git commit -m "chore(deps): update outputHashes for updated Cargo git dependencies [dependabot skip]"
           git push origin HEAD:${{ github.head_ref }}

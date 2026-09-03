@@ -39,8 +39,8 @@ let
     # Regenerate after any cargo update that moves a revision: crane reports the
     # expected value as a hash mismatch.
     outputHashes = {
-      "git+https://github.com/oras-project/rust-oci-client#7f8200640b5ca80543421c7ac7c4457a9d1de9e2" =
-        "sha256-QjucurMMhQQJcgZor5TdRbvYJcidCeDyME8aPXdvfjM=";
+      "git+https://github.com/oras-project/rust-oci-client#463cfc118a0cc4a8adc867a19eabddd18da1b6dd" =
+        "sha256-dWsQk+V0lbfIGcJb1++vAJ57Ta3qh8or9B+wvGyRONg=";
     };
   };
 

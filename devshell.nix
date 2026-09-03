@@ -36,6 +36,7 @@
           pkgs.rustfmt
           pkgs.clippy
           pkgs.oras
+          pkgs.nix-prefetch-git
           pkgs.stdenv.cc
           pkgs.protobuf
           pkgs.protoc-gen-go
