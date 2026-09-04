@@ -45,6 +45,10 @@ const (
 	AdminService_Watch_FullMethodName             = "/admin.AdminService/Watch"
 	AdminService_ListGenerations_FullMethodName   = "/admin.AdminService/ListGenerations"
 	AdminService_SetGeneration_FullMethodName     = "/admin.AdminService/SetGeneration"
+	AdminService_Discover_FullMethodName          = "/admin.AdminService/Discover"
+	AdminService_Changelog_FullMethodName         = "/admin.AdminService/Changelog"
+	AdminService_Pull_FullMethodName              = "/admin.AdminService/Pull"
+	AdminService_ImageInstall_FullMethodName      = "/admin.AdminService/ImageInstall"
 	AdminService_NotifyUser_FullMethodName        = "/admin.AdminService/NotifyUser"
 	AdminService_Ctap_FullMethodName              = "/admin.AdminService/Ctap"
 	AdminService_Sysinfo_FullMethodName           = "/admin.AdminService/Sysinfo"
@@ -93,6 +97,10 @@ type AdminServiceClient interface {
 	// OTA
 	ListGenerations(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListGenerationsResponse, error)
 	SetGeneration(ctx context.Context, in *SetGenerationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SetGenerationResponse], error)
+	Discover(ctx context.Context, in *RegistryDiscoverRequest, opts ...grpc.CallOption) (*RegistryDiscoverResponse, error)
+	Changelog(ctx context.Context, in *RegistryChangelogRequest, opts ...grpc.CallOption) (*RegistryChangelogResponse, error)
+	Pull(ctx context.Context, in *RegistryPullRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RegistryPullResponse], error)
+	ImageInstall(ctx context.Context, in *ImageInstallRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ImageInstallResponse], error)
 	// Send user notification
 	NotifyUser(ctx context.Context, in *UserNotificationRequest, opts ...grpc.CallOption) (*notify.Status, error)
 	// Perform CTAP action
@@ -327,6 +335,64 @@ func (c *adminServiceClient) SetGeneration(ctx context.Context, in *SetGeneratio
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AdminService_SetGenerationClient = grpc.ServerStreamingClient[SetGenerationResponse]
 
+func (c *adminServiceClient) Discover(ctx context.Context, in *RegistryDiscoverRequest, opts ...grpc.CallOption) (*RegistryDiscoverResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegistryDiscoverResponse)
+	err := c.cc.Invoke(ctx, AdminService_Discover_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) Changelog(ctx context.Context, in *RegistryChangelogRequest, opts ...grpc.CallOption) (*RegistryChangelogResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegistryChangelogResponse)
+	err := c.cc.Invoke(ctx, AdminService_Changelog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) Pull(ctx context.Context, in *RegistryPullRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RegistryPullResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AdminService_ServiceDesc.Streams[2], AdminService_Pull_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[RegistryPullRequest, RegistryPullResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AdminService_PullClient = grpc.ServerStreamingClient[RegistryPullResponse]
+
+func (c *adminServiceClient) ImageInstall(ctx context.Context, in *ImageInstallRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ImageInstallResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AdminService_ServiceDesc.Streams[3], AdminService_ImageInstall_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ImageInstallRequest, ImageInstallResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AdminService_ImageInstallClient = grpc.ServerStreamingClient[ImageInstallResponse]
+
 func (c *adminServiceClient) NotifyUser(ctx context.Context, in *UserNotificationRequest, opts ...grpc.CallOption) (*notify.Status, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(notify.Status)
@@ -400,6 +466,10 @@ type AdminServiceServer interface {
 	// OTA
 	ListGenerations(context.Context, *Empty) (*ListGenerationsResponse, error)
 	SetGeneration(*SetGenerationRequest, grpc.ServerStreamingServer[SetGenerationResponse]) error
+	Discover(context.Context, *RegistryDiscoverRequest) (*RegistryDiscoverResponse, error)
+	Changelog(context.Context, *RegistryChangelogRequest) (*RegistryChangelogResponse, error)
+	Pull(*RegistryPullRequest, grpc.ServerStreamingServer[RegistryPullResponse]) error
+	ImageInstall(*ImageInstallRequest, grpc.ServerStreamingServer[ImageInstallResponse]) error
 	// Send user notification
 	NotifyUser(context.Context, *UserNotificationRequest) (*notify.Status, error)
 	// Perform CTAP action
@@ -475,6 +545,18 @@ func (UnimplementedAdminServiceServer) ListGenerations(context.Context, *Empty) 
 }
 func (UnimplementedAdminServiceServer) SetGeneration(*SetGenerationRequest, grpc.ServerStreamingServer[SetGenerationResponse]) error {
 	return status.Error(codes.Unimplemented, "method SetGeneration not implemented")
+}
+func (UnimplementedAdminServiceServer) Discover(context.Context, *RegistryDiscoverRequest) (*RegistryDiscoverResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Discover not implemented")
+}
+func (UnimplementedAdminServiceServer) Changelog(context.Context, *RegistryChangelogRequest) (*RegistryChangelogResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Changelog not implemented")
+}
+func (UnimplementedAdminServiceServer) Pull(*RegistryPullRequest, grpc.ServerStreamingServer[RegistryPullResponse]) error {
+	return status.Error(codes.Unimplemented, "method Pull not implemented")
+}
+func (UnimplementedAdminServiceServer) ImageInstall(*ImageInstallRequest, grpc.ServerStreamingServer[ImageInstallResponse]) error {
+	return status.Error(codes.Unimplemented, "method ImageInstall not implemented")
 }
 func (UnimplementedAdminServiceServer) NotifyUser(context.Context, *UserNotificationRequest) (*notify.Status, error) {
 	return nil, status.Error(codes.Unimplemented, "method NotifyUser not implemented")
@@ -852,6 +934,64 @@ func _AdminService_SetGeneration_Handler(srv interface{}, stream grpc.ServerStre
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AdminService_SetGenerationServer = grpc.ServerStreamingServer[SetGenerationResponse]
 
+func _AdminService_Discover_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegistryDiscoverRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).Discover(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_Discover_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).Discover(ctx, req.(*RegistryDiscoverRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_Changelog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegistryChangelogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).Changelog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_Changelog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).Changelog(ctx, req.(*RegistryChangelogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_Pull_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(RegistryPullRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AdminServiceServer).Pull(m, &grpc.GenericServerStream[RegistryPullRequest, RegistryPullResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AdminService_PullServer = grpc.ServerStreamingServer[RegistryPullResponse]
+
+func _AdminService_ImageInstall_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ImageInstallRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AdminServiceServer).ImageInstall(m, &grpc.GenericServerStream[ImageInstallRequest, ImageInstallResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AdminService_ImageInstallServer = grpc.ServerStreamingServer[ImageInstallResponse]
+
 func _AdminService_NotifyUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UserNotificationRequest)
 	if err := dec(in); err != nil {
@@ -986,6 +1126,14 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_ListGenerations_Handler,
 		},
 		{
+			MethodName: "Discover",
+			Handler:    _AdminService_Discover_Handler,
+		},
+		{
+			MethodName: "Changelog",
+			Handler:    _AdminService_Changelog_Handler,
+		},
+		{
 			MethodName: "NotifyUser",
 			Handler:    _AdminService_NotifyUser_Handler,
 		},
@@ -1007,6 +1155,16 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "SetGeneration",
 			Handler:       _AdminService_SetGeneration_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "Pull",
+			Handler:       _AdminService_Pull_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ImageInstall",
+			Handler:       _AdminService_ImageInstall_Handler,
 			ServerStreams: true,
 		},
 	},

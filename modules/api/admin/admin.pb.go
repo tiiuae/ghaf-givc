@@ -1337,6 +1337,1024 @@ func (x *SetGenerationResponse) GetError() string {
 	return ""
 }
 
+type RegistryBasicAuth struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Username      string                 `protobuf:"bytes,1,opt,name=Username,proto3" json:"Username,omitempty"`
+	Password      string                 `protobuf:"bytes,2,opt,name=Password,proto3" json:"Password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryBasicAuth) Reset() {
+	*x = RegistryBasicAuth{}
+	mi := &file_admin_admin_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryBasicAuth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryBasicAuth) ProtoMessage() {}
+
+func (x *RegistryBasicAuth) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryBasicAuth.ProtoReflect.Descriptor instead.
+func (*RegistryBasicAuth) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *RegistryBasicAuth) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *RegistryBasicAuth) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+type RegistryBearerAuth struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=Token,proto3" json:"Token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryBearerAuth) Reset() {
+	*x = RegistryBearerAuth{}
+	mi := &file_admin_admin_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryBearerAuth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryBearerAuth) ProtoMessage() {}
+
+func (x *RegistryBearerAuth) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryBearerAuth.ProtoReflect.Descriptor instead.
+func (*RegistryBearerAuth) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *RegistryBearerAuth) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type RegistryCredentials struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Auth:
+	//
+	//	*RegistryCredentials_Basic
+	//	*RegistryCredentials_Bearer
+	Auth          isRegistryCredentials_Auth `protobuf_oneof:"Auth"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryCredentials) Reset() {
+	*x = RegistryCredentials{}
+	mi := &file_admin_admin_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryCredentials) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryCredentials) ProtoMessage() {}
+
+func (x *RegistryCredentials) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryCredentials.ProtoReflect.Descriptor instead.
+func (*RegistryCredentials) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *RegistryCredentials) GetAuth() isRegistryCredentials_Auth {
+	if x != nil {
+		return x.Auth
+	}
+	return nil
+}
+
+func (x *RegistryCredentials) GetBasic() *RegistryBasicAuth {
+	if x != nil {
+		if x, ok := x.Auth.(*RegistryCredentials_Basic); ok {
+			return x.Basic
+		}
+	}
+	return nil
+}
+
+func (x *RegistryCredentials) GetBearer() *RegistryBearerAuth {
+	if x != nil {
+		if x, ok := x.Auth.(*RegistryCredentials_Bearer); ok {
+			return x.Bearer
+		}
+	}
+	return nil
+}
+
+type isRegistryCredentials_Auth interface {
+	isRegistryCredentials_Auth()
+}
+
+type RegistryCredentials_Basic struct {
+	Basic *RegistryBasicAuth `protobuf:"bytes,1,opt,name=Basic,proto3,oneof"`
+}
+
+type RegistryCredentials_Bearer struct {
+	Bearer *RegistryBearerAuth `protobuf:"bytes,2,opt,name=Bearer,proto3,oneof"`
+}
+
+func (*RegistryCredentials_Basic) isRegistryCredentials_Auth() {}
+
+func (*RegistryCredentials_Bearer) isRegistryCredentials_Auth() {}
+
+type AvailableUpdate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Repository    string                 `protobuf:"bytes,1,opt,name=Repository,proto3" json:"Repository,omitempty"`
+	Tag           string                 `protobuf:"bytes,2,opt,name=Tag,proto3" json:"Tag,omitempty"`
+	Version       string                 `protobuf:"bytes,3,opt,name=Version,proto3" json:"Version,omitempty"`
+	Hash          string                 `protobuf:"bytes,4,opt,name=Hash,proto3" json:"Hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AvailableUpdate) Reset() {
+	*x = AvailableUpdate{}
+	mi := &file_admin_admin_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AvailableUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AvailableUpdate) ProtoMessage() {}
+
+func (x *AvailableUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AvailableUpdate.ProtoReflect.Descriptor instead.
+func (*AvailableUpdate) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *AvailableUpdate) GetRepository() string {
+	if x != nil {
+		return x.Repository
+	}
+	return ""
+}
+
+func (x *AvailableUpdate) GetTag() string {
+	if x != nil {
+		return x.Tag
+	}
+	return ""
+}
+
+func (x *AvailableUpdate) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *AvailableUpdate) GetHash() string {
+	if x != nil {
+		return x.Hash
+	}
+	return ""
+}
+
+type RegistryDiscoverRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reference     string                 `protobuf:"bytes,1,opt,name=Reference,proto3" json:"Reference,omitempty"`
+	Insecure      bool                   `protobuf:"varint,2,opt,name=Insecure,proto3" json:"Insecure,omitempty"`
+	Credentials   *RegistryCredentials   `protobuf:"bytes,3,opt,name=Credentials,proto3,oneof" json:"Credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryDiscoverRequest) Reset() {
+	*x = RegistryDiscoverRequest{}
+	mi := &file_admin_admin_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryDiscoverRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryDiscoverRequest) ProtoMessage() {}
+
+func (x *RegistryDiscoverRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryDiscoverRequest.ProtoReflect.Descriptor instead.
+func (*RegistryDiscoverRequest) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *RegistryDiscoverRequest) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *RegistryDiscoverRequest) GetInsecure() bool {
+	if x != nil {
+		return x.Insecure
+	}
+	return false
+}
+
+func (x *RegistryDiscoverRequest) GetCredentials() *RegistryCredentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+type RegistryDiscoverResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	List          []*AvailableUpdate     `protobuf:"bytes,1,rep,name=List,proto3" json:"List,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryDiscoverResponse) Reset() {
+	*x = RegistryDiscoverResponse{}
+	mi := &file_admin_admin_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryDiscoverResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryDiscoverResponse) ProtoMessage() {}
+
+func (x *RegistryDiscoverResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryDiscoverResponse.ProtoReflect.Descriptor instead.
+func (*RegistryDiscoverResponse) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *RegistryDiscoverResponse) GetList() []*AvailableUpdate {
+	if x != nil {
+		return x.List
+	}
+	return nil
+}
+
+type RegistryChangelogRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reference     string                 `protobuf:"bytes,1,opt,name=Reference,proto3" json:"Reference,omitempty"`
+	Insecure      bool                   `protobuf:"varint,2,opt,name=Insecure,proto3" json:"Insecure,omitempty"`
+	Credentials   *RegistryCredentials   `protobuf:"bytes,3,opt,name=Credentials,proto3,oneof" json:"Credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryChangelogRequest) Reset() {
+	*x = RegistryChangelogRequest{}
+	mi := &file_admin_admin_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryChangelogRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryChangelogRequest) ProtoMessage() {}
+
+func (x *RegistryChangelogRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryChangelogRequest.ProtoReflect.Descriptor instead.
+func (*RegistryChangelogRequest) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *RegistryChangelogRequest) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *RegistryChangelogRequest) GetInsecure() bool {
+	if x != nil {
+		return x.Insecure
+	}
+	return false
+}
+
+func (x *RegistryChangelogRequest) GetCredentials() *RegistryCredentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+type RegistryChangelogResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Changelog     string                 `protobuf:"bytes,1,opt,name=Changelog,proto3" json:"Changelog,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryChangelogResponse) Reset() {
+	*x = RegistryChangelogResponse{}
+	mi := &file_admin_admin_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryChangelogResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryChangelogResponse) ProtoMessage() {}
+
+func (x *RegistryChangelogResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryChangelogResponse.ProtoReflect.Descriptor instead.
+func (*RegistryChangelogResponse) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *RegistryChangelogResponse) GetChangelog() string {
+	if x != nil {
+		return x.Changelog
+	}
+	return ""
+}
+
+type RegistryPullRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reference     string                 `protobuf:"bytes,1,opt,name=Reference,proto3" json:"Reference,omitempty"`
+	Destination   string                 `protobuf:"bytes,2,opt,name=Destination,proto3" json:"Destination,omitempty"`
+	Insecure      bool                   `protobuf:"varint,4,opt,name=Insecure,proto3" json:"Insecure,omitempty"`
+	Credentials   *RegistryCredentials   `protobuf:"bytes,5,opt,name=Credentials,proto3,oneof" json:"Credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryPullRequest) Reset() {
+	*x = RegistryPullRequest{}
+	mi := &file_admin_admin_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryPullRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryPullRequest) ProtoMessage() {}
+
+func (x *RegistryPullRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryPullRequest.ProtoReflect.Descriptor instead.
+func (*RegistryPullRequest) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *RegistryPullRequest) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *RegistryPullRequest) GetDestination() string {
+	if x != nil {
+		return x.Destination
+	}
+	return ""
+}
+
+func (x *RegistryPullRequest) GetInsecure() bool {
+	if x != nil {
+		return x.Insecure
+	}
+	return false
+}
+
+func (x *RegistryPullRequest) GetCredentials() *RegistryCredentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+type RegistryPullResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OutputDir     string                 `protobuf:"bytes,1,opt,name=OutputDir,proto3" json:"OutputDir,omitempty"`
+	ManifestPath  string                 `protobuf:"bytes,2,opt,name=ManifestPath,proto3" json:"ManifestPath,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryPullResult) Reset() {
+	*x = RegistryPullResult{}
+	mi := &file_admin_admin_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryPullResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryPullResult) ProtoMessage() {}
+
+func (x *RegistryPullResult) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryPullResult.ProtoReflect.Descriptor instead.
+func (*RegistryPullResult) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *RegistryPullResult) GetOutputDir() string {
+	if x != nil {
+		return x.OutputDir
+	}
+	return ""
+}
+
+func (x *RegistryPullResult) GetManifestPath() string {
+	if x != nil {
+		return x.ManifestPath
+	}
+	return ""
+}
+
+type RegistryPullStarted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reference     string                 `protobuf:"bytes,1,opt,name=Reference,proto3" json:"Reference,omitempty"`
+	Destination   string                 `protobuf:"bytes,2,opt,name=Destination,proto3" json:"Destination,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryPullStarted) Reset() {
+	*x = RegistryPullStarted{}
+	mi := &file_admin_admin_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryPullStarted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryPullStarted) ProtoMessage() {}
+
+func (x *RegistryPullStarted) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryPullStarted.ProtoReflect.Descriptor instead.
+func (*RegistryPullStarted) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *RegistryPullStarted) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *RegistryPullStarted) GetDestination() string {
+	if x != nil {
+		return x.Destination
+	}
+	return ""
+}
+
+type RegistryBlobDownloading struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Digest        string                 `protobuf:"bytes,1,opt,name=Digest,proto3" json:"Digest,omitempty"`
+	Downloaded    uint64                 `protobuf:"varint,2,opt,name=Downloaded,proto3" json:"Downloaded,omitempty"`
+	Total         *uint64                `protobuf:"varint,3,opt,name=Total,proto3,oneof" json:"Total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryBlobDownloading) Reset() {
+	*x = RegistryBlobDownloading{}
+	mi := &file_admin_admin_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryBlobDownloading) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryBlobDownloading) ProtoMessage() {}
+
+func (x *RegistryBlobDownloading) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryBlobDownloading.ProtoReflect.Descriptor instead.
+func (*RegistryBlobDownloading) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *RegistryBlobDownloading) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+func (x *RegistryBlobDownloading) GetDownloaded() uint64 {
+	if x != nil {
+		return x.Downloaded
+	}
+	return 0
+}
+
+func (x *RegistryBlobDownloading) GetTotal() uint64 {
+	if x != nil && x.Total != nil {
+		return *x.Total
+	}
+	return 0
+}
+
+type RegistryPullProgress struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Event:
+	//
+	//	*RegistryPullProgress_PullStarted
+	//	*RegistryPullProgress_BlobDownloading
+	//	*RegistryPullProgress_BlobVerified
+	//	*RegistryPullProgress_ManifestWritten
+	//	*RegistryPullProgress_Cancelled
+	//	*RegistryPullProgress_Done
+	Event         isRegistryPullProgress_Event `protobuf_oneof:"Event"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryPullProgress) Reset() {
+	*x = RegistryPullProgress{}
+	mi := &file_admin_admin_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryPullProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryPullProgress) ProtoMessage() {}
+
+func (x *RegistryPullProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryPullProgress.ProtoReflect.Descriptor instead.
+func (*RegistryPullProgress) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *RegistryPullProgress) GetEvent() isRegistryPullProgress_Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *RegistryPullProgress) GetPullStarted() *RegistryPullStarted {
+	if x != nil {
+		if x, ok := x.Event.(*RegistryPullProgress_PullStarted); ok {
+			return x.PullStarted
+		}
+	}
+	return nil
+}
+
+func (x *RegistryPullProgress) GetBlobDownloading() *RegistryBlobDownloading {
+	if x != nil {
+		if x, ok := x.Event.(*RegistryPullProgress_BlobDownloading); ok {
+			return x.BlobDownloading
+		}
+	}
+	return nil
+}
+
+func (x *RegistryPullProgress) GetBlobVerified() string {
+	if x != nil {
+		if x, ok := x.Event.(*RegistryPullProgress_BlobVerified); ok {
+			return x.BlobVerified
+		}
+	}
+	return ""
+}
+
+func (x *RegistryPullProgress) GetManifestWritten() string {
+	if x != nil {
+		if x, ok := x.Event.(*RegistryPullProgress_ManifestWritten); ok {
+			return x.ManifestWritten
+		}
+	}
+	return ""
+}
+
+func (x *RegistryPullProgress) GetCancelled() string {
+	if x != nil {
+		if x, ok := x.Event.(*RegistryPullProgress_Cancelled); ok {
+			return x.Cancelled
+		}
+	}
+	return ""
+}
+
+func (x *RegistryPullProgress) GetDone() bool {
+	if x != nil {
+		if x, ok := x.Event.(*RegistryPullProgress_Done); ok {
+			return x.Done
+		}
+	}
+	return false
+}
+
+type isRegistryPullProgress_Event interface {
+	isRegistryPullProgress_Event()
+}
+
+type RegistryPullProgress_PullStarted struct {
+	PullStarted *RegistryPullStarted `protobuf:"bytes,1,opt,name=PullStarted,proto3,oneof"`
+}
+
+type RegistryPullProgress_BlobDownloading struct {
+	BlobDownloading *RegistryBlobDownloading `protobuf:"bytes,2,opt,name=BlobDownloading,proto3,oneof"`
+}
+
+type RegistryPullProgress_BlobVerified struct {
+	BlobVerified string `protobuf:"bytes,3,opt,name=BlobVerified,proto3,oneof"`
+}
+
+type RegistryPullProgress_ManifestWritten struct {
+	ManifestWritten string `protobuf:"bytes,4,opt,name=ManifestWritten,proto3,oneof"`
+}
+
+type RegistryPullProgress_Cancelled struct {
+	Cancelled string `protobuf:"bytes,5,opt,name=Cancelled,proto3,oneof"`
+}
+
+type RegistryPullProgress_Done struct {
+	Done bool `protobuf:"varint,6,opt,name=Done,proto3,oneof"`
+}
+
+func (*RegistryPullProgress_PullStarted) isRegistryPullProgress_Event() {}
+
+func (*RegistryPullProgress_BlobDownloading) isRegistryPullProgress_Event() {}
+
+func (*RegistryPullProgress_BlobVerified) isRegistryPullProgress_Event() {}
+
+func (*RegistryPullProgress_ManifestWritten) isRegistryPullProgress_Event() {}
+
+func (*RegistryPullProgress_Cancelled) isRegistryPullProgress_Event() {}
+
+func (*RegistryPullProgress_Done) isRegistryPullProgress_Event() {}
+
+type RegistryPullResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Update:
+	//
+	//	*RegistryPullResponse_Progress
+	//	*RegistryPullResponse_Result
+	Update        isRegistryPullResponse_Update `protobuf_oneof:"Update"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistryPullResponse) Reset() {
+	*x = RegistryPullResponse{}
+	mi := &file_admin_admin_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistryPullResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistryPullResponse) ProtoMessage() {}
+
+func (x *RegistryPullResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistryPullResponse.ProtoReflect.Descriptor instead.
+func (*RegistryPullResponse) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *RegistryPullResponse) GetUpdate() isRegistryPullResponse_Update {
+	if x != nil {
+		return x.Update
+	}
+	return nil
+}
+
+func (x *RegistryPullResponse) GetProgress() *RegistryPullProgress {
+	if x != nil {
+		if x, ok := x.Update.(*RegistryPullResponse_Progress); ok {
+			return x.Progress
+		}
+	}
+	return nil
+}
+
+func (x *RegistryPullResponse) GetResult() *RegistryPullResult {
+	if x != nil {
+		if x, ok := x.Update.(*RegistryPullResponse_Result); ok {
+			return x.Result
+		}
+	}
+	return nil
+}
+
+type isRegistryPullResponse_Update interface {
+	isRegistryPullResponse_Update()
+}
+
+type RegistryPullResponse_Progress struct {
+	Progress *RegistryPullProgress `protobuf:"bytes,1,opt,name=Progress,proto3,oneof"`
+}
+
+type RegistryPullResponse_Result struct {
+	Result *RegistryPullResult `protobuf:"bytes,2,opt,name=Result,proto3,oneof"`
+}
+
+func (*RegistryPullResponse_Progress) isRegistryPullResponse_Update() {}
+
+func (*RegistryPullResponse_Result) isRegistryPullResponse_Update() {}
+
+type ImageInstallRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Manifest      string                 `protobuf:"bytes,1,opt,name=Manifest,proto3" json:"Manifest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImageInstallRequest) Reset() {
+	*x = ImageInstallRequest{}
+	mi := &file_admin_admin_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImageInstallRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImageInstallRequest) ProtoMessage() {}
+
+func (x *ImageInstallRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImageInstallRequest.ProtoReflect.Descriptor instead.
+func (*ImageInstallRequest) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *ImageInstallRequest) GetManifest() string {
+	if x != nil {
+		return x.Manifest
+	}
+	return ""
+}
+
+type ImageInstallResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Finished      bool                   `protobuf:"varint,1,opt,name=Finished,proto3" json:"Finished,omitempty"`
+	Output        *string                `protobuf:"bytes,2,opt,name=Output,proto3,oneof" json:"Output,omitempty"`
+	Error         *string                `protobuf:"bytes,3,opt,name=Error,proto3,oneof" json:"Error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImageInstallResponse) Reset() {
+	*x = ImageInstallResponse{}
+	mi := &file_admin_admin_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImageInstallResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImageInstallResponse) ProtoMessage() {}
+
+func (x *ImageInstallResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImageInstallResponse.ProtoReflect.Descriptor instead.
+func (*ImageInstallResponse) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *ImageInstallResponse) GetFinished() bool {
+	if x != nil {
+		return x.Finished
+	}
+	return false
+}
+
+func (x *ImageInstallResponse) GetOutput() string {
+	if x != nil && x.Output != nil {
+		return *x.Output
+	}
+	return ""
+}
+
+func (x *ImageInstallResponse) GetError() string {
+	if x != nil && x.Error != nil {
+		return *x.Error
+	}
+	return ""
+}
+
 type CtapRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Req           string                 `protobuf:"bytes,1,opt,name=Req,proto3" json:"Req,omitempty"`
@@ -1348,7 +2366,7 @@ type CtapRequest struct {
 
 func (x *CtapRequest) Reset() {
 	*x = CtapRequest{}
-	mi := &file_admin_admin_proto_msgTypes[22]
+	mi := &file_admin_admin_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1360,7 +2378,7 @@ func (x *CtapRequest) String() string {
 func (*CtapRequest) ProtoMessage() {}
 
 func (x *CtapRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[22]
+	mi := &file_admin_admin_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1373,7 +2391,7 @@ func (x *CtapRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CtapRequest.ProtoReflect.Descriptor instead.
 func (*CtapRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{22}
+	return file_admin_admin_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CtapRequest) GetReq() string {
@@ -1406,7 +2424,7 @@ type CtapResponse struct {
 
 func (x *CtapResponse) Reset() {
 	*x = CtapResponse{}
-	mi := &file_admin_admin_proto_msgTypes[23]
+	mi := &file_admin_admin_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1418,7 +2436,7 @@ func (x *CtapResponse) String() string {
 func (*CtapResponse) ProtoMessage() {}
 
 func (x *CtapResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[23]
+	mi := &file_admin_admin_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1431,7 +2449,7 @@ func (x *CtapResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CtapResponse.ProtoReflect.Descriptor instead.
 func (*CtapResponse) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{23}
+	return file_admin_admin_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *CtapResponse) GetOutput() []byte {
@@ -1543,14 +2561,82 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\x06Output\x18\x02 \x01(\tH\x00R\x06Output\x88\x01\x01\x12\x19\n" +
 	"\x05Error\x18\x03 \x01(\tH\x01R\x05Error\x88\x01\x01B\t\n" +
 	"\a_OutputB\b\n" +
+	"\x06_Error\"K\n" +
+	"\x11RegistryBasicAuth\x12\x1a\n" +
+	"\bUsername\x18\x01 \x01(\tR\bUsername\x12\x1a\n" +
+	"\bPassword\x18\x02 \x01(\tR\bPassword\"*\n" +
+	"\x12RegistryBearerAuth\x12\x14\n" +
+	"\x05Token\x18\x01 \x01(\tR\x05Token\"\x84\x01\n" +
+	"\x13RegistryCredentials\x120\n" +
+	"\x05Basic\x18\x01 \x01(\v2\x18.admin.RegistryBasicAuthH\x00R\x05Basic\x123\n" +
+	"\x06Bearer\x18\x02 \x01(\v2\x19.admin.RegistryBearerAuthH\x00R\x06BearerB\x06\n" +
+	"\x04Auth\"q\n" +
+	"\x0fAvailableUpdate\x12\x1e\n" +
+	"\n" +
+	"Repository\x18\x01 \x01(\tR\n" +
+	"Repository\x12\x10\n" +
+	"\x03Tag\x18\x02 \x01(\tR\x03Tag\x12\x18\n" +
+	"\aVersion\x18\x03 \x01(\tR\aVersion\x12\x12\n" +
+	"\x04Hash\x18\x04 \x01(\tR\x04Hash\"\xa6\x01\n" +
+	"\x17RegistryDiscoverRequest\x12\x1c\n" +
+	"\tReference\x18\x01 \x01(\tR\tReference\x12\x1a\n" +
+	"\bInsecure\x18\x02 \x01(\bR\bInsecure\x12A\n" +
+	"\vCredentials\x18\x03 \x01(\v2\x1a.admin.RegistryCredentialsH\x00R\vCredentials\x88\x01\x01B\x0e\n" +
+	"\f_Credentials\"F\n" +
+	"\x18RegistryDiscoverResponse\x12*\n" +
+	"\x04List\x18\x01 \x03(\v2\x16.admin.AvailableUpdateR\x04List\"\xa7\x01\n" +
+	"\x18RegistryChangelogRequest\x12\x1c\n" +
+	"\tReference\x18\x01 \x01(\tR\tReference\x12\x1a\n" +
+	"\bInsecure\x18\x02 \x01(\bR\bInsecure\x12A\n" +
+	"\vCredentials\x18\x03 \x01(\v2\x1a.admin.RegistryCredentialsH\x00R\vCredentials\x88\x01\x01B\x0e\n" +
+	"\f_Credentials\"9\n" +
+	"\x19RegistryChangelogResponse\x12\x1c\n" +
+	"\tChangelog\x18\x01 \x01(\tR\tChangelog\"\xc4\x01\n" +
+	"\x13RegistryPullRequest\x12\x1c\n" +
+	"\tReference\x18\x01 \x01(\tR\tReference\x12 \n" +
+	"\vDestination\x18\x02 \x01(\tR\vDestination\x12\x1a\n" +
+	"\bInsecure\x18\x04 \x01(\bR\bInsecure\x12A\n" +
+	"\vCredentials\x18\x05 \x01(\v2\x1a.admin.RegistryCredentialsH\x00R\vCredentials\x88\x01\x01B\x0e\n" +
+	"\f_Credentials\"V\n" +
+	"\x12RegistryPullResult\x12\x1c\n" +
+	"\tOutputDir\x18\x01 \x01(\tR\tOutputDir\x12\"\n" +
+	"\fManifestPath\x18\x02 \x01(\tR\fManifestPath\"U\n" +
+	"\x13RegistryPullStarted\x12\x1c\n" +
+	"\tReference\x18\x01 \x01(\tR\tReference\x12 \n" +
+	"\vDestination\x18\x02 \x01(\tR\vDestination\"v\n" +
+	"\x17RegistryBlobDownloading\x12\x16\n" +
+	"\x06Digest\x18\x01 \x01(\tR\x06Digest\x12\x1e\n" +
+	"\n" +
+	"Downloaded\x18\x02 \x01(\x04R\n" +
+	"Downloaded\x12\x19\n" +
+	"\x05Total\x18\x03 \x01(\x04H\x00R\x05Total\x88\x01\x01B\b\n" +
+	"\x06_Total\"\xb3\x02\n" +
+	"\x14RegistryPullProgress\x12>\n" +
+	"\vPullStarted\x18\x01 \x01(\v2\x1a.admin.RegistryPullStartedH\x00R\vPullStarted\x12J\n" +
+	"\x0fBlobDownloading\x18\x02 \x01(\v2\x1e.admin.RegistryBlobDownloadingH\x00R\x0fBlobDownloading\x12$\n" +
+	"\fBlobVerified\x18\x03 \x01(\tH\x00R\fBlobVerified\x12*\n" +
+	"\x0fManifestWritten\x18\x04 \x01(\tH\x00R\x0fManifestWritten\x12\x1e\n" +
+	"\tCancelled\x18\x05 \x01(\tH\x00R\tCancelled\x12\x14\n" +
+	"\x04Done\x18\x06 \x01(\bH\x00R\x04DoneB\a\n" +
+	"\x05Event\"\x90\x01\n" +
+	"\x14RegistryPullResponse\x129\n" +
+	"\bProgress\x18\x01 \x01(\v2\x1b.admin.RegistryPullProgressH\x00R\bProgress\x123\n" +
+	"\x06Result\x18\x02 \x01(\v2\x19.admin.RegistryPullResultH\x00R\x06ResultB\b\n" +
+	"\x06Update\"1\n" +
+	"\x13ImageInstallRequest\x12\x1a\n" +
+	"\bManifest\x18\x01 \x01(\tR\bManifest\"\x7f\n" +
+	"\x14ImageInstallResponse\x12\x1a\n" +
+	"\bFinished\x18\x01 \x01(\bR\bFinished\x12\x1b\n" +
+	"\x06Output\x18\x02 \x01(\tH\x00R\x06Output\x88\x01\x01\x12\x19\n" +
+	"\x05Error\x18\x03 \x01(\tH\x01R\x05Error\x88\x01\x01B\t\n" +
+	"\a_OutputB\b\n" +
 	"\x06_Error\"M\n" +
 	"\vCtapRequest\x12\x10\n" +
 	"\x03Req\x18\x01 \x01(\tR\x03Req\x12\x12\n" +
 	"\x04Args\x18\x02 \x03(\tR\x04Args\x12\x18\n" +
 	"\aPayload\x18\x03 \x01(\fR\aPayload\"&\n" +
 	"\fCtapResponse\x12\x16\n" +
-	"\x06Output\x18\x01 \x01(\fR\x06Output2\xe2\n" +
-	"\n" +
+	"\x06Output\x18\x01 \x01(\fR\x06Output2\x95\r\n" +
 	"\fAdminService\x12D\n" +
 	"\x0fRegisterService\x12\x16.admin.RegistryRequest\x1a\x17.admin.RegistryResponse\"\x00\x12E\n" +
 	"\x10StartApplication\x12\x19.admin.ApplicationRequest\x1a\x14.admin.StartResponse\"\x00\x128\n" +
@@ -1571,7 +2657,11 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\tQueryList\x12\f.admin.Empty\x1a\x18.admin.QueryListResponse\"\x00\x12+\n" +
 	"\x05Watch\x12\f.admin.Empty\x1a\x10.admin.WatchItem\"\x000\x01\x12A\n" +
 	"\x0fListGenerations\x12\f.admin.Empty\x1a\x1e.admin.ListGenerationsResponse\"\x00\x12N\n" +
-	"\rSetGeneration\x12\x1b.admin.SetGenerationRequest\x1a\x1c.admin.SetGenerationResponse\"\x000\x01\x12>\n" +
+	"\rSetGeneration\x12\x1b.admin.SetGenerationRequest\x1a\x1c.admin.SetGenerationResponse\"\x000\x01\x12M\n" +
+	"\bDiscover\x12\x1e.admin.RegistryDiscoverRequest\x1a\x1f.admin.RegistryDiscoverResponse\"\x00\x12P\n" +
+	"\tChangelog\x12\x1f.admin.RegistryChangelogRequest\x1a .admin.RegistryChangelogResponse\"\x00\x12C\n" +
+	"\x04Pull\x12\x1a.admin.RegistryPullRequest\x1a\x1b.admin.RegistryPullResponse\"\x000\x01\x12K\n" +
+	"\fImageInstall\x12\x1a.admin.ImageInstallRequest\x1a\x1b.admin.ImageInstallResponse\"\x000\x01\x12>\n" +
 	"\n" +
 	"NotifyUser\x12\x1e.admin.UserNotificationRequest\x1a\x0e.notify.Status\"\x00\x12/\n" +
 	"\x04Ctap\x12\x11.ctap.CtapRequest\x1a\x12.ctap.CtapResponse\"\x00\x121\n" +
@@ -1589,104 +2679,138 @@ func file_admin_admin_proto_rawDescGZIP() []byte {
 	return file_admin_admin_proto_rawDescData
 }
 
-var file_admin_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_admin_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_admin_admin_proto_goTypes = []any{
-	(*TransportConfig)(nil),         // 0: admin.TransportConfig
-	(*RegistryRequest)(nil),         // 1: admin.RegistryRequest
-	(*RegistryResponse)(nil),        // 2: admin.RegistryResponse
-	(*ApplicationRequest)(nil),      // 3: admin.ApplicationRequest
-	(*StatsRequest)(nil),            // 4: admin.StatsRequest
-	(*StartVMRequest)(nil),          // 5: admin.StartVMRequest
-	(*ServiceRequest)(nil),          // 6: admin.ServiceRequest
-	(*StartResponse)(nil),           // 7: admin.StartResponse
-	(*ApplicationResponse)(nil),     // 8: admin.ApplicationResponse
-	(*UnitStatusRequest)(nil),       // 9: admin.UnitStatusRequest
-	(*Empty)(nil),                   // 10: admin.Empty
-	(*QueryListItem)(nil),           // 11: admin.QueryListItem
-	(*QueryListResponse)(nil),       // 12: admin.QueryListResponse
-	(*WatchItem)(nil),               // 13: admin.WatchItem
-	(*LocaleRequest)(nil),           // 14: admin.LocaleRequest
-	(*TimezoneRequest)(nil),         // 15: admin.TimezoneRequest
-	(*UserNotificationRequest)(nil), // 16: admin.UserNotificationRequest
-	(*Generation)(nil),              // 17: admin.Generation
-	(*ListGenerationsResponse)(nil), // 18: admin.ListGenerationsResponse
-	(*SetGenerationRequest)(nil),    // 19: admin.SetGenerationRequest
-	(*Cachix)(nil),                  // 20: admin.Cachix
-	(*SetGenerationResponse)(nil),   // 21: admin.SetGenerationResponse
-	(*CtapRequest)(nil),             // 22: admin.CtapRequest
-	(*CtapResponse)(nil),            // 23: admin.CtapResponse
-	(*systemd.UnitStatus)(nil),      // 24: systemd.UnitStatus
-	(*locale.LocaleAssignment)(nil), // 25: locale.LocaleAssignment
-	(*notify.UserNotification)(nil), // 26: notify.UserNotification
-	(*ctap.CtapRequest)(nil),        // 27: ctap.CtapRequest
-	(*stats.StatsResponse)(nil),     // 28: stats.StatsResponse
-	(*notify.Status)(nil),           // 29: notify.Status
-	(*ctap.CtapResponse)(nil),       // 30: ctap.CtapResponse
-	(*stats.SysinfoResponse)(nil),   // 31: stats.SysinfoResponse
+	(*TransportConfig)(nil),           // 0: admin.TransportConfig
+	(*RegistryRequest)(nil),           // 1: admin.RegistryRequest
+	(*RegistryResponse)(nil),          // 2: admin.RegistryResponse
+	(*ApplicationRequest)(nil),        // 3: admin.ApplicationRequest
+	(*StatsRequest)(nil),              // 4: admin.StatsRequest
+	(*StartVMRequest)(nil),            // 5: admin.StartVMRequest
+	(*ServiceRequest)(nil),            // 6: admin.ServiceRequest
+	(*StartResponse)(nil),             // 7: admin.StartResponse
+	(*ApplicationResponse)(nil),       // 8: admin.ApplicationResponse
+	(*UnitStatusRequest)(nil),         // 9: admin.UnitStatusRequest
+	(*Empty)(nil),                     // 10: admin.Empty
+	(*QueryListItem)(nil),             // 11: admin.QueryListItem
+	(*QueryListResponse)(nil),         // 12: admin.QueryListResponse
+	(*WatchItem)(nil),                 // 13: admin.WatchItem
+	(*LocaleRequest)(nil),             // 14: admin.LocaleRequest
+	(*TimezoneRequest)(nil),           // 15: admin.TimezoneRequest
+	(*UserNotificationRequest)(nil),   // 16: admin.UserNotificationRequest
+	(*Generation)(nil),                // 17: admin.Generation
+	(*ListGenerationsResponse)(nil),   // 18: admin.ListGenerationsResponse
+	(*SetGenerationRequest)(nil),      // 19: admin.SetGenerationRequest
+	(*Cachix)(nil),                    // 20: admin.Cachix
+	(*SetGenerationResponse)(nil),     // 21: admin.SetGenerationResponse
+	(*RegistryBasicAuth)(nil),         // 22: admin.RegistryBasicAuth
+	(*RegistryBearerAuth)(nil),        // 23: admin.RegistryBearerAuth
+	(*RegistryCredentials)(nil),       // 24: admin.RegistryCredentials
+	(*AvailableUpdate)(nil),           // 25: admin.AvailableUpdate
+	(*RegistryDiscoverRequest)(nil),   // 26: admin.RegistryDiscoverRequest
+	(*RegistryDiscoverResponse)(nil),  // 27: admin.RegistryDiscoverResponse
+	(*RegistryChangelogRequest)(nil),  // 28: admin.RegistryChangelogRequest
+	(*RegistryChangelogResponse)(nil), // 29: admin.RegistryChangelogResponse
+	(*RegistryPullRequest)(nil),       // 30: admin.RegistryPullRequest
+	(*RegistryPullResult)(nil),        // 31: admin.RegistryPullResult
+	(*RegistryPullStarted)(nil),       // 32: admin.RegistryPullStarted
+	(*RegistryBlobDownloading)(nil),   // 33: admin.RegistryBlobDownloading
+	(*RegistryPullProgress)(nil),      // 34: admin.RegistryPullProgress
+	(*RegistryPullResponse)(nil),      // 35: admin.RegistryPullResponse
+	(*ImageInstallRequest)(nil),       // 36: admin.ImageInstallRequest
+	(*ImageInstallResponse)(nil),      // 37: admin.ImageInstallResponse
+	(*CtapRequest)(nil),               // 38: admin.CtapRequest
+	(*CtapResponse)(nil),              // 39: admin.CtapResponse
+	(*systemd.UnitStatus)(nil),        // 40: systemd.UnitStatus
+	(*locale.LocaleAssignment)(nil),   // 41: locale.LocaleAssignment
+	(*notify.UserNotification)(nil),   // 42: notify.UserNotification
+	(*ctap.CtapRequest)(nil),          // 43: ctap.CtapRequest
+	(*stats.StatsResponse)(nil),       // 44: stats.StatsResponse
+	(*notify.Status)(nil),             // 45: notify.Status
+	(*ctap.CtapResponse)(nil),         // 46: ctap.CtapResponse
+	(*stats.SysinfoResponse)(nil),     // 47: stats.SysinfoResponse
 }
 var file_admin_admin_proto_depIdxs = []int32{
 	0,  // 0: admin.RegistryRequest.Transport:type_name -> admin.TransportConfig
-	24, // 1: admin.RegistryRequest.State:type_name -> systemd.UnitStatus
+	40, // 1: admin.RegistryRequest.State:type_name -> systemd.UnitStatus
 	11, // 2: admin.QueryListResponse.List:type_name -> admin.QueryListItem
 	12, // 3: admin.WatchItem.Initial:type_name -> admin.QueryListResponse
 	11, // 4: admin.WatchItem.Added:type_name -> admin.QueryListItem
 	11, // 5: admin.WatchItem.Updated:type_name -> admin.QueryListItem
 	11, // 6: admin.WatchItem.Removed:type_name -> admin.QueryListItem
-	25, // 7: admin.LocaleRequest.assignments:type_name -> locale.LocaleAssignment
-	26, // 8: admin.UserNotificationRequest.Notification:type_name -> notify.UserNotification
+	41, // 7: admin.LocaleRequest.assignments:type_name -> locale.LocaleAssignment
+	42, // 8: admin.UserNotificationRequest.Notification:type_name -> notify.UserNotification
 	17, // 9: admin.ListGenerationsResponse.List:type_name -> admin.Generation
 	20, // 10: admin.SetGenerationRequest.Cachix:type_name -> admin.Cachix
-	1,  // 11: admin.AdminService.RegisterService:input_type -> admin.RegistryRequest
-	3,  // 12: admin.AdminService.StartApplication:input_type -> admin.ApplicationRequest
-	5,  // 13: admin.AdminService.StartVM:input_type -> admin.StartVMRequest
-	6,  // 14: admin.AdminService.StartService:input_type -> admin.ServiceRequest
-	6,  // 15: admin.AdminService.StopService:input_type -> admin.ServiceRequest
-	3,  // 16: admin.AdminService.PauseApplication:input_type -> admin.ApplicationRequest
-	3,  // 17: admin.AdminService.ResumeApplication:input_type -> admin.ApplicationRequest
-	3,  // 18: admin.AdminService.StopApplication:input_type -> admin.ApplicationRequest
-	14, // 19: admin.AdminService.SetLocale:input_type -> admin.LocaleRequest
-	15, // 20: admin.AdminService.SetTimezone:input_type -> admin.TimezoneRequest
-	10, // 21: admin.AdminService.Poweroff:input_type -> admin.Empty
-	10, // 22: admin.AdminService.Reboot:input_type -> admin.Empty
-	10, // 23: admin.AdminService.Suspend:input_type -> admin.Empty
-	10, // 24: admin.AdminService.Wakeup:input_type -> admin.Empty
-	9,  // 25: admin.AdminService.GetUnitStatus:input_type -> admin.UnitStatusRequest
-	4,  // 26: admin.AdminService.GetStats:input_type -> admin.StatsRequest
-	10, // 27: admin.AdminService.QueryList:input_type -> admin.Empty
-	10, // 28: admin.AdminService.Watch:input_type -> admin.Empty
-	10, // 29: admin.AdminService.ListGenerations:input_type -> admin.Empty
-	19, // 30: admin.AdminService.SetGeneration:input_type -> admin.SetGenerationRequest
-	16, // 31: admin.AdminService.NotifyUser:input_type -> admin.UserNotificationRequest
-	27, // 32: admin.AdminService.Ctap:input_type -> ctap.CtapRequest
-	10, // 33: admin.AdminService.Sysinfo:input_type -> admin.Empty
-	2,  // 34: admin.AdminService.RegisterService:output_type -> admin.RegistryResponse
-	7,  // 35: admin.AdminService.StartApplication:output_type -> admin.StartResponse
-	7,  // 36: admin.AdminService.StartVM:output_type -> admin.StartResponse
-	7,  // 37: admin.AdminService.StartService:output_type -> admin.StartResponse
-	8,  // 38: admin.AdminService.StopService:output_type -> admin.ApplicationResponse
-	8,  // 39: admin.AdminService.PauseApplication:output_type -> admin.ApplicationResponse
-	8,  // 40: admin.AdminService.ResumeApplication:output_type -> admin.ApplicationResponse
-	8,  // 41: admin.AdminService.StopApplication:output_type -> admin.ApplicationResponse
-	10, // 42: admin.AdminService.SetLocale:output_type -> admin.Empty
-	10, // 43: admin.AdminService.SetTimezone:output_type -> admin.Empty
-	10, // 44: admin.AdminService.Poweroff:output_type -> admin.Empty
-	10, // 45: admin.AdminService.Reboot:output_type -> admin.Empty
-	10, // 46: admin.AdminService.Suspend:output_type -> admin.Empty
-	10, // 47: admin.AdminService.Wakeup:output_type -> admin.Empty
-	24, // 48: admin.AdminService.GetUnitStatus:output_type -> systemd.UnitStatus
-	28, // 49: admin.AdminService.GetStats:output_type -> stats.StatsResponse
-	12, // 50: admin.AdminService.QueryList:output_type -> admin.QueryListResponse
-	13, // 51: admin.AdminService.Watch:output_type -> admin.WatchItem
-	18, // 52: admin.AdminService.ListGenerations:output_type -> admin.ListGenerationsResponse
-	21, // 53: admin.AdminService.SetGeneration:output_type -> admin.SetGenerationResponse
-	29, // 54: admin.AdminService.NotifyUser:output_type -> notify.Status
-	30, // 55: admin.AdminService.Ctap:output_type -> ctap.CtapResponse
-	31, // 56: admin.AdminService.Sysinfo:output_type -> stats.SysinfoResponse
-	34, // [34:57] is the sub-list for method output_type
-	11, // [11:34] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	22, // 11: admin.RegistryCredentials.Basic:type_name -> admin.RegistryBasicAuth
+	23, // 12: admin.RegistryCredentials.Bearer:type_name -> admin.RegistryBearerAuth
+	24, // 13: admin.RegistryDiscoverRequest.Credentials:type_name -> admin.RegistryCredentials
+	25, // 14: admin.RegistryDiscoverResponse.List:type_name -> admin.AvailableUpdate
+	24, // 15: admin.RegistryChangelogRequest.Credentials:type_name -> admin.RegistryCredentials
+	24, // 16: admin.RegistryPullRequest.Credentials:type_name -> admin.RegistryCredentials
+	32, // 17: admin.RegistryPullProgress.PullStarted:type_name -> admin.RegistryPullStarted
+	33, // 18: admin.RegistryPullProgress.BlobDownloading:type_name -> admin.RegistryBlobDownloading
+	34, // 19: admin.RegistryPullResponse.Progress:type_name -> admin.RegistryPullProgress
+	31, // 20: admin.RegistryPullResponse.Result:type_name -> admin.RegistryPullResult
+	1,  // 21: admin.AdminService.RegisterService:input_type -> admin.RegistryRequest
+	3,  // 22: admin.AdminService.StartApplication:input_type -> admin.ApplicationRequest
+	5,  // 23: admin.AdminService.StartVM:input_type -> admin.StartVMRequest
+	6,  // 24: admin.AdminService.StartService:input_type -> admin.ServiceRequest
+	6,  // 25: admin.AdminService.StopService:input_type -> admin.ServiceRequest
+	3,  // 26: admin.AdminService.PauseApplication:input_type -> admin.ApplicationRequest
+	3,  // 27: admin.AdminService.ResumeApplication:input_type -> admin.ApplicationRequest
+	3,  // 28: admin.AdminService.StopApplication:input_type -> admin.ApplicationRequest
+	14, // 29: admin.AdminService.SetLocale:input_type -> admin.LocaleRequest
+	15, // 30: admin.AdminService.SetTimezone:input_type -> admin.TimezoneRequest
+	10, // 31: admin.AdminService.Poweroff:input_type -> admin.Empty
+	10, // 32: admin.AdminService.Reboot:input_type -> admin.Empty
+	10, // 33: admin.AdminService.Suspend:input_type -> admin.Empty
+	10, // 34: admin.AdminService.Wakeup:input_type -> admin.Empty
+	9,  // 35: admin.AdminService.GetUnitStatus:input_type -> admin.UnitStatusRequest
+	4,  // 36: admin.AdminService.GetStats:input_type -> admin.StatsRequest
+	10, // 37: admin.AdminService.QueryList:input_type -> admin.Empty
+	10, // 38: admin.AdminService.Watch:input_type -> admin.Empty
+	10, // 39: admin.AdminService.ListGenerations:input_type -> admin.Empty
+	19, // 40: admin.AdminService.SetGeneration:input_type -> admin.SetGenerationRequest
+	26, // 41: admin.AdminService.Discover:input_type -> admin.RegistryDiscoverRequest
+	28, // 42: admin.AdminService.Changelog:input_type -> admin.RegistryChangelogRequest
+	30, // 43: admin.AdminService.Pull:input_type -> admin.RegistryPullRequest
+	36, // 44: admin.AdminService.ImageInstall:input_type -> admin.ImageInstallRequest
+	16, // 45: admin.AdminService.NotifyUser:input_type -> admin.UserNotificationRequest
+	43, // 46: admin.AdminService.Ctap:input_type -> ctap.CtapRequest
+	10, // 47: admin.AdminService.Sysinfo:input_type -> admin.Empty
+	2,  // 48: admin.AdminService.RegisterService:output_type -> admin.RegistryResponse
+	7,  // 49: admin.AdminService.StartApplication:output_type -> admin.StartResponse
+	7,  // 50: admin.AdminService.StartVM:output_type -> admin.StartResponse
+	7,  // 51: admin.AdminService.StartService:output_type -> admin.StartResponse
+	8,  // 52: admin.AdminService.StopService:output_type -> admin.ApplicationResponse
+	8,  // 53: admin.AdminService.PauseApplication:output_type -> admin.ApplicationResponse
+	8,  // 54: admin.AdminService.ResumeApplication:output_type -> admin.ApplicationResponse
+	8,  // 55: admin.AdminService.StopApplication:output_type -> admin.ApplicationResponse
+	10, // 56: admin.AdminService.SetLocale:output_type -> admin.Empty
+	10, // 57: admin.AdminService.SetTimezone:output_type -> admin.Empty
+	10, // 58: admin.AdminService.Poweroff:output_type -> admin.Empty
+	10, // 59: admin.AdminService.Reboot:output_type -> admin.Empty
+	10, // 60: admin.AdminService.Suspend:output_type -> admin.Empty
+	10, // 61: admin.AdminService.Wakeup:output_type -> admin.Empty
+	40, // 62: admin.AdminService.GetUnitStatus:output_type -> systemd.UnitStatus
+	44, // 63: admin.AdminService.GetStats:output_type -> stats.StatsResponse
+	12, // 64: admin.AdminService.QueryList:output_type -> admin.QueryListResponse
+	13, // 65: admin.AdminService.Watch:output_type -> admin.WatchItem
+	18, // 66: admin.AdminService.ListGenerations:output_type -> admin.ListGenerationsResponse
+	21, // 67: admin.AdminService.SetGeneration:output_type -> admin.SetGenerationResponse
+	27, // 68: admin.AdminService.Discover:output_type -> admin.RegistryDiscoverResponse
+	29, // 69: admin.AdminService.Changelog:output_type -> admin.RegistryChangelogResponse
+	35, // 70: admin.AdminService.Pull:output_type -> admin.RegistryPullResponse
+	37, // 71: admin.AdminService.ImageInstall:output_type -> admin.ImageInstallResponse
+	45, // 72: admin.AdminService.NotifyUser:output_type -> notify.Status
+	46, // 73: admin.AdminService.Ctap:output_type -> ctap.CtapResponse
+	47, // 74: admin.AdminService.Sysinfo:output_type -> stats.SysinfoResponse
+	48, // [48:75] is the sub-list for method output_type
+	21, // [21:48] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_admin_admin_proto_init() }
@@ -1708,13 +2832,34 @@ func file_admin_admin_proto_init() {
 	}
 	file_admin_admin_proto_msgTypes[20].OneofWrappers = []any{}
 	file_admin_admin_proto_msgTypes[21].OneofWrappers = []any{}
+	file_admin_admin_proto_msgTypes[24].OneofWrappers = []any{
+		(*RegistryCredentials_Basic)(nil),
+		(*RegistryCredentials_Bearer)(nil),
+	}
+	file_admin_admin_proto_msgTypes[26].OneofWrappers = []any{}
+	file_admin_admin_proto_msgTypes[28].OneofWrappers = []any{}
+	file_admin_admin_proto_msgTypes[30].OneofWrappers = []any{}
+	file_admin_admin_proto_msgTypes[33].OneofWrappers = []any{}
+	file_admin_admin_proto_msgTypes[34].OneofWrappers = []any{
+		(*RegistryPullProgress_PullStarted)(nil),
+		(*RegistryPullProgress_BlobDownloading)(nil),
+		(*RegistryPullProgress_BlobVerified)(nil),
+		(*RegistryPullProgress_ManifestWritten)(nil),
+		(*RegistryPullProgress_Cancelled)(nil),
+		(*RegistryPullProgress_Done)(nil),
+	}
+	file_admin_admin_proto_msgTypes[35].OneofWrappers = []any{
+		(*RegistryPullResponse_Progress)(nil),
+		(*RegistryPullResponse_Result)(nil),
+	}
+	file_admin_admin_proto_msgTypes[37].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_admin_admin_proto_rawDesc), len(file_admin_admin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

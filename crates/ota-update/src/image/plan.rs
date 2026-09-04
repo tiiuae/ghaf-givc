@@ -8,8 +8,10 @@ use super::lvm::Volume;
 use super::manifest::{File, Manifest};
 use super::pipeline::{CommandSpec, Pipeline};
 use super::runtime::{Runtime, SlotSelection};
-use anyhow::{Context, bail};
+use anyhow::{Context, bail, ensure};
 use std::path::Path;
+
+use super::uki;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plan {
@@ -126,9 +128,10 @@ impl Plan {
     }
 
     fn trial_default_pattern(boot_id: &str) -> anyhow::Result<String> {
-        if !boot_id.starts_with("ghaf-") || !boot_id.ends_with(".efi") {
-            bail!("refusing to activate trial outside the Ghaf A/B UKI namespace: {boot_id}");
-        }
+        ensure!(
+            uki::validate_file_path(boot_id),
+            "refusing to activate trial outside the Ghaf A/B UKI namespace: {boot_id}"
+        );
 
         Ok(format!("{}*.efi", boot_id.trim_end_matches(".efi")))
     }

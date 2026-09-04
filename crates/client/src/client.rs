@@ -19,7 +19,14 @@ use givc_common::types::{EndpointEntry, TransportConfig, UnitStatus, UnitType};
 
 use crate::endpoint::{EndpointConfig, TlsConfig};
 use crate::error::StatusWrapExt;
-use crate::stream::drain_stream_with_callback;
+use crate::stream::{check_trailers, drain_stream_with_callback};
+use crate::update::UpdateClient;
+
+#[derive(Clone, Debug)]
+pub enum RegistryAuth {
+    Basic { username: String, password: String },
+    Bearer { token: String },
+}
 
 type Client = pb::admin_service_client::AdminServiceClient<Channel>;
 
@@ -504,14 +511,8 @@ impl AdminClient {
     /// # Errors
     /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
     pub async fn list_generations(&self) -> anyhow::Result<Vec<Generation>> {
-        let response = self
-            .connect_to()
-            .await?
-            .list_generations(pb::admin::Empty {})
-            .await
-            .rewrap_err()?;
-        let gens = response.into_inner();
-        Ok(gens.list)
+        let mut client = UpdateClient::connect(self.endpoint.clone()).await?;
+        client.list_generations().await
     }
 
     /// Install choosed pinned release from cachix.
@@ -530,19 +531,92 @@ impl AdminClient {
             cache,
             token,
         };
-        let req = pb::admin::SetGenerationRequest {
-            update: Some(pb::set_generation_request::Update::Cachix(cachix)),
-        };
-        let response = self
-            .connect_to()
-            .await?
-            .set_generation(req)
-            .await
-            .rewrap_err()?;
-        let stream = response.into_inner();
+        let mut client = UpdateClient::connect(self.endpoint.clone()).await?;
+        let stream = client.install_cachix(cachix).await?;
         drain_stream_with_callback(stream, async move |next| {
             if let Some(out) = next.output {
                 info!("set_generation: {out}");
+            }
+            Ok(())
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Discover OTA updates in a registry repository.
+    /// # Errors
+    /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
+    pub async fn discover_updates(
+        &self,
+        reference: String,
+        auth: Option<RegistryAuth>,
+        insecure: bool,
+    ) -> anyhow::Result<Vec<pb::admin::AvailableUpdate>> {
+        let mut client = UpdateClient::connect(self.endpoint.clone()).await?;
+        client.discover_updates(reference, auth, insecure).await
+    }
+
+    /// Fetch changelog text for a specific registry tag.
+    /// # Errors
+    /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
+    pub async fn fetch_changelog(
+        &self,
+        reference: String,
+        auth: Option<RegistryAuth>,
+        insecure: bool,
+    ) -> anyhow::Result<String> {
+        let mut client = UpdateClient::connect(self.endpoint.clone()).await?;
+        client.fetch_changelog(reference, auth, insecure).await
+    }
+
+    /// Pull OTA update artifacts from a registry repository.
+    /// # Errors
+    /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
+    pub async fn pull_update<F>(
+        &self,
+        reference: String,
+        destination: String,
+        auth: Option<RegistryAuth>,
+        insecure: bool,
+        mut on_progress: F,
+    ) -> anyhow::Result<pb::admin::RegistryPullResult>
+    where
+        F: AsyncFnMut(pb::admin::RegistryPullProgress),
+    {
+        let mut client = UpdateClient::connect(self.endpoint.clone()).await?;
+        let mut stream = client
+            .pull_update(reference, destination, auth, insecure)
+            .await?;
+
+        let mut result = None;
+        while let Some(message) = stream.message().await.rewrap_err()? {
+            match message.update {
+                Some(pb::registry_pull_response::Update::Progress(progress)) => {
+                    on_progress(progress).await;
+                }
+                Some(pb::registry_pull_response::Update::Result(done)) => {
+                    result = Some(done);
+                }
+                None => {}
+            }
+        }
+
+        check_trailers(stream).await?;
+        result.ok_or_else(|| anyhow::anyhow!("pull stream completed without a result"))
+    }
+
+    /// Install image on ghaf-host from a manifest path.
+    /// # Errors
+    /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
+    pub async fn image_install(&self, manifest: String) -> anyhow::Result<()> {
+        let mut client = UpdateClient::connect(self.endpoint.clone()).await?;
+        let stream = client.image_install(manifest).await?;
+        drain_stream_with_callback(stream, async move |next| {
+            if let Some(out) = next.output {
+                info!("image_install: {out}");
+            }
+            if let Some(err) = next.error {
+                info!("image_install err: {err}");
             }
             Ok(())
         })

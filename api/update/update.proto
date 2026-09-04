@@ -1,0 +1,22 @@
+// Update Service API
+syntax = "proto3";
+option go_package = "givc/modules/api/update";
+
+import "admin/admin.proto";
+
+package update;
+
+service Update {
+    // List installed generations (updates)
+    rpc ListGenerations(admin.Empty) returns (admin.ListGenerationsResponse) {}
+    // Discover available OTA updates in an OCI repository
+    rpc Discover(admin.RegistryDiscoverRequest) returns (admin.RegistryDiscoverResponse) {}
+    // Fetch changelog text for a specific registry tag
+    rpc Changelog(admin.RegistryChangelogRequest) returns (admin.RegistryChangelogResponse) {}
+    // Pull OTA update artifacts from an OCI repository
+    rpc Pull(admin.RegistryPullRequest) returns (stream admin.RegistryPullResponse) {}
+    // Install image on ghaf-host from a manifest path
+    rpc ImageInstall(admin.ImageInstallRequest) returns (stream admin.ImageInstallResponse) {}
+    // Install a pinned release from Cachix
+    rpc InstallCachix(admin.Cachix) returns (stream admin.SetGenerationResponse) {}
+}

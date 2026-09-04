@@ -317,6 +317,7 @@ impl Runtime {
         }
     }
 
+    #[allow(clippy::unused_self)]
     fn stage_slot(
         &self,
         slot: &SlotGroup,

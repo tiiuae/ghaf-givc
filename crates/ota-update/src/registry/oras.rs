@@ -24,7 +24,7 @@ use super::{MediaType, RegistryCredentials, notify, progress};
 const PROGRESS_EVENT_STEP: u64 = 10 * 1024 * 1024;
 // Match rust-oci-client's default push chunk size so one read usually becomes one upload chunk.
 const IO_CHUNK_CAPACITY: usize = 4 * 1024 * 1024;
-const IO_CHUNK_TIMEOUT: Duration = Duration::from_secs(120);
+const IO_CHUNK_TIMEOUT: Duration = Duration::from_mins(2);
 
 #[derive(Debug, thiserror::Error)]
 #[error("operation cancelled")]
