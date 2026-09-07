@@ -239,7 +239,7 @@ func registryCredentials(credentials *pbupdate.RegistryCredentials) []string {
 }
 
 func runUpdateCommand(args ...string) ([]byte, []byte, int, error) {
-	log.WithField("args", strings.Join(args, " ")).Debug("update: running ota-update")
+	log.Debug("update: running ota-update")
 	cmd := exec.Command("ota-update", args...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -248,7 +248,6 @@ func runUpdateCommand(args ...string) ([]byte, []byte, int, error) {
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			log.WithFields(log.Fields{
-				"args":   strings.Join(args, " "),
 				"rc":     exitErr.ExitCode(),
 				"stdout": strings.TrimSpace(stdout.String()),
 				"stderr": strings.TrimSpace(stderr.String()),
@@ -256,14 +255,12 @@ func runUpdateCommand(args ...string) ([]byte, []byte, int, error) {
 			return stdout.Bytes(), stderr.Bytes(), exitErr.ExitCode(), nil
 		}
 		log.WithFields(log.Fields{
-			"args":   strings.Join(args, " "),
 			"stdout": strings.TrimSpace(stdout.String()),
 			"stderr": strings.TrimSpace(stderr.String()),
 		}).Debug("update: ota-update execution failed")
 		return nil, nil, -1, err
 	}
 	log.WithFields(log.Fields{
-		"args":   strings.Join(args, " "),
 		"stdout": strings.TrimSpace(stdout.String()),
 		"stderr": strings.TrimSpace(stderr.String()),
 	}).Debug("update: ota-update exited successfully")
