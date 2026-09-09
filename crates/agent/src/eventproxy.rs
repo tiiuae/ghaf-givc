@@ -337,7 +337,7 @@ pub async fn start_event_proxy_services(config: &AgentConfig) -> Result<()> {
 async fn start_event_proxy_service(config: &AgentConfig, event: EventConfig) -> Result<()> {
     let controller = EventProxyController::new(event.transport.clone());
 
-    if !event.producer {
+    if !event.producer.enabled {
         let listen_addr = event_server_addr(config, &event)?;
         let grpc_service = EventProxyServerServer::new(EventProxyServer { controller });
         let reflect = tonic_reflection::server::Builder::configure()
