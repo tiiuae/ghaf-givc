@@ -13,7 +13,7 @@ fn authorizer_allows_matching_principal_and_unit_name() {
         r#"
         permit (
             principal == Source::"gui-vm",
-            action == Action::"StartApplication",
+            action == Command::"StartApplication",
             resource == Module::"systemd"
         ) when {
             context.UnitName == "app-vm.service"
@@ -42,7 +42,7 @@ fn authorizer_denies_wrong_unit_name() {
         r#"
         permit (
             principal == Source::"gui-vm",
-            action == Action::"StartApplication",
+            action == Command::"StartApplication",
             resource == Module::"systemd"
         ) when {
             context.UnitName == "app-vm.service"

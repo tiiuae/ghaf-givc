@@ -39,7 +39,8 @@ impl Authorizer {
     /// # Errors
     /// Fails if the policy file cannot be read or parsed.
     pub fn new(policy_path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let policy_text = fs::read_to_string(policy_path.as_ref())?;
+        let policy_text =
+            fs::read_to_string(policy_path.as_ref())?.replace("Command::", "Action::");
         let policies = PolicySet::from_str(&policy_text)?;
 
         Ok(Self {
@@ -162,10 +163,11 @@ impl Authorizer {
             return Ok(serde_json::json!({}));
         }
 
+        let body = decode_grpc_body(body_bytes);
         match (module_name, method_name) {
             ("systemd", "StartApplication") => {
-                let request = givc_common::pb::systemd::AppUnitRequest::decode(body_bytes)
-                    .map_err(|err| {
+                let request =
+                    givc_common::pb::systemd::AppUnitRequest::decode(body).map_err(|err| {
                         Status::internal(format!("failed to decode request body: {err}"))
                     })?;
                 Ok(serde_json::json!({
@@ -175,7 +177,7 @@ impl Authorizer {
             }
             ("systemd", _) => {
                 let request =
-                    givc_common::pb::systemd::UnitRequest::decode(body_bytes).map_err(|err| {
+                    givc_common::pb::systemd::UnitRequest::decode(body).map_err(|err| {
                         Status::internal(format!("failed to decode request body: {err}"))
                     })?;
                 Ok(serde_json::json!({
@@ -185,6 +187,16 @@ impl Authorizer {
             _ => Ok(serde_json::json!({})),
         }
     }
+}
+
+fn decode_grpc_body(body: &[u8]) -> &[u8] {
+    if body.len() >= 5 && body[0] <= 1 {
+        let frame_len = u32::from_be_bytes(body[1..5].try_into().unwrap()) as usize;
+        if frame_len == body.len() - 5 {
+            return &body[5..];
+        }
+    }
+    body
 }
 
 #[tonic::async_trait]
@@ -207,6 +219,11 @@ impl RequestInterceptor for Authorizer {
                 "failed to parse module and service from fullMethod: {path}"
             )));
         };
+
+        if module_name == "grpc" {
+            self.authorize(&source, &path, serde_json::json!({}))?;
+            return Ok(HttpRequest::from_parts(parts, body));
+        }
 
         let pool = Self::pool_for_module(module_name)?;
         let Some(service) = pool.get_service_by_name(service_part) else {
@@ -247,7 +264,7 @@ mod tests {
             std::env::temp_dir().join(format!("givc-agent-acl-test-{}.cedar", std::process::id()));
         fs::write(
             &path,
-            r#"permit (principal == Source::"gui-vm", action == Action::"StartApplication", resource == Module::"systemd");"#,
+            r#"permit (principal == Source::"gui-vm", action == Command::"StartApplication", resource == Module::"systemd");"#,
         )
         .expect("policy write");
         path
@@ -265,6 +282,24 @@ mod tests {
                 }
                 .encode_to_vec(),
             )
+            .expect("context");
+
+        assert_eq!(context["UnitName"], "app-vm.service");
+    }
+
+    #[test]
+    fn request_context_decodes_grpc_framed_body() {
+        let authorizer = Authorizer::new(policy_path()).expect("authorizer");
+        let payload = givc_common::pb::systemd::AppUnitRequest {
+            unit_name: "app-vm.service".to_owned(),
+            args: Vec::new(),
+        }
+        .encode_to_vec();
+        let mut framed = vec![0, 0, 0, 0, payload.len() as u8];
+        framed.extend_from_slice(&payload);
+
+        let context = authorizer
+            .request_context("/systemd.UnitControlService/StartApplication", &framed)
             .expect("context");
 
         assert_eq!(context["UnitName"], "app-vm.service");
