@@ -3,6 +3,7 @@
 
 use anyhow::Context;
 
+pub mod access_control;
 pub mod cli;
 pub mod config;
 pub mod ctap;
@@ -37,6 +38,7 @@ pub mod auth {
     #[derive(Clone, Debug)]
     pub struct SecurityInfo {
         enabled: bool,
+        dns_names: Vec<String>,
         ip_addrs: Vec<IpAddr>,
     }
 
@@ -44,6 +46,7 @@ pub mod auth {
         fn new() -> Self {
             Self {
                 enabled: true,
+                dns_names: Vec::new(),
                 ip_addrs: Vec::new(),
             }
         }
@@ -60,6 +63,16 @@ pub mod auth {
         pub fn check_address(&self, ip: &IpAddr) -> bool {
             !self.enabled || self.ip_addrs.iter().any(|candidate| candidate == ip)
         }
+
+        #[must_use]
+        pub fn check_hostname(&self, hostname: &str) -> bool {
+            !self.enabled || self.dns_names.iter().any(|candidate| candidate == hostname)
+        }
+
+        #[must_use]
+        pub fn hostname(&self) -> Option<&str> {
+            self.dns_names.first().map(String::as_str)
+        }
     }
 
     impl TryFrom<&[u8]> for SecurityInfo {
@@ -71,8 +84,9 @@ pub mod auth {
             for ext in x509.extensions() {
                 if let ParsedExtension::SubjectAlternativeName(san) = ext.parsed_extension() {
                     for name in &san.general_names {
-                        if let GeneralName::IPAddress(b) = name {
-                            match b.len() {
+                        match name {
+                            GeneralName::DNSName(s) => this.dns_names.push((*s).to_string()),
+                            GeneralName::IPAddress(b) => match b.len() {
                                 4 => {
                                     let b = <[u8; 4]>::try_from(*b).unwrap();
                                     this.ip_addrs.push(IpAddr::from(b));
@@ -82,7 +96,8 @@ pub mod auth {
                                     this.ip_addrs.push(IpAddr::from(b));
                                 }
                                 _ => (),
-                            }
+                            },
+                            _ => (),
                         }
                     }
                 }
