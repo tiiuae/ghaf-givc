@@ -1435,13 +1435,17 @@ name = "givc-agent"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "cedar-policy",
  "clap",
  "futures-util",
  "givc-client",
  "givc-common",
  "http",
+ "http-body-util",
  "libc",
  "procfs",
+ "prost",
+ "prost-reflect",
  "regex",
  "serde",
  "serde_json",

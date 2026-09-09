@@ -68,6 +68,7 @@ pub mod pb {
         pub const LOCALE_DESCRIPTOR: &[u8] =
             tonic::include_file_descriptor_set!("locale_descriptor");
         pub const HWID_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("hwid_descriptor");
+        pub const STATS_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("stats_descriptor");
         pub const SYSTEMD_DESCRIPTOR: &[u8] =
             tonic::include_file_descriptor_set!("systemd_descriptor");
     }
