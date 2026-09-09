@@ -253,6 +253,28 @@ mod tests {
         assert!(config.capabilities.event_proxy.events.is_empty());
         assert!(config.capabilities.socket_proxy.sockets.is_empty());
     }
+
+    #[test]
+    fn parses_nested_event_proxy_roles() {
+        let json = r#"
+        {
+            "capabilities": {
+                "eventProxy": {
+                    "enable": true,
+                    "events": [{
+                        "producer": {"enable": false},
+                        "consumer": {"enable": true, "permittedSource": "audio-vm"}
+                    }]
+                }
+            }
+        }"#;
+
+        let config: AgentConfig = serde_json::from_str(json).expect("config should parse");
+        let event = &config.capabilities.event_proxy.events[0];
+        assert!(!event.producer.enabled);
+        assert!(event.consumer.enabled);
+        assert_eq!(event.consumer.permitted_source.as_deref(), Some("audio-vm"));
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -375,11 +397,29 @@ pub struct EventConfig {
     #[serde(default)]
     pub transport: TransportConfig,
 
-    #[serde(rename = "producer", default)]
-    pub producer: bool,
+    #[serde(default)]
+    pub producer: ProducerConfig,
+
+    #[serde(default)]
+    pub consumer: ConsumerConfig,
 
     #[serde(default)]
     pub device: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ProducerConfig {
+    #[serde(rename = "enable", default)]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ConsumerConfig {
+    #[serde(rename = "enable", default)]
+    pub enabled: bool,
+
+    #[serde(rename = "permittedSource", default)]
+    pub permitted_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
