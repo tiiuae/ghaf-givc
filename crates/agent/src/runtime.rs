@@ -8,6 +8,7 @@ use tonic::transport::{Server, server::TcpIncoming};
 use tonic_middleware::RequestInterceptorLayer;
 use tracing::info;
 
+use crate::access_control::Authorizer as AccessController;
 use crate::auth::Authenticator;
 use crate::config::AgentConfig;
 use crate::ctap::{CtapService, CtapServiceServer};
@@ -29,6 +30,27 @@ use givc_common::pb::reflection::{
     NOTIFY_DESCRIPTOR, POLICYADMIN_DESCRIPTOR, SOCKET_DESCRIPTOR, SYSTEMD_DESCRIPTOR,
     WIFI_DESCRIPTOR,
 };
+
+#[derive(Clone)]
+struct AgentInterceptor {
+    auth: Authenticator,
+    acl: Option<AccessController>,
+}
+
+#[tonic::async_trait]
+impl tonic_middleware::RequestInterceptor for AgentInterceptor {
+    async fn intercept(
+        &self,
+        req: http::Request<tonic::body::Body>,
+    ) -> Result<http::Request<tonic::body::Body>, tonic::Status> {
+        let req = self.auth.intercept(req).await?;
+        if let Some(acl) = &self.acl {
+            acl.intercept(req).await
+        } else {
+            Ok(req)
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct AgentRuntime {
@@ -104,15 +126,24 @@ impl AgentRuntime {
         let listener = bind_listener_with_retry(self.listen).await?;
         let _ = started_tx.send(());
 
-        let authenticator = RequestInterceptorLayer::new(Authenticator {
-            use_tls: self.config.network.tls_config.is_some(),
+        let interceptor = RequestInterceptorLayer::new(AgentInterceptor {
+            auth: Authenticator {
+                use_tls: self.config.network.tls_config.is_some(),
+            },
+            acl: if self.config.access_control.enabled {
+                Some(AccessController::new(
+                    &self.config.access_control.rules_file,
+                )?)
+            } else {
+                None
+            },
         });
 
         let listener = TcpIncoming::from(listener);
         if let Some(tls) = &self.config.network.tls_config {
             let mut server = Server::builder()
                 .tls_config(tls.server_config()?)?
-                .layer(authenticator)
+                .layer(interceptor.clone())
                 .add_service(reflect);
 
             if self.config.capabilities.exec.enabled {
@@ -179,7 +210,7 @@ impl AgentRuntime {
             server = server.add_optional_service(wifi_service);
             server.serve_with_incoming(listener).await?;
         } else {
-            let mut server = Server::builder().layer(authenticator).add_service(reflect);
+            let mut server = Server::builder().layer(interceptor).add_service(reflect);
 
             if self.config.capabilities.exec.enabled {
                 server = server.add_service(ExecServiceServer::new(ExecService::new()));

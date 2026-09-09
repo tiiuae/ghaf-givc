@@ -10,6 +10,8 @@ version = "0.0.1"
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 futures-util.workspace = true
+cedar-policy.workspace = true
+http-body-util.workspace = true
 givc-client = { path = "../client" }
 givc-common = { path = "../common" }
 libc = "0.2.177"
@@ -19,6 +21,8 @@ sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 http.workspace = true
+prost.workspace = true
+prost-reflect = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = [
   "macros",
   "net",
