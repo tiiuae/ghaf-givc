@@ -36,10 +36,13 @@ let
     # serves refs/pull/* -- and prints the whole fetch to the eval log. Given a
     # hash, crane uses a plain fetchgit derivation instead, so the checkout is
     # substitutable and evaluation stays offline.
+    # Keys must match the dependency's `source` in Cargo.lock verbatim, including the
+    # `?rev=` Cargo adds once Cargo.toml pins a revision: crane looks the hash up as
+    # `outputHashes.${package.source}`, and a key that does not match is ignored.
     # Regenerate after any cargo update that moves a revision: crane reports the
     # expected value as a hash mismatch.
     outputHashes = {
-      "git+https://github.com/oras-project/rust-oci-client#7f8200640b5ca80543421c7ac7c4457a9d1de9e2" =
+      "git+https://github.com/oras-project/rust-oci-client?rev=7f8200640b5ca80543421c7ac7c4457a9d1de9e2#7f8200640b5ca80543421c7ac7c4457a9d1de9e2" =
         "sha256-QjucurMMhQQJcgZor5TdRbvYJcidCeDyME8aPXdvfjM=";
     };
   };
