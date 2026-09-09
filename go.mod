@@ -1,6 +1,6 @@
 module givc
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/cedar-policy/cedar-go v1.8.0
@@ -16,7 +16,7 @@ require (
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/sirupsen/logrus v1.10.2
 	golang.org/x/net v0.58.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
