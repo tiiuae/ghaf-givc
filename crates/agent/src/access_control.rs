@@ -39,8 +39,13 @@ impl Authorizer {
     /// # Errors
     /// Fails if the policy file cannot be read or parsed.
     pub fn new(policy_path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let policy_text =
-            fs::read_to_string(policy_path.as_ref())?.replace("Command::", "Action::");
+        Self::from_str(&fs::read_to_string(policy_path.as_ref())?)
+    }
+
+    /// # Errors
+    /// Fails if the policy text cannot be parsed.
+    pub fn from_str(policy_text: &str) -> anyhow::Result<Self> {
+        let policy_text = policy_text.replace("Command::", "Action::");
         let policies = PolicySet::from_str(&policy_text)?;
 
         Ok(Self {
@@ -259,20 +264,11 @@ impl RequestInterceptor for Authorizer {
 mod tests {
     use super::*;
 
-    fn policy_path() -> std::path::PathBuf {
-        let path =
-            std::env::temp_dir().join(format!("givc-agent-acl-test-{}.cedar", std::process::id()));
-        fs::write(
-            &path,
-            r#"permit (principal == Source::"gui-vm", action == Command::"StartApplication", resource == Module::"systemd");"#,
-        )
-        .expect("policy write");
-        path
-    }
+    const POLICY: &str = r#"permit (principal == Source::"gui-vm", action == Command::"StartApplication", resource == Module::"systemd");"#;
 
     #[test]
     fn request_context_preserves_unit_name() {
-        let authorizer = Authorizer::new(policy_path()).expect("authorizer");
+        let authorizer = Authorizer::from_str(POLICY).expect("authorizer");
         let context = authorizer
             .request_context(
                 "/systemd.UnitControlService/StartApplication",
@@ -289,7 +285,7 @@ mod tests {
 
     #[test]
     fn request_context_decodes_grpc_framed_body() {
-        let authorizer = Authorizer::new(policy_path()).expect("authorizer");
+        let authorizer = Authorizer::from_str(POLICY).expect("authorizer");
         let payload = givc_common::pb::systemd::AppUnitRequest {
             unit_name: "app-vm.service".to_owned(),
             args: Vec::new(),
