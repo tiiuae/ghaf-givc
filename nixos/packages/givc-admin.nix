@@ -11,7 +11,11 @@ let
   craneLib = crane.mkLib pkgs;
 
   protoFilter = path: _type: null != builtins.match ".*proto$" path;
-  protoOrCargo = path: type: (protoFilter path type) || (craneLib.filterCargoSources path type);
+  protoOrCargo =
+    path: type:
+    (protoFilter path type)
+    || (craneLib.filterCargoSources path type)
+    || lib.hasSuffix "/manifest-identifiers.json" path;
   # Common arguments can be set here to avoid repeating them later
   # Note: changes here will rebuild all dependency crates
   commonArgs = {

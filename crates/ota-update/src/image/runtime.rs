@@ -164,6 +164,26 @@ impl Runtime {
         );
         let active = self.active_slot()?;
 
+        // Both fixed system pairs must accommodate the candidate. Reject before
+        // constructing any mutation steps; an update never grows into VG space
+        // reserved for persist. Missing pairs are recreated at active capacity.
+        for slot in &storage_slots {
+            for (volume, required) in [
+                (slot.root.as_ref(), manifest.store.unpacked_size),
+                (slot.verity.as_ref(), manifest.verity.unpacked_size),
+            ] {
+                if let Some(volume) = volume {
+                    let volume = volume.volume();
+                    let capacity = volume.lv_size_bytes.context("unknown system LV capacity")?;
+                    ensure!(
+                        required <= capacity,
+                        "payload requires {required} bytes but {} has fixed capacity {capacity}",
+                        volume.lv_name
+                    );
+                }
+            }
+        }
+
         let incomplete: Vec<_> = storage_slots
             .iter()
             .copied()
@@ -176,8 +196,7 @@ impl Runtime {
                     && !std::ptr::eq(*partial, active),
                 "incomplete A/B slot detected without exactly one active peer"
             );
-            let (slot, pre_steps) =
-                self.complete_partial_staging_slot(partial, manifest, target)?;
+            let (slot, pre_steps) = self.complete_partial_staging_slot(partial, target)?;
             return Ok(SlotSelection::Selected { slot, pre_steps });
         }
         ensure!(
@@ -204,13 +223,13 @@ impl Runtime {
             .iter()
             .find(|slot| slot.is_empty() && !slot.is_active(&self.kernel) && slot.is_complete())
         {
-            let (slot, pre_steps) = self.stage_slot(slot, manifest, target)?;
+            let (slot, pre_steps) = self.stage_slot(slot, target)?;
             return Ok(SlotSelection::Selected { slot, pre_steps });
         }
 
         // 3. A first update creates the one allowed inactive slot.
         if storage_slots.len() == 1 {
-            let (slot, pre_steps) = self.create_empty_slot(manifest)?;
+            let (slot, pre_steps) = self.create_empty_slot()?;
             let slot = slot.attach_uki(Self::trial_uki(target))?;
             return Ok(SlotSelection::Selected { slot, pre_steps });
         }
@@ -220,14 +239,13 @@ impl Runtime {
             .into_iter()
             .find(|slot| !std::ptr::eq(*slot, active))
             .context("no inactive A/B slot available")?;
-        let (slot, pre_steps) = self.stage_slot(inactive, manifest, target)?;
+        let (slot, pre_steps) = self.stage_slot(inactive, target)?;
         Ok(SlotSelection::Selected { slot, pre_steps })
     }
 
     fn complete_partial_staging_slot(
         &self,
         partial: &SlotGroup,
-        manifest: &Manifest,
         target: Version,
     ) -> Result<(SlotGroup, Vec<Pipeline>)> {
         ensure!(
@@ -268,12 +286,13 @@ impl Runtime {
             "staging LV is not in the active A/B volume group"
         );
 
-        let mut pre_steps = Self::resize_steps_for_slot(partial, manifest);
+        let mut pre_steps = Vec::new();
         let (missing_prefix, missing_size) = if partial.root.is_none() {
-            ("root", manifest.store.unpacked_size)
+            ("root", active_root.volume().lv_size_bytes)
         } else {
-            ("verity", manifest.verity.unpacked_size)
+            ("verity", active_verity.volume().lv_size_bytes)
         };
+        let missing_size = missing_size.context("unknown active system LV capacity")?;
         let missing_name = format!("{missing_prefix}_staging_{id}");
         let vg = existing.volume().vg_name.clone();
         pre_steps.push(
@@ -317,18 +336,13 @@ impl Runtime {
         }
     }
 
-    fn stage_slot(
-        &self,
-        slot: &SlotGroup,
-        manifest: &Manifest,
-        target: Version,
-    ) -> Result<(SlotGroup, Vec<Pipeline>)> {
+    fn stage_slot(&self, slot: &SlotGroup, target: Version) -> Result<(SlotGroup, Vec<Pipeline>)> {
         let id = slot
             .empty_id()
             .or(target.hash.as_deref())
             .unwrap_or("inactive")
             .to_owned();
-        let mut pre_steps = Self::resize_steps_for_slot(slot, manifest);
+        let mut pre_steps = Vec::new();
         if let Some(boot) = &slot.boot {
             pre_steps.push(boot.to_remove());
         }
@@ -366,34 +380,8 @@ impl Runtime {
         Ok((group, pre_steps))
     }
 
-    /// Generate `lvresize` steps for an existing empty slot if its LVs are
-    /// smaller than the unpacked images in the manifest.
-    fn resize_steps_for_slot(slot: &SlotGroup, manifest: &Manifest) -> Vec<Pipeline> {
-        [
-            slot.root
-                .as_ref()
-                .map(|slot| (slot, manifest.store.unpacked_size)),
-            slot.verity
-                .as_ref()
-                .map(|slot| (slot, manifest.verity.unpacked_size)),
-        ]
-        .into_iter()
-        .flatten()
-        .map(|(slot, needed)| (slot.volume(), needed))
-        .filter(|(vol, needed)| vol.lv_size_bytes.is_some_and(|cur| cur < *needed))
-        .map(|(vol, needed)| {
-            CommandSpec::new("lvresize")
-                .arg("-f")
-                .args(["-L", &format!("{needed}b")])
-                .arg(format!("{}/{}", vol.vg_name, vol.lv_name))
-                .into()
-        })
-        .collect()
-    }
-
-    /// Create empty root + verity LVs sized for the manifest images,
-    /// falling back to the active slot sizes if `unpacked_size` is not set.
-    fn create_empty_slot(&self, manifest: &Manifest) -> Result<(SlotGroup, Vec<Pipeline>)> {
+    /// Recreate a missing inactive pair at the active pair's fixed capacities.
+    fn create_empty_slot(&self) -> Result<(SlotGroup, Vec<Pipeline>)> {
         let active = self.active_slot()?;
 
         let active_root = active
@@ -411,27 +399,15 @@ impl Runtime {
         let empty_id = self.allocate_empty_identifier()?;
 
         let lv_specs = [
-            (
-                "root",
-                Some(manifest.store.unpacked_size),
-                active_root.lv_size_bytes,
-            ),
-            (
-                "verity",
-                Some(manifest.verity.unpacked_size),
-                active_verity.lv_size_bytes,
-            ),
+            ("root", active_root.lv_size_bytes),
+            ("verity", active_verity.lv_size_bytes),
         ];
 
         let mut pre_steps = Vec::new();
         let mut slots = Vec::new();
 
-        for (prefix, manifest_size, active_size) in lv_specs {
-            let size = manifest_size.or(active_size).with_context(|| {
-                format!(
-                    "cannot determine {prefix} LV size: no unpacked_size in manifest and no active {prefix} size"
-                )
-            })?;
+        for (prefix, active_size) in lv_specs {
+            let size = active_size.context("unknown active system LV capacity")?;
             let lv_name = format!("{prefix}_staging_{empty_id}");
 
             pre_steps.push(
@@ -1062,8 +1038,13 @@ mod tests {
 
         // The slot should be empty (pre-rename)
         assert!(slot.is_empty());
-        assert!(slot.root.is_some());
-        assert!(slot.verity.is_some());
+        let active = rt.active_slot().unwrap();
+        for (created, original) in [(&slot.root, &active.root), (&slot.verity, &active.verity)] {
+            assert_eq!(
+                created.as_ref().unwrap().volume().lv_size_bytes,
+                original.as_ref().unwrap().volume().lv_size_bytes
+            );
+        }
     }
 
     #[test]
@@ -1154,59 +1135,64 @@ mod tests {
     }
 
     #[test]
-    fn resizes_small_empty_slot() {
-        // Empty slot exists but is smaller than the manifest's unpacked_size
-        let mut small_root = Volume::new("root_empty_0");
-        small_root.lv_size_bytes = Some(1_000_000_000); // 1 GB — too small
-        let mut small_verity = Volume::new("verity_empty_0");
-        small_verity.lv_size_bytes = Some(10_000_000); // 10 MB — too small
-
-        let (slots, _) = Slot::from_volumes(vec![small_root, small_verity]);
-        let mut slotgroups = groups(&vec![
-            "root_1.0.0_aaaaaaaaaaaaaaaa",
-            "verity_1.0.0_aaaaaaaaaaaaaaaa",
-        ]);
-        slotgroups.extend(SlotGroup::group_volumes(slots, vec![]).unwrap());
-
-        let rt = Runtime {
-            slotgroups,
-            kernel: KernelParams {
-                revision: Some("1.0.0".into()),
-                store_hash: Some("aaaaaaaaaaaaaaaa".into()),
-            },
-            ..Runtime::default()
-        };
-
-        let m = manifest("2.0.0", "bbbbbbbbbbbbbbbb");
-
-        let SlotSelection::Selected { pre_steps, .. } =
-            rt.select_update_slot(&m).expect("slot expected")
-        else {
-            panic!("Selected expected")
-        };
-
-        // Should have lvresize steps
-        assert_eq!(pre_steps.len(), 4, "expected resize and staging steps");
-        let cmds: Vec<_> = pre_steps.iter().map(|s| s.format_shell()).collect();
-        assert!(
-            cmds[0].contains("lvresize"),
-            "expected lvresize: {}",
-            cmds[0]
-        );
-        assert!(
-            cmds[1].contains("lvresize"),
-            "expected lvresize: {}",
-            cmds[1]
-        );
+    fn rejects_oversized_payloads_before_staging() {
+        for suffix in ["empty_0", "0.9.0_bbbbbbbbbbbbbbbb", "staging_0"] {
+            for kind in ["root", "verity"] {
+                let mut volumes = vec![
+                    Volume::new("root_1.0.0_aaaaaaaaaaaaaaaa"),
+                    Volume::new("verity_1.0.0_aaaaaaaaaaaaaaaa"),
+                    Volume::new(&format!("root_{suffix}")),
+                    Volume::new(&format!("verity_{suffix}")),
+                ];
+                // Also exercise interrupted creation with only one staging LV.
+                if suffix == "staging_0" {
+                    volumes.retain(|v| !v.lv_name.ends_with(suffix) || v.lv_name.starts_with(kind));
+                }
+                let small = volumes
+                    .iter_mut()
+                    .find(|v| v.lv_name == format!("{kind}_{suffix}"))
+                    .unwrap();
+                small.lv_size_bytes = Some(1);
+                let rt = Runtime::new(volumes, "ghaf.revision=1.0.0 ghaf.storehash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", vec![]).unwrap();
+                let error = rt
+                    .select_update_slot(&manifest("2.0.0", "cccccccccccccccc"))
+                    .unwrap_err();
+                assert!(
+                    error.to_string().contains("fixed capacity"),
+                    "{suffix}/{kind}: {error}"
+                );
+            }
+        }
     }
 
     #[test]
-    fn no_resize_when_slot_is_large_enough() {
+    fn rejects_unknown_system_capacity() {
+        let mut volumes = vec![
+            Volume::new("root_1.0.0_aaaaaaaaaaaaaaaa"),
+            Volume::new("verity_1.0.0_aaaaaaaaaaaaaaaa"),
+            Volume::new("root_empty"),
+            Volume::new("verity_empty"),
+        ];
+        volumes[2].lv_size_bytes = None;
+        let rt = Runtime::new(
+            volumes,
+            "ghaf.revision=1.0.0 ghaf.storehash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            vec![],
+        )
+        .unwrap();
+        let error = rt
+            .select_update_slot(&manifest("2.0.0", "cccccccccccccccc"))
+            .unwrap_err();
+        assert!(error.to_string().contains("unknown system LV capacity"));
+    }
+
+    #[test]
+    fn accepts_payloads_at_fixed_capacity() {
         // Empty slot that's already large enough
         let mut big_root = Volume::new("root_empty_0");
-        big_root.lv_size_bytes = Some(10_000_000_000); // 10 GB — big enough
+        big_root.lv_size_bytes = Some(6_000_000_000); // Exactly the manifest root size
         let mut big_verity = Volume::new("verity_empty_0");
-        big_verity.lv_size_bytes = Some(100_000_000); // 100 MB — big enough
+        big_verity.lv_size_bytes = Some(60_000_000); // Exactly the manifest verity size
 
         let (slots, _) = Slot::from_volumes(vec![big_root, big_verity]);
         let mut slotgroups = groups(&vec![

@@ -169,6 +169,12 @@ _: {
                     EOF
                     openssl pkeyutl -sign -rawin -inkey update.key \
                       -in "$out/manifest.json" -out "$out/manifest.json.sig"
+                    for kind in root verity; do
+                      jq --arg kind "$kind" '.[$kind].unpacked_size = 67108865' \
+                        "$out/manifest.json" > "$out/oversized-$kind.json"
+                      openssl pkeyutl -sign -rawin -inkey update.key \
+                        -in "$out/oversized-$kind.json" -out "$out/oversized-$kind.json.sig"
+                    done
                   '';
             in
             ''
@@ -249,6 +255,23 @@ _: {
                   output = machine.succeed("lvs --noheadings -o lv_name pool | sort")
                   assert "root_empty" in output and "verity_empty" in output
                   machine.fail("test -e /boot/EFI/Linux/ghaf-${version}-*.efi")
+
+              with subtest("oversized signed payloads do not resize or write system slots"):
+                  inventory = "lvs --noheadings -o lv_name,lv_size pool | sort"
+                  contents = "sha256sum /dev/pool/root_empty /dev/pool/verity_empty"
+                  before = machine.succeed(inventory)
+                  hashes = machine.succeed(contents)
+                  for kind in ["root", "verity"]:
+                      machine.fail(
+                          f"${ota-update} image install --manifest ${suDir}/oversized-{kind}.json"
+                          f" --signature ${suDir}/oversized-{kind}.json.sig"
+                          " --trusted-key ${suDir}/update.pub --uki-trusted-cert ${suDir}/db.crt"
+                          " --target ${target} --accepted-generation-file /var/lib/ota-test/accepted-generation"
+                          " 2>/tmp/capacity-error"
+                      )
+                      machine.succeed("grep -F 'fixed capacity' /tmp/capacity-error")
+                  assert machine.succeed(inventory) == before
+                  assert machine.succeed(contents) == hashes
 
               with subtest("dry-run install"):
                   output = machine.succeed("${ota-update} image --dry-run install --manifest ${suDir}/manifest.json ${trustArgs}")
