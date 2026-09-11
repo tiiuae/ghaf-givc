@@ -362,7 +362,7 @@ pub(crate) async fn fetch_changelog(
         .context("no changelog layer found for reference")?;
 
     let bytes = timeout(
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         oras::download_blob_to_vec(&client, reference, changelog, credentials, ct),
     )
     .await
@@ -450,23 +450,15 @@ pub async fn push_update_with_feedback(
         .await
         .context("while validating manifest content")?;
 
-    let mut layers = Vec::new();
-    layers.push(layer_input_with_title(
-        manifest.kernel.full_name(base_dir),
-        MediaType::Uki,
-    )?);
-    layers.push(layer_input_with_title(
-        manifest.store.full_name(base_dir),
-        MediaType::Root,
-    )?);
-    layers.push(layer_input_with_title(
-        manifest.verity.full_name(base_dir),
-        MediaType::Verity,
-    )?);
-    layers.push(layer_input_with_title(
-        default_signature_path(&options.manifest_path),
-        MediaType::Signature,
-    )?);
+    let mut layers = vec![
+        layer_input_with_title(manifest.kernel.full_name(base_dir), MediaType::Uki)?,
+        layer_input_with_title(manifest.store.full_name(base_dir), MediaType::Root)?,
+        layer_input_with_title(manifest.verity.full_name(base_dir), MediaType::Verity)?,
+        layer_input_with_title(
+            default_signature_path(&options.manifest_path),
+            MediaType::Signature,
+        )?,
+    ];
 
     if let Some(changelog_path) = &options.changelog_path {
         let title = changelog_path

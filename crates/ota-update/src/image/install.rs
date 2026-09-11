@@ -187,6 +187,9 @@ async fn validate_authenticated_manifest(
 /// Validate manifest v2 structure and artifact hashes without authorizing an
 /// installation. Registry transport smoke tests use this after pull; the image
 /// install path always uses `validate_signed_manifest_path` above.
+///
+/// # Errors
+/// Errors if `manifest_path` has no parent directory or refers to inaccessible files
 pub async fn validate_manifest_path(manifest_path: &Path) -> anyhow::Result<()> {
     let source_dir = manifest_path
         .parent()

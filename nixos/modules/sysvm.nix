@@ -12,6 +12,7 @@ let
   rulesFile = "givc-agent-acl/rules.cedar";
   rulesFilePath = "/etc/${rulesFile}";
   givc-agent = pkgs."givc-agent" or self.packages.${pkgs.system}."givc-agent";
+  ota-update = pkgs."ota-update" or self.packages.${pkgs.system}."ota-update";
   inherit (lib)
     mkIf
     mkOption
@@ -243,6 +244,10 @@ in
         };
       };
 
+      update.enable = mkEnableOption ''
+        update API
+      '';
+
       ctap.enable = mkEnableOption ''
         CTAP interaction module for security token proxy host
       '';
@@ -317,6 +322,9 @@ in
         ++ optionals cfg.capabilities.ctap.enable [
           "ctap"
         ]
+        ++ optionals cfg.capabilities.update.enable [
+          "update"
+        ]
         ++ optionals cfg.capabilities.wifi.enable [
           "wifi"
         ]
@@ -390,7 +398,11 @@ in
         TimeoutStopSec = 5;
         RestartSec = 1;
       };
-      path = [ pkgs.dbus ] ++ lib.optional cfg.capabilities.ctap.enable pkgs.qubes-ctap;
+      path = [
+        pkgs.dbus
+      ]
+      ++ lib.optional cfg.capabilities.update.enable ota-update
+      ++ lib.optional cfg.capabilities.ctap.enable pkgs.qubes-ctap;
     };
     networking.firewall.allowedTCPPorts =
       let

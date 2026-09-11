@@ -6,6 +6,7 @@ import "locale/locale.proto";
 import "systemd/systemd.proto";
 import "notify/notify.proto";
 import "ctap/ctap.proto";
+import "update/update.proto";
 
 package admin;
 
@@ -102,40 +103,6 @@ message UserNotificationRequest {
     notify.UserNotification Notification = 2;
 }
 
-message Generation {
-    int32 Generation = 1;
-    string Date = 2;
-    string NixosVersion = 3;
-    string KernelVersion = 4;
-    string ConfigurationRevision = 5;
-    repeated string Specialisations = 6;
-    bool Current = 7;
-    string StorePath = 8;
-}
-
-message ListGenerationsResponse {
-    repeated Generation List = 1;
-}
-
-message SetGenerationRequest {
-    oneof Update {
-        Cachix Cachix = 1;
-    }
-}
-
-message Cachix {
-    string Pin = 1;
-    optional string CachixHost = 2; // API url for cachix
-    string Cache = 3;
-    optional string Token = 4;
-}
-
-message SetGenerationResponse {
-    bool Finished = 1;
-    optional string Output = 2;
-    optional string Error = 3;
-}
-
 message CtapRequest {
     string Req = 1;
     repeated string Args = 2;
@@ -190,8 +157,12 @@ service AdminService {
     rpc Watch(Empty) returns (stream WatchItem) {}
 
     // OTA
-    rpc ListGenerations(Empty) returns (ListGenerationsResponse) {}
-    rpc SetGeneration(SetGenerationRequest) returns (stream SetGenerationResponse) {}
+    rpc ListGenerations(update.Empty) returns (update.ListGenerationsResponse) {}
+    rpc SetGeneration(update.SetGenerationRequest) returns (stream update.SetGenerationResponse) {}
+    rpc Discover(update.RegistryDiscoverRequest) returns (update.RegistryDiscoverResponse) {}
+    rpc Changelog(update.RegistryChangelogRequest) returns (update.RegistryChangelogResponse) {}
+    rpc Pull(update.RegistryPullRequest) returns (stream update.RegistryPullResponse) {}
+    rpc ImageInstall(update.ImageInstallRequest) returns (stream update.ImageInstallResponse) {}
 
     // Send user notification
     rpc NotifyUser(UserNotificationRequest) returns (notify.Status) {}

@@ -22,10 +22,16 @@ use crate::admin::entry::{Placement, RegistryEntry};
 use crate::admin::policyclient::PolicyAdminClient;
 use crate::admin::registry::Registry;
 use crate::pb::{
-    self, ApplicationRequest, ApplicationResponse, Empty, ListGenerationsResponse, LocaleRequest,
-    QueryListResponse, RegistryRequest, RegistryResponse, SetGenerationRequest,
-    SetGenerationResponse, StartResponse, StartVmRequest, TimezoneRequest, UnitStatusRequest,
-    WatchItem, ctap::CtapRequest, ctap::CtapResponse,
+    self, ApplicationRequest, ApplicationResponse, Empty, LocaleRequest, QueryListResponse,
+    RegistryRequest, RegistryResponse, StartResponse, StartVmRequest, TimezoneRequest,
+    UnitStatusRequest, WatchItem,
+    ctap::CtapRequest,
+    ctap::CtapResponse,
+    update::{
+        ImageInstallRequest, ListGenerationsResponse, RegistryChangelogRequest,
+        RegistryChangelogResponse, RegistryDiscoverRequest, RegistryDiscoverResponse,
+        RegistryPullRequest, SetGenerationRequest,
+    },
 };
 use crate::systemd_api::client::SystemDClient;
 use crate::types::{ServiceType, UnitType, VmType};
@@ -174,6 +180,12 @@ impl AdminServiceImpl {
             service: ServiceType::Mgr,
         })?;
         self.endpoint(&host_mgr).context("Resolving host agent")
+    }
+
+    fn net_vm_endpoint(&self) -> anyhow::Result<EndpointConfig> {
+        let net_vm = VmName::Vm("net-vm").agent_service();
+        self.agent_endpoint(&net_vm)
+            .with_context(|| "Resolving net-vm agent")
     }
 
     fn endpoint(&self, entry: &RegistryEntry) -> anyhow::Result<EndpointConfig> {
@@ -957,7 +969,7 @@ impl pb::admin_service_server::AdminService for AdminService {
     // OTA
     async fn list_generations(
         &self,
-        request: tonic::Request<givc_common::pb::Empty>,
+        request: tonic::Request<crate::pb::update::Empty>,
     ) -> Result<tonic::Response<ListGenerationsResponse>, tonic::Status> {
         escalate(request, async |_| {
             let endpoint = self.inner.host_endpoint()?;
@@ -968,7 +980,63 @@ impl pb::admin_service_server::AdminService for AdminService {
         .await
     }
 
-    type SetGenerationStream = Stream<SetGenerationResponse>;
+    async fn discover(
+        &self,
+        request: tonic::Request<RegistryDiscoverRequest>,
+    ) -> Result<tonic::Response<RegistryDiscoverResponse>, tonic::Status> {
+        escalate(request, async move |req| {
+            let endpoint = self.inner.net_vm_endpoint()?;
+            let ota = super::OTA::OTA::new(endpoint);
+            Ok(RegistryDiscoverResponse {
+                list: ota.discover(req).await?,
+            })
+        })
+        .await
+    }
+
+    async fn changelog(
+        &self,
+        request: tonic::Request<RegistryChangelogRequest>,
+    ) -> Result<tonic::Response<RegistryChangelogResponse>, tonic::Status> {
+        escalate(request, async move |req| {
+            let endpoint = self.inner.net_vm_endpoint()?;
+            let ota = super::OTA::OTA::new(endpoint);
+            Ok(RegistryChangelogResponse {
+                changelog: ota.changelog(req).await?,
+            })
+        })
+        .await
+    }
+
+    type PullStream = super::OTA::PullStream;
+    async fn pull(
+        &self,
+        request: tonic::Request<RegistryPullRequest>,
+    ) -> Result<tonic::Response<Self::PullStream>, tonic::Status> {
+        escalate(request, async move |req| {
+            let endpoint = self.inner.net_vm_endpoint()?;
+            let ota = super::OTA::OTA::new(endpoint);
+            let stream = ota.pull(req).await?;
+            Ok(stream)
+        })
+        .await
+    }
+
+    type ImageInstallStream = super::OTA::ImageInstallStream;
+    async fn image_install(
+        &self,
+        request: tonic::Request<ImageInstallRequest>,
+    ) -> Result<tonic::Response<Self::ImageInstallStream>, tonic::Status> {
+        escalate(request, async move |req| {
+            let endpoint = self.inner.host_endpoint()?;
+            let ota = super::OTA::OTA::new(endpoint);
+            let stream = ota.image_install(req).await?;
+            Ok(stream)
+        })
+        .await
+    }
+
+    type SetGenerationStream = super::OTA::SetGenerationStream;
     async fn set_generation(
         &self,
         request: tonic::Request<SetGenerationRequest>,
@@ -977,7 +1045,7 @@ impl pb::admin_service_server::AdminService for AdminService {
             let endpoint = self.inner.host_endpoint()?;
             let ota = super::OTA::OTA::new(endpoint);
             match req.update {
-                Some(pb::set_generation_request::Update::Cachix(cachix_request)) => {
+                Some(crate::pb::update::set_generation_request::Update::Cachix(cachix_request)) => {
                     let stream = ota.install_via_cachix(cachix_request).await?;
                     Ok(Box::pin(stream) as Self::SetGenerationStream)
                 }

@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
 
+use crate::image::uki;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BootctlAddon {
@@ -95,9 +97,7 @@ pub fn parse_bootctl(json: impl AsRef<[u8]>) -> anyhow::Result<BootctlInfo> {
                 && item
                     .get("path")
                     .and_then(|val| val.as_str())
-                    .and_then(|path| Path::new(path).file_name())
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.starts_with("ghaf-") && name.ends_with(".efi"));
+                    .is_some_and(uki::validate_file_path);
             nixos || managed_uki
         })
         .collect();
