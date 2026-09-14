@@ -94,7 +94,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4087686b4b0a3427190bae57a1d9a478dbb2d40c5dc1bd6e2b6d797913bdd348"
 dependencies = [
- "object",
+ "object 0.37.3",
 ]
 
 [[package]]
@@ -3263,6 +3263,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "object"
+version = "0.40.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd229a0361b9d0d4396176e02d65897f487eebeab7caa6d443855ee152ca0b9c"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "oci-client"
 version = "0.17.0"
 source = "git+https://github.com/oras-project/rust-oci-client?rev=7f8200640b5ca80543421c7ac7c4457a9d1de9e2#7f8200640b5ca80543421c7ac7c4457a9d1de9e2"
@@ -3366,7 +3375,7 @@ dependencies = [
  "futures-util",
  "hex",
  "memmap2",
- "object",
+ "object 0.40.0",
  "oci-client",
  "regex",
  "reqwest",
