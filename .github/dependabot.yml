@@ -21,10 +21,11 @@ updates:
     schedule:
       interval: weekly
     groups:
-      cargo-patches:
+      cargo:
         patterns:
           - "*"
         update-types:
+          - minor
           - patch
 
   - package-ecosystem: gomod
@@ -32,8 +33,9 @@ updates:
     schedule:
       interval: weekly
     groups:
-      gomod-patches:
+      gomod:
         patterns:
           - "*"
         update-types:
+          - minor
           - patch
