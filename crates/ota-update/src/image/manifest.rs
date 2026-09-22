@@ -293,15 +293,27 @@ mod tests {
             "25.12.1-rc1",
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         );
-        manifest.validate_structure().unwrap();
-
-        manifest.target = "../other-target".into();
-        assert!(manifest.validate_structure().is_err());
-        manifest.target = "test-target".into();
-
-        manifest.version = "version with spaces".into();
-        assert!(manifest.validate_structure().is_err());
-        manifest.version.clear();
-        assert!(manifest.validate_structure().is_err());
+        // The Ghaf producer runs this same fixture through its Python validator.
+        let cases: serde_json::Value =
+            serde_json::from_str(include_str!("test/manifest-identifiers.json")).unwrap();
+        for (group, accepted) in [("valid", true), ("invalid", false)] {
+            for value in cases[group].as_array().unwrap() {
+                let value = value.as_str().unwrap();
+                manifest.target = value.into();
+                manifest.version = "25.12.1-rc1".into();
+                assert_eq!(
+                    manifest.validate_structure().is_ok(),
+                    accepted,
+                    "target: {value:?}"
+                );
+                manifest.target = "test-target".into();
+                manifest.version = value.into();
+                assert_eq!(
+                    manifest.validate_structure().is_ok(),
+                    accepted,
+                    "version: {value:?}"
+                );
+            }
+        }
     }
 }
