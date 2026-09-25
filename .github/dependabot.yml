@@ -39,3 +39,27 @@ updates:
         update-types:
           - minor
           - patch
+
+  # Nix flake inputs. Scheduled to match the rest of the repo's weekly cadence,
+  # pinned to Monday morning so a failing bump is waiting at the start of the
+  # week. Grouped into a single PR: ungrouped, each input would open its own PR
+  # and each would run the full VM suite.
+  #
+  # The ci:full-check label is what flake-check.yml keys on, so applying it here
+  # makes Dependabot's flake.lock PRs run `nix flake check` (VM tests included)
+  # without anyone having to label them by hand. check.yml runs on every PR
+  # regardless and covers formatting plus the package builds.
+  - package-ecosystem: nix
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:27"
+      timezone: Etc/UTC
+    labels:
+      - dependencies
+      - "ci:full-check"
+    groups:
+      nix:
+        patterns:
+          - "*"
