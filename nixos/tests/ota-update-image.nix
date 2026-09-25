@@ -5,10 +5,7 @@
 #
 # Exercises the real `ota-update` binary against LUKS2-backed LVM volumes, a
 # real UEFI boot chain (OVMF + systemd-boot), and real bootctl — verifying
-# install, status, idempotency, persist isolation, and removal end-to-end.
-#
-# The VM boots via systemd-boot on OVMF so that the updater can write a real
-# glob-valued LoaderEntryDefault EFI variable, matching production behaviour.
+# install, persist isolation, removal, and trial exhaustion with real EFI boots.
 _: {
   perSystem =
     { self', pkgs, ... }:
@@ -23,6 +20,7 @@ _: {
               virtualisation.useEFIBoot = true;
               boot.loader.systemd-boot.enable = true;
               boot.loader.efi.canTouchEfiVariables = true;
+              systemd.services.systemd-bless-boot.enable = false;
 
               # useBootLoader disables host nix store mounting by default
               virtualisation.mountHostNixStore = true;
@@ -67,28 +65,37 @@ _: {
                   key=/run/ota-test-luks.key
                   printf 'ota-test-manufacturer-key' > "$key"
                   chmod 0600 "$key"
-                  cryptsetup luksFormat --type luks2 --batch-mode --key-file "$key" "$disk"
+                  fresh=false
+                  if ! cryptsetup isLuks "$disk"; then
+                    cryptsetup luksFormat --type luks2 --batch-mode --key-file "$key" "$disk"
+                    fresh=true
+                  fi
                   cryptsetup open --key-file "$key" "$disk" cryptpool
 
-                  pvcreate -f /dev/mapper/cryptpool
-                  vgcreate pool /dev/mapper/cryptpool
+                  if $fresh; then
+                    pvcreate -f /dev/mapper/cryptpool
+                    vgcreate pool /dev/mapper/cryptpool
 
-                  lvcreate -L 64M -n root_0 pool
-                  lvcreate -L 16M -n verity_0 pool
-                  lvcreate -L 64M -n root_empty pool
-                  lvcreate -L 16M -n verity_empty pool
-                  lvcreate -L 32M -n persist pool
-                  lvcreate -L 16M -n swap pool
-                  mkfs.ext4 -q /dev/pool/persist
+                    lvcreate -L 64M -n root_0 pool
+                    lvcreate -L 16M -n verity_0 pool
+                    lvcreate -L 64M -n root_empty pool
+                    lvcreate -L 16M -n verity_empty pool
+                    lvcreate -L 32M -n persist pool
+                    lvcreate -L 16M -n swap pool
+                    mkfs.ext4 -q /dev/pool/persist
+                  fi
+                  vgchange -ay pool
                   mkdir -p /persist
                   mount /dev/pool/persist /persist
-                  printf 'shared-persist-sentinel\n' > /persist/ota-test
+                  if $fresh; then
+                    printf 'shared-persist-sentinel\n' > /persist/ota-test
+                  fi
                 '';
               };
             };
 
           testScript =
-            _:
+            { nodes, ... }:
             let
               ota-update = "${self'.packages.givc-admin.ota}/bin/ota-update";
               version = "25.12.1";
@@ -125,10 +132,11 @@ _: {
                     zstd root.raw -o "$out/ghaf_root_${version}_${artifactId}.raw.zst"
                     zstd verity.raw -o "$out/ghaf_verity_${version}_${artifactId}.raw.zst"
 
-                    printf 'quiet ghaf.storehash=%s ghaf.generation=${toString generation}' "$verity_hash" > cmdline
+                    printf 'init=${nodes.machine.system.build.toplevel}/init ${pkgs.lib.concatStringsSep " " nodes.machine.boot.kernelParams} ghaf.storehash=%s ghaf.generation=${toString generation}' "$verity_hash" > cmdline
                     printf 'ID=ghaf\nIMAGE_ID=ghaf\nIMAGE_VERSION=${version}\n' > os-release
                     ukify build \
-                      --linux=${pkgs.hello}/bin/hello \
+                      --linux=${nodes.machine.system.build.kernel}/bzImage \
+                      --initrd=${nodes.machine.system.build.initialRamdisk}/initrd \
                       --stub=${pkgs.systemd}/lib/systemd/boot/efi/linuxx64.efi.stub \
                       --cmdline=@cmdline \
                       --os-release=@os-release \
@@ -178,6 +186,7 @@ _: {
                   '';
             in
             ''
+              machine.start(allow_reboot=True)
               machine.wait_for_unit("multi-user.target")
               machine.wait_for_unit("setup-lvm.service")
               verity_hash = machine.succeed("jq -r .root_verity_hash ${suDir}/manifest.json").strip()
@@ -188,6 +197,7 @@ _: {
                       "test -e /sys/firmware/efi/efivars/LoaderEntrySelected-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
                   )
                   machine.succeed("bootctl status")
+                  fallback = machine.succeed("bootctl list --json=short | jq -r '.[] | select(.isSelected) | .id'").strip()
 
               with subtest("lvm setup"):
                   machine.succeed("cryptsetup status cryptpool")
@@ -204,6 +214,8 @@ _: {
                   machine.fail(
                       "test -e /sys/firmware/efi/efivars/LoaderEntryDefault-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
                   )
+                  machine.succeed(f"bootctl set-default {fallback}")
+                  default_before = machine.succeed("base64 -w0 /sys/firmware/efi/efivars/LoaderEntryDefault-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f")
 
               with subtest("status before install"):
                   status = machine.succeed("${ota-update} image status")
@@ -292,18 +304,12 @@ _: {
 
                   machine.succeed(f"test -f /boot/EFI/Linux/ghaf-${version}-{hash_fragment}+3.efi")
 
-                  # Legacy bootloader migration uses the secure A/B namespace,
-                  # while trial activation targets only this candidate. The
-                  # wildcard suffix permits fallback after its counter is
-                  # exhausted without allowing equal-version hash ordering to
-                  # select a different entry.
-                  machine.succeed("grep -Fxq 'default ghaf-*.efi' /boot/loader/loader.conf")
-                  machine.succeed(
-                      f"bootctl status --no-pager | grep -F 'Default Entry: ghaf-${version}-{hash_fragment}*.efi'"
-                  )
-                  machine.succeed(
-                      "test -e /sys/firmware/efi/efivars/LoaderEntryDefault-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
-                  )
+                  assert machine.succeed("cat /boot/loader/loader.conf") == loader_conf
+                  assert machine.succeed("base64 -w0 /sys/firmware/efi/efivars/LoaderEntryDefault-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f") == default_before
+                  oneshot = bytes.fromhex(machine.succeed(
+                      "od -An -v -tx1 /sys/firmware/efi/efivars/LoaderEntryOneShot-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
+                  ))[4:].decode("utf-16-le").rstrip("\0")
+                  assert oneshot == f"ghaf-${version}-{hash_fragment}.efi"
 
               with subtest("status after install"):
                   status = machine.succeed("${ota-update} image status")
@@ -348,6 +354,27 @@ _: {
                   status = machine.succeed("${ota-update} image status")
                   print(f"Status after auto-create install:\n{status}")
                   assert "${version}" in status
+                  machine.succeed("grep -qx shared-persist-sentinel /persist/ota-test")
+
+              with subtest("unblessed trials exhaust and return to the original boot entry"):
+                  trial = f"ghaf-${version}-{hash_fragment}"
+                  for attempt in range(1, 4):
+                      if attempt > 1:
+                          machine.succeed(f"bootctl set-oneshot {trial}.efi")
+                      machine.reboot()
+                      machine.wait_for_unit("setup-lvm.service")
+                      machine.succeed("grep -w ghaf.generation=2 /proc/cmdline")
+                      machine.succeed(f"test -f /boot/EFI/Linux/{trial}+{3-attempt}-{attempt}.efi")
+                      machine.fail("test -e /sys/firmware/efi/efivars/LoaderEntryOneShot-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f")
+                      machine.succeed("grep -qx shared-persist-sentinel /persist/ota-test")
+
+                  machine.reboot()
+                  machine.wait_for_unit("setup-lvm.service")
+                  selected = machine.succeed("bootctl list --json=short | jq -r '.[] | select(.isSelected) | .id'").strip()
+                  assert selected == fallback, f"Expected fallback {fallback}, booted {selected}"
+                  machine.fail("grep -w ghaf.generation=2 /proc/cmdline")
+                  machine.succeed(f"test -f /boot/EFI/Linux/{trial}+0-3.efi")
+                  machine.succeed("grep -qx 1 /var/lib/ota-test/accepted-generation")
                   machine.succeed("grep -qx shared-persist-sentinel /persist/ota-test")
             '';
         };

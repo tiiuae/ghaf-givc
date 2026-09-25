@@ -50,8 +50,8 @@ impl Plan {
             SlotSelection::FinalizeBoot { boot_id } => Ok(Plan {
                 steps: vec![
                     CommandSpec::new("bootctl")
-                        .arg("set-default")
-                        .arg(Self::trial_default_pattern(&boot_id)?)
+                        .arg("set-oneshot")
+                        .arg(Self::trial_entry_id(&boot_id)?)
                         .into(),
                 ],
             }),
@@ -109,31 +109,25 @@ impl Plan {
             .context("cannot determine installed UKI entry")?
             .id
             .clone();
-        // Select this trial with a glob rather than its exact entry ID. An
-        // exact LoaderEntryDefault keeps winning after its boot counter reaches
-        // zero, while a glob lets systemd-boot fall back once the counted entry
-        // is exhausted. The glob must still be candidate-specific: a broad
-        // `ghaf-*.efi` default can select an older entry when two updates have
-        // the same OS version and their hash fragments sort differently. The
-        // health gate promotes a successful trial by setting its exact entry as
-        // the default. This is the only boot-state commit and must remain last.
+        // Keep the blessed default for rollback; only this next boot is a trial.
+        // Boot selection is the final transaction step.
         steps.push(
             CommandSpec::new("bootctl")
-                .arg("set-default")
-                .arg(Self::trial_default_pattern(&boot_id)?)
+                .arg("set-oneshot")
+                .arg(Self::trial_entry_id(&boot_id)?)
                 .into(),
         );
 
         Ok(Plan { steps })
     }
 
-    fn trial_default_pattern(boot_id: &str) -> anyhow::Result<String> {
+    fn trial_entry_id(boot_id: &str) -> anyhow::Result<&str> {
         ensure!(
             uki::validate_file_path(boot_id),
             "refusing to activate trial outside the Ghaf A/B UKI namespace: {boot_id}"
         );
 
-        Ok(format!("{}*.efi", boot_id.trim_end_matches(".efi")))
+        Ok(boot_id)
     }
 
     fn install_volume(volume: &Volume, file: &File, source: &Path) -> Pipeline {
@@ -191,11 +185,6 @@ impl Plan {
 
     fn legacy_bootloader_migration(rt: &Runtime) -> Vec<Pipeline> {
         vec![
-            CommandSpec::new("sed")
-                .arg("-i")
-                .arg("s/^default .*/default ghaf-*.efi/")
-                .arg(format!("{}/loader/loader.conf", rt.boot))
-                .into(),
             CommandSpec::new("rm")
                 .arg("-f")
                 .arg(format!("{}/loader/entries.srel", rt.boot))
@@ -303,9 +292,8 @@ mod tests {
             "lvrename pool root_staging_44cc41b403a2d323 root_25.12.1_44cc41b403a2d323",
             "lvrename pool verity_staging_44cc41b403a2d323 verity_25.12.1_44cc41b403a2d323",
             "mkdir -p /boot/EFI/Linux && install -m 0644 /sysupdate/ghaf_kernel_25.12.1_44cc41b403a2d323.efi /boot/EFI/Linux/ghaf-25.12.1-44cc41b403a2d323+3.efi.tmp && sync -f /boot/EFI/Linux/ghaf-25.12.1-44cc41b403a2d323+3.efi.tmp && mv /boot/EFI/Linux/ghaf-25.12.1-44cc41b403a2d323+3.efi.tmp /boot/EFI/Linux/ghaf-25.12.1-44cc41b403a2d323+3.efi && sync -f /boot/EFI/Linux",
-            "sed -i 's/^default .*/default ghaf-*.efi/' /boot/loader/loader.conf",
             "rm -f /boot/loader/entries.srel",
-            "bootctl set-default 'ghaf-25.12.1-44cc41b403a2d323*.efi'",
+            "bootctl set-oneshot ghaf-25.12.1-44cc41b403a2d323.efi",
         ];
 
         let plan = Plan::install(&rt, &m, &Path::new("/sysupdate")).expect("install failed");
@@ -335,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn finalize_existing_trial_sets_candidate_specific_default() {
+    fn finalize_existing_trial_sets_oneshot() {
         let rt = make_test_runtime_installed_with_legacy_active();
         let m = manifest("25.12.1", "deadbeefdeadbeef");
 
@@ -343,18 +331,18 @@ mod tests {
 
         assert_eq!(
             plan.into_script(),
-            ["bootctl set-default 'ghaf-25.12.1-deadbeefdeadbeef*.efi'"]
+            ["bootctl set-oneshot ghaf-25.12.1-deadbeefdeadbeef.efi"]
         );
     }
 
     #[test]
     fn trial_activation_rejects_non_ab_boot_entry() {
         assert_eq!(
-            Plan::trial_default_pattern("ghaf-25.12.1-deadbeefdeadbeef.efi").unwrap(),
-            "ghaf-25.12.1-deadbeefdeadbeef*.efi"
+            Plan::trial_entry_id("ghaf-25.12.1-deadbeefdeadbeef.efi").unwrap(),
+            "ghaf-25.12.1-deadbeefdeadbeef.efi"
         );
-        assert!(Plan::trial_default_pattern("ghaf_kernel_25.12.1_deadbeef.efi").is_err());
-        assert!(Plan::trial_default_pattern("nixos-generation-1.conf").is_err());
+        assert!(Plan::trial_entry_id("ghaf_kernel_25.12.1_deadbeef.efi").is_err());
+        assert!(Plan::trial_entry_id("nixos-generation-1.conf").is_err());
     }
 
     #[test]
