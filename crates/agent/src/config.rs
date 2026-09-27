@@ -245,13 +245,23 @@ mod tests {
                 "notifier": {"enable": false, "socket": ""},
                 "eventProxy": {"enable": false, "events": null},
                 "socketProxy": {"enable": false, "sockets": null},
-                "policy": {"enable": false, "storePath": "", "policies": {}}
+                "policy": {"enable": false, "storePath": "", "policies": {}},
+                "update": {"enable": true, "trustedKey": "/etc/update.pub", "ukiTrustedCert": "/etc/db.crt", "target": "host"}
             }
         }"#;
 
         let config: AgentConfig = serde_json::from_str(json).expect("config should parse");
         assert!(config.capabilities.event_proxy.events.is_empty());
         assert!(config.capabilities.socket_proxy.sockets.is_empty());
+        assert!(config.capabilities.update.enabled);
+        assert_eq!(
+            config.capabilities.update.trusted_key,
+            std::path::Path::new("/etc/update.pub")
+        );
+        assert_eq!(
+            config.capabilities.update.accepted_generation_file,
+            std::path::Path::new("/persist/common/ota/accepted-generation")
+        );
     }
 
     #[test]
@@ -322,6 +332,9 @@ pub struct CapabilitiesConfig {
 
     #[serde(default)]
     pub policy: PolicyConfig,
+
+    #[serde(default)]
+    pub update: UpdateConfig,
 
     #[serde(skip, default)]
     pub units: HashMap<String, u32>,
@@ -454,4 +467,32 @@ pub struct PolicyConfig {
 
     #[serde(default)]
     pub policies: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct UpdateConfig {
+    #[serde(rename = "enable", default)]
+    pub enabled: bool,
+
+    #[serde(rename = "signaturePath", default)]
+    pub signature_path: PathBuf,
+
+    #[serde(rename = "trustedKey", default)]
+    pub trusted_key: PathBuf,
+
+    #[serde(rename = "ukiTrustedCert", default)]
+    pub uki_trusted_cert: PathBuf,
+
+    #[serde(default)]
+    pub target: String,
+
+    #[serde(
+        rename = "acceptedGenerationFile",
+        default = "default_accepted_generation_file"
+    )]
+    pub accepted_generation_file: PathBuf,
+}
+
+fn default_accepted_generation_file() -> PathBuf {
+    "/persist/common/ota/accepted-generation".into()
 }
