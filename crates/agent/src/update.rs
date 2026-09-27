@@ -218,12 +218,16 @@ fn validate_trust(config: &UpdateConfig) -> Result<(), Status> {
 }
 
 fn parse_jsonl_result<T: for<'de> Deserialize<'de>>(stdout: &[u8]) -> Result<T, Status> {
-    stdout
-        .split(|byte| *byte == b'\n')
-        .rev()
-        .filter_map(|line| serde_json::from_slice(line).ok())
-        .next()
-        .ok_or_else(|| Status::internal("ota-update returned no JSON result"))
+    if let Ok(result) = serde_json::from_slice(stdout) {
+        return Ok(result);
+    }
+
+    let start = stdout
+        .iter()
+        .position(|byte| *byte == b'[')
+        .ok_or_else(|| Status::internal("ota-update returned no JSON result"))?;
+    serde_json::from_slice(&stdout[start..])
+        .map_err(|err| Status::internal(format!("failed to parse ota-update result: {err}")))
 }
 
 #[derive(Debug, Deserialize)]
@@ -491,7 +495,7 @@ impl From<GenerationDetails> for Generation {
 
 #[cfg(test)]
 mod tests {
-    use super::{registry_prefix, validate_trust};
+    use super::{parse_jsonl_result, registry_prefix, validate_trust};
     use crate::config::UpdateConfig;
     use givc_common::pb::update::{
         RegistryBasicAuth, RegistryCredentials, RegistryDiscoverRequest,
@@ -535,5 +539,16 @@ mod tests {
                 .code(),
             tonic::Code::FailedPrecondition
         );
+    }
+
+    #[test]
+    fn parses_multiline_json_after_progress_events() {
+        let output = br#"{"event":"done"}
+[
+  {"repository":"repo","tag":"tag","version":"1","hash":"sha256:x"}
+]"#;
+        let result: Vec<super::AvailableUpdateJson> =
+            parse_jsonl_result(output).expect("result should parse");
+        assert_eq!(result[0].tag, "tag");
     }
 }
