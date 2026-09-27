@@ -265,15 +265,42 @@ async fn pull_stream(
     let (tx, rx) = mpsc::channel(16);
     tokio::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
+        let mut output_dir = None;
+        let mut manifest_path = None;
+        let mut saw_result = false;
         while let Ok(Some(line)) = lines.next_line().await {
+            if let Some(path) = line.strip_prefix("pulled to: ") {
+                output_dir = Some(path.to_owned());
+            } else if let Some(path) = line.strip_prefix("manifest: ") {
+                manifest_path = Some(path.to_owned());
+            }
             if let Some(response) = parse_pull_line(&line) {
+                saw_result = matches!(
+                    &response.update,
+                    Some(update::registry_pull_response::Update::Result(_))
+                );
                 if tx.send(Ok(response)).await.is_err() {
                     return;
                 }
             }
         }
         match child.wait().await {
-            Ok(status) if status.success() => {}
+            Ok(status) if status.success() => {
+                if !saw_result {
+                    if let (Some(output_dir), Some(manifest_path)) = (output_dir, manifest_path) {
+                        let _ = tx
+                            .send(Ok(RegistryPullResponse {
+                                update: Some(update::registry_pull_response::Update::Result(
+                                    update::RegistryPullResult {
+                                        output_dir,
+                                        manifest_path,
+                                    },
+                                )),
+                            }))
+                            .await;
+                    }
+                }
+            }
             Ok(status) => {
                 let _ = tx
                     .send(Err(Status::unknown(format!(
