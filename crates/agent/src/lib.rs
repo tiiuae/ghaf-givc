@@ -19,6 +19,7 @@ pub mod service;
 pub mod servicemanager;
 pub mod socketproxy;
 pub mod statsmanager;
+pub mod update;
 pub mod wifimanager;
 
 pub mod auth {
