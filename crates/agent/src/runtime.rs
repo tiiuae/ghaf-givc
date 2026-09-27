@@ -24,11 +24,12 @@ use crate::servicemanager::{
 };
 use crate::socketproxy;
 use crate::statsmanager::{StatsServer, StatsServiceServer};
+use crate::update::{UpdateService, UpdateServiceServer};
 use crate::wifimanager::{WifiService, WifiServiceServerServer};
 use givc_common::pb::reflection::{
     CTAP_DESCRIPTOR, EVENT_DESCRIPTOR, EXEC_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR,
     NOTIFY_DESCRIPTOR, POLICYADMIN_DESCRIPTOR, SOCKET_DESCRIPTOR, SYSTEMD_DESCRIPTOR,
-    WIFI_DESCRIPTOR,
+    UPDATE_DESCRIPTOR, WIFI_DESCRIPTOR,
 };
 
 #[derive(Clone)]
@@ -115,6 +116,7 @@ impl AgentRuntime {
             .register_encoded_file_descriptor_set(SOCKET_DESCRIPTOR)
             .register_encoded_file_descriptor_set(WIFI_DESCRIPTOR)
             .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
+            .register_encoded_file_descriptor_set(UPDATE_DESCRIPTOR)
             .build_v1()?;
 
         info!(
@@ -162,6 +164,16 @@ impl AgentRuntime {
                     None
                 };
             server = server.add_optional_service(policyadmin_service);
+
+            let update_service: Option<UpdateServiceServer> =
+                if self.config.capabilities.update.enabled {
+                    Some(UpdateServiceServer::new(UpdateService::new(
+                        self.config.capabilities.update.clone(),
+                    )))
+                } else {
+                    None
+                };
+            server = server.add_optional_service(update_service);
 
             server = server.add_service(UnitControlServiceServer::new(UnitControlService::new(
                 manager,
@@ -228,6 +240,16 @@ impl AgentRuntime {
                     None
                 };
             server = server.add_optional_service(policyadmin_service);
+
+            let update_service: Option<UpdateServiceServer> =
+                if self.config.capabilities.update.enabled {
+                    Some(UpdateServiceServer::new(UpdateService::new(
+                        self.config.capabilities.update.clone(),
+                    )))
+                } else {
+                    None
+                };
+            server = server.add_optional_service(update_service);
 
             server = server.add_service(UnitControlServiceServer::new(UnitControlService::new(
                 manager,

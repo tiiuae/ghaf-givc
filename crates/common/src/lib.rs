@@ -74,6 +74,8 @@ pub mod pb {
         pub const STATS_DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("stats_descriptor");
         pub const SYSTEMD_DESCRIPTOR: &[u8] =
             tonic::include_file_descriptor_set!("systemd_descriptor");
+        pub const UPDATE_DESCRIPTOR: &[u8] =
+            tonic::include_file_descriptor_set!("update_descriptor");
     }
     // Re-export to keep current code untouched
     pub use crate::pb::admin::*;
