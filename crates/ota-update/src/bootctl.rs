@@ -24,13 +24,13 @@ pub struct BootctlItem {
     pub source: String,
     pub id: String,
     pub path: PathBuf,
-    pub root: PathBuf,
-    pub title: String,
-    pub show_title: String,
-    pub sort_key: String,
-    pub version: String,
+    pub root: Option<PathBuf>,
+    pub title: Option<String>,
+    pub show_title: Option<String>,
+    pub sort_key: Option<String>,
+    pub version: Option<String>,
     pub machine_id: Option<String>,
-    pub options: String,
+    pub options: Option<String>,
     pub linux: Option<PathBuf>,
     pub efi: Option<PathBuf>,
     pub initrd: Option<Vec<PathBuf>>,
@@ -41,7 +41,7 @@ pub struct BootctlItem {
     #[serde(default)]
     pub is_selected: bool,
     pub addons: Option<Vec<BootctlAddon>>,
-    pub cmdline: String,
+    pub cmdline: Option<String>,
 }
 
 type BootctlInfo = Vec<BootctlItem>;
@@ -108,6 +108,7 @@ pub fn parse_bootctl(json: impl AsRef<[u8]>) -> anyhow::Result<BootctlInfo> {
 pub fn find_init(boot_info: &BootctlItem) -> Option<&Path> {
     boot_info
         .cmdline
+        .as_deref()?
         .split_whitespace()
         .find_map(|init| init.strip_prefix("init="))
         .map(Path::new)
@@ -218,6 +219,6 @@ mod tests {
 
         let parsed = parse_bootctl(json).expect("managed Ghaf UKI should parse");
         assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].sort_key, "ghaf");
+        assert_eq!(parsed[0].sort_key, Some("ghaf".into()));
     }
 }

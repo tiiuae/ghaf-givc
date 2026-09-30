@@ -39,6 +39,7 @@ pub struct BootEntry {
 
     pub kind: BootEntryKind,
     pub is_default: bool,
+    pub is_selected: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -157,6 +158,7 @@ impl BootEntry {
                 id,
                 kind,
                 is_default,
+                is_selected: item.is_selected,
             })
         })
     }
@@ -199,6 +201,7 @@ impl From<UkiEntry> for BootEntry {
             id: uki.boot_id(),
             kind: BootEntryKind::Managed(uki),
             is_default: false,
+            is_selected: false,
         }
     }
 }
