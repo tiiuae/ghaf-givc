@@ -1,19 +1,30 @@
 // SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(feature = "debug-closure-updates")]
 use std::ffi::OsStr;
+#[cfg(feature = "debug-closure-updates")]
 use std::path::{Path, PathBuf};
+#[cfg(feature = "debug-closure-updates")]
 use tokio::process::Command;
 
 use anyhow::Context;
+#[cfg(feature = "debug-closure-updates")]
 use cachix_client::{CachixClientConfig, nixos::filter_valid_systems};
-use clap::{ArgAction, Parser, Subcommand};
-use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
+#[cfg(feature = "debug-closure-updates")]
+use clap::ArgAction;
+use clap::{Parser, Subcommand};
+#[cfg(feature = "debug-closure-updates")]
+use ota_update::cli::CachixOptions;
+use ota_update::cli::{QueryUpdates, query_updates};
 use ota_update::image::cli::ImageUpdate;
 use ota_update::profile;
+#[cfg(feature = "debug-closure-updates")]
 use ota_update::query::query_available_updates;
 use ota_update::registry::cli::RegistryCommand;
+#[cfg(feature = "debug-closure-updates")]
 use regex::Regex;
+#[cfg(feature = "debug-closure-updates")]
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -33,6 +44,7 @@ enum Commands {
     Get,
 
     /// Set the configuration value
+    #[cfg(feature = "debug-closure-updates")]
     Local {
         path: Option<PathBuf>,
 
@@ -50,6 +62,7 @@ enum Commands {
     /// Query updates list
     Query(QueryUpdates),
 
+    #[cfg(feature = "debug-closure-updates")]
     Cachix(CachixOptions),
     Image(ImageUpdate),
     Registry(RegistryCommand),
@@ -63,6 +76,7 @@ async fn get_generations() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "debug-closure-updates")]
 fn is_valid_nix_path(path: &Path) -> anyhow::Result<()> {
     let path = path
         .to_str()
@@ -76,6 +90,7 @@ fn is_valid_nix_path(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "debug-closure-updates")]
 async fn set_generation(
     path: &Path,
     sources: &[String],
@@ -134,12 +149,14 @@ async fn set_generation(
     Ok(())
 }
 
+#[cfg(feature = "debug-closure-updates")]
 async fn read_system_boot_json() -> anyhow::Result<String> {
     let contents = tokio::fs::read_to_string("/run/current-system/boot.json").await?;
     let boot_json = serde_json::from_str::<bootspec::v1::GenerationV1>(&contents)?;
     Ok(boot_json.bootspec.system)
 }
 
+#[cfg(feature = "debug-closure-updates")]
 async fn perform_cachix_update(
     pin_name: &str,
     token: Option<String>,
@@ -165,6 +182,7 @@ async fn perform_cachix_update(
     Ok(())
 }
 
+#[cfg(feature = "debug-closure-updates")]
 async fn perform_local_update(
     maybe_path: Option<PathBuf>,
     source: String,
@@ -195,6 +213,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Get => get_generations().await?,
+        #[cfg(feature = "debug-closure-updates")]
         Commands::Local {
             path,
             source,
@@ -204,6 +223,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Query(query) => {
             query_updates(query).await?;
         }
+        #[cfg(feature = "debug-closure-updates")]
         Commands::Cachix(CachixOptions {
             pin_name,
             token,
@@ -218,8 +238,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn closure_update_commands_require_debug_feature() {
+        for command in ["local", "cachix"] {
+            let error = Cli::try_parse_from(["ota-update", command, "--help"]).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                if cfg!(feature = "debug-closure-updates") {
+                    clap::error::ErrorKind::DisplayHelp
+                } else {
+                    clap::error::ErrorKind::InvalidSubcommand
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn image_updates_remain_available() {
+        for command in ["image", "registry"] {
+            let error = Cli::try_parse_from(["ota-update", command, "--help"]).unwrap_err();
+            assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
+        }
+    }
+
+    #[cfg(feature = "debug-closure-updates")]
     use super::is_valid_nix_path;
+    #[cfg(feature = "debug-closure-updates")]
     use std::path::Path;
+    #[cfg(feature = "debug-closure-updates")]
     #[test]
     fn test_validation() -> anyhow::Result<()> {
         let path = Path::new("/nix/store")

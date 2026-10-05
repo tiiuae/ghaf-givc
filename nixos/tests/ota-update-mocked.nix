@@ -61,6 +61,7 @@ let
         '';
         environment.systemPackages = [ pkgs.curl ];
         givc.host.capabilities.update.enable = true;
+        givc.host.closureUpdates = false;
       };
     netvm =
       {

@@ -55,6 +55,7 @@
       imports = [
         ./nixos/checks/treefmt.nix
         ./nixos/checks/vmTests.nix
+        ./nixos/checks/ota-update-policy.nix
         ./devshell.nix
         ./nixos/tests
         ./nixos/cachix
@@ -92,6 +93,7 @@
               givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
               givc-cli = givc-admin.cli;
               ota-update = givc-admin.ota;
+              ota-update-debug = (givc-admin.override { debugClosureUpdates = true; }).ota;
               docs = pkgs.callPackage ./nixos/packages/givc-docs.nix {
                 inherit pkgs lib self;
                 src = ./.;
@@ -144,6 +146,7 @@
             givc-agent = final.callPackage ./nixos/packages/givc-agent.nix { src = goSrc; };
             givc-cli = givc-admin.cli;
             ota-update = givc-admin.ota;
+            ota-update-debug = (givc-admin.override { debugClosureUpdates = true; }).ota;
             ota-update-server = givc-admin.update_server;
             givc-docs = self.packages.${final.stdenv.hostPlatform.system}.docs;
           };
