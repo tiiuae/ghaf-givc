@@ -6,6 +6,7 @@
   crane,
   protobuf,
   src,
+  debugClosureUpdates ? false,
 }:
 let
   craneLib = crane.mkLib pkgs;
@@ -62,6 +63,8 @@ let
         "ota"
       ];
       cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+      cargoExtraArgs =
+        "--locked" + lib.optionalString debugClosureUpdates " --features ota-update/debug-closure-updates";
 
       # Additional environment variables or build phases/hooks can be set
       # here *without* rebuilding all dependency crates

@@ -12,7 +12,11 @@ let
   rulesFile = "givc-agent-acl/rules.cedar";
   rulesFilePath = "/etc/${rulesFile}";
   givc-agent = pkgs."givc-agent" or self.packages.${pkgs.system}."givc-agent";
-  ota-update = pkgs."ota-update" or self.packages.${pkgs.system}."ota-update";
+  ota-update =
+    if cfg.closureUpdates then
+      pkgs."ota-update-debug" or self.packages.${pkgs.system}."ota-update-debug"
+    else
+      pkgs."ota-update" or self.packages.${pkgs.system}."ota-update";
   inherit (lib)
     mkOption
     mkEnableOption
@@ -205,8 +209,8 @@ in
       default = true;
       description = ''
         Whether this host performs closure-based OTA updates
-        (`ota-update cachix` / `local`), which shell out to `nix build` and so
-        require the Nix binary on the target.
+        (`ota-update cachix` / `local`). Selects the debug updater with these
+        commands compiled in and adds the required Nix binary to the target.
 
         Set false on image-based (dm-verity A/B) systems, where updates replace
         whole root images and the store is read-only: `ota-update image` needs
