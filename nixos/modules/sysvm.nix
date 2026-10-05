@@ -244,9 +244,36 @@ in
         };
       };
 
-      update.enable = mkEnableOption ''
-        update API
-      '';
+      update = {
+        enable = mkEnableOption ''
+          update API
+        '';
+        signaturePath = mkOption {
+          type = types.str;
+          default = "";
+          description = "Optional detached manifest signature path for image updates.";
+        };
+        trustedKey = mkOption {
+          type = types.str;
+          default = "";
+          description = "Trusted Ed25519 update key path.";
+        };
+        ukiTrustedCert = mkOption {
+          type = types.str;
+          default = "";
+          description = "Trusted UKI Authenticode certificate path.";
+        };
+        target = mkOption {
+          type = types.str;
+          default = "";
+          description = "Trusted update target identifier.";
+        };
+        acceptedGenerationFile = mkOption {
+          type = types.str;
+          default = "/persist/common/ota/accepted-generation";
+          description = "Trusted rollback state file.";
+        };
+      };
 
       ctap.enable = mkEnableOption ''
         CTAP interaction module for security token proxy host
@@ -391,9 +418,10 @@ in
       wantedBy = [ "givc-setup.target" ];
       serviceConfig = {
         Type = "exec";
+        ExecStartPre = "${pkgs.coreutils}/bin/cat /etc/givc-agent/config.json";
         ExecStart =
-          "${givc-agent}/bin/givc-agent -config /etc/givc-agent/config.json"
-          + optionalString cfg.debug " -debug";
+          "${givc-agent}/bin/givc-agent --config /etc/givc-agent/config.json"
+          + optionalString cfg.debug " --debug";
         Restart = "on-failure";
         TimeoutStopSec = 5;
         RestartSec = 1;
