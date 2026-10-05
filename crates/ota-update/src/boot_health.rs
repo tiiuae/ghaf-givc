@@ -112,43 +112,41 @@ pub(crate) fn write_generation_atomically(path: &Path, generation: NonZeroU64) -
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .context("accepted generation path has no parent")?;
-    fs::create_dir_all(parent).with_context(|| {
-        format!(
-            "creating accepted generation directory {}",
-            parent.display()
-        )
-    })?;
+    let parent_d = parent.display();
+    fs::create_dir_all(parent)
+        .with_context(|| format!("creating accepted generation directory {parent_d}",))?;
     fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
-        .with_context(|| format!("setting permissions on {}", parent.display()))?;
+        .with_context(|| format!("setting permissions on {parent_d}"))?;
 
     let name = path
         .file_name()
         .context("accepted generation path has no file name")?
         .to_string_lossy();
     let temporary = parent.join(format!(".{name}.tmp"));
+    let temporary_d = temporary.display();
     let mut file = OpenOptions::new()
         .create(true)
         .truncate(true)
         .write(true)
         .open(&temporary)
-        .with_context(|| format!("opening {}", temporary.display()))?;
+        .with_context(|| format!("opening {temporary_d}"))?;
     file.set_permissions(fs::Permissions::from_mode(0o600))
-        .with_context(|| format!("setting permissions on {}", temporary.display()))?;
-    writeln!(file, "{generation}").with_context(|| format!("writing {}", temporary.display()))?;
+        .with_context(|| format!("setting permissions on {temporary_d}"))?;
+    writeln!(file, "{generation}").with_context(|| format!("writing {temporary_d}"))?;
     file.sync_all()
-        .with_context(|| format!("syncing {}", temporary.display()))?;
+        .with_context(|| format!("syncing {temporary_d}"))?;
     drop(file);
     fs::rename(&temporary, path).with_context(|| {
         format!(
             "renaming accepted generation {} to {}",
-            temporary.display(),
+            temporary_d,
             path.display()
         )
     })?;
     let directory = OpenOptions::new().read(true).open(parent)?;
     directory
         .sync_all()
-        .with_context(|| format!("syncing {}", parent.display()))?;
+        .with_context(|| format!("syncing {parent_d}"))?;
     Ok(())
 }
 
@@ -157,11 +155,11 @@ async fn evaluate_health_with(
     config: &BootHealthConfig,
 ) -> Result<()> {
     runner
-        .run("cryptsetup", &["status", config.luks_mapper.as_str()])
+        .run("cryptsetup", &["status", &config.luks_mapper])
         .await
         .context("LUKS health check")?;
     runner
-        .run("veritysetup", &["status", config.verity_mapper.as_str()])
+        .run("veritysetup", &["status", &config.verity_mapper])
         .await
         .context("verity health check")?;
     for mountpoint in &config.mountpoints {

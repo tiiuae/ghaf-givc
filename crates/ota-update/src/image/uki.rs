@@ -133,6 +133,7 @@ impl BootEntry {
         items.into_iter().filter_map(|item| {
             let id = item.id;
             let is_default = item.is_default;
+            let is_selected = item.is_selected;
 
             let kind = match item.r#type.as_str() {
                 // UKI entries
@@ -158,7 +159,7 @@ impl BootEntry {
                 id,
                 kind,
                 is_default,
-                is_selected: item.is_selected,
+                is_selected,
             })
         })
     }
