@@ -7,7 +7,8 @@ use tokio::process::Command;
 
 use anyhow::Context;
 use cachix_client::{CachixClientConfig, nixos::filter_valid_systems};
-use clap::{ArgAction, Parser, Subcommand};
+use clap::{ArgAction, Args, Parser, Subcommand};
+use ota_update::boot_health::{self, BootHealthConfig};
 use ota_update::cli::{CachixOptions, QueryUpdates, query_updates};
 use ota_update::image::cli::ImageUpdate;
 use ota_update::profile;
@@ -53,6 +54,50 @@ enum Commands {
     Cachix(CachixOptions),
     Image(ImageUpdate),
     Registry(RegistryCommand),
+    BootHealth(BootHealthOptions),
+}
+
+#[derive(Debug, Args)]
+struct BootHealthOptions {
+    /// LUKS mapper that must be active
+    #[arg(long)]
+    luks_mapper: String,
+
+    /// dm-verity mapper that must be active
+    #[arg(long)]
+    verity_mapper: String,
+
+    /// Mountpoint that must be mounted; repeat for every required mount
+    #[arg(long, required = true)]
+    mountpoint: Vec<PathBuf>,
+
+    /// systemd service that must be active; repeat for every required service
+    #[arg(long, required = true)]
+    service: Vec<String>,
+
+    /// Persistent accepted generation state
+    #[arg(long, default_value = "/persist/common/ota/accepted-generation")]
+    accepted_generation_file: PathBuf,
+
+    /// Print planned mutations without executing them
+    #[arg(long)]
+    dry_run: bool,
+}
+
+impl BootHealthOptions {
+    async fn handle(self) -> anyhow::Result<()> {
+        boot_health::run(
+            BootHealthConfig {
+                luks_mapper: self.luks_mapper,
+                verity_mapper: self.verity_mapper,
+                mountpoints: self.mountpoint,
+                services: self.service,
+                accepted_generation_file: self.accepted_generation_file,
+            },
+            self.dry_run,
+        )
+        .await
+    }
 }
 
 async fn get_generations() -> anyhow::Result<()> {
@@ -212,6 +257,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }) => perform_cachix_update(&pin_name, token, cachix_host, cache).await?,
         Commands::Image(image) => image.handle().await?,
         Commands::Registry(registry) => registry.handle().await?,
+        Commands::BootHealth(options) => options.handle().await?,
     }
     Ok(())
 }
