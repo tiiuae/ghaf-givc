@@ -10,6 +10,7 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use gix::{
     bstr::{BStr, ByteSlice},
+    error::Exn,
     hash::ObjectId,
     object::tree::diff::{Action, Change},
 };
@@ -213,9 +214,12 @@ impl PolicyRepoMonitor {
                 &gix::progress::Discard,
                 &gix::interrupt::IS_INTERRUPTED,
                 opts,
-            )?;
+            )
+            .map_err(Exn::into_error)?;
 
-            index.write(gix::index::write::Options::default())?;
+            index
+                .write(gix::index::write::Options::default())
+                .map_err(Exn::into_error)?;
 
             /* Update Heads */
             state.old_head = state.new_head;
@@ -253,7 +257,7 @@ impl PolicyRepoMonitor {
                 } {
                     let _ = write!(changes_str, "{kind} {}", subject.to_str_lossy());
                 }
-                Ok::<_, std::convert::Infallible>(Action::Continue(()))
+                Ok::<_, Exn>(Action::Continue(()))
             })?;
 
         Ok(changes_str)
