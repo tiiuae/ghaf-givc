@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::{Read, Write};
-use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::process::Stdio;
+use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use givc_common::pb;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::process::Command;
+use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
@@ -76,7 +77,7 @@ impl pb::exec::exec_server::Exec for ExecService {
         if start.stdin.is_some() {
             cmd.stdin(Stdio::piped());
         } else {
-            cmd.stdin(File::open("/dev/null").map_err(|err| Status::internal(err.to_string()))?);
+            cmd.stdin(Stdio::null());
         }
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
@@ -84,7 +85,7 @@ impl pb::exec::exec_server::Exec for ExecService {
         let mut child = cmd
             .spawn()
             .map_err(|err| Status::internal(err.to_string()))?;
-        let pid = child.id() as i32;
+        let pid = child.id().unwrap_or_default() as i32;
 
         if let Some(stdin) = child.stdin.take() {
             stdin_pipe = Some(Arc::new(Mutex::new(stdin)));
@@ -100,32 +101,35 @@ impl pb::exec::exec_server::Exec for ExecService {
 
         if let Some(mut stdout) = child.stdout.take() {
             let tx = tx.clone();
-            std::thread::spawn(move || {
+            tokio::spawn(async move {
                 stream_reader(&mut stdout, tx, |data| pb::exec::CommandResponse {
                     event: Some(pb::exec::command_response::Event::Stdout(
                         pb::exec::CommandIo { payload: data },
                     )),
-                });
+                })
+                .await;
             });
         }
 
         if let Some(mut stderr) = child.stderr.take() {
             let tx = tx.clone();
-            std::thread::spawn(move || {
+            tokio::spawn(async move {
                 stream_reader(&mut stderr, tx, |data| pb::exec::CommandResponse {
                     event: Some(pb::exec::command_response::Event::Stderr(
                         pb::exec::CommandIo { payload: data },
                     )),
-                });
+                })
+                .await;
             });
         }
 
         if let Some(stdin) = stdin_pipe.clone() {
             if let Some(initial) = start.stdin {
                 if !initial.is_empty() {
-                    let mut guard = stdin.lock().expect("stdin poisoned");
+                    let mut guard = stdin.lock().await;
                     guard
                         .write_all(&initial)
+                        .await
                         .map_err(|err| Status::internal(err.to_string()))?;
                 }
             }
@@ -138,9 +142,8 @@ impl pb::exec::exec_server::Exec for ExecService {
                     };
                     match msg.command {
                         Some(pb::exec::command_request::Command::Stdin(stdin_msg)) => {
-                            if let Ok(mut guard) = stdin.lock() {
-                                let _ = guard.write_all(&stdin_msg.payload);
-                            }
+                            let mut guard = stdin.lock().await;
+                            let _ = guard.write_all(&stdin_msg.payload).await;
                         }
                         Some(pb::exec::command_request::Command::Signal(sig)) => {
                             let _ = unsafe { libc::kill(signal_pid, sig.signal) };
@@ -153,38 +156,39 @@ impl pb::exec::exec_server::Exec for ExecService {
         }
 
         let tx = tx.clone();
-        std::thread::spawn(move || {
-            let mut child = child;
-            let status = child.wait();
+        tokio::spawn(async move {
+            let status = child.wait().await;
             let code = match status {
                 Ok(status) => status.code().unwrap_or_default(),
                 Err(_) => 1,
             };
-            let _ = tx.blocking_send(Ok(pb::exec::CommandResponse {
-                event: Some(pb::exec::command_response::Event::Finished(
-                    pb::exec::FinishedEvent { return_code: code },
-                )),
-            }));
+            let _ = tx
+                .send(Ok(pb::exec::CommandResponse {
+                    event: Some(pb::exec::command_response::Event::Finished(
+                        pb::exec::FinishedEvent { return_code: code },
+                    )),
+                }))
+                .await;
         });
 
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 }
 
-fn stream_reader<R, F>(
+async fn stream_reader<R, F>(
     reader: &mut R,
     tx: mpsc::Sender<Result<pb::exec::CommandResponse, Status>>,
     make_response: F,
 ) where
-    R: Read,
+    R: AsyncRead + Unpin,
     F: Fn(Vec<u8>) -> pb::exec::CommandResponse,
 {
     let mut buffer = [0_u8; 1024];
     loop {
-        match reader.read(&mut buffer) {
+        match reader.read(&mut buffer).await {
             Ok(0) => break,
             Ok(n) => {
-                let _ = tx.blocking_send(Ok(make_response(buffer[..n].to_vec())));
+                let _ = tx.send(Ok(make_response(buffer[..n].to_vec()))).await;
             }
             Err(_) => break,
         }
