@@ -115,7 +115,7 @@ where
 }
 
 fn is_root() -> bool {
-    unsafe { libc::geteuid() == 0 }
+    nix::unistd::geteuid().is_root()
 }
 
 fn map_err(err: anyhow::Error) -> Status {

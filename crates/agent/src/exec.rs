@@ -146,7 +146,12 @@ impl pb::exec::exec_server::Exec for ExecService {
                             let _ = guard.write_all(&stdin_msg.payload).await;
                         }
                         Some(pb::exec::command_request::Command::Signal(sig)) => {
-                            let _ = unsafe { libc::kill(signal_pid, sig.signal) };
+                            if let Ok(signal) = nix::sys::signal::Signal::try_from(sig.signal) {
+                                let _ = nix::sys::signal::kill(
+                                    nix::unistd::Pid::from_raw(signal_pid),
+                                    signal,
+                                );
+                            }
                         }
                         Some(pb::exec::command_request::Command::Start(_)) | None => {}
                     }

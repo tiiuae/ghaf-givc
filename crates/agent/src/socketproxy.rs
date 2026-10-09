@@ -3,7 +3,6 @@
 
 use std::fs;
 use std::net::{IpAddr, SocketAddr};
-use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
@@ -478,10 +477,7 @@ fn set_socket_permissions(path: &Path) -> Result<()> {
     fs::set_permissions(path, permissions)
         .with_context(|| format!("unable to chmod socket {}", path.display()))?;
 
-    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes())
-        .context("socket path contains interior nul")?;
-    let rc = unsafe { libc::chown(c_path.as_ptr(), u32::MAX, 100) };
-    if rc != 0 {
+    if nix::unistd::chown(path, None, Some(nix::unistd::Gid::from_raw(100))).is_err() {
         warn!(socket = %path.display(), "unable to change socket ownership");
     }
 

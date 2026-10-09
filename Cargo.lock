@@ -1449,6 +1449,7 @@ dependencies = [
  "http",
  "http-body-util",
  "libc",
+ "nix 0.31.3",
  "procfs",
  "prost",
  "prost-reflect",
