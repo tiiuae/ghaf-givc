@@ -24,6 +24,8 @@ use crate::config::{AgentConfig, ProxyConfig};
 
 pub use pb::socketproxy::socket_stream_server::SocketStreamServer as SocketProxyServerServer;
 
+// NixOS default GID for the users group.
+const USERS_GROUP_GID: u32 = 100;
 const SOCKET_READ_CHUNK_SIZE: usize = 32 * 1024;
 const SOCKET_PROXY_MAX_RETRIES: usize = 10;
 
@@ -477,7 +479,13 @@ fn set_socket_permissions(path: &Path) -> Result<()> {
     fs::set_permissions(path, permissions)
         .with_context(|| format!("unable to chmod socket {}", path.display()))?;
 
-    if nix::unistd::chown(path, None, Some(nix::unistd::Gid::from_raw(100))).is_err() {
+    if nix::unistd::chown(
+        path,
+        None,
+        Some(nix::unistd::Gid::from_raw(USERS_GROUP_GID)),
+    )
+    .is_err()
+    {
         warn!(socket = %path.display(), "unable to change socket ownership");
     }
 
