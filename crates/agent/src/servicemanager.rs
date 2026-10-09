@@ -524,7 +524,7 @@ impl ZbusBackend {
     /// # Errors
     /// Fails if system bus connection cannot be established.
     pub async fn new() -> Result<Self> {
-        let conn = if unsafe { libc::geteuid() } == 0 {
+        let conn = if nix::unistd::geteuid().is_root() {
             zbus::Connection::system().await?
         } else {
             zbus::Connection::session().await?

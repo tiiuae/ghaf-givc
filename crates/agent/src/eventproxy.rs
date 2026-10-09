@@ -115,6 +115,15 @@ const EVIOCGID: libc::c_ulong = ior(b'E' as u32, 0x02, size_of::<libc::input_id>
 const EVIOCGNAME_LEN: usize = 256;
 const EVIOCGNAME: libc::c_ulong = ior(b'E' as u32, 0x06, EVIOCGNAME_LEN as u32);
 
+nix::ioctl_read_bad!(ev_iocgid, EVIOCGID, libc::input_id);
+nix::ioctl_read_bad!(ev_iocgname, EVIOCGNAME, [u8; EVIOCGNAME_LEN]);
+nix::ioctl_none_bad!(ui_dev_create, UI_DEV_CREATE);
+nix::ioctl_none_bad!(ui_dev_destroy, UI_DEV_DESTROY);
+nix::ioctl_write_int_bad!(ui_set_evbit, UI_SET_EVBIT);
+nix::ioctl_write_int_bad!(ui_set_keybit, UI_SET_KEYBIT);
+nix::ioctl_write_int_bad!(ui_set_relbit, UI_SET_RELBIT);
+nix::ioctl_write_int_bad!(ui_set_absbit, UI_SET_ABSBIT);
+
 #[derive(Debug)]
 pub struct EventProxyController {
     transport_config: crate::config::TransportConfig,
@@ -499,7 +508,8 @@ fn endpoint_from_transport(
 }
 
 fn extract_device_info(file: &File) -> Result<pb::eventproxy::DeviceInfo> {
-    let id: libc::input_id = ioctl_read_struct(file.as_raw_fd(), EVIOCGID)?;
+    let mut id = unsafe { zeroed::<libc::input_id>() };
+    unsafe { ev_iocgid(file.as_raw_fd(), &mut id) }?;
     let name = input_device_name_from_fd(file.as_raw_fd())?;
 
     Ok(pb::eventproxy::DeviceInfo {
@@ -516,10 +526,7 @@ fn input_device_name(path: &Path) -> Result<String> {
 
 fn input_device_name_from_fd(fd: libc::c_int) -> Result<String> {
     let mut buf = [0_u8; EVIOCGNAME_LEN];
-    let rc = unsafe { libc::ioctl(fd, EVIOCGNAME, buf.as_mut_ptr()) };
-    if rc < 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
+    unsafe { ev_iocgname(fd, &mut buf) }?;
     let end = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
     Ok(String::from_utf8_lossy(&buf[..end]).to_string())
 }
@@ -556,15 +563,6 @@ fn is_device_disconnect_io(err: &std::io::Error) -> bool {
 
 fn map_err(err: anyhow::Error) -> Status {
     Status::internal(err.to_string())
-}
-
-fn ioctl_read_struct<T: Copy>(fd: libc::c_int, req: libc::c_ulong) -> Result<T> {
-    let mut out: T = unsafe { zeroed() };
-    let rc = unsafe { libc::ioctl(fd, req, &mut out) };
-    if rc < 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    Ok(out)
 }
 
 #[derive(Debug)]
@@ -668,7 +666,7 @@ impl UInputDevice {
 
 impl Drop for UInputDevice {
     fn drop(&mut self) {
-        let _ = unsafe { libc::ioctl(self.file.as_raw_fd(), UI_DEV_DESTROY) };
+        let _ = unsafe { ui_dev_destroy(self.file.as_raw_fd()) };
     }
 }
 
@@ -732,20 +730,21 @@ impl UInputDeviceBuilder {
         device.absmax = self.abs.map(|a| a.maximum);
 
         self.file.write_all(as_bytes(&device))?;
-        let rc = unsafe { libc::ioctl(self.file.as_raw_fd(), UI_DEV_CREATE) };
-        if rc < 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
+        unsafe { ui_dev_create(self.file.as_raw_fd()) }?;
 
         Ok(UInputDevice { file: self.file })
     }
 }
 
 fn ioctl_set_int(fd: libc::c_int, req: libc::c_ulong, value: i32) -> Result<()> {
-    let rc = unsafe { libc::ioctl(fd, req, value) };
-    if rc < 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
+    let result = match req {
+        UI_SET_EVBIT => unsafe { ui_set_evbit(fd, value) },
+        UI_SET_KEYBIT => unsafe { ui_set_keybit(fd, value) },
+        UI_SET_RELBIT => unsafe { ui_set_relbit(fd, value) },
+        UI_SET_ABSBIT => unsafe { ui_set_absbit(fd, value) },
+        _ => bail!("unsupported uinput ioctl request: {req}"),
+    };
+    result?;
     Ok(())
 }
 
