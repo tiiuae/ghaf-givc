@@ -11,6 +11,7 @@ anyhow.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 futures-util.workspace = true
 cedar-policy.workspace = true
+evdev = "0.13.2"
 http-body-util.workspace = true
 givc-client = { path = "../client" }
 givc-common = { path = "../common" }
