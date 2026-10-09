@@ -1,17 +1,18 @@
 // SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::ffi::CString;
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
-use std::mem::{size_of, zeroed};
-use std::os::fd::AsRawFd;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use evdev::uinput::VirtualDevice;
+use evdev::{
+    AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, Device, InputEvent, InputId, KeyCode,
+    RelativeAxisCode, UinputAbsSetup,
+};
 use givc_client::endpoint::EndpointConfig as ClientEndpointConfig;
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
@@ -31,99 +32,6 @@ pub use pb::eventproxy::event_service_server::EventServiceServer as EventProxySe
 
 const UINPUT_NAME_MOUSE: &str = "givc-virtual-mouse";
 const UINPUT_NAME_GAMEPAD: &str = "givc-virtual-gamepad";
-const BUS_USB: u16 = 0x03;
-
-const EV_SYN: u16 = 0x00;
-const EV_KEY: u16 = 0x01;
-const EV_REL: u16 = 0x02;
-const EV_ABS: u16 = 0x03;
-
-const SYN_REPORT: u16 = 0x00;
-
-const REL_X: u16 = 0x00;
-const REL_Y: u16 = 0x01;
-const REL_WHEEL: u16 = 0x08;
-
-const ABS_X: u16 = 0x00;
-const ABS_Y: u16 = 0x01;
-const ABS_Z: u16 = 0x02;
-const ABS_RX: u16 = 0x03;
-const ABS_RY: u16 = 0x04;
-const ABS_RZ: u16 = 0x05;
-const ABS_HAT0X: u16 = 0x10;
-const ABS_HAT0Y: u16 = 0x11;
-
-const BTN_LEFT: u16 = 0x110;
-const BTN_RIGHT: u16 = 0x111;
-const BTN_MIDDLE: u16 = 0x112;
-
-const BTN_SOUTH: u16 = 0x130;
-const BTN_EAST: u16 = 0x131;
-const BTN_C: u16 = 0x132;
-const BTN_NORTH: u16 = 0x133;
-const BTN_WEST: u16 = 0x134;
-const BTN_TL: u16 = 0x136;
-const BTN_TR: u16 = 0x137;
-const BTN_SELECT: u16 = 0x13a;
-const BTN_START: u16 = 0x13b;
-const BTN_MODE: u16 = 0x13c;
-const BTN_THUMBL: u16 = 0x13d;
-const BTN_THUMBR: u16 = 0x13e;
-const BTN_DPAD_UP: u16 = 0x220;
-const BTN_DPAD_DOWN: u16 = 0x221;
-const BTN_DPAD_LEFT: u16 = 0x222;
-const BTN_DPAD_RIGHT: u16 = 0x223;
-
-const IOC_NRBITS: u32 = 8;
-const IOC_TYPEBITS: u32 = 8;
-const IOC_SIZEBITS: u32 = 14;
-
-const IOC_NRSHIFT: u32 = 0;
-const IOC_TYPESHIFT: u32 = IOC_NRSHIFT + IOC_NRBITS;
-const IOC_SIZESHIFT: u32 = IOC_TYPESHIFT + IOC_TYPEBITS;
-const IOC_DIRSHIFT: u32 = IOC_SIZESHIFT + IOC_SIZEBITS;
-
-const IOC_NONE: u32 = 0;
-const IOC_WRITE: u32 = 1;
-const IOC_READ: u32 = 2;
-
-const fn ioc(dir: u32, ty: u32, nr: u32, size: u32) -> libc::c_ulong {
-    ((dir << IOC_DIRSHIFT) | (ty << IOC_TYPESHIFT) | (nr << IOC_NRSHIFT) | (size << IOC_SIZESHIFT))
-        as libc::c_ulong
-}
-
-const fn io(ty: u32, nr: u32) -> libc::c_ulong {
-    ioc(IOC_NONE, ty, nr, 0)
-}
-
-const fn iow(ty: u32, nr: u32, size: u32) -> libc::c_ulong {
-    ioc(IOC_WRITE, ty, nr, size)
-}
-
-const fn ior(ty: u32, nr: u32, size: u32) -> libc::c_ulong {
-    ioc(IOC_READ, ty, nr, size)
-}
-
-const UI_DEV_CREATE: libc::c_ulong = io(b'U' as u32, 1);
-const UI_DEV_DESTROY: libc::c_ulong = io(b'U' as u32, 2);
-const UI_SET_EVBIT: libc::c_ulong = iow(b'U' as u32, 100, size_of::<libc::c_int>() as u32);
-const UI_SET_KEYBIT: libc::c_ulong = iow(b'U' as u32, 101, size_of::<libc::c_int>() as u32);
-const UI_SET_RELBIT: libc::c_ulong = iow(b'U' as u32, 102, size_of::<libc::c_int>() as u32);
-const UI_SET_ABSBIT: libc::c_ulong = iow(b'U' as u32, 103, size_of::<libc::c_int>() as u32);
-
-const EVIOCGID: libc::c_ulong = ior(b'E' as u32, 0x02, size_of::<libc::input_id>() as u32);
-const EVIOCGNAME_LEN: usize = 256;
-const EVIOCGNAME: libc::c_ulong = ior(b'E' as u32, 0x06, EVIOCGNAME_LEN as u32);
-
-nix::ioctl_read_bad!(ev_iocgid, EVIOCGID, libc::input_id);
-nix::ioctl_read_bad!(ev_iocgname, EVIOCGNAME, [u8; EVIOCGNAME_LEN]);
-nix::ioctl_none_bad!(ui_dev_create, UI_DEV_CREATE);
-nix::ioctl_none_bad!(ui_dev_destroy, UI_DEV_DESTROY);
-nix::ioctl_write_int_bad!(ui_set_evbit, UI_SET_EVBIT);
-nix::ioctl_write_int_bad!(ui_set_keybit, UI_SET_KEYBIT);
-nix::ioctl_write_int_bad!(ui_set_relbit, UI_SET_RELBIT);
-nix::ioctl_write_int_bad!(ui_set_absbit, UI_SET_ABSBIT);
-
 #[derive(Debug)]
 pub struct EventProxyController {
     transport_config: crate::config::TransportConfig,
@@ -172,21 +80,18 @@ impl EventProxyController {
         }
     }
 
-    fn open_and_extract(&self, handler: &Path) -> Result<(File, pb::eventproxy::DeviceInfo)> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .open(handler)
+    fn open_and_extract(&self, handler: &Path) -> Result<(Device, pb::eventproxy::DeviceInfo)> {
+        let device = Device::open(handler)
             .with_context(|| format!("event: failed to open input device {}", handler.display()))?;
 
-        let device_info = extract_device_info(&file).with_context(|| {
+        let device_info = extract_device_info(&device).with_context(|| {
             format!(
                 "event: failed to extract device info from {}",
                 handler.display()
             )
         })?;
 
-        Ok((file, device_info))
+        Ok((device, device_info))
     }
 
     fn monitor_input_device(&self, target_device: &str) -> Result<PathBuf> {
@@ -203,9 +108,12 @@ impl EventProxyController {
                     Some(base) if base.starts_with("event") => base,
                     _ => continue,
                 };
-                let name = match input_device_name(&path) {
-                    Ok(name) => name,
-                    Err(_) => continue,
+                let name = match Device::open(&path)
+                    .ok()
+                    .and_then(|device| device.name().map(str::to_owned))
+                {
+                    Some(name) => name,
+                    None => continue,
                 };
                 let lower = name.to_lowercase();
                 if lower.contains("vmmouse") {
@@ -427,14 +335,16 @@ fn run_event_proxy_producer(
 }
 
 fn stream_device_events(
-    dev: &mut File,
+    dev: &mut Device,
     tx: mpsc::Sender<pb::eventproxy::InputEvent>,
 ) -> Result<()> {
     loop {
-        match read_input_event(dev) {
-            Ok(event) => {
-                if tx.blocking_send(input_event_to_message(&event)).is_err() {
-                    return Ok(());
+        match dev.fetch_events() {
+            Ok(events) => {
+                for event in events {
+                    if tx.blocking_send(input_event_to_message(&event)).is_err() {
+                        return Ok(());
+                    }
                 }
             }
             Err(err) if is_device_disconnect_io(&err) => {
@@ -507,51 +417,29 @@ fn endpoint_from_transport(
     })
 }
 
-fn extract_device_info(file: &File) -> Result<pb::eventproxy::DeviceInfo> {
-    let mut id = unsafe { zeroed::<libc::input_id>() };
-    unsafe { ev_iocgid(file.as_raw_fd(), &mut id) }?;
-    let name = input_device_name_from_fd(file.as_raw_fd())?;
+fn extract_device_info(device: &Device) -> Result<pb::eventproxy::DeviceInfo> {
+    let id = device.input_id();
+    let name = device.name().unwrap_or_default().to_owned();
 
     Ok(pb::eventproxy::DeviceInfo {
-        device_id: u32::from(id.product),
-        vendor_id: u32::from(id.vendor),
+        device_id: u32::from(id.product()),
+        vendor_id: u32::from(id.vendor()),
         name,
     })
 }
 
-fn input_device_name(path: &Path) -> Result<String> {
-    let file = OpenOptions::new().read(true).open(path)?;
-    input_device_name_from_fd(file.as_raw_fd())
-}
-
-fn input_device_name_from_fd(fd: libc::c_int) -> Result<String> {
-    let mut buf = [0_u8; EVIOCGNAME_LEN];
-    unsafe { ev_iocgname(fd, &mut buf) }?;
-    let end = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
-    Ok(String::from_utf8_lossy(&buf[..end]).to_string())
-}
-
-fn read_input_event(dev: &mut File) -> std::io::Result<libc::input_event> {
-    let mut buf = vec![0_u8; size_of::<libc::input_event>()];
-    dev.read_exact(&mut buf)?;
-    let event = unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const libc::input_event) };
-    Ok(event)
-}
-
-fn input_event_to_message(event: &libc::input_event) -> pb::eventproxy::InputEvent {
-    let timestamp = timeval_to_nanos(&event.time);
+fn input_event_to_message(event: &InputEvent) -> pb::eventproxy::InputEvent {
+    let timestamp = event
+        .timestamp()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos().min(i64::MAX as u128) as i64)
+        .unwrap_or_default();
     pb::eventproxy::InputEvent {
         timestamp,
-        r#type: u32::from(event.type_),
-        code: u32::from(event.code),
-        value: event.value,
+        r#type: u32::from(event.event_type().0),
+        code: u32::from(event.code()),
+        value: event.value(),
     }
-}
-
-fn timeval_to_nanos(tv: &libc::timeval) -> i64 {
-    (tv.tv_sec as i64)
-        .saturating_mul(1_000_000_000)
-        .saturating_add((tv.tv_usec as i64).saturating_mul(1_000))
 }
 
 fn is_device_disconnect_io(err: &std::io::Error) -> bool {
@@ -567,189 +455,84 @@ fn map_err(err: anyhow::Error) -> Status {
 
 #[derive(Debug)]
 struct UInputDevice {
-    file: File,
+    device: VirtualDevice,
 }
 
 impl UInputDevice {
     fn new_mouse(name: &str) -> Result<Self> {
-        Self::new(name, |dev| {
-            dev.enable_evbit(EV_KEY)?;
-            dev.enable_evbit(EV_REL)?;
-            dev.enable_keybit(BTN_LEFT)?;
-            dev.enable_keybit(BTN_RIGHT)?;
-            dev.enable_keybit(BTN_MIDDLE)?;
-            dev.enable_relbit(REL_X)?;
-            dev.enable_relbit(REL_Y)?;
-            dev.enable_relbit(REL_WHEEL)?;
-            Ok(())
-        })
+        let mut keys = AttributeSet::<KeyCode>::new();
+        for key in [KeyCode::BTN_LEFT, KeyCode::BTN_RIGHT, KeyCode::BTN_MIDDLE] {
+            keys.insert(key);
+        }
+        let mut axes = AttributeSet::<RelativeAxisCode>::new();
+        for axis in [
+            RelativeAxisCode::REL_X,
+            RelativeAxisCode::REL_Y,
+            RelativeAxisCode::REL_WHEEL,
+        ] {
+            axes.insert(axis);
+        }
+        let device = VirtualDevice::builder()?
+            .name(name)
+            .input_id(InputId::new(BusType::BUS_USB, 1, 1, 1))
+            .with_keys(&keys)?
+            .with_relative_axes(&axes)?
+            .build()?;
+        Ok(Self { device })
     }
 
     fn new_gamepad(name: &str) -> Result<Self> {
-        Self::new(name, |dev| {
-            dev.enable_evbit(EV_KEY)?;
-            dev.enable_evbit(EV_ABS)?;
-
-            for code in [
-                BTN_SOUTH,
-                BTN_EAST,
-                BTN_C,
-                BTN_NORTH,
-                BTN_WEST,
-                BTN_TL,
-                BTN_TR,
-                BTN_SELECT,
-                BTN_START,
-                BTN_MODE,
-                BTN_THUMBL,
-                BTN_THUMBR,
-                BTN_DPAD_UP,
-                BTN_DPAD_DOWN,
-                BTN_DPAD_LEFT,
-                BTN_DPAD_RIGHT,
-            ] {
-                dev.enable_keybit(code)?;
-            }
-
-            for code in [
-                ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ, ABS_HAT0X, ABS_HAT0Y,
-            ] {
-                dev.enable_absbit(code)?;
-            }
-
-            dev.set_abs_range(ABS_X, -32768, 32767)?;
-            dev.set_abs_range(ABS_Y, -32768, 32767)?;
-            dev.set_abs_range(ABS_RX, -32768, 32767)?;
-            dev.set_abs_range(ABS_RY, -32768, 32767)?;
-            dev.set_abs_range(ABS_Z, 0, 255)?;
-            dev.set_abs_range(ABS_RZ, 0, 255)?;
-            dev.set_abs_range(ABS_HAT0X, -1, 1)?;
-            dev.set_abs_range(ABS_HAT0Y, -1, 1)?;
-            Ok(())
+        let mut keys = AttributeSet::<KeyCode>::new();
+        for key in [
+            KeyCode::BTN_SOUTH,
+            KeyCode::BTN_EAST,
+            KeyCode::BTN_C,
+            KeyCode::BTN_NORTH,
+            KeyCode::BTN_WEST,
+            KeyCode::BTN_TL,
+            KeyCode::BTN_TR,
+            KeyCode::BTN_SELECT,
+            KeyCode::BTN_START,
+            KeyCode::BTN_MODE,
+            KeyCode::BTN_THUMBL,
+            KeyCode::BTN_THUMBR,
+            KeyCode::BTN_DPAD_UP,
+            KeyCode::BTN_DPAD_DOWN,
+            KeyCode::BTN_DPAD_LEFT,
+            KeyCode::BTN_DPAD_RIGHT,
+        ] {
+            keys.insert(key);
+        }
+        let axes = [
+            (AbsoluteAxisCode::ABS_X, -32768, 32767),
+            (AbsoluteAxisCode::ABS_Y, -32768, 32767),
+            (AbsoluteAxisCode::ABS_RX, -32768, 32767),
+            (AbsoluteAxisCode::ABS_RY, -32768, 32767),
+            (AbsoluteAxisCode::ABS_Z, 0, 255),
+            (AbsoluteAxisCode::ABS_RZ, 0, 255),
+            (AbsoluteAxisCode::ABS_HAT0X, -1, 1),
+            (AbsoluteAxisCode::ABS_HAT0Y, -1, 1),
+        ];
+        let mut builder = VirtualDevice::builder()?
+            .name(name)
+            .input_id(InputId::new(BusType::BUS_USB, 1, 1, 1))
+            .with_keys(&keys)?;
+        for (axis, min, max) in axes {
+            builder = builder.with_absolute_axis(&UinputAbsSetup::new(
+                axis,
+                AbsInfo::new(0, min, max, 0, 0, 0),
+            ))?;
+        }
+        Ok(Self {
+            device: builder.build()?,
         })
     }
 
-    fn new(name: &str, setup: impl FnOnce(&mut UInputDeviceBuilder) -> Result<()>) -> Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open("/dev/uinput")
-            .context("event: unable to open /dev/uinput")?;
-
-        let mut builder = UInputDeviceBuilder::new(file);
-        setup(&mut builder)?;
-        builder.create(name)
-    }
-
     fn emit(&mut self, event_type: u16, code: u16, value: i32) -> Result<()> {
-        self.write_event(event_type, code, value)?;
-        self.sync()?;
+        self.device
+            .emit(&[InputEvent::new(event_type, code, value)])?;
         Ok(())
     }
-
-    fn write_event(&mut self, event_type: u16, code: u16, value: i32) -> Result<()> {
-        let event = unsafe {
-            let mut event: libc::input_event = zeroed();
-            event.type_ = event_type;
-            event.code = code;
-            event.value = value;
-            event
-        };
-        self.file.write_all(as_bytes(&event))?;
-        Ok(())
-    }
-
-    fn sync(&mut self) -> Result<()> {
-        self.write_event(EV_SYN, SYN_REPORT, 0)
-    }
-}
-
-impl Drop for UInputDevice {
-    fn drop(&mut self) {
-        let _ = unsafe { ui_dev_destroy(self.file.as_raw_fd()) };
-    }
-}
-
-struct UInputDeviceBuilder {
-    file: File,
-    abs: [libc::input_absinfo; 64],
-}
-
-impl UInputDeviceBuilder {
-    fn new(file: File) -> Self {
-        Self {
-            file,
-            abs: unsafe { zeroed() },
-        }
-    }
-
-    fn enable_evbit(&mut self, bit: u16) -> Result<()> {
-        ioctl_set_int(self.file.as_raw_fd(), UI_SET_EVBIT, bit as i32)
-    }
-
-    fn enable_keybit(&mut self, bit: u16) -> Result<()> {
-        ioctl_set_int(self.file.as_raw_fd(), UI_SET_KEYBIT, bit as i32)
-    }
-
-    fn enable_relbit(&mut self, bit: u16) -> Result<()> {
-        ioctl_set_int(self.file.as_raw_fd(), UI_SET_RELBIT, bit as i32)
-    }
-
-    fn enable_absbit(&mut self, bit: u16) -> Result<()> {
-        ioctl_set_int(self.file.as_raw_fd(), UI_SET_ABSBIT, bit as i32)
-    }
-
-    fn set_abs_range(&mut self, axis: u16, min: i32, max: i32) -> Result<()> {
-        let slot = axis as usize;
-        self.abs[slot].minimum = min;
-        self.abs[slot].maximum = max;
-        Ok(())
-    }
-
-    fn create(mut self, name: &str) -> Result<UInputDevice> {
-        let mut device: libc::uinput_user_dev = unsafe { zeroed() };
-        let name_bytes = CString::new(name).context("event: invalid device name")?;
-        let name_bytes = name_bytes.as_bytes_with_nul();
-        let copy_len = name_bytes.len().min(device.name.len());
-        for (dst, src) in device
-            .name
-            .iter_mut()
-            .zip(name_bytes.iter().copied())
-            .take(copy_len)
-        {
-            *dst = src as libc::c_char;
-        }
-        device.id = libc::input_id {
-            bustype: BUS_USB,
-            vendor: 0x0001,
-            product: 0x0001,
-            version: 1,
-        };
-        device.ff_effects_max = 0;
-        device.absmin = self.abs.map(|a| a.minimum);
-        device.absmax = self.abs.map(|a| a.maximum);
-
-        self.file.write_all(as_bytes(&device))?;
-        unsafe { ui_dev_create(self.file.as_raw_fd()) }?;
-
-        Ok(UInputDevice { file: self.file })
-    }
-}
-
-fn ioctl_set_int(fd: libc::c_int, req: libc::c_ulong, value: i32) -> Result<()> {
-    let result = match req {
-        UI_SET_EVBIT => unsafe { ui_set_evbit(fd, value) },
-        UI_SET_KEYBIT => unsafe { ui_set_keybit(fd, value) },
-        UI_SET_RELBIT => unsafe { ui_set_relbit(fd, value) },
-        UI_SET_ABSBIT => unsafe { ui_set_absbit(fd, value) },
-        _ => bail!("unsupported uinput ioctl request: {req}"),
-    };
-    result?;
-    Ok(())
-}
-
-fn as_bytes<T>(value: &T) -> &[u8] {
-    unsafe { std::slice::from_raw_parts((value as *const T).cast::<u8>(), size_of::<T>()) }
 }
 
 #[cfg(test)]
@@ -759,18 +542,14 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn encodes_message() {
-        let msg = input_event_to_message(&libc::input_event {
-            time: libc::timeval {
-                tv_sec: 1,
-                tv_usec: 2,
-            },
-            type_: EV_KEY,
-            code: BTN_LEFT,
-            value: 1,
-        });
-        assert_eq!(msg.r#type, u32::from(EV_KEY));
-        assert_eq!(msg.code, u32::from(BTN_LEFT));
-        assert_eq!(msg.timestamp, 1_000_002_000);
+        let msg = input_event_to_message(&InputEvent::new(
+            evdev::EventType::KEY.0,
+            KeyCode::BTN_LEFT.0,
+            1,
+        ));
+        assert_eq!(msg.r#type, u32::from(evdev::EventType::KEY.0));
+        assert_eq!(msg.code, u32::from(KeyCode::BTN_LEFT.0));
+        assert_eq!(msg.timestamp, 0);
     }
 
     #[test]
