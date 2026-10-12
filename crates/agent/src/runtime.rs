@@ -196,7 +196,7 @@ impl AgentRuntime {
             let notifier_service: Option<UserNotificationServiceServer<_>> =
                 if self.config.capabilities.notifier.enabled {
                     Some(UserNotificationServiceServer::new(UserNotifierServer::new(
-                        self.config.capabilities.notifier.socket.clone(),
+                        self.config.capabilities.notifier.socket.clone().into(),
                     )))
                 } else {
                     None
@@ -272,7 +272,7 @@ impl AgentRuntime {
             let notifier_service: Option<UserNotificationServiceServer<_>> =
                 if self.config.capabilities.notifier.enabled {
                     Some(UserNotificationServiceServer::new(UserNotifierServer::new(
-                        self.config.capabilities.notifier.socket.clone(),
+                        self.config.capabilities.notifier.socket.clone().into(),
                     )))
                 } else {
                     None

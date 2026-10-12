@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::FileTypeExt;
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use givc_common::pb;
+use tokio::io::AsyncWriteExt;
+use tokio::net::UnixStream;
 use tonic::{Request, Response, Status};
 
 pub use pb::notify::user_notification_service_server::UserNotificationServiceServer;
@@ -20,14 +20,12 @@ pub struct UserNotifierServer {
 
 impl UserNotifierServer {
     #[must_use]
-    pub fn new(socket_dir: String) -> Self {
-        Self {
-            socket_dir: PathBuf::from(socket_dir),
-        }
+    pub fn new(socket_dir: PathBuf) -> Self {
+        Self { socket_dir }
     }
 
-    fn broadcast_notification(&self, json_message: &[u8]) -> Result<()> {
-        let entries = match fs::read_dir(&self.socket_dir) {
+    async fn broadcast_notification(&self, json_message: &[u8]) -> Result<()> {
+        let mut entries = match tokio::fs::read_dir(&self.socket_dir).await {
             Ok(entries) => entries,
             Err(err) => {
                 return Err(err).with_context(|| {
@@ -37,13 +35,9 @@ impl UserNotifierServer {
         };
 
         let mut sockets = Vec::new();
-        for entry in entries {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(_) => continue,
-            };
+        while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
-            let Ok(meta) = fs::metadata(&path) else {
+            let Ok(meta) = tokio::fs::metadata(&path).await else {
                 continue;
             };
             if meta.file_type().is_socket() {
@@ -56,7 +50,7 @@ impl UserNotifierServer {
         }
 
         for socket in sockets {
-            let _ = send_message_to_socket(&socket, json_message);
+            let _ = send_message_to_socket(&socket, json_message).await;
         }
         Ok(())
     }
@@ -70,7 +64,7 @@ impl pb::notify::user_notification_service_server::UserNotificationService for U
     ) -> Result<Response<pb::notify::Status>, Status> {
         let notification = request.into_inner();
         let json = notification_to_json(&notification).into_bytes();
-        self.broadcast_notification(&json).map_err(map_err)?;
+        self.broadcast_notification(&json).await.map_err(map_err)?;
         Ok(Response::new(pb::notify::Status {
             status: "Notification sent".to_owned(),
         }))
@@ -91,9 +85,9 @@ fn notification_to_json(notification: &pb::notify::UserNotification) -> String {
     .to_string()
 }
 
-fn send_message_to_socket(socket_path: &Path, data: &[u8]) -> Result<()> {
-    let mut conn = UnixStream::connect(socket_path)?;
-    conn.write_all(data)?;
+async fn send_message_to_socket(socket_path: &Path, data: &[u8]) -> Result<()> {
+    let mut conn = UnixStream::connect(socket_path).await?;
+    conn.write_all(data).await?;
     Ok(())
 }
 
@@ -104,9 +98,8 @@ fn map_err(err: anyhow::Error) -> Status {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::net::UnixListener;
-    use std::sync::mpsc;
-    use std::thread;
+    use tokio::io::AsyncReadExt;
+    use tokio::net::UnixListener;
 
     #[test]
     fn formats_json() {
@@ -121,27 +114,27 @@ mod tests {
         assert!(json.contains(r#""Urgency":"CRITICAL""#));
     }
 
-    #[test]
-    fn broadcasts_to_socket() {
+    #[tokio::test]
+    async fn broadcasts_to_socket() {
         let base = std::env::temp_dir().join(format!("givc-notify-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         let socket_path = base.join("user.sock");
         let listener = UnixListener::bind(&socket_path).unwrap();
-        let (tx, rx) = mpsc::channel();
-
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+        let receiver = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
             let mut buf = Vec::new();
-            use std::io::Read;
-            stream.read_to_end(&mut buf).unwrap();
-            tx.send(buf).unwrap();
+            stream.read_to_end(&mut buf).await.unwrap();
+            buf
         });
 
-        let server = UserNotifierServer::new(base.to_string_lossy().into_owned());
-        server.broadcast_notification(br#"{"event":"x"}"#).unwrap();
+        let server = UserNotifierServer::new(base.clone());
+        server
+            .broadcast_notification(br#"{"event":"x"}"#)
+            .await
+            .unwrap();
 
-        let data = rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+        let data = receiver.await.unwrap();
         assert_eq!(data, br#"{"event":"x"}"#);
 
         let _ = fs::remove_dir_all(&base);
