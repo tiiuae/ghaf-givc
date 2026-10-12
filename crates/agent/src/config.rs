@@ -10,16 +10,13 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct AgentConfig {
-    #[serde(default)]
     pub identity: IdentityConfig,
 
-    #[serde(default)]
     pub network: NetworkConfig,
 
-    #[serde(default)]
     pub capabilities: CapabilitiesConfig,
 
-    #[serde(rename = "accessControl", default)]
+    #[serde(default)]
     pub access_control: AccessControlConfig,
 }
 
@@ -47,11 +44,12 @@ impl AgentConfig {
         self.identity.service_name = format!("givc-{}.service", self.identity.name);
 
         self.capabilities.units = HashMap::new();
-        for service in &self.capabilities.services {
+        self.capabilities.units.extend(
             self.capabilities
-                .units
-                .insert(service.clone(), self.identity.sub_type);
-        }
+                .services
+                .iter()
+                .map(|srv| (srv.clone(), self.identity.sub_type)),
+        );
 
         if !self.capabilities.vm_services.admin_vm.is_empty() {
             self.capabilities.units.insert(
@@ -63,25 +61,29 @@ impl AgentConfig {
             );
         }
 
-        for vm in &self.capabilities.vm_services.sys_vms {
-            self.capabilities.units.insert(
-                vm.clone(),
-                u32::from(UnitType {
-                    vm: VmType::SysVM,
-                    service: ServiceType::VM,
-                }),
-            );
-        }
+        self.capabilities
+            .units
+            .extend(self.capabilities.vm_services.sys_vms.iter().map(|vm| {
+                (
+                    vm.clone(),
+                    u32::from(UnitType {
+                        vm: VmType::SysVM,
+                        service: ServiceType::VM,
+                    }),
+                )
+            }));
 
-        for vm in &self.capabilities.vm_services.app_vms {
-            self.capabilities.units.insert(
-                vm.clone(),
-                u32::from(UnitType {
-                    vm: VmType::AppVM,
-                    service: ServiceType::VM,
-                }),
-            );
-        }
+        self.capabilities
+            .units
+            .extend(self.capabilities.vm_services.app_vms.iter().map(|vm| {
+                (
+                    vm.clone(),
+                    u32::from(UnitType {
+                        vm: VmType::AppVM,
+                        service: ServiceType::VM,
+                    }),
+                )
+            }));
 
         self.network.tls_config = if self.network.tls.enable {
             Some(self.network.tls.to_tls_config()?)
@@ -103,11 +105,10 @@ impl AgentConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
 pub struct IdentityConfig {
-    #[serde(rename = "type", default)]
     pub r#type: u32,
 
-    #[serde(rename = "subType", default)]
     pub sub_type: u32,
 
     #[serde(default)]
@@ -122,10 +123,8 @@ pub struct IdentityConfig {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct NetworkConfig {
-    #[serde(rename = "admin", default)]
     pub admin: EndpointConfig,
 
-    #[serde(rename = "agent", default)]
     pub agent: EndpointConfig,
 
     #[serde(default)]
@@ -187,18 +186,18 @@ impl TransportConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct TlsConfigJson {
     #[serde(default)]
     pub enable: bool,
 
-    #[serde(rename = "caCertPath", default)]
-    pub ca_cert_path: PathBuf,
+    pub ca_cert_path: Option<PathBuf>,
 
-    #[serde(rename = "certPath", default)]
-    pub cert_path: PathBuf,
+    pub cert_path: Option<PathBuf>,
 
-    #[serde(rename = "keyPath", default)]
-    pub key_path: PathBuf,
+    pub key_path: Option<PathBuf>,
+
+    pub tls_name: Option<String>,
 }
 
 impl TlsConfigJson {
@@ -206,18 +205,23 @@ impl TlsConfigJson {
     /// Fails if TLS files cannot be read later by tonic.
     pub fn to_tls_config(&self) -> Result<TlsConfig> {
         Ok(TlsConfig {
-            ca_cert_file_path: self.ca_cert_path.clone(),
-            cert_file_path: self.cert_path.clone(),
-            key_file_path: self.key_path.clone(),
-            tls_name: None,
+            ca_cert_file_path: self
+                .ca_cert_path
+                .as_ref()
+                .expect("no ca_cert_file_path")
+                .clone(),
+            cert_file_path: self.cert_path.as_ref().expect("no cert_file_path").clone(),
+            key_file_path: self.key_path.as_ref().expect("no key_file_path").clone(),
+            tls_name: self.tls_name.clone(),
         })
     }
 }
 
-fn null_to_empty_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+fn null_to_default<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: serde::Deserialize<'de>,
+    T: Default,
 {
     Option::<Vec<T>>::deserialize(deserializer).map(|value| value.unwrap_or_default())
 }
@@ -268,6 +272,12 @@ mod tests {
     fn parses_nested_event_proxy_roles() {
         let json = r#"
         {
+            "identity": {"name": "vm", "type": 1, "subType": 2, "parent": "parent"},
+            "network": {
+                "admin": {"transport": {"addr": "127.0.0.1", "port": "9000", "protocol": "tcp"}},
+                "agent": {"transport": {"addr": "127.0.0.1", "port": "9001", "protocol": "tcp"}},
+                "tls": {"enable": false}
+            },
             "capabilities": {
                 "eventProxy": {
                     "enable": true,
@@ -285,28 +295,41 @@ mod tests {
         assert!(event.consumer.enabled);
         assert_eq!(event.consumer.permitted_source.as_deref(), Some("audio-vm"));
     }
+
+    #[test]
+    fn tls_config_allows_missing_tls_name() {
+        let config = TlsConfigJson {
+            enable: true,
+            ca_cert_path: Some("/etc/givc/ca-cert.pem".into()),
+            cert_path: Some("/etc/givc/cert.pem".into()),
+            key_path: Some("/etc/givc/key.pem".into()),
+            tls_name: None,
+        };
+
+        assert_eq!(config.to_tls_config().unwrap().tls_name, None);
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct AccessControlConfig {
-    #[serde(rename = "enable", default)]
+    #[serde(rename = "enable")]
     pub enabled: bool,
 
-    #[serde(rename = "rulesFile", default)]
-    pub rules_file: String,
+    #[serde(rename = "rulesFile")]
+    pub rules_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct CapabilitiesConfig {
     #[serde(default)]
-    #[serde(deserialize_with = "null_to_empty_vec")]
+    #[serde(deserialize_with = "null_to_default")]
     pub services: Vec<String>,
 
     #[serde(rename = "vmServices", default)]
     pub vm_services: VmServicesConfig,
 
     #[serde(default)]
-    #[serde(deserialize_with = "null_to_empty_vec")]
+    #[serde(deserialize_with = "null_to_default")]
     pub applications: Vec<ApplicationManifest>,
 
     #[serde(default)]
@@ -346,11 +369,11 @@ pub struct VmServicesConfig {
     pub admin_vm: String,
 
     #[serde(rename = "systemVms", default)]
-    #[serde(deserialize_with = "null_to_empty_vec")]
+    #[serde(deserialize_with = "null_to_default")]
     pub sys_vms: Vec<String>,
 
     #[serde(rename = "appVms", default)]
-    #[serde(deserialize_with = "null_to_empty_vec")]
+    #[serde(deserialize_with = "null_to_default")]
     pub app_vms: Vec<String>,
 }
 
@@ -363,11 +386,11 @@ pub struct ApplicationManifest {
     pub command: String,
 
     #[serde(default)]
-    #[serde(deserialize_with = "null_to_empty_vec")]
+    #[serde(deserialize_with = "null_to_default")]
     pub args: Vec<String>,
 
     #[serde(default)]
-    #[serde(deserialize_with = "null_to_empty_vec")]
+    #[serde(deserialize_with = "null_to_default")]
     pub directories: Vec<String>,
 }
 
@@ -401,7 +424,7 @@ pub struct EventProxyConfig {
     pub enabled: bool,
 
     #[serde(default)]
-    #[serde(deserialize_with = "null_to_empty_vec")]
+    #[serde(deserialize_with = "null_to_default")]
     pub events: Vec<EventConfig>,
 }
 
@@ -441,7 +464,7 @@ pub struct SocketProxyConfig {
     pub enabled: bool,
 
     #[serde(default)]
-    #[serde(deserialize_with = "null_to_empty_vec")]
+    #[serde(deserialize_with = "null_to_default")]
     pub sockets: Vec<ProxyConfig>,
 }
 
@@ -470,17 +493,15 @@ pub struct PolicyConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
 pub struct UpdateConfig {
     #[serde(rename = "enable", default)]
     pub enabled: bool,
 
-    #[serde(rename = "signaturePath", default)]
     pub signature_path: PathBuf,
 
-    #[serde(rename = "trustedKey", default)]
     pub trusted_key: PathBuf,
 
-    #[serde(rename = "ukiTrustedCert", default)]
     pub uki_trusted_cert: PathBuf,
 
     #[serde(default)]
