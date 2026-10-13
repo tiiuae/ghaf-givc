@@ -5,7 +5,7 @@ use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use givc_common::pb;
+use givc_common::{pb, tonic::RewrapErr};
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
 use tonic::{Request, Response, Status};
@@ -51,7 +51,7 @@ impl pb::notify::user_notification_service_server::UserNotificationService for U
     ) -> Result<Response<pb::notify::Status>, Status> {
         let notification = request.into_inner();
         let json = notification_to_json(&notification).into_bytes();
-        self.broadcast_notification(&json).await.map_err(map_err)?;
+        self.broadcast_notification(&json).await.rewrap_err()?;
         Ok(Response::new(pb::notify::Status {
             status: "Notification sent".to_owned(),
         }))
@@ -76,10 +76,6 @@ async fn send_message_to_socket(socket_path: &Path, data: &[u8]) -> Result<()> {
     let mut conn = UnixStream::connect(socket_path).await?;
     conn.write_all(data).await?;
     Ok(())
-}
-
-fn map_err(err: anyhow::Error) -> Status {
-    Status::internal(err.to_string())
 }
 
 #[cfg(test)]

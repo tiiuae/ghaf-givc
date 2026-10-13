@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 use std::process::Command;
 
 use anyhow::{Context, Result, bail, ensure};
-use givc_common::pb;
+use givc_common::{pb, tonic::RewrapErr};
 use regex::Regex;
 use tonic::{Request, Response, Status};
 
@@ -67,7 +67,7 @@ impl pb::locale::locale_client_server::LocaleClient for LocaleServer {
         request: Request<pb::locale::LocaleMessage>,
     ) -> Result<Response<pb::locale::Empty>, Status> {
         let req = request.into_inner();
-        self.set_locale(&req.assignments).map_err(map_err)?;
+        self.set_locale(&req.assignments).rewrap_err()?;
         Ok(Response::new(pb::locale::Empty {}))
     }
 
@@ -76,7 +76,7 @@ impl pb::locale::locale_client_server::LocaleClient for LocaleServer {
         request: Request<pb::locale::TimezoneMessage>,
     ) -> Result<Response<pb::locale::Empty>, Status> {
         let req = request.into_inner();
-        self.set_timezone(&req.timezone).map_err(map_err)?;
+        self.set_timezone(&req.timezone).rewrap_err()?;
         Ok(Response::new(pb::locale::Empty {}))
     }
 }
@@ -112,10 +112,6 @@ where
 
 fn is_root() -> bool {
     nix::unistd::geteuid().is_root()
-}
-
-fn map_err(err: anyhow::Error) -> Status {
-    Status::internal(err.to_string())
 }
 
 #[cfg(test)]

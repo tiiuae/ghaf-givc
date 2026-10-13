@@ -15,9 +15,9 @@ use evdev::{
 };
 use givc_client::endpoint::EndpointConfig as ClientEndpointConfig;
 use givc_common::address::EndpointAddress;
-use givc_common::pb;
 use givc_common::pb::reflection::EVENT_DESCRIPTOR;
 use givc_common::types::TransportConfig as CommonTransportConfig;
+use givc_common::{pb, tonic::RewrapErr};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
@@ -209,7 +209,7 @@ impl pb::eventproxy::event_service_server::EventService for EventProxyServer {
         request: Request<pb::eventproxy::DeviceInfo>,
     ) -> Result<Response<pb::eventproxy::Ack>, Status> {
         let info = request.into_inner();
-        self.controller.register_device(&info).map_err(map_err)?;
+        self.controller.register_device(&info).rewrap_err()?;
         Ok(Response::new(pb::eventproxy::Ack {
             status: "OK".to_owned(),
         }))
@@ -223,7 +223,7 @@ impl pb::eventproxy::event_service_server::EventService for EventProxyServer {
         loop {
             match stream.next().await {
                 Some(Ok(event)) => {
-                    self.controller.stream_event(&event).map_err(map_err)?;
+                    self.controller.stream_event(&event).rewrap_err()?;
                 }
                 Some(Err(err)) => {
                     let _ = self.controller.close();
@@ -448,10 +448,6 @@ fn is_device_disconnect_io(err: &std::io::Error) -> bool {
         err.kind(),
         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::BrokenPipe
     ) || err.raw_os_error() == Some(libc::ENODEV)
-}
-
-fn map_err(err: anyhow::Error) -> Status {
-    Status::internal(err.to_string())
 }
 
 #[derive(Debug)]

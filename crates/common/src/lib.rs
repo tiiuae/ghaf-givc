@@ -3,6 +3,7 @@
 
 pub mod address;
 pub mod query;
+pub mod tonic;
 pub mod types;
 
 pub mod pb {

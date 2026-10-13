@@ -201,6 +201,7 @@ async fn stream_reader<R, F>(
 }
 
 fn map_err(err: anyhow::Error) -> Status {
+    // Command allowlist failures must remain permission errors.
     Status::permission_denied(err.to_string())
 }
 

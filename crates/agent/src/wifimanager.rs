@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use givc_common::pb;
+use givc_common::{pb, tonic::RewrapErr};
 use serde_json::Value as JsonValue;
 use tokio::time::sleep;
 use tonic::{Request, Response, Status};
@@ -223,14 +223,14 @@ impl pb::wifi::wifi_service_server::WifiService for WifiService {
         _request: Request<pb::wifi::WifiNetworkRequest>,
     ) -> Result<Response<pb::wifi::WifiNetworkResponse>, Status> {
         let mut networks = Vec::new();
-        for device_path in self.backend.wifi_devices().await.map_err(map_err)? {
+        for device_path in self.backend.wifi_devices().await.rewrap_err()? {
             for ap_path in self
                 .backend
                 .access_points(&device_path)
                 .await
-                .map_err(map_err)?
+                .rewrap_err()?
             {
-                let ap = self.backend.ap_info(&ap_path).await.map_err(map_err)?;
+                let ap = self.backend.ap_info(&ap_path).await.rewrap_err()?;
                 networks.push(ap.into());
             }
         }
@@ -242,7 +242,7 @@ impl pb::wifi::wifi_service_server::WifiService for WifiService {
         &self,
         _request: Request<pb::wifi::EmptyRequest>,
     ) -> Result<Response<pb::wifi::AccessPoint>, Status> {
-        if let Some(ap) = self.backend.active_connection().await.map_err(map_err)? {
+        if let Some(ap) = self.backend.active_connection().await.rewrap_err()? {
             return Ok(Response::new(ap.into()));
         }
 
@@ -263,7 +263,7 @@ impl pb::wifi::wifi_service_server::WifiService for WifiService {
             .backend
             .connect(&req.ssid, &req.password, &req.settings)
             .await
-            .map_err(map_err)?;
+            .rewrap_err()?;
         Ok(Response::new(pb::wifi::WifiConnectionResponse { response }))
     }
 
@@ -271,7 +271,7 @@ impl pb::wifi::wifi_service_server::WifiService for WifiService {
         &self,
         _request: Request<pb::wifi::EmptyRequest>,
     ) -> Result<Response<pb::wifi::WifiConnectionResponse>, Status> {
-        let response = self.backend.disconnect().await.map_err(map_err)?;
+        let response = self.backend.disconnect().await.rewrap_err()?;
         Ok(Response::new(pb::wifi::WifiConnectionResponse { response }))
     }
 
@@ -279,7 +279,7 @@ impl pb::wifi::wifi_service_server::WifiService for WifiService {
         &self,
         _request: Request<pb::wifi::EmptyRequest>,
     ) -> Result<Response<pb::wifi::WifiConnectionResponse>, Status> {
-        let response = self.backend.radio_switch(true).await.map_err(map_err)?;
+        let response = self.backend.radio_switch(true).await.rewrap_err()?;
         Ok(Response::new(pb::wifi::WifiConnectionResponse { response }))
     }
 
@@ -287,7 +287,7 @@ impl pb::wifi::wifi_service_server::WifiService for WifiService {
         &self,
         _request: Request<pb::wifi::EmptyRequest>,
     ) -> Result<Response<pb::wifi::WifiConnectionResponse>, Status> {
-        let response = self.backend.radio_switch(false).await.map_err(map_err)?;
+        let response = self.backend.radio_switch(false).await.rewrap_err()?;
         Ok(Response::new(pb::wifi::WifiConnectionResponse { response }))
     }
 }
@@ -301,10 +301,6 @@ impl From<AccessPointInfo> for pb::wifi::AccessPoint {
             security: value.security,
         }
     }
-}
-
-fn map_err(err: anyhow::Error) -> Status {
-    Status::internal(err.to_string())
 }
 
 fn infer_security(flags: u32, wpa_flags: u32, rsn_flags: u32) -> String {
