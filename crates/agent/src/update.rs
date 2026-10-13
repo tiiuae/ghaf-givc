@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::pin::Pin;
 
 use serde::Deserialize;
@@ -160,9 +161,10 @@ impl Update for UpdateService {
     }
 }
 
-async fn run_command<I>(args: I) -> Result<std::process::Output, Status>
+async fn run_command<I, S>(args: I) -> Result<std::process::Output, Status>
 where
-    I: IntoIterator<Item = String>,
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
 {
     let output = Command::new("ota-update")
         .args(args)
@@ -206,8 +208,8 @@ fn registry_prefix(insecure: bool, credentials: Option<&RegistryCredentials>) ->
 }
 
 fn validate_trust(config: &UpdateConfig) -> Result<(), Status> {
-    if config.trusted_key.as_os_str().is_empty()
-        || config.uki_trusted_cert.as_os_str().is_empty()
+    if config.trusted_key.is_empty()
+        || config.uki_trusted_cert.is_empty()
         || config.target.is_empty()
     {
         return Err(Status::failed_precondition(
@@ -249,9 +251,12 @@ impl From<AvailableUpdateJson> for AvailableUpdate {
     }
 }
 
-async fn pull_stream(
-    args: Vec<String>,
-) -> Result<ReceiverStream<Result<RegistryPullResponse, Status>>, Status> {
+async fn pull_stream<S>(
+    args: Vec<S>,
+) -> Result<ReceiverStream<Result<RegistryPullResponse, Status>>, Status>
+where
+    S: AsRef<OsStr>,
+{
     let mut child = Command::new("ota-update")
         .args(args)
         .stdout(std::process::Stdio::piped())

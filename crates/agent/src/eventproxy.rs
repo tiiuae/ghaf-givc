@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use evdev::uinput::VirtualDevice;
 use evdev::{
     AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, Device, InputEvent, InputId, KeyCode,
@@ -358,9 +358,10 @@ fn stream_device_events(
 }
 
 fn event_server_addr(config: &AgentConfig, event: &EventConfig) -> Result<std::net::SocketAddr> {
-    if event.transport.protocol != "tcp" {
-        bail!("event server requires tcp transport");
-    }
+    ensure!(
+        event.transport.protocol == "tcp",
+        "event server requires tcp transport"
+    );
 
     let addr: std::net::IpAddr = event
         .transport
