@@ -807,6 +807,7 @@ where
 }
 
 fn map_err(err: anyhow::Error) -> Status {
+    // Preserve domain-specific status codes for systemd errors.
     if err.to_string().contains("whitelisted") {
         Status::permission_denied(err.to_string())
     } else if err.to_string().contains("not found") {

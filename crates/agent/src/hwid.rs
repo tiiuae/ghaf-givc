@@ -82,6 +82,7 @@ fn read_trimmed(path: impl AsRef<Path>) -> Result<String> {
 }
 
 fn map_err(err: anyhow::Error) -> Status {
+    // Add hardware-ID context while keeping the error internal.
     Status::internal(format!("cannot get hardware id: {err}"))
 }
 

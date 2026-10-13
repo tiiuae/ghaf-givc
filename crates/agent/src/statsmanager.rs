@@ -7,6 +7,7 @@ use std::process::Command;
 use std::sync::Mutex;
 
 use anyhow::{Result, bail};
+use givc_common::tonic::RewrapErr;
 use procfs::Current;
 use tonic::{Request, Response, Status};
 
@@ -123,10 +124,7 @@ impl givc_common::pb::stats::stats_service_server::StatsService for StatsServer 
         &self,
         _request: Request<givc_common::pb::stats::StatsRequest>,
     ) -> Result<Response<givc_common::pb::stats::StatsResponse>, Status> {
-        self.controller
-            .get_stats()
-            .map(Response::new)
-            .map_err(map_err)
+        self.controller.get_stats().map(Response::new).rewrap_err()
     }
 
     async fn get_sysinfo(
@@ -136,7 +134,7 @@ impl givc_common::pb::stats::stats_service_server::StatsService for StatsServer 
         self.controller
             .get_sysinfo()
             .map(Response::new)
-            .map_err(map_err)
+            .rewrap_err()
     }
 }
 
@@ -310,10 +308,6 @@ fn run_system_command_output(name: &str, args: &[&str]) -> Result<Vec<u8>> {
     } else {
         bail!("binary {name:?} failed")
     }
-}
-
-fn map_err(err: anyhow::Error) -> Status {
-    Status::internal(err.to_string())
 }
 
 #[cfg(test)]

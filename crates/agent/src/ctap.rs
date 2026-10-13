@@ -4,7 +4,7 @@
 use std::process::Stdio;
 
 use anyhow::{Result, bail};
-use givc_common::pb;
+use givc_common::{pb, tonic::RewrapErr};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tonic::{Request, Response, Status};
@@ -38,7 +38,7 @@ impl pb::ctap::ctap_server::Ctap for CtapService {
         request: Request<pb::ctap::CtapRequest>,
     ) -> Result<Response<pb::ctap::CtapResponse>, Status> {
         let req = request.into_inner();
-        let prog = Self::resolve_program(&req.req).map_err(map_err)?;
+        let prog = Self::resolve_program(&req.req).rewrap_err()?;
 
         let mut cmd = Command::new(prog);
         cmd.args(req.args);
@@ -59,10 +59,6 @@ impl pb::ctap::ctap_server::Ctap for CtapService {
             output: output.stdout,
         }))
     }
-}
-
-fn map_err(err: anyhow::Error) -> Status {
-    Status::internal(err.to_string())
 }
 
 #[cfg(test)]

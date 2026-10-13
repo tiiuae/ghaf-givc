@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Result, bail};
-use givc_common::pb;
+use givc_common::{pb, tonic::RewrapErr};
 use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -120,7 +120,7 @@ impl pb::policyadmin::policy_admin_server::PolicyAdmin for PolicyAdminServer {
 
                 let tmp = create_temp_policy_file(&self.temp_dir())
                     .await
-                    .map_err(map_err)?;
+                    .rewrap_err()?;
                 temp_file = Some(tmp);
             }
 
@@ -146,7 +146,7 @@ impl pb::policyadmin::policy_admin_server::PolicyAdmin for PolicyAdminServer {
 
         self.update_policy(&policy_name, &policy_file_path)
             .await
-            .map_err(map_err)?;
+            .rewrap_err()?;
 
         let _ = fs::remove_file(&policy_file_path).await;
         Ok(Response::new(pb::policyadmin::Status {
@@ -189,10 +189,6 @@ async fn copy_policy(src: &Path, dest: &Path) -> Result<()> {
     let mut src = fs::File::open(src).await?;
     tokio::io::copy(&mut src, &mut dst).await?;
     Ok(())
-}
-
-fn map_err(err: anyhow::Error) -> Status {
-    Status::internal(err.to_string())
 }
 
 #[cfg(test)]
