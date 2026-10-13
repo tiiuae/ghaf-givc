@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::ffi::OsStr;
 use std::process::Command;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use givc_common::pb;
 use regex::Regex;
 use tonic::{Request, Response, Status};
@@ -98,20 +99,15 @@ fn validate_timezone(timezone: &str) -> bool {
 fn run_command<I, S>(name: &str, args: I) -> Result<()>
 where
     I: IntoIterator<Item = S>,
-    S: AsRef<str>,
+    S: AsRef<OsStr>,
 {
     let mut cmd = Command::new(name);
-    for arg in args {
-        cmd.arg(arg.as_ref());
-    }
+    cmd.args(args);
     let status = cmd
         .status()
         .with_context(|| format!("failed to run {name}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        bail!("{name} exited with status {status}")
-    }
+    ensure!(status.success(), "{name} exited with status {status}");
+    Ok(())
 }
 
 fn is_root() -> bool {

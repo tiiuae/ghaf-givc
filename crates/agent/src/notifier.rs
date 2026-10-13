@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::fs;
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +9,7 @@ use givc_common::pb;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
 use tonic::{Request, Response, Status};
+use tracing::error;
 
 pub use pb::notify::user_notification_service_server::UserNotificationServiceServer;
 
@@ -25,33 +25,20 @@ impl UserNotifierServer {
     }
 
     async fn broadcast_notification(&self, json_message: &[u8]) -> Result<()> {
-        let mut entries = match tokio::fs::read_dir(&self.socket_dir).await {
-            Ok(entries) => entries,
-            Err(err) => {
-                return Err(err).with_context(|| {
-                    format!("could not read directory '{}'", self.socket_dir.display())
-                });
-            }
-        };
+        let mut entries = tokio::fs::read_dir(&self.socket_dir)
+            .await
+            .with_context(|| format!("could not read directory '{}'", self.socket_dir.display()))?;
 
-        let mut sockets = Vec::new();
         while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            let Ok(meta) = tokio::fs::metadata(&path).await else {
+            if !entry.file_type().await?.is_socket() {
                 continue;
-            };
-            if meta.file_type().is_socket() {
-                sockets.push(path);
             }
+
+            if let Err(e) = send_message_to_socket(&entry.path(), json_message).await {
+                error!("error sending message to socket {e}")
+            };
         }
 
-        if sockets.is_empty() {
-            return Ok(());
-        }
-
-        for socket in sockets {
-            let _ = send_message_to_socket(&socket, json_message).await;
-        }
         Ok(())
     }
 }
@@ -98,6 +85,7 @@ fn map_err(err: anyhow::Error) -> Status {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tokio::io::AsyncReadExt;
     use tokio::net::UnixListener;
 
