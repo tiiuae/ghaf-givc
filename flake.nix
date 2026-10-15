@@ -70,14 +70,6 @@
           # Packages
           packages =
             let
-              src = lib.fileset.toSource {
-                root = ./.;
-                fileset = lib.fileset.unions [
-                  ./go.mod
-                  ./go.sum
-                  ./modules
-                ];
-              };
               givc-admin = pkgs.callPackage ./nixos/packages/givc-admin.nix {
                 inherit crane;
                 src = ./.;
@@ -89,7 +81,7 @@
             {
               inherit givc-admin;
               inherit ota-oras-push;
-              givc-agent = pkgs.callPackage ./nixos/packages/givc-agent.nix { inherit src; };
+              givc-agent = givc-admin.agent;
               givc-cli = givc-admin.cli;
               ota-update = givc-admin.ota;
               docs = pkgs.callPackage ./nixos/packages/givc-docs.nix {
@@ -126,14 +118,6 @@
           final: _prev:
           let
             src = ./.;
-            goSrc = final.lib.fileset.toSource {
-              root = src;
-              fileset = final.lib.fileset.unions [
-                (src + "/go.mod")
-                (src + "/go.sum")
-                (src + "/modules")
-              ];
-            };
             givc-admin = final.callPackage ./nixos/packages/givc-admin.nix {
               inherit crane;
               inherit src;
@@ -141,7 +125,7 @@
           in
           {
             inherit givc-admin;
-            givc-agent = final.callPackage ./nixos/packages/givc-agent.nix { src = goSrc; };
+            givc-agent = givc-admin.agent;
             givc-cli = givc-admin.cli;
             ota-update = givc-admin.ota;
             ota-update-server = givc-admin.update_server;
