@@ -52,7 +52,7 @@ impl Update for UpdateService {
     ) -> Result<Response<RegistryDiscoverResponse>, Status> {
         let request = request.into_inner();
         let mut args = registry_prefix(request.insecure, request.credentials.as_ref());
-        args.extend(["discover".to_owned(), request.reference]);
+        args.extend(["discover", &request.reference]);
         let output = run_command(args).await?;
         let list = parse_jsonl_result::<Vec<AvailableUpdateJson>>(&output.stdout)?
             .into_iter()
@@ -67,7 +67,7 @@ impl Update for UpdateService {
     ) -> Result<Response<RegistryChangelogResponse>, Status> {
         let request = request.into_inner();
         let mut args = registry_prefix(request.insecure, request.credentials.as_ref());
-        args.extend(["changelog".to_owned(), request.reference]);
+        args.extend(["changelog", &request.reference]);
         let output = run_command(args).await?;
         let changelog = output
             .stdout
@@ -93,11 +93,11 @@ impl Update for UpdateService {
         let request = request.into_inner();
         let mut args = registry_prefix(request.insecure, request.credentials.as_ref());
         args.extend([
-            "pull".to_owned(),
-            request.reference,
-            "--destination".to_owned(),
-            request.destination,
-            "--validate".to_owned(),
+            "pull",
+            &request.reference,
+            "--destination",
+            &request.destination,
+            "--validate",
         ]);
         let stream = pull_stream(args).await?;
         Ok(Response::new(Box::pin(stream)))
@@ -181,25 +181,18 @@ where
     }
 }
 
-fn registry_prefix(insecure: bool, credentials: Option<&RegistryCredentials>) -> Vec<String> {
-    let mut args = vec![
-        "registry".to_owned(),
-        "--output".to_owned(),
-        "jsonl".to_owned(),
-    ];
+fn registry_prefix(insecure: bool, credentials: Option<&RegistryCredentials>) -> Vec<&str> {
+    let mut args = vec!["registry", "--output", "jsonl"];
     if insecure {
-        args.push("--insecure".to_owned());
+        args.push("--insecure");
     }
     if let Some(credentials) = credentials {
         match &credentials.auth {
-            Some(update::registry_credentials::Auth::Basic(auth)) => args.extend([
-                "--username".to_owned(),
-                auth.username.clone(),
-                "--password".to_owned(),
-                auth.password.clone(),
-            ]),
+            Some(update::registry_credentials::Auth::Basic(auth)) => {
+                args.extend(["--username", &auth.username, "--password", &auth.password])
+            }
             Some(update::registry_credentials::Auth::Bearer(auth)) => {
-                args.extend(["--token".to_owned(), auth.token.clone()]);
+                args.extend(["--token", &auth.token]);
             }
             None => {}
         }
@@ -272,7 +265,7 @@ where
         let mut lines = BufReader::new(stdout).lines();
         let mut output_dir = None;
         let mut manifest_path = None;
-        let mut saw_result = false;
+        let mut has_result = false;
         while let Ok(Some(line)) = lines.next_line().await {
             if let Some(path) = line.strip_prefix("pulled to: ") {
                 output_dir = Some(path.to_owned());
@@ -280,7 +273,7 @@ where
                 manifest_path = Some(path.to_owned());
             }
             if let Some(response) = parse_pull_line(&line) {
-                saw_result = matches!(
+                has_result = matches!(
                     &response.update,
                     Some(update::registry_pull_response::Update::Result(_))
                 );
@@ -291,8 +284,8 @@ where
         }
         match child.wait().await {
             Ok(status) if status.success() => {
-                if !saw_result {
-                    if let (Some(output_dir), Some(manifest_path)) = (output_dir, manifest_path) {
+                if !has_result {
+                    if let Some((output_dir, manifest_path)) = output_dir.zip(manifest_path) {
                         let _ = tx
                             .send(Ok(RegistryPullResponse {
                                 update: Some(update::registry_pull_response::Update::Result(
