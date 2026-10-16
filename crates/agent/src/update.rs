@@ -263,40 +263,51 @@ where
     let (tx, rx) = mpsc::channel(16);
     tokio::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
-        let mut output_dir = None;
-        let mut manifest_path = None;
         let mut has_result = false;
-        while let Ok(Some(line)) = lines.next_line().await {
-            if let Some(path) = line.strip_prefix("pulled to: ") {
-                output_dir = Some(path.to_owned());
-            } else if let Some(path) = line.strip_prefix("manifest: ") {
-                manifest_path = Some(path.to_owned());
-            }
-            if let Some(response) = parse_pull_line(&line) {
-                has_result = matches!(
-                    &response.update,
-                    Some(update::registry_pull_response::Update::Result(_))
-                );
-                if tx.send(Ok(response)).await.is_err() {
-                    return;
+        let mut stream_error = None;
+        loop {
+            let line = match lines.next_line().await {
+                Ok(Some(line)) => line,
+                Ok(None) => break,
+                Err(err) => {
+                    stream_error = Some(Status::internal(format!(
+                        "failed reading ota-update output: {err}"
+                    )));
+                    let _ = child.kill().await;
+                    break;
                 }
+            };
+
+            let response = match parse_pull_line(&line) {
+                Ok(Some(response)) => response,
+                Ok(None) => continue,
+                Err(err) => {
+                    stream_error = Some(err);
+                    let _ = child.kill().await;
+                    break;
+                }
+            };
+            has_result = matches!(
+                &response.update,
+                Some(update::registry_pull_response::Update::Result(_))
+            );
+            if tx.send(Ok(response)).await.is_err() {
+                return;
             }
         }
-        match child.wait().await {
+
+        let wait_result = child.wait().await;
+        if let Some(err) = stream_error {
+            let _ = tx.send(Err(err)).await;
+            return;
+        }
+
+        match wait_result {
             Ok(status) if status.success() => {
                 if !has_result {
-                    if let Some((output_dir, manifest_path)) = output_dir.zip(manifest_path) {
-                        let _ = tx
-                            .send(Ok(RegistryPullResponse {
-                                update: Some(update::registry_pull_response::Update::Result(
-                                    update::RegistryPullResult {
-                                        output_dir,
-                                        manifest_path,
-                                    },
-                                )),
-                            }))
-                            .await;
-                    }
+                    let _ = tx
+                        .send(Err(Status::internal("ota-update returned no pull result")))
+                        .await;
                 }
             }
             Ok(status) => {
@@ -318,25 +329,33 @@ where
     Ok(ReceiverStream::new(rx))
 }
 
-fn parse_pull_line(line: &str) -> Option<RegistryPullResponse> {
-    let value: serde_json::Value = serde_json::from_str(line).ok()?;
-    if value.get("event").is_some() {
-        let event: PullEvent = serde_json::from_value(value).ok()?;
-        return Some(RegistryPullResponse {
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum PullOutput {
+    Event(PullEvent),
+    Result(PullResult),
+}
+
+fn parse_pull_line(line: &str) -> Result<Option<RegistryPullResponse>, Status> {
+    let output: PullOutput = serde_json::from_str(line)
+        .map_err(|err| Status::internal(format!("failed to parse ota-update JSONL: {err}")))?;
+
+    match output {
+        PullOutput::Event(PullEvent::Ignored) => Ok(None),
+        PullOutput::Event(event) => Ok(Some(RegistryPullResponse {
             update: Some(update::registry_pull_response::Update::Progress(
                 event.into(),
             )),
-        });
+        })),
+        PullOutput::Result(result) => Ok(Some(RegistryPullResponse {
+            update: Some(update::registry_pull_response::Update::Result(
+                update::RegistryPullResult {
+                    output_dir: result.output_dir,
+                    manifest_path: result.manifest_path,
+                },
+            )),
+        })),
     }
-    let result: PullResult = serde_json::from_value(value).ok()?;
-    Some(RegistryPullResponse {
-        update: Some(update::registry_pull_response::Update::Result(
-            update::RegistryPullResult {
-                output_dir: result.output_dir,
-                manifest_path: result.manifest_path,
-            },
-        )),
-    })
 }
 
 async fn output_stream<T>(args: Vec<String>) -> Result<ReceiverStream<Result<T, Status>>, Status>
@@ -520,10 +539,10 @@ impl From<GenerationDetails> for Generation {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_jsonl_result, registry_prefix, validate_trust};
+    use super::{parse_jsonl_result, parse_pull_line, registry_prefix, validate_trust};
     use crate::config::UpdateConfig;
     use givc_common::pb::update::{
-        RegistryBasicAuth, RegistryCredentials, RegistryDiscoverRequest,
+        self, RegistryBasicAuth, RegistryCredentials, RegistryDiscoverRequest,
     };
 
     #[test]
@@ -575,5 +594,40 @@ mod tests {
         let result: Vec<super::AvailableUpdateJson> =
             parse_jsonl_result(output).expect("result should parse");
         assert_eq!(result[0].tag, "tag");
+    }
+
+    #[test]
+    fn parses_pull_progress_jsonl() {
+        let response = parse_pull_line(r#"{"event":"blob_verified","digest":"sha256:test"}"#)
+            .expect("progress line should parse")
+            .expect("known event should produce a response");
+
+        assert!(matches!(
+            response.update,
+            Some(update::registry_pull_response::Update::Progress(_))
+        ));
+    }
+
+    #[test]
+    fn parses_pull_result_jsonl() {
+        let response = parse_pull_line(
+            r#"{"outputDir":"/persist/sysupdate/update","manifestPath":"/persist/sysupdate/update/manifest.json"}"#,
+        )
+        .expect("result line should parse")
+        .expect("result should produce a response");
+
+        let Some(update::registry_pull_response::Update::Result(result)) = response.update else {
+            panic!("expected pull result");
+        };
+        assert_eq!(result.output_dir, "/persist/sysupdate/update");
+        assert_eq!(
+            result.manifest_path,
+            "/persist/sysupdate/update/manifest.json"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_pull_jsonl() {
+        assert!(parse_pull_line("not json").is_err());
     }
 }
