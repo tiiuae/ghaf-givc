@@ -112,19 +112,32 @@ let
                   ;;
                 changelog)
                   cat <<'EOF'
-          {"event":"done"}
+          {"event":"changelog_fetched","bytes":14}
           Mock changelog
           EOF
                   ;;
                 pull)
                   cat <<'EOF'
+          pull layout: /tmp/mock-destination
           {"event":"pull_started","reference":"ghaf-updates","destination":"/tmp/mock-destination"}
-          {"event":"blob_downloading","digest":"sha256:mock","downloaded":12,"total":34}
-          {"event":"blob_verified","digest":"sha256:mock"}
+          {"event":"blob_downloading","digest":"sha256:mock-uki","downloaded":10,"total":34}
+          {"event":"blob_downloading","digest":"sha256:mock-uki","downloaded":20,"total":34}
+          artifact application/vnd.ghaf.ota.uki.v1+efi: remote media_type=application/vnd.ghaf.ota.uki.v1+efi digest=sha256:mock-uki -> local /tmp/mock-destination/kernel.efi
+          {"event":"blob_verified","digest":"sha256:mock-uki"}
+          {"event":"blob_downloading","digest":"sha256:mock-root","downloaded":12,"total":34}
+          {"event":"blob_downloading","digest":"sha256:mock-root","downloaded":34,"total":34}
+          artifact application/vnd.ghaf.ota.root.v1: remote media_type=application/vnd.ghaf.ota.root.v1 digest=sha256:mock-root -> local /tmp/mock-destination/root.img
+          {"event":"blob_verified","digest":"sha256:mock-root"}
+          {"event":"blob_downloading","digest":"sha256:mock-verity","downloaded":20,"total":24}
+          {"event":"blob_downloading","digest":"sha256:mock-verity","downloaded":24,"total":24}
+          artifact application/vnd.ghaf.ota.verity.v1+raw: remote media_type=application/vnd.ghaf.ota.verity.v1+raw digest=sha256:mock-verity -> local /tmp/mock-destination/verity.raw.zst
+          {"event":"blob_verified","digest":"sha256:mock-verity"}
+          artifact application/vnd.ghaf.ota.manifest-signature.v1+ed25519: remote media_type=application/vnd.ghaf.ota.manifest-signature.v1+ed25519 digest=sha256:mock-signature -> local /tmp/mock-destination/manifest.json.sig
+          {"event":"blob_verified","digest":"sha256:mock-signature"}
+          manifest path: /tmp/mock-destination/manifest.json
           {"event":"manifest_written","path":"/tmp/mock-destination/manifest.json"}
+          {"output_dir":"/tmp/mock-destination","manifest_path":"/tmp/mock-destination/manifest.json"}
           {"event":"done"}
-          pulled to: /tmp/mock-destination
-          manifest: /tmp/mock-destination/manifest.json
           EOF
                   ;;
                 *)
