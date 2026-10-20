@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod address;
+pub mod authn;
 pub mod query;
+pub mod tls_stream;
 pub mod types;
 
 pub mod pb {

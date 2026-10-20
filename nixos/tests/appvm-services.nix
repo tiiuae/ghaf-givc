@@ -123,12 +123,7 @@ in
                       addr = addrs.appvm;
                     };
                     admin.transport = admin;
-                    tls = {
-                      enable = tls;
-                      caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
-                      certPath = lib.mkForce "/etc/givc/cert.pem";
-                      keyPath = lib.mkForce "/etc/givc/key.pem";
-                    };
+                    tls.enable = tls;
                   };
                   capabilities = {
                     # Explicitly empty: a services-only app VM must not have to
