@@ -80,16 +80,20 @@ _: {
                     lvcreate -L 16M -n verity_0 pool
                     lvcreate -L 64M -n root_empty pool
                     lvcreate -L 16M -n verity_empty pool
-                    lvcreate -L 32M -n persist pool
-                    lvcreate -L 16M -n swap pool
-                    mkfs.ext4 -q /dev/pool/persist
-                  fi
-                  vgchange -ay pool
-                  mkdir -p /persist
-                  mount /dev/pool/persist /persist
-                  if $fresh; then
-                    printf 'shared-persist-sentinel\n' > /persist/ota-test
-                  fi
+                     lvcreate -L 32M -n persist pool
+                     lvcreate -L 16M -n swap pool
+                     mkfs.ext4 -q /dev/pool/persist
+                   fi
+                   vgchange -ay pool
+                   mkdir -p /persist
+                   mount /dev/pool/persist /persist
+                   if $fresh; then
+                     veritysetup format --root-hash-file=/persist/ota-test-root-hash /dev/pool/root_0 /dev/pool/verity_0 >/dev/null
+                     printf 'shared-persist-sentinel\n' > /persist/ota-test
+                   fi
+                   if ! veritysetup status nix-store >/dev/null 2>&1; then
+                     veritysetup open /dev/pool/root_0 nix-store /dev/pool/verity_0 "$(cat /persist/ota-test-root-hash)"
+                   fi
                 '';
               };
             };
@@ -365,6 +369,21 @@ _: {
                       machine.wait_for_unit("setup-lvm.service")
                       machine.succeed("grep -w ghaf.generation=2 /proc/cmdline")
                       machine.succeed(f"test -f /boot/EFI/Linux/{trial}+{3-attempt}-{attempt}.efi")
+                      if attempt == 1:
+                          machine.succeed(
+                              "${ota-update} boot-health"
+                              " --luks-mapper cryptpool --verity-mapper nix-store"
+                              " --mountpoint /persist --service setup-lvm.service"
+                              " --accepted-generation-file /var/lib/ota-test/accepted-generation"
+                              " --dry-run"
+                          )
+                          machine.fail(
+                              "${ota-update} boot-health"
+                              " --luks-mapper cryptpool --verity-mapper nix-store"
+                              " --mountpoint /persist --service missing-health.service"
+                              " --accepted-generation-file /var/lib/ota-test/accepted-generation"
+                              " --dry-run"
+                          )
                       machine.fail("test -e /sys/firmware/efi/efivars/LoaderEntryOneShot-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f")
                       machine.succeed("grep -qx shared-persist-sentinel /persist/ota-test")
 
