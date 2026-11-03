@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	givc_event "givc/modules/api/event"
@@ -18,6 +19,7 @@ import (
 	evdev "github.com/holoplot/go-evdev"
 	"github.com/jbdemonte/virtual-device/gamepad"
 	"github.com/jbdemonte/virtual-device/mouse"
+	"golang.org/x/sys/unix"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -52,6 +54,65 @@ func (s *EventProxyController) WaitForConsumer() (net.Conn, error) {
 	return nil, err
 }
 
+func parseUdevDeviceType(data string) string {
+	lines := strings.Split(data, "\n")
+	var isMouse, isGamepad, isKeyboard bool
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "E:ID_INPUT_JOYSTICK=1"), strings.HasPrefix(line, "E:ID_INPUT_GAMEPAD=1"):
+			isGamepad = true
+		case strings.HasPrefix(line, "E:ID_INPUT_MOUSE=1"):
+			isMouse = true
+		case strings.HasPrefix(line, "E:ID_INPUT_KEYBOARD=1"):
+			isKeyboard = true
+		}
+	}
+
+	if isMouse {
+		return "mouse"
+	}
+	if isGamepad {
+		return "wireless controller"
+	}
+	if isKeyboard {
+		return "keyboard"
+	}
+
+	return ""
+}
+
+func getDeviceType(devicePath string, waitTimeout time.Duration) string {
+	var stat syscall.Stat_t
+
+	if err := syscall.Stat(devicePath, &stat); err != nil {
+		return ""
+	}
+
+	major := unix.Major(stat.Rdev)
+	minor := unix.Minor(stat.Rdev)
+	udevFile := fmt.Sprintf("/run/udev/data/c%d:%d", major, minor)
+
+	var data []byte
+	var err error
+	deadline := time.Now().Add(waitTimeout)
+	for {
+		data, err = os.ReadFile(udevFile)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if err != nil {
+		return ""
+	}
+
+	return parseUdevDeviceType(string(data))
+}
+
 func extractDeviceInfo(dev *evdev.InputDevice) (*givc_event.DeviceInfo, error) {
 
 	inputID, err := dev.InputID()
@@ -64,10 +125,19 @@ func extractDeviceInfo(dev *evdev.InputDevice) (*givc_event.DeviceInfo, error) {
 		return nil, err
 	}
 
+	deviceType := getDeviceType(dev.Path(), 1*time.Second)
+	if deviceType == "" {
+		log.Errorf("event: device %s not supported, unknown device type!", name)
+		return nil, fmt.Errorf("event: device %s not supported, unknown device type!", name)
+	}
+
+	log.Infof("event: device %s detected, device type: %s", name, deviceType)
+
 	deviceInfo := &givc_event.DeviceInfo{
-		VendorId: uint32(inputID.Vendor),
-		DeviceId: uint32(inputID.Product),
-		Name:     name,
+		VendorId:   uint32(inputID.Vendor),
+		DeviceId:   uint32(inputID.Product),
+		Name:       name,
+		DeviceType: deviceType,
 	}
 	return deviceInfo, nil
 }
@@ -89,22 +159,26 @@ func (s *EventProxyController) OpenAndExtract(handler string) (*evdev.InputDevic
 	return dev, deviceInfo, nil
 }
 
-func checkDevice(targetDevice string, event string) bool {
-	devicePaths, err := evdev.ListDevicePaths()
-	if err == nil {
-		for _, dev := range devicePaths {
-			// Ignore VMMouse directly
-			if strings.Contains(strings.ToLower(dev.Name), "vmmouse") {
-				log.Debugf("event: ignoring device: %s", dev.Name)
-				continue
-			}
-			if strings.Contains(strings.ToLower(dev.Name), strings.ToLower(targetDevice)) && dev.Path == event {
-				log.Infof("event: device attached: %s", dev.Name)
-				return true
-			}
-		}
+func checkDevice(targetDevice string, event string, waitTimeout time.Duration) bool {
+	deviceType := getDeviceType(event, waitTimeout)
+	if deviceType == "" || !strings.EqualFold(deviceType, targetDevice) {
+		return false
 	}
-	return false
+
+	dev, err := evdev.Open(event)
+	if err != nil {
+		return false
+	}
+	name, _ := dev.Name()
+	dev.Close()
+
+	if strings.Contains(strings.ToLower(name), "vmmouse") {
+		log.Debugf("event: ignoring device: %s", name)
+		return false
+	}
+
+	log.Infof("event: device attached by type %s: %s", deviceType, name)
+	return true
 }
 
 func (s *EventProxyController) MonitorInputDevices(targetDevice string, onAdd func(string)) (string, error) {
@@ -129,9 +203,11 @@ func (s *EventProxyController) MonitorInputDevices(targetDevice string, onAdd fu
 	// Check existing devices at start
 	filepath.Walk(inputDir, func(path string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() && info.Mode()&os.ModeCharDevice != 0 && strings.HasPrefix(filepath.Base(path), "event") {
-			if checkDevice(targetDevice, path) {
-				handler = path
-				once.Do(func() { close(done) }) // Signal that the target device is found
+			if checkDevice(targetDevice, path, 0) {
+				once.Do(func() {
+					handler = path
+					close(done)
+				})
 				return nil
 			}
 			onAdd(path)
@@ -147,12 +223,16 @@ func (s *EventProxyController) MonitorInputDevices(targetDevice string, onAdd fu
 					return
 				}
 				if event.Op&fsnotify.Create == fsnotify.Create && strings.HasPrefix(filepath.Base(event.Name), "event") {
-					if checkDevice(targetDevice, event.Name) {
-						handler = event.Name
-						once.Do(func() { close(done) }) // Signal that the target device is found
-						return
-					}
-					onAdd(event.Name)
+					go func(devicePath string) {
+						if checkDevice(targetDevice, devicePath, 3*time.Second) {
+							once.Do(func() {
+								handler = devicePath
+								close(done)
+							})
+							return
+						}
+						onAdd(devicePath)
+					}(event.Name)
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {
