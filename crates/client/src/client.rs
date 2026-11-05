@@ -6,6 +6,7 @@ use async_channel::Receiver;
 use gethostname::gethostname;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
+use tonic::Request;
 use tonic::transport::Channel;
 use tracing::{debug, info};
 
@@ -82,18 +83,14 @@ impl AdminClient {
     pub async fn register_service(
         &self,
         name: String,
+        parent: String,
         ty: UnitType,
         endpoint: EndpointEntry,
         status: UnitStatus,
     ) -> anyhow::Result<()> {
-        // Convert everything into wire format
-        let request = pb::admin::RegistryRequest {
-            name,
-            parent: String::new(),
-            r#type: ty.into(),
-            transport: Some(endpoint.into()),
-            state: Some(status.into()),
-        };
+        let request = crate::registration::registration_request(name, parent, ty, endpoint, status);
+        let mut request = Request::new(request);
+        request.set_timeout(crate::endpoint::RPC_TIMEOUT);
         let response = self
             .connect_to()
             .await?

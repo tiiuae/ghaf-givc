@@ -18,6 +18,7 @@ use givc_common::address::EndpointAddress;
 use givc_common::types::TransportConfig;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+pub const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct TlsConfig {

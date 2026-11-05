@@ -39,6 +39,7 @@ pub fn start_registration_worker(
 }
 
 async fn register_agent_with_retry(config: &AgentConfig, backend: &ZbusBackend) -> Result<()> {
+    // Keep Go's indefinite retry behavior; revisit if registration gets an explicit shutdown policy.
     loop {
         match register_agent(config, backend).await {
             Ok(()) => return Ok(()),
@@ -64,6 +65,7 @@ async fn register_agent(config: &AgentConfig, backend: &ZbusBackend) -> Result<(
     admin
         .register_service(
             agent_service_name.clone(),
+            config.identity.parent.clone(),
             config.identity.r#type.try_into()?,
             endpoint_entry(&config.network.agent)?,
             snapshot_to_unit_status(unit_status),
@@ -86,6 +88,7 @@ async fn register_services(config: &AgentConfig, backend: &ZbusBackend) -> Resul
                 if let Err(err) = admin
                     .register_service(
                         service.clone(),
+                        config.identity.service_name.clone(),
                         (*sub_type).try_into()?,
                         endpoint_entry(&config.network.agent)?,
                         snapshot_to_unit_status(snapshot),
