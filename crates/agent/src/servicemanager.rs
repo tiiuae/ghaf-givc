@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use crate::config::ApplicationManifest;
@@ -449,8 +449,18 @@ const APP_ARG_FLAG: &str = "flag";
 const APP_ARG_URL: &str = "url";
 const APP_ARG_FILE: &str = "file";
 
+static APP_SERVICE_NAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+\.service$")
+        .expect("valid application service name regex")
+});
+static APP_FLAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^-[-]?[a-zA-Z0-9_-]+$").expect("valid application flag regex"));
+static APP_FILE_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^/[-a-zA-Z0-9_/\. \(\)\[\]\{\}]+$").expect("valid application file path regex")
+});
+
 fn validate_service_name(service_name: &str) -> Result<()> {
-    if Regex::new(r"^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+\.service$")?.is_match(service_name) {
+    if APP_SERVICE_NAME_RE.is_match(service_name) {
         Ok(())
     } else {
         bail!("failure parsing application name")
@@ -465,7 +475,7 @@ fn validate_application_arg(arg: &str, app: &ApplicationManifest) -> bool {
 }
 
 fn validate_flag(arg: &str) -> bool {
-    Regex::new(r"^-[-]?[a-zA-Z0-9_-]+$").is_ok_and(|re| re.is_match(arg))
+    APP_FLAG_RE.is_match(arg)
 }
 
 fn validate_url(arg: &str) -> bool {
@@ -505,7 +515,7 @@ fn validate_url(arg: &str) -> bool {
 
 fn validate_file_path(arg: &str, directories: &[String]) -> bool {
     let path = std::path::Path::new(arg);
-    if !Regex::new(r"^/[-a-zA-Z0-9_/\. \(\)\[\]\{\}]+$").is_ok_and(|re| re.is_match(arg))
+    if !APP_FILE_PATH_RE.is_match(arg)
         || !path.is_absolute()
         || path
             .components()
