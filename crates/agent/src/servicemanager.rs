@@ -260,8 +260,6 @@ where
         service_name: &str,
         service_args: Vec<String>,
     ) -> Result<ApplicationStartPlan> {
-        validate_service_name(service_name)?;
-
         let app_name = service_name
             .split_once('@')
             .map(|(name, _)| name)
@@ -272,6 +270,8 @@ where
             .iter()
             .find(|candidate| candidate.name == app_name)
             .ok_or_else(|| anyhow::anyhow!("application not found in manifest"))?;
+
+        validate_service_name(service_name)?;
 
         if let Some(arg) = service_args
             .iter()
@@ -469,6 +469,12 @@ fn validate_flag(arg: &str) -> bool {
 }
 
 fn validate_url(arg: &str) -> bool {
+    if arg.chars().any(|character| {
+        character.is_control() || character.is_whitespace() || "`$;\\\\'\"".contains(character)
+    }) {
+        return false;
+    }
+
     let validation_url = if let Some(after) = arg.strip_prefix("element:") {
         format!("http://{}", after.trim_start_matches('/'))
     } else if let Some(after) = arg.strip_prefix("io.element.desktop:") {
@@ -480,39 +486,48 @@ fn validate_url(arg: &str) -> bool {
     let Ok(parsed) = url::Url::parse(&validation_url) else {
         return false;
     };
-
-    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+    if parsed
+        .host_str()
+        .is_none_or(|host| host.eq_ignore_ascii_case("http"))
+        || (!arg.starts_with("element:")
+            && !arg.starts_with("io.element.desktop:")
+            && parsed.scheme() != "http"
+            && parsed.scheme() != "https")
+    {
         return false;
     }
 
     match url::Url::parse(arg) {
         Ok(original) => original.username().is_empty() && original.password().is_none(),
-        Err(_) => true,
+        Err(_) => arg.starts_with("element:") || arg.starts_with("io.element.desktop:"),
     }
 }
 
 fn validate_file_path(arg: &str, directories: &[String]) -> bool {
     let path = std::path::Path::new(arg);
-    if !path.is_absolute() {
-        return false;
-    }
-
-    if path
-        .components()
-        .any(|component| matches!(component, std::path::Component::ParentDir))
+    if !Regex::new(r"^/[-a-zA-Z0-9_/\. \(\)\[\]\{\}]+$").is_ok_and(|re| re.is_match(arg))
+        || !path.is_absolute()
+        || path
+            .components()
+            .collect::<std::path::PathBuf>()
+            .as_os_str()
+            != path.as_os_str()
     {
         return false;
     }
 
-    if !directories
-        .iter()
-        .map(std::path::Path::new)
-        .any(|dir| path.starts_with(dir))
-    {
+    if !directories.iter().any(|directory| {
+        let directory = std::path::Path::new(directory);
+        path.starts_with(directory)
+            && std::fs::canonicalize(path)
+                .ok()
+                .zip(std::fs::canonicalize(directory).ok())
+                .is_some_and(|(path, directory)| path.starts_with(directory))
+    }) {
         return false;
     }
 
-    std::fs::metadata(arg).is_ok()
+    std::fs::metadata(path).is_ok()
 }
 
 #[derive(Debug, Clone)]

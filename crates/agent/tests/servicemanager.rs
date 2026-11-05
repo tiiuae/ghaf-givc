@@ -252,6 +252,232 @@ fn resolve_application_request_rejects_unknown_app() {
 }
 
 #[test]
+fn application_service_names_match_go_validation_table() {
+    let valid = [
+        "-@-.service",
+        "1@1.service",
+        "-_1@1_-.service",
+        "valid@my-service.service",
+        "valid@my.service",
+    ];
+    let invalid = [
+        "a@valid@my-service.service",
+        "a@a@my-service.service",
+        "a@valid.service@my-service.service",
+        "@1.service",
+        "my-service.service",
+        "my-service@.service",
+    ];
+
+    for name in valid {
+        let manager = ServiceManager::new(
+            vec![],
+            vec![ApplicationManifest {
+                name: name.split('@').next().unwrap().to_owned(),
+                command: "app".to_owned(),
+                args: vec![],
+                directories: vec![],
+            }],
+            FakeBackend::default(),
+        );
+        assert!(
+            manager.resolve_application_request(name, vec![]).is_ok(),
+            "{name}"
+        );
+    }
+    for name in invalid {
+        let manager = ServiceManager::new(
+            vec![],
+            vec![ApplicationManifest {
+                name: name.split('@').next().unwrap().to_owned(),
+                command: "app".to_owned(),
+                args: vec![],
+                directories: vec![],
+            }],
+            FakeBackend::default(),
+        );
+        let error = manager
+            .resolve_application_request(name, vec![])
+            .expect_err("invalid service name must be rejected");
+        assert!(error.to_string().contains("application name"), "{name}");
+    }
+}
+
+#[test]
+fn application_flags_match_go_validation_behavior() {
+    let manager = ServiceManager::new(
+        vec![],
+        vec![ApplicationManifest {
+            name: "test-app".to_owned(),
+            command: "app".to_owned(),
+            args: vec!["flag".to_owned()],
+            directories: vec![],
+        }],
+        FakeBackend::default(),
+    );
+    for argument in ["-incognito", "--incognito", "-a_b-9"] {
+        assert!(
+            manager
+                .resolve_application_request("test-app@1.service", vec![argument.to_owned()])
+                .is_ok(),
+            "{argument}"
+        );
+    }
+    for argument in ["", "incognito", "--incognito;echo bad", "--ü"] {
+        assert!(
+            manager
+                .resolve_application_request("test-app@1.service", vec![argument.to_owned()])
+                .is_err(),
+            "{argument}"
+        );
+    }
+}
+
+#[test]
+fn application_urls_match_go_validation_table() {
+    let valid = [
+        "http://example.com",
+        "https://example.com",
+        "element://example.com",
+        "io.element.desktop:/something/",
+        "io.element.desktop:/example#123",
+        "https://example.com/something.",
+        "https://example.com?q=2#first",
+        "https://localhost:8080/",
+    ];
+    let invalid = [
+        "file:///etc/passwd",
+        "elements://example.com",
+        "tcp://example.com",
+        "http://http://example.com",
+        "https://example.com$(touch IWASHERE)",
+        "https://example.com`touch IWASHERE`",
+        "https://example.com/ $(touch IWASHERE)",
+        "$(touch IWASHERE)https://google.com",
+        "https://example.com\\%20$(touch IWASHERE)",
+        "https://example.com/a;\\$(touch IWASHERE)",
+        "https://example.com;touch IWASHERE",
+        "https://example.com/'$(touch IWASHERE)",
+        "https://bob:pass123@www.example.com/",
+    ];
+
+    let manager = ServiceManager::new(
+        vec![],
+        vec![ApplicationManifest {
+            name: "test-app".to_owned(),
+            command: "app".to_owned(),
+            args: vec!["url".to_owned()],
+            directories: vec![],
+        }],
+        FakeBackend::default(),
+    );
+    for url in valid {
+        assert!(
+            manager
+                .resolve_application_request("test-app@1.service", vec![url.to_owned()])
+                .is_ok(),
+            "{url}"
+        );
+    }
+    for url in invalid {
+        assert!(
+            manager
+                .resolve_application_request("test-app@1.service", vec![url.to_owned()])
+                .is_err(),
+            "{url}"
+        );
+    }
+}
+
+#[test]
+fn file_paths_match_go_allowlist_and_reject_sibling_directory_escape() {
+    let root = std::env::temp_dir().join(format!("givc-app-path-{}", std::process::id()));
+    let allowed = root.join("allowed");
+    let sibling = root.join("allowed-escape");
+    std::fs::create_dir_all(&allowed).unwrap();
+    std::fs::create_dir_all(&sibling).unwrap();
+    let accepted = [
+        allowed.join("file.txt"),
+        allowed.join("another file"),
+        allowed.join("another{2}[1]file(4).txt"),
+        allowed.join(".hidden"),
+    ];
+    for path in &accepted {
+        std::fs::write(path, b"ok").unwrap();
+    }
+    let escape = sibling.join("file.txt");
+    std::fs::write(&escape, b"outside").unwrap();
+    let disallowed_character = allowed.join("bad;file");
+    std::fs::write(&disallowed_character, b"invalid").unwrap();
+    let repeated_separator = format!("{}/file.txt", allowed.display());
+    let repeated_separator = repeated_separator.replacen('/', "//", 1);
+    let malformed_parent = allowed.join(".. ").join("file.txt");
+    let directory = allowed.to_string_lossy().into_owned();
+    let allowed_file = accepted[0].to_string_lossy().into_owned();
+    for directories in [vec!["tmp".to_owned()], vec![], vec!["/etc".to_owned()]] {
+        let manager = ServiceManager::new(
+            vec![],
+            vec![ApplicationManifest {
+                name: "test-app".to_owned(),
+                command: "app".to_owned(),
+                args: vec!["file".to_owned()],
+                directories,
+            }],
+            FakeBackend::default(),
+        );
+        assert!(
+            manager
+                .resolve_application_request("test-app@1.service", vec![allowed_file.clone()])
+                .is_err()
+        );
+    }
+    let manager = ServiceManager::new(
+        vec![],
+        vec![ApplicationManifest {
+            name: "test-app".to_owned(),
+            command: "app".to_owned(),
+            args: vec!["file".to_owned()],
+            directories: vec![allowed.to_string_lossy().into_owned()],
+        }],
+        FakeBackend::default(),
+    );
+
+    for path in accepted {
+        assert!(
+            manager
+                .resolve_application_request(
+                    "test-app@1.service",
+                    vec![path.to_string_lossy().into_owned()],
+                )
+                .is_ok(),
+            "{}",
+            path.display()
+        );
+    }
+    for path in [
+        "//something.txt".to_owned(),
+        "../../something.txt".to_owned(),
+        "../something.txt".to_owned(),
+        "//../../something.txt ".to_owned(),
+        "/a/b/c/../something.txt ".to_owned(),
+        malformed_parent.to_string_lossy().into_owned(),
+        "/etc/password $(touch /etc/something)".to_owned(),
+        disallowed_character.to_string_lossy().into_owned(),
+        repeated_separator,
+        escape.to_string_lossy().into_owned(),
+    ] {
+        assert!(
+            manager
+                .resolve_application_request("test-app@1.service", vec![path.clone()])
+                .is_err(),
+            "{path}"
+        );
+    }
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn resolve_application_request_validates_file_args() {
     let backend = FakeBackend::default();
     let manager = ServiceManager::new(
