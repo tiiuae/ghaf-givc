@@ -34,7 +34,7 @@ pub fn start_registration_worker(
             return;
         }
 
-        info!("registration goroutine finished");
+        info!("registration routine finished");
     });
 }
 
@@ -51,7 +51,7 @@ async fn register_agent_with_retry(config: &AgentConfig, backend: &ZbusBackend) 
 }
 
 async fn register_agent(config: &AgentConfig, backend: &ZbusBackend) -> Result<()> {
-    let agent_service_name = config.identity.service_name.clone();
+    let agent_service_name = &config.identity.service_name;
     if agent_service_name.is_empty() {
         bail!("agent service name not configured");
     }
