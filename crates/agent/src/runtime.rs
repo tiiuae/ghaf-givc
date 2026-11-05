@@ -134,9 +134,13 @@ impl AgentRuntime {
             },
             acl: if self.config.access_control.enabled {
                 Some(AccessController::new(
-                    self.config.access_control.rules_file.as_ref().expect(
-                        "Access controller enabled, but rulesFile is missed in configuration",
-                    ),
+                    self.config
+                        .access_control
+                        .rules_file
+                        .as_ref()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("access control is enabled, but rulesFile is missing")
+                        })?,
                 )?)
             } else {
                 None

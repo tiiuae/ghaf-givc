@@ -16,7 +16,7 @@ pub struct AgentConfig {
 
     pub capabilities: CapabilitiesConfig,
 
-    #[serde(default)]
+    #[serde(rename = "accessControl", default)]
     pub access_control: AccessControlConfig,
 }
 
@@ -29,6 +29,7 @@ impl AgentConfig {
         let mut config: Self = serde_json::from_str(&data)
             .with_context(|| format!("failed to parse JSON config {}", path.as_ref().display()))?;
         config.populate()?;
+        config.access_control.validate()?;
         Ok(config)
     }
 
@@ -297,6 +298,40 @@ mod tests {
     }
 
     #[test]
+    fn parses_nix_shaped_access_control_config() {
+        let json = r#"{
+            "identity": {"name": "vm", "type": 1, "subType": 2, "parent": "admin-vm"},
+            "network": {
+                "admin": {"transport": {"addr": "127.0.0.1", "port": "9000", "protocol": "tcp"}},
+                "agent": {"transport": {"addr": "127.0.0.1", "port": "9001", "protocol": "tcp"}},
+                "tls": {"enable": false}
+            },
+            "capabilities": {},
+            "accessControl": {"enable": true, "rulesFile": "/etc/givc/agent.cedar"}
+        }"#;
+
+        let config: AgentConfig = serde_json::from_str(json).expect("config should parse");
+
+        assert!(config.access_control.enabled);
+        assert_eq!(
+            config.access_control.rules_file.as_deref(),
+            Some("/etc/givc/agent.cedar")
+        );
+    }
+
+    #[test]
+    fn rejects_enabled_access_control_without_rules_file() {
+        let config = AccessControlConfig {
+            enabled: true,
+            rules_file: None,
+        };
+
+        let error = config.validate().expect_err("rules file is required");
+
+        assert!(error.to_string().contains("rulesFile"));
+    }
+
+    #[test]
     fn tls_config_allows_missing_tls_name() {
         let config = TlsConfigJson {
             enable: true,
@@ -317,6 +352,15 @@ pub struct AccessControlConfig {
 
     #[serde(rename = "rulesFile")]
     pub rules_file: Option<String>,
+}
+
+impl AccessControlConfig {
+    fn validate(&self) -> Result<()> {
+        if self.enabled && self.rules_file.as_deref().is_none_or(str::is_empty) {
+            bail!("access control is enabled, but rulesFile is missing");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
