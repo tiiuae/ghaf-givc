@@ -84,6 +84,7 @@ in
               };
               environment.systemPackages = [
                 pkgs.networkmanager
+                pkgs.grpcurl
               ];
 
               # Network
@@ -138,6 +139,20 @@ in
 
               givc.sysvm = {
                 enable = true;
+                accessControl = {
+                  enable = true;
+                  # Keep this test policy local; revisit when proxy authorization tests have a dedicated VM fixture.
+                  agentRules = [
+                    {
+                      permittedVms = [ "net-vm" ];
+                      permittedModules = [ "socketproxy" ];
+                    }
+                    {
+                      permittedVms = [ "app-vm" ];
+                      permittedModules = [ "socketproxy" ];
+                    }
+                  ];
+                };
                 network = {
                   admin.transport = lib.head adminConfig.addresses;
                   agent.transport = {
@@ -176,6 +191,7 @@ in
                           protocol = "tcp";
                         };
                         socket = "/tmp/.dbusproxy_app.sock";
+                        server = false;
                       }
                       {
                         transport = {
@@ -239,6 +255,7 @@ in
 
               givc.sysvm = {
                 enable = true;
+                accessControl.enable = true;
                 network = {
                   admin.transport = lib.head adminConfig.addresses;
                   agent.transport = {
@@ -312,6 +329,7 @@ in
                   prefixLength = 24;
                 }
               ];
+              environment.systemPackages = [ pkgs.grpcurl ];
 
               # Service
               services.upower.enable = true;
@@ -332,6 +350,20 @@ in
 
               givc.sysvm = {
                 enable = true;
+                accessControl = {
+                  enable = true;
+                  # Keep this test policy local; revisit when proxy authorization tests have a dedicated VM fixture.
+                  agentRules = [
+                    {
+                      permittedVms = [ "gui-vm" ];
+                      permittedModules = [ "socketproxy" ];
+                    }
+                    {
+                      permittedVms = [ "gui-vm" ];
+                      permittedModules = [ ];
+                    }
+                  ];
+                };
                 network = {
                   admin.transport = lib.head adminConfig.addresses;
                   agent.transport = {
@@ -527,6 +559,18 @@ in
 
             # FAIL: evil2 user access to netvm service
             print(guivm.fail("sudo -u evil2 dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.Avahi /org/freedesktop/Avahi org.freedesktop.DBus.Introspectable.Introspect"))
+
+          with subtest("socket_proxy_cedar_allow"):
+            guivm.succeed(
+              "grpcurl -cacert /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem -d '{\"Chunk\":\"b2s=\",\"Eof\":true}' ${addrs.netvm}:9010 socketproxy.SocketStream/TransferData"
+            )
+
+          with subtest("socket_proxy_cedar_deny"):
+            (exit_code, output) = audiovm.execute(
+              "grpcurl -cacert /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem -d '{\"Chunk\":\"b2s=\",\"Eof\":true}' ${addrs.netvm}:9010 socketproxy.SocketStream/TransferData 2>&1"
+            )
+            assert exit_code != 0, f"Cedar should deny audio VM access to net-vm socket proxy: {output}"
+            assert "PermissionDenied" in output, f"Expected Cedar PermissionDenied, got: {output}"
 
           with subtest("remote_user_to_sesssionbus_access"):
             appvm.wait_for_unit("multi-user.target")

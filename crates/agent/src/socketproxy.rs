@@ -18,9 +18,12 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+use tonic_middleware::RequestInterceptorLayer;
+use tonic_reflection::server::Builder as ReflectionBuilder;
 use tracing::{error, info, warn};
 
 use crate::config::{AgentConfig, ProxyConfig};
+use crate::runtime::AgentInterceptor;
 
 pub use pb::socketproxy::socket_stream_server::SocketStreamServer as SocketProxyServerServer;
 
@@ -296,13 +299,23 @@ async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) ->
     if proxy.server {
         let listen_addr = socket_proxy_listen_addr(config, &proxy)?;
         let grpc_service = SocketProxyServerServer::new(socket_service.clone());
-        let mut server = Server::builder();
+        let reflection = ReflectionBuilder::configure()
+            .register_encoded_file_descriptor_set(givc_common::pb::reflection::SOCKET_DESCRIPTOR)
+            .build_v1()?;
+        let mut server = Server::builder().layer(RequestInterceptorLayer::new(
+            AgentInterceptor::from_config(config)?,
+        ));
         if let Some(tls) = &config.network.tls_config {
             server = server.tls_config(tls.server_config()?)?;
         }
         tokio::spawn(async move {
             info!(addr = %listen_addr, socket = %proxy.socket, "socket-proxy: server starting");
-            if let Err(err) = server.add_service(grpc_service).serve(listen_addr).await {
+            if let Err(err) = server
+                .add_service(grpc_service)
+                .add_service(reflection)
+                .serve(listen_addr)
+                .await
+            {
                 error!(error = %err, "socket-proxy: server failed");
             }
         });

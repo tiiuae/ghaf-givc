@@ -24,12 +24,40 @@ let
       }
     ];
   };
+  admin = lib.head adminConfig.addresses;
 in
 {
   perSystem = _: {
     vmTests.tests.event = {
       module = {
         nodes = {
+          adminvm =
+            { ... }:
+            {
+              imports = [
+                self.nixosModules.admin
+                ./snakeoil/gen-test-certs.nix
+              ];
+
+              givc-tls-test = {
+                inherit (admin) name;
+                addresses = admin.addr;
+              };
+
+              networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
+                {
+                  address = addrs.adminvm;
+                  prefixLength = 24;
+                }
+              ];
+              givc.admin = {
+                enable = true;
+                inherit (adminConfig) name addresses;
+                tls.enable = tls;
+                debug = false;
+              };
+            };
+
           audiovm =
             { pkgs, ... }:
             let
@@ -57,7 +85,6 @@ in
                   prefixLength = 24;
                 }
               ];
-
               environment.systemPackages = [ pkgs.grpcurl ];
 
               # Setup users and keys
@@ -135,6 +162,7 @@ in
                   prefixLength = 24;
                 }
               ];
+              environment.systemPackages = [ pkgs.grpcurl ];
 
               # Setup users and keys
               users.mutableUsers = false;
@@ -164,6 +192,13 @@ in
                 enable = true;
                 accessControl = {
                   enable = true;
+                  # Keep this test policy local; revisit when proxy authorization tests have a dedicated VM fixture.
+                  agentRules = [
+                    {
+                      permittedVms = [ "audio-vm" ];
+                      permittedModules = [ "eventproxy" ];
+                    }
+                  ];
                 };
                 network = {
                   admin.transport = lib.head adminConfig.addresses;
@@ -215,8 +250,13 @@ in
           ''
 
             with subtest("boot_completed"):
+              adminvm.wait_for_unit("multi-user.target")
+              adminvm.wait_for_unit("givc-admin.service")
               audiovm.wait_for_unit("multi-user.target")
               appvm.wait_for_unit("multi-user.target")
+              appvm.wait_until_succeeds(
+                "grpcurl ${grpcurl_args} ${admin.addr}:${admin.port} admin.AdminService/QueryList"
+              )
 
             with subtest("success_test_device_register"):
               audiovm.succeed("${grpcurl_cmd} -d \'{\"name\":\"wireless controller\", \"vendorId\":\"1118\", \"deviceId\":\"654\"}\' ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.RegisterDevice")
@@ -234,6 +274,13 @@ in
             with subtest("failure_tests_device_register"):
               audiovm.fail("${grpcurl_cmd}  ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.RegisterDevice")
               audiovm.fail("${grpcurl_cmd} -d \'{\"name\":\"wireless keyboard\", \"vendorId\":\"1118\", \"deviceId\":\"654\"}\' ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.RegisterDevice")
+
+            with subtest("authenticated_but_unpermitted_event_peer_is_denied"):
+              (exit_code, output) = appvm.execute(
+                "${grpcurl_cmd} ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.RegisterDevice 2>&1"
+              )
+              assert exit_code != 0, f"Cedar should deny app VM event proxy access: {output}"
+              assert "PermissionDenied" in output, f"Expected Cedar PermissionDenied, got: {output}"
           '';
       };
     };

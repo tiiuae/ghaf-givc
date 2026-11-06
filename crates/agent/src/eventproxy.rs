@@ -24,9 +24,11 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+use tonic_middleware::RequestInterceptorLayer;
 use tracing::{error, info, warn};
 
 use crate::config::{AgentConfig, EventConfig};
+use crate::runtime::AgentInterceptor;
 
 pub use pb::eventproxy::event_service_server::EventServiceServer as EventProxyServerServer;
 
@@ -260,7 +262,9 @@ async fn start_event_proxy_service(config: &AgentConfig, event: EventConfig) -> 
         let reflect = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(EVENT_DESCRIPTOR)
             .build_v1()?;
-        let mut server = Server::builder();
+        let mut server = Server::builder().layer(RequestInterceptorLayer::new(
+            AgentInterceptor::from_config(config)?,
+        ));
         if let Some(tls) = &config.network.tls_config {
             server = server.tls_config(tls.server_config()?)?;
         }

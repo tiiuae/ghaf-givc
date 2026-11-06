@@ -33,9 +33,30 @@ use givc_common::pb::reflection::{
 };
 
 #[derive(Clone)]
-struct AgentInterceptor {
+pub(crate) struct AgentInterceptor {
     auth: Authenticator,
     acl: Option<AccessController>,
+}
+
+impl AgentInterceptor {
+    pub(crate) fn from_config(config: &AgentConfig) -> Result<Self> {
+        let acl = if config.access_control.enabled {
+            Some(AccessController::new(
+                config.access_control.rules_file.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("access control is enabled, but rulesFile is missing")
+                })?,
+            )?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            auth: Authenticator {
+                use_tls: config.network.tls_config.is_some(),
+            },
+            acl,
+        })
+    }
 }
 
 #[tonic::async_trait]
@@ -128,24 +149,8 @@ impl AgentRuntime {
         let listener = bind_listener_with_retry(self.listen).await?;
         let _ = started_tx.send(());
 
-        let interceptor = RequestInterceptorLayer::new(AgentInterceptor {
-            auth: Authenticator {
-                use_tls: self.config.network.tls_config.is_some(),
-            },
-            acl: if self.config.access_control.enabled {
-                Some(AccessController::new(
-                    self.config
-                        .access_control
-                        .rules_file
-                        .as_ref()
-                        .ok_or_else(|| {
-                            anyhow::anyhow!("access control is enabled, but rulesFile is missing")
-                        })?,
-                )?)
-            } else {
-                None
-            },
-        });
+        let interceptor =
+            RequestInterceptorLayer::new(AgentInterceptor::from_config(&self.config)?);
 
         let listener = TcpIncoming::from(listener);
         if let Some(tls) = &self.config.network.tls_config {
