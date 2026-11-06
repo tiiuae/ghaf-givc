@@ -540,6 +540,167 @@ fn validate_file_path(arg: &str, directories: &[String]) -> bool {
     std::fs::metadata(path).is_ok()
 }
 
+#[cfg(test)]
+mod application_validation_tests {
+    use super::*;
+
+    #[test]
+    fn validate_service_name_matches_go_table() {
+        let cases = [
+            ("-@-.service", true),
+            ("1@1.service", true),
+            ("-_1@1_-.service", true),
+            ("valid@my-service.service", true),
+            ("valid@my.service", true),
+            ("a@valid@my-service.service", false),
+            ("a@a@my-service.service", false),
+            ("a@valid.service@my-service.service", false),
+            ("@1.service", false),
+            ("my-service.service", false),
+            ("my-service@.service", false),
+        ];
+
+        for (service_name, expected_valid) in cases {
+            assert_eq!(
+                validate_service_name(service_name).is_ok(),
+                expected_valid,
+                "service name: {service_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_url_matches_go_table() {
+        let cases = [
+            ("http://example.com", true),
+            ("https://example.com", true),
+            ("element://example.com", true),
+            ("io.element.desktop:/something/", true),
+            ("io.element.desktop:/example#123", true),
+            ("https://example.com/something.", true),
+            ("https://example.com?q=2#first", true),
+            ("https://localhost:8080/", true),
+            ("file:///etc/passwd", false),
+            ("elements://example.com", false),
+            ("tcp://example.com", false),
+            ("http://http://example.com", false),
+            ("https://example.com$(touch IWASHERE)", false),
+            ("https://example.com`touch IWASHERE`", false),
+            ("https://example.com/ $(touch IWASHERE)", false),
+            ("$(touch IWASHERE)https://google.com", false),
+            ("https://example.com\\%20$(touch IWASHERE)", false),
+            ("https://example.com/a;\\$(touch IWASHERE)", false),
+            ("https://example.com;touch IWASHERE", false),
+            ("https://example.com/'$(touch IWASHERE)", false),
+            ("https://bob:pass123@www.example.com/", false),
+        ];
+
+        for (url, expected_valid) in cases {
+            assert_eq!(validate_url(url), expected_valid, "URL: {url}");
+        }
+    }
+
+    #[test]
+    fn validate_file_path_matches_go_table_and_containment_boundaries() {
+        let root = std::env::temp_dir().join(format!(
+            "givc-agent-app-validation-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let allowed = root.join("tmp");
+        let sibling = root.join("tmp-escape");
+        std::fs::create_dir_all(&allowed).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        let valid_paths = [
+            allowed.join("file"),
+            allowed.join(".file"),
+            allowed.join("another file"),
+            allowed.join("another{2}[1]file(4).txt"),
+        ];
+        let outside_path = sibling.join("outside.txt");
+        for path in valid_paths.iter().chain(std::iter::once(&outside_path)) {
+            std::fs::write(path, b"test").unwrap();
+        }
+        let directory = allowed.to_string_lossy().into_owned();
+
+        for path in &valid_paths {
+            assert!(
+                validate_file_path(&path.to_string_lossy(), std::slice::from_ref(&directory)),
+                "expected valid path: {}",
+                path.display()
+            );
+        }
+
+        let invalid = [
+            (
+                valid_paths[0].to_string_lossy().into_owned(),
+                vec!["tmp".to_owned()],
+            ),
+            (valid_paths[0].to_string_lossy().into_owned(), vec![]),
+            (
+                valid_paths[0].to_string_lossy().into_owned(),
+                vec!["/etc".to_owned()],
+            ),
+            ("//something.txt".to_owned(), vec!["/etc".to_owned()]),
+            ("../../something.txt".to_owned(), vec!["/etc".to_owned()]),
+            ("../something.txt".to_owned(), vec!["/etc".to_owned()]),
+            ("//../../something.txt ".to_owned(), vec!["/etc".to_owned()]),
+            (
+                "/a/b/c/../something.txt ".to_owned(),
+                vec!["/etc".to_owned()],
+            ),
+            (
+                "/etc/password $(touch /etc/something)".to_owned(),
+                vec!["/etc".to_owned()],
+            ),
+            (
+                outside_path.to_string_lossy().into_owned(),
+                vec![directory.clone()],
+            ),
+        ];
+        for (path, directories) in invalid {
+            assert!(
+                !validate_file_path(&path, &directories),
+                "expected invalid path: {path}"
+            );
+        }
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn application_arguments_obey_manifest_allowlist() {
+        let app = ApplicationManifest {
+            name: "test-app".to_owned(),
+            command: "chromium".to_owned(),
+            args: vec![APP_ARG_URL.to_owned(), APP_ARG_FLAG.to_owned()],
+            directories: vec![],
+        };
+        for (arg, expected_valid) in [
+            ("https://example.com", true),
+            ("--incognito", true),
+            ("-incognito", true),
+            ("--incognito;echo something", false),
+        ] {
+            assert_eq!(
+                validate_application_arg(arg, &app),
+                expected_valid,
+                "argument: {arg}"
+            );
+        }
+
+        let no_args = ApplicationManifest {
+            args: vec![],
+            ..app.clone()
+        };
+        assert!(!validate_application_arg("https://example.com", &no_args));
+        assert!(!validate_application_arg("--incognito", &no_args));
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ZbusBackend {
     conn: zbus::Connection,
