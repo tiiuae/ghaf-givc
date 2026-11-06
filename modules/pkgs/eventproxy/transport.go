@@ -84,31 +84,32 @@ func (s *EventProxyServer) RegisterDevice(ctx context.Context, info *givc_event.
 		return nil, errors.New("device info cannot be nil")
 	}
 
-	deviceName := strings.ToLower(info.Name)
+	deviceType := info.DeviceType
 
-	switch {
-	case strings.Contains(deviceName, "wireless controller"):
+	switch deviceType {
+	case "wireless controller":
 		device := gamepad.NewXBoxOneS()
 		if err := device.Register(); err != nil {
-			log.Errorf("event: failed to register gamepad device %s: %v", deviceName, err)
+			log.Errorf("event: failed to register wireless controller device %s: %v", info.Name, err)
 			return nil, err
 		}
 		s.eventController.virtualGamepad = device
 
-	case strings.Contains(deviceName, "mouse"):
+	case "mouse":
 		device := mouse.NewGenericMouse()
 		if err := device.Register(); err != nil {
-			log.Errorf("event: failed to register mouse device %s: %v", info.Name, err)
+			log.Errorf("event: failed to register wireless mouse device %s: %v", info.Name, err)
 			return nil, err
 		}
 		s.eventController.virtualMouse = device
 
 	default:
+		log.Errorf("event: unsupported device type %s (name: %s)", deviceType, info.Name)
 		return nil, errors.New("unsupported device")
 	}
 
-	log.Infof("event: registered device %s with VendorID:0x%x DeviceID:0x%x",
-		deviceName, info.VendorId, info.DeviceId,
+	log.Infof("event: registered device %s (type: %s) with VendorID:0x%x DeviceID:0x%x",
+		info.Name, deviceType, info.VendorId, info.DeviceId,
 	)
 	return &givc_event.Ack{Status: "OK"}, nil
 }

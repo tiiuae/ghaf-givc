@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	givc_event "givc/modules/api/event"
@@ -18,6 +19,7 @@ import (
 	evdev "github.com/holoplot/go-evdev"
 	"github.com/jbdemonte/virtual-device/gamepad"
 	"github.com/jbdemonte/virtual-device/mouse"
+	"golang.org/x/sys/unix"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -52,6 +54,37 @@ func (s *EventProxyController) WaitForConsumer() (net.Conn, error) {
 	return nil, err
 }
 
+func getDeviceType(devicePath string) string {
+	var stat syscall.Stat_t
+
+	if err := syscall.Stat(devicePath, &stat); err != nil {
+		return ""
+	}
+
+	major := unix.Major(stat.Rdev)
+	minor := unix.Minor(stat.Rdev)
+	udevFile := fmt.Sprintf("/run/udev/data/c%d:%d", major, minor)
+
+	data, err := os.ReadFile(udevFile)
+	if err != nil {
+		return ""
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "E:ID_INPUT_JOYSTICK=1"), strings.HasPrefix(line, "E:ID_INPUT_GAMEPAD=1"):
+			return "wireless controller"
+		case strings.HasPrefix(line, "E:ID_INPUT_MOUSE=1"):
+			return "mouse"
+		case strings.HasPrefix(line, "E:ID_INPUT_KEYBOARD=1"):
+			return "keyboard"
+		}
+	}
+
+	return ""
+}
+
 func extractDeviceInfo(dev *evdev.InputDevice) (*givc_event.DeviceInfo, error) {
 
 	inputID, err := dev.InputID()
@@ -64,10 +97,19 @@ func extractDeviceInfo(dev *evdev.InputDevice) (*givc_event.DeviceInfo, error) {
 		return nil, err
 	}
 
+	deviceType := getDeviceType(dev.Path())
+	if deviceType == "" {
+		log.Errorf("event: device %s not supported, unknown device type!", name)
+		return nil, fmt.Errorf("event: device %s not supported, unknown device type!", name)
+	}
+
+	log.Infof("event: device %s detected, device type: %s", name, deviceType)
+
 	deviceInfo := &givc_event.DeviceInfo{
-		VendorId: uint32(inputID.Vendor),
-		DeviceId: uint32(inputID.Product),
-		Name:     name,
+		VendorId:   uint32(inputID.Vendor),
+		DeviceId:   uint32(inputID.Product),
+		Name:       name,
+		DeviceType: deviceType,
 	}
 	return deviceInfo, nil
 }
@@ -98,8 +140,13 @@ func checkDevice(targetDevice string, event string) bool {
 				log.Debugf("event: ignoring device: %s", dev.Name)
 				continue
 			}
-			if strings.Contains(strings.ToLower(dev.Name), strings.ToLower(targetDevice)) && dev.Path == event {
-				log.Infof("event: device attached: %s", dev.Name)
+			if dev.Path != event {
+				continue
+			}
+
+			udevType := getDeviceType(dev.Path)
+			if udevType != "" && strings.EqualFold(udevType, targetDevice) && dev.Path == event {
+				log.Infof("event: device attached by udev type %s: %s", udevType, dev.Name)
 				return true
 			}
 		}
