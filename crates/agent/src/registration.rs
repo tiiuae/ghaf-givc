@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
+use crate::config::{AgentConfig, EndpointConfig as AgentEndpointConfig};
+use crate::servicemanager::{Snapshot, SystemdBackend, ZbusBackend};
 use anyhow::{Context, Result, bail};
 use givc_client::AdminClient;
 use givc_common::address::EndpointAddress;
@@ -11,8 +13,8 @@ use tokio::sync::oneshot;
 use tokio::time::sleep;
 use tracing::{info, warn};
 
-use crate::config::{AgentConfig, EndpointConfig as AgentEndpointConfig};
-use crate::servicemanager::{Snapshot, SystemdBackend, ZbusBackend};
+const MAX_REGISTRATION_ATTEMPTS: usize = 5;
+const REGISTRATION_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 pub fn start_registration_worker(
     config: AgentConfig,
@@ -25,7 +27,7 @@ pub fn start_registration_worker(
         }
 
         if let Err(err) = register_agent_with_retry(&config, &backend).await {
-            warn!(error = %err, "failed to register agent");
+            warn!("failed to register agent: {err:#}");
             return;
         }
 
@@ -39,16 +41,62 @@ pub fn start_registration_worker(
 }
 
 async fn register_agent_with_retry(config: &AgentConfig, backend: &ZbusBackend) -> Result<()> {
-    // Keep Go's indefinite retry behavior; revisit if registration gets an explicit shutdown policy.
-    loop {
-        match register_agent(config, backend).await {
+    register_with_retry(|| register_agent(config, backend), REGISTRATION_RETRY_DELAY).await
+}
+
+async fn register_with_retry<F, Fut>(mut operation: F, retry_delay: Duration) -> Result<()>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<()>>,
+{
+    for attempt in 1..=MAX_REGISTRATION_ATTEMPTS {
+        match operation().await {
             Ok(()) => return Ok(()),
-            Err(err) => {
-                warn!("error registering agent, retrying: {err:#}");
-                sleep(Duration::from_secs(1)).await;
+            Err(error)
+                if attempt < MAX_REGISTRATION_ATTEMPTS
+                    && is_retryable_registration_error(&error) =>
+            {
+                warn!(
+                    attempt,
+                    max_attempts = MAX_REGISTRATION_ATTEMPTS,
+                    error = %error,
+                    "transient agent registration failure; retrying"
+                );
+                sleep(retry_delay).await;
             }
+            Err(error) => return Err(error),
         }
     }
+
+    unreachable!("registration attempt loop always returns")
+}
+
+fn is_retryable_registration_error(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause.downcast_ref::<tonic::Status>().is_some_and(|status| {
+            matches!(
+                status.code(),
+                tonic::Code::Unavailable
+                    | tonic::Code::DeadlineExceeded
+                    | tonic::Code::ResourceExhausted
+                    | tonic::Code::Aborted
+            )
+        }) || cause.downcast_ref::<std::io::Error>().is_some_and(|error| {
+            matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionRefused
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::NotConnected
+                    | std::io::ErrorKind::HostUnreachable
+                    | std::io::ErrorKind::NetworkUnreachable
+                    | std::io::ErrorKind::TimedOut
+                    | std::io::ErrorKind::WouldBlock
+                    | std::io::ErrorKind::Interrupted
+                    | std::io::ErrorKind::NotFound
+            )
+        })
+    })
 }
 
 async fn register_agent(config: &AgentConfig, backend: &ZbusBackend) -> Result<()> {
@@ -157,5 +205,117 @@ fn snapshot_to_unit_status(snapshot: Snapshot) -> UnitStatus {
         sub_state: snapshot.sub_state,
         path: snapshot.path,
         freezer_state: snapshot.freezer_state,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn permanent_registration_error_stops_without_retry() {
+        let attempts = AtomicUsize::new(0);
+        let result = register_with_retry(
+            || async {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                Err(anyhow::Error::msg("registration rejected by admin"))
+            },
+            Duration::ZERO,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "registration rejected by admin"
+        );
+    }
+
+    #[tokio::test]
+    async fn transient_registration_error_retries_until_success() {
+        let attempts = AtomicUsize::new(0);
+
+        let result = register_with_retry(
+            || async {
+                let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                if attempt < 2 {
+                    Err(anyhow::Error::new(tonic::Status::unavailable("try again")))
+                } else {
+                    Ok(())
+                }
+            },
+            Duration::ZERO,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn transient_registration_error_stops_at_attempt_limit() {
+        let attempts = AtomicUsize::new(0);
+
+        let result = register_with_retry(
+            || async {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                Err(anyhow::Error::new(tonic::Status::unavailable("try again")))
+            },
+            Duration::ZERO,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(attempts.load(Ordering::SeqCst), 5);
+    }
+
+    #[test]
+    fn retryable_grpc_statuses_are_classified_as_transient() {
+        for status in [
+            tonic::Status::unavailable("transient"),
+            tonic::Status::deadline_exceeded("transient"),
+            tonic::Status::resource_exhausted("transient"),
+            tonic::Status::aborted("transient"),
+        ] {
+            assert!(is_retryable_registration_error(&anyhow::Error::new(status)));
+        }
+
+        assert!(!is_retryable_registration_error(&anyhow::Error::new(
+            tonic::Status::invalid_argument("permanent")
+        )));
+        assert!(!is_retryable_registration_error(&anyhow::Error::msg(
+            "application rejected registration"
+        )));
+    }
+
+    #[test]
+    fn only_transient_transport_io_errors_are_retryable() {
+        for kind in [
+            std::io::ErrorKind::ConnectionRefused,
+            std::io::ErrorKind::ConnectionReset,
+            std::io::ErrorKind::ConnectionAborted,
+            std::io::ErrorKind::NotConnected,
+            std::io::ErrorKind::HostUnreachable,
+            std::io::ErrorKind::NetworkUnreachable,
+            std::io::ErrorKind::TimedOut,
+            std::io::ErrorKind::WouldBlock,
+            std::io::ErrorKind::Interrupted,
+            std::io::ErrorKind::NotFound,
+        ] {
+            assert!(is_retryable_registration_error(&anyhow::Error::new(
+                std::io::Error::from(kind)
+            )));
+        }
+
+        for kind in [
+            std::io::ErrorKind::PermissionDenied,
+            std::io::ErrorKind::InvalidInput,
+        ] {
+            assert!(!is_retryable_registration_error(&anyhow::Error::new(
+                std::io::Error::from(kind)
+            )));
+        }
     }
 }

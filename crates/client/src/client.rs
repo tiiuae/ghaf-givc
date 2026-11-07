@@ -88,9 +88,8 @@ impl AdminClient {
         endpoint: EndpointEntry,
         status: UnitStatus,
     ) -> anyhow::Result<()> {
-        let request = crate::registration::registration_request(name, parent, ty, endpoint, status);
-        let mut request = Request::new(request);
-        request.set_timeout(crate::endpoint::RPC_TIMEOUT);
+        let request =
+            crate::registration::registration_rpc_request(name, parent, ty, endpoint, status);
         let response = self
             .connect_to()
             .await?

@@ -297,6 +297,8 @@ in
               pull_destination = "/tmp/mock-destination";
             in
             ''
+              adminvm.wait_for_unit("multi-user.target")
+              adminvm.wait_for_unit("givc-admin.service")
               hostvm.wait_for_unit("multi-user.target")
               hostvm.succeed("nix-env -p /nix/var/nix/profiles/system --set ${hostvm}")
 
@@ -306,9 +308,7 @@ in
               netvm.succeed("mkdir -p /nix/var/nix/profiles/per-user/updates")
               netvm.succeed(f"ota-update-server register /nix/var/nix/profiles/per-user/updates ghaf-dev {update}")
 
-              adminvm.wait_for_unit("multi-user.target")
               hostvm.wait_for_unit("givc-ghaf-host.service")
-              adminvm.wait_for_unit("givc-admin.service")
 
               hostvm.succeed("${cli} ${cliArgs} test ensure --retry 60 --type 0 givc-ghaf-host.service")
 
