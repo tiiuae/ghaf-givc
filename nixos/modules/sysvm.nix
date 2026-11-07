@@ -353,7 +353,7 @@ in
           "update"
         ]
         ++ optionals cfg.capabilities.wifi.enable [
-          "wifi"
+          "wifimanager"
         ]
         ++ optionals cfg.capabilities.hwid.enable [
           "hwid"

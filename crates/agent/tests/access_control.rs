@@ -25,6 +25,51 @@ permit (
 );
 "#;
 
+const UPDATE_POLICY: &str = r#"
+permit (
+    principal == Source::"admin-vm",
+    action == Command::"Discover",
+    resource == Module::"update"
+) when {
+    context.Reference == "ghaf-dev" && context.service == "Update"
+};
+permit (
+    principal == Source::"admin-vm",
+    action == Command::"ListNetwork",
+    resource == Module::"wifimanager"
+);
+"#;
+
+#[test]
+fn update_policy_uses_request_fields_and_actual_wifi_module() {
+    let authorizer = Authorizer::from_str(UPDATE_POLICY).expect("authorizer");
+
+    authorizer
+        .authorize(
+            "admin-vm",
+            "/update.Update/Discover",
+            json!({"Reference": "ghaf-dev"}),
+        )
+        .expect("matching update request should be allowed");
+
+    let denied = authorizer
+        .authorize(
+            "admin-vm",
+            "/update.Update/Discover",
+            json!({"Reference": "other"}),
+        )
+        .expect_err("wrong update reference should be denied");
+    assert_eq!(denied.code(), tonic::Code::PermissionDenied);
+
+    authorizer
+        .authorize(
+            "admin-vm",
+            "/wifimanager.WifiService/ListNetwork",
+            json!({}),
+        )
+        .expect("policy must use the protobuf module name");
+}
+
 #[test]
 fn proxy_policy_allows_configured_event_and_socket_peers() {
     let authorizer = Authorizer::from_str(PROXY_POLICY).expect("authorizer");
