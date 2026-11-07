@@ -123,8 +123,7 @@ let
           {"event":"blob_verified","digest":"sha256:mock"}
           {"event":"manifest_written","path":"/tmp/mock-destination/manifest.json"}
           {"event":"done"}
-          pulled to: /tmp/mock-destination
-          manifest: /tmp/mock-destination/manifest.json
+          {"outputDir":"/tmp/mock-destination","manifestPath":"/tmp/mock-destination/manifest.json"}
           EOF
                   ;;
                 *)
