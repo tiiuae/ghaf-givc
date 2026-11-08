@@ -12,8 +12,10 @@ use givc_client::endpoint::EndpointConfig;
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{Notify, mpsc};
+use tokio::net::{TcpStream, UnixListener, UnixStream};
+use tokio::sync::{mpsc, watch};
+use tokio::task::JoinSet;
+use tokio_listener::{Listener, ListenerAddress, SystemOptions, UserOptions};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server;
@@ -40,7 +42,7 @@ pub struct SocketProxyController {
 }
 
 impl SocketProxyController {
-    fn new(socket: String, run_as_server: bool) -> Result<Self> {
+    async fn new(socket: String, run_as_server: bool) -> Result<Self> {
         if !run_as_server {
             let _ = fs::remove_file(&socket);
         }
@@ -50,9 +52,13 @@ impl SocketProxyController {
         } else {
             let listener = UnixListener::bind(&socket)
                 .with_context(|| format!("unable to listen on unix socket {socket}"))?;
-            set_socket_permissions(Path::new(&socket))?;
             Some(listener)
         };
+
+        while fs::metadata(&socket).is_err() {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+        set_socket_permissions(Path::new(&socket))?;
 
         Ok(Self {
             run_as_server,
@@ -96,9 +102,9 @@ pub struct SocketProxyService {
 }
 
 impl SocketProxyService {
-    fn new(socket: String, run_as_server: bool) -> Result<Self> {
+    async fn new(socket: String, run_as_server: bool) -> Result<Self> {
         Ok(Self {
-            socket_controller: Arc::new(SocketProxyController::new(socket, run_as_server)?),
+            socket_controller: Arc::new(SocketProxyController::new(socket, run_as_server).await?),
         })
     }
 
@@ -110,33 +116,32 @@ impl SocketProxyService {
     ) {
         let (mut reader, mut writer) = conn.into_split();
         let controller = Arc::clone(&self.socket_controller);
-        let cancel = Arc::new(Notify::new());
-        let outbound_wait = Arc::clone(&cancel);
-        let outbound_signal = Arc::clone(&cancel);
-        let inbound_wait = Arc::clone(&cancel);
-        let inbound_signal = Arc::clone(&cancel);
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        let mut outbound_wait = cancel_rx.clone();
+        let mut inbound_wait = cancel_rx;
+        let inbound_signal = cancel_tx.clone();
 
         let outbound = tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    _ = outbound_wait.notified() => break,
+                    _ = outbound_wait.changed() => break,
                     result = controller.read(&mut reader) => {
                         match result {
                             Ok(data) if data.is_empty() => {
                                 let _ = tx.send(Ok(pb::socketproxy::StreamFrame { chunk: Vec::new(), eof: true })).await;
-                                inbound_signal.notify_waiters();
+                                let _ = inbound_signal.send(true);
                                 break;
                             }
                             Ok(data) => {
                                 if tx.send(Ok(pb::socketproxy::StreamFrame { chunk: data, eof: false })).await.is_err() {
-                                    inbound_signal.notify_waiters();
+                                    let _ = inbound_signal.send(true);
                                     break;
                                 }
                             }
                             Err(err) => {
                                 warn!(error = %err, "socket-proxy: read failed");
                                 let _ = tx.send(Ok(pb::socketproxy::StreamFrame { chunk: Vec::new(), eof: true })).await;
-                                inbound_signal.notify_waiters();
+                                let _ = inbound_signal.send(true);
                                 break;
                             }
                         }
@@ -149,18 +154,18 @@ impl SocketProxyService {
             let mut inbound = inbound;
             loop {
                 tokio::select! {
-                    _ = inbound_wait.notified() => break,
+                    _ = inbound_wait.changed() => break,
                     next = inbound.next() => {
                         let Some(next) = next else {
-                            outbound_signal.notify_waiters();
+                            let _ = cancel_tx.send(true);
                             break;
                         };
                         let Ok(frame) = next else {
-                            outbound_signal.notify_waiters();
+                            let _ = cancel_tx.send(true);
                             break;
                         };
                         if frame.eof {
-                            outbound_signal.notify_waiters();
+                            let _ = cancel_tx.send(true);
                             break;
                         }
                         if frame.chunk.is_empty() {
@@ -168,13 +173,13 @@ impl SocketProxyService {
                         }
                         if let Err(err) = writer.write_all(&frame.chunk).await {
                             warn!(error = %err, "socket-proxy: write failed");
-                            outbound_signal.notify_waiters();
+                            let _ = cancel_tx.send(true);
                             break;
                         }
                     }
                 }
             }
-            outbound_signal.notify_waiters();
+            let _ = cancel_tx.send(true);
         });
 
         let _ = tokio::join!(outbound, inbound_task);
@@ -188,33 +193,32 @@ impl SocketProxyService {
     ) -> Result<()> {
         let (mut reader, mut writer) = conn.into_split();
         let controller = Arc::clone(&self.socket_controller);
-        let cancel = Arc::new(Notify::new());
-        let send_wait = Arc::clone(&cancel);
-        let send_signal = Arc::clone(&cancel);
-        let recv_wait = Arc::clone(&cancel);
-        let recv_signal = Arc::clone(&cancel);
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        let mut send_wait = cancel_rx.clone();
+        let mut recv_wait = cancel_rx;
+        let recv_signal = cancel_tx.clone();
 
         let send_task = tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    _ = send_wait.notified() => break,
+                    _ = send_wait.changed() => break,
                     result = controller.read(&mut reader) => {
                         match result {
                             Ok(data) if data.is_empty() => {
                                 let _ = tx.send(pb::socketproxy::StreamFrame { chunk: Vec::new(), eof: true }).await;
-                                recv_signal.notify_waiters();
+                                let _ = recv_signal.send(true);
                                 break;
                             }
                             Ok(data) => {
                                 if tx.send(pb::socketproxy::StreamFrame { chunk: data, eof: false }).await.is_err() {
-                                    recv_signal.notify_waiters();
+                                    let _ = recv_signal.send(true);
                                     break;
                                 }
                             }
                             Err(err) => {
                                 warn!(error = %err, "socket-proxy: local read failed");
                                 let _ = tx.send(pb::socketproxy::StreamFrame { chunk: Vec::new(), eof: true }).await;
-                                recv_signal.notify_waiters();
+                                let _ = recv_signal.send(true);
                                 break;
                             }
                         }
@@ -225,28 +229,33 @@ impl SocketProxyService {
 
         loop {
             tokio::select! {
-                _ = recv_wait.notified() => break,
+                _ = recv_wait.changed() => break,
                 next = stream.next() => {
                     let Some(next) = next else {
-                        send_signal.notify_waiters();
                         break;
                     };
-                    let frame = next.map_err(|err| Status::internal(err.to_string()))?;
+                    let frame = match next {
+                        Ok(frame) => frame,
+                        Err(err) => {
+                            warn!(error = %err, "socket-proxy: remote stream read failed");
+                            break;
+                        }
+                    };
                     if frame.eof {
-                        send_signal.notify_waiters();
                         break;
                     }
                     if frame.chunk.is_empty() {
                         continue;
                     }
-                    writer
-                        .write_all(&frame.chunk)
-                        .await
-                        .map_err(|err| Status::internal(err.to_string()))?;
+                    if let Err(err) = writer.write_all(&frame.chunk).await {
+                        warn!(error = %err, "socket-proxy: local socket write failed");
+                        break;
+                    }
                 }
             }
         }
 
+        let _ = cancel_tx.send(true);
         let _ = send_task.await;
         Ok(())
     }
@@ -264,11 +273,10 @@ impl pb::socketproxy::socket_stream_server::SocketStream for SocketProxyService 
             return Err(Status::failed_precondition("socket proxy runs as client"));
         }
 
-        let conn = self
-            .socket_controller
-            .dial()
-            .await
-            .map_err(|err| Status::internal(err.to_string()))?;
+        let conn = self.socket_controller.dial().await.map_err(|err| {
+            warn!(error = %err, "socket-proxy: local dial failed");
+            Status::internal(err.to_string())
+        })?;
         let (tx, rx) = mpsc::channel(32);
         let inbound = request.into_inner();
         let service = self.clone();
@@ -294,10 +302,18 @@ pub async fn start_socket_proxy_services(config: &AgentConfig) -> Result<()> {
 }
 
 async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) -> Result<()> {
-    let socket_service = SocketProxyService::new(proxy.socket.clone(), proxy.server)?;
+    let socket_service = SocketProxyService::new(proxy.socket.clone(), proxy.server).await?;
 
     if proxy.server {
-        let listen_addr = socket_proxy_listen_addr(config, &proxy)?;
+        let listen_addr = socket_proxy_listener_address(config, &proxy)?;
+        let listener = Listener::bind(
+            &listen_addr,
+            &SystemOptions::default(),
+            &UserOptions::default(),
+        )
+        .await
+        .with_context(|| format!("unable to bind socket-proxy listener {listen_addr:?}"))?;
+        let is_tcp = matches!(listen_addr, ListenerAddress::Tcp(_));
         let grpc_service = SocketProxyServerServer::new(socket_service.clone());
         let reflection = ReflectionBuilder::configure()
             .register_encoded_file_descriptor_set(givc_common::pb::reflection::SOCKET_DESCRIPTOR)
@@ -309,13 +325,23 @@ async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) ->
             server = server.tls_config(tls.server_config()?)?;
         }
         tokio::spawn(async move {
-            info!(addr = %listen_addr, socket = %proxy.socket, "socket-proxy: server starting");
-            if let Err(err) = server
-                .add_service(grpc_service)
-                .add_service(reflection)
-                .serve(listen_addr)
-                .await
-            {
+            info!(addr = ?listen_addr, socket = %proxy.socket, "socket-proxy: server starting");
+            let result = if is_tcp {
+                server
+                    .add_service(grpc_service)
+                    .add_service(reflection)
+                    .serve_with_incoming(
+                        listener.map(|result| result.and_then(listener_connection_into_tcp)),
+                    )
+                    .await
+            } else {
+                server
+                    .add_service(grpc_service)
+                    .add_service(reflection)
+                    .serve_with_incoming(listener)
+                    .await
+            };
+            if let Err(err) = result {
                 error!(error = %err, "socket-proxy: server failed");
             }
         });
@@ -331,6 +357,14 @@ async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) ->
     });
 
     Ok(())
+}
+
+fn listener_connection_into_tcp(
+    connection: tokio_listener::Connection,
+) -> std::io::Result<TcpStream> {
+    connection
+        .try_into_tcp()
+        .map_err(|_| std::io::Error::other("socket-proxy TCP listener accepted non-TCP connection"))
 }
 
 async fn run_socket_proxy_client(
@@ -359,61 +393,45 @@ async fn run_socket_proxy_client(
             }
         };
 
-        consecutive_failures = 0;
-
-        let mut client = pb::socketproxy::socket_stream_client::SocketStreamClient::new(channel);
-        let conn = match service.socket_controller.accept().await {
-            Ok(conn) => conn,
-            Err(err) => {
-                warn!(error = %err, "socket-proxy: local accept failed");
-                consecutive_failures += 1;
-                let delay = if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
-                    warn!(
-                        retries = SOCKET_PROXY_MAX_RETRIES,
-                        "socket-proxy: still waiting for local socket"
-                    );
-                    5
-                } else {
-                    1
-                };
-                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
-                continue;
+        let client = pb::socketproxy::socket_stream_client::SocketStreamClient::new(channel);
+        let mut connections = JoinSet::new();
+        loop {
+            tokio::select! {
+                Some(result) = connections.join_next(), if !connections.is_empty() => {
+                    if let Err(err) = result {
+                        warn!(error = %err, "socket-proxy: connection task failed");
+                    }
+                }
+                accepted = service.socket_controller.accept() => {
+                    let conn = match accepted {
+                        Ok(conn) => conn,
+                        Err(err) => {
+                            warn!(error = %err, "socket-proxy: local accept failed");
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            continue;
+                        }
+                    };
+                    let mut client = client.clone();
+                    let service = service.clone();
+                    connections.spawn(async move {
+                        let mut failures = 0usize;
+                        let (tx, mut response) = loop {
+                            let (tx, rx) = mpsc::channel(32);
+                            match client.transfer_data(Request::new(ReceiverStream::new(rx))).await {
+                                Ok(response) => break (tx, response.into_inner()),
+                                Err(err) => {
+                                    warn!("socket-proxy: remote transfer failed: {err}");
+                                    failures += 1;
+                                    let delay = if failures >= SOCKET_PROXY_MAX_RETRIES { 5 } else { 1 };
+                                    tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                                }
+                            }
+                        };
+                        service.stream_client_connection(conn, &mut response, tx).await
+                    });
+                }
             }
-        };
-
-        consecutive_failures = 0;
-
-        let (tx, rx) = mpsc::channel(32);
-        let request = ReceiverStream::new(rx);
-        let mut response = match client.transfer_data(Request::new(request)).await {
-            Ok(response) => response.into_inner(),
-            Err(err) => {
-                warn!(error = %err, "socket-proxy: remote transfer failed");
-                consecutive_failures += 1;
-                let delay = if consecutive_failures >= SOCKET_PROXY_MAX_RETRIES {
-                    warn!(
-                        retries = SOCKET_PROXY_MAX_RETRIES,
-                        "socket-proxy: still waiting for remote transfer"
-                    );
-                    5
-                } else {
-                    1
-                };
-                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
-                continue;
-            }
-        };
-
-        consecutive_failures = 0;
-
-        let service_for_task = service.clone();
-        let send_task = tokio::spawn(async move {
-            let _ = service_for_task
-                .stream_client_connection(conn, &mut response, tx)
-                .await;
-        });
-
-        let _ = send_task.await;
+        }
     }
 }
 
@@ -458,30 +476,36 @@ fn socket_proxy_endpoint_config(
     })
 }
 
-fn socket_proxy_listen_addr(config: &AgentConfig, proxy: &ProxyConfig) -> Result<SocketAddr> {
-    if proxy.transport.protocol != "tcp" {
-        bail!("socket-proxy server requires tcp transport");
-    }
-
-    let addr: IpAddr = config
-        .network
-        .agent
-        .transport
-        .address
-        .parse()
-        .with_context(|| {
-            format!(
-                "invalid agent address {}",
-                config.network.agent.transport.address
-            )
-        })?;
-    let port: u16 = proxy
-        .transport
-        .port
-        .parse()
-        .with_context(|| format!("invalid socket-proxy port {}", proxy.transport.port))?;
-
-    Ok(SocketAddr::new(addr, port))
+fn socket_proxy_listener_address(
+    config: &AgentConfig,
+    proxy: &ProxyConfig,
+) -> Result<ListenerAddress> {
+    let transport = &config.network.agent.transport;
+    Ok(match proxy.transport.protocol.as_str() {
+        "tcp" => {
+            let addr: IpAddr = transport
+                .address
+                .parse()
+                .with_context(|| format!("invalid agent address {}", transport.address))?;
+            let port =
+                proxy.transport.port.parse().with_context(|| {
+                    format!("invalid socket-proxy port {}", proxy.transport.port)
+                })?;
+            ListenerAddress::Tcp(SocketAddr::new(addr, port))
+        }
+        "unix" => ListenerAddress::Path(transport.address.clone().into()),
+        "abstract" => ListenerAddress::Abstract(transport.address.clone()),
+        "vsock" => ListenerAddress::Vsock {
+            cid: transport
+                .address
+                .parse()
+                .with_context(|| format!("invalid agent vsock cid {}", transport.address))?,
+            port: proxy.transport.port.parse().with_context(|| {
+                format!("invalid socket-proxy vsock port {}", proxy.transport.port)
+            })?,
+        },
+        other => bail!("unsupported socket-proxy transport protocol: {other}"),
+    })
 }
 
 fn set_socket_permissions(path: &Path) -> Result<()> {
@@ -508,19 +532,104 @@ fn set_socket_permissions(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio_stream::wrappers::TcpListenerStream;
+    use tonic::transport::server::Connected;
+
+    fn test_socket_path(name: &str) -> String {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!(
+                "givc-socketproxy-{name}-{}-{unique}.sock",
+                std::process::id()
+            ))
+            .to_string_lossy()
+            .into_owned()
+    }
 
     #[test]
-    fn reject_non_tcp_server_transport() {
-        let config = AgentConfig::default();
-        let proxy = ProxyConfig {
-            transport: crate::config::TransportConfig {
-                protocol: "unix".to_owned(),
+    fn supports_socket_proxy_server_transports() {
+        let config = AgentConfig {
+            network: crate::config::NetworkConfig {
+                agent: crate::config::EndpointConfig {
+                    transport: crate::config::TransportConfig {
+                        protocol: "tcp".to_owned(),
+                        address: "127.0.0.1".to_owned(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            server: true,
-            socket: "unused".to_owned(),
+            ..Default::default()
         };
-        assert!(socket_proxy_listen_addr(&config, &proxy).is_err());
+
+        for (protocol, address, port) in [
+            ("tcp", "127.0.0.1", "9010"),
+            ("unix", "/tmp/givc.sock", "9010"),
+            ("abstract", "givc-socket", "9010"),
+            ("vsock", "2", "9010"),
+        ] {
+            let config = AgentConfig {
+                network: crate::config::NetworkConfig {
+                    agent: crate::config::EndpointConfig {
+                        transport: crate::config::TransportConfig {
+                            address: address.to_owned(),
+                            ..config.network.agent.transport.clone()
+                        },
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let proxy = ProxyConfig {
+                transport: crate::config::TransportConfig {
+                    protocol: protocol.to_owned(),
+                    port: port.to_owned(),
+                    ..Default::default()
+                },
+                server: true,
+                socket: "unused".to_owned(),
+            };
+            assert!(
+                socket_proxy_listener_address(&config, &proxy).is_ok(),
+                "{protocol}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn tcp_listener_connections_preserve_native_connect_info() {
+        let bind_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = bind_listener.local_addr().expect("local address");
+        drop(bind_listener);
+
+        let listener = Listener::bind(
+            &ListenerAddress::Tcp(address),
+            &SystemOptions::default(),
+            &UserOptions::default(),
+        )
+        .await
+        .expect("listener");
+        let mut incoming = listener.map(|result| result.and_then(listener_connection_into_tcp));
+        let client = TcpStream::connect(address).await.expect("client");
+        let accepted = incoming
+            .next()
+            .await
+            .expect("incoming item")
+            .expect("accepted TCP connection");
+
+        assert_eq!(
+            accepted.connect_info().remote_addr(),
+            Some(client.local_addr().expect("client local address"))
+        );
     }
 
     #[test]
@@ -558,5 +667,92 @@ mod tests {
                 .and_then(|tls| tls.tls_name.as_deref()),
             Some("app-vm")
         );
+    }
+
+    #[tokio::test]
+    async fn second_client_completes_while_first_stays_open() {
+        let backend_path = test_socket_path("backend");
+        let proxy_path = test_socket_path("proxy");
+        let backend_listener = UnixListener::bind(&backend_path).expect("backend listener");
+        let (accepted_tx, mut accepted_rx) = mpsc::unbounded_channel();
+        let backend_task = tokio::spawn(async move {
+            while let Ok((mut conn, _)) = backend_listener.accept().await {
+                let accepted_tx = accepted_tx.clone();
+                tokio::spawn(async move {
+                    let _ = accepted_tx.send(());
+                    let mut buf = [0; 1024];
+                    loop {
+                        let Ok(n) = conn.read(&mut buf).await else {
+                            break;
+                        };
+                        if n == 0 || conn.write_all(&buf[..n]).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+
+        let remote_service = SocketProxyService::new(backend_path.clone(), true)
+            .await
+            .expect("service");
+        let remote_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("gRPC listener");
+        let remote_addr = remote_listener.local_addr().expect("gRPC address");
+        let remote_server = tokio::spawn(async move {
+            Server::builder()
+                .add_service(SocketProxyServerServer::new(remote_service))
+                .serve_with_incoming(TcpListenerStream::new(remote_listener))
+                .await
+        });
+
+        let proxy_service = SocketProxyService::new(proxy_path.clone(), false)
+            .await
+            .expect("proxy");
+        let endpoint = EndpointConfig {
+            transport: givc_common::types::TransportConfig {
+                address: EndpointAddress::Tcp {
+                    addr: remote_addr.ip().to_string(),
+                    port: remote_addr.port(),
+                },
+                tls_name: String::new(),
+            },
+            tls: None,
+        };
+        let proxy_task = tokio::spawn(run_socket_proxy_client(proxy_service, endpoint));
+
+        let first = UnixStream::connect(&proxy_path)
+            .await
+            .expect("first client");
+        tokio::time::timeout(std::time::Duration::from_secs(2), accepted_rx.recv())
+            .await
+            .expect("first connection reached backend")
+            .expect("backend accept event");
+
+        let mut second = UnixStream::connect(&proxy_path)
+            .await
+            .expect("second client");
+        second
+            .write_all(b"second client")
+            .await
+            .expect("write request");
+        let mut response = [0; 13];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            second.read_exact(&mut response),
+        )
+        .await
+        .expect("second client must not wait for first")
+        .expect("read response");
+        assert_eq!(&response, b"second client");
+
+        drop(first);
+        drop(second);
+        proxy_task.abort();
+        remote_server.abort();
+        backend_task.abort();
+        let _ = tokio::fs::remove_file(proxy_path).await;
+        let _ = tokio::fs::remove_file(backend_path).await;
     }
 }

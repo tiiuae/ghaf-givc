@@ -85,6 +85,7 @@ in
               environment.systemPackages = [
                 pkgs.networkmanager
                 pkgs.grpcurl
+                pkgs.python3
               ];
 
               # Network
@@ -532,7 +533,7 @@ in
           with subtest("success_tests_systembus"):
 
             # SUCCESS: remote access to netvms NetworkManager service; dbus-send
-            print(guivm.succeed("sudo -u ghaf dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.NetworkManager /org/freedesktop/NetworkManager org.freedesktop.DBus.Properties.Get string:'org.freedesktop.NetworkManager' string:'ActiveConnections'"))
+            print(guivm.succeed("sudo -u ghaf timeout 10 dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.NetworkManager /org/freedesktop/NetworkManager org.freedesktop.DBus.Properties.Get string:'org.freedesktop.NetworkManager' string:'ActiveConnections'"))
 
             # SUCCESS: remote access to netvms NetworkManager service; nmcli
             print(guivm.succeed("sudo -u ghaf -- bash -c 'export DBUS_SYSTEM_BUS_ADDRESS=unix:path=/tmp/.dbusproxy_net.sock; nmcli d'"))
@@ -545,6 +546,20 @@ in
 
             # SUCCESS: connection to secondary system vm (audio)
             print(guivm.succeed("sudo -u ghaf dbus-send --bus=unix:path=/tmp/.dbusproxy_snd.sock --print-reply --dest=org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.DBus.Introspectable.Introspect"))
+
+          with subtest("persistent_socket_client_does_not_block_other_clients"):
+            guivm.succeed(
+              "python3 -c 'import socket,time; s=socket.socket(socket.AF_UNIX); s.connect(\"/tmp/.dbusproxy_net.sock\"); open(\"/tmp/givc-persistent-proxy-open\", \"w\").close(); time.sleep(60)' >/tmp/givc-persistent-proxy.log 2>&1 & echo $! >/tmp/givc-persistent-proxy.pid"
+            )
+            guivm.wait_until_succeeds("test -e /tmp/givc-persistent-proxy-open")
+            guivm.succeed(
+              "sudo -u ghaf timeout 5 dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.Avahi /org/freedesktop/Avahi org.freedesktop.DBus.Introspectable.Introspect"
+            )
+            guivm.succeed("kill $(cat /tmp/givc-persistent-proxy.pid)")
+            guivm.succeed("rm -f /tmp/givc-persistent-proxy-open")
+            guivm.succeed(
+              "sudo -u ghaf timeout 5 dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.Avahi /org/freedesktop/Avahi org.freedesktop.DBus.Introspectable.Introspect"
+            )
 
           with subtest("failure_tests_systembus"):
 

@@ -33,6 +33,7 @@ tokio = { workspace = true, features = [
   "test-util",
 ] }
 tokio-stream = { workspace = true, features = ["net"] }
+tokio-listener = { workspace = true, features = ["tonic014", "vsock"] }
 tonic = { workspace = true, features = ["tls-aws-lc"] }
 tonic-middleware.workspace = true
 tonic-reflection.workspace = true
