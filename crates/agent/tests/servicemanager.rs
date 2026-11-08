@@ -12,6 +12,7 @@ struct FakeBackend {
     snapshots: Arc<std::sync::Mutex<std::collections::HashMap<String, Snapshot>>>,
     snapshot_sequence: Arc<std::sync::Mutex<std::collections::VecDeque<Snapshot>>>,
     running_units: Arc<std::sync::Mutex<Vec<RunningUnit>>>,
+    start_error: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 #[tonic::async_trait]
@@ -79,14 +80,25 @@ impl SystemdBackend for FakeBackend {
             .collect())
     }
 
-    async fn start_transient_unit(&self, name: &str, command: &[String]) -> anyhow::Result<()> {
+    async fn start_transient_unit(
+        &self,
+        name: &str,
+        command: &[String],
+        unit_type: &str,
+        environment: &[String],
+    ) -> anyhow::Result<()> {
         self.calls
             .lock()
             .unwrap()
             .push(BackendCall::StartTransientUnit {
                 name: name.to_owned(),
                 command: command.to_vec(),
+                unit_type: unit_type.to_owned(),
+                environment: environment.to_vec(),
             });
+        if let Some(error) = self.start_error.lock().unwrap().clone() {
+            anyhow::bail!(error);
+        }
         Ok(())
     }
 
@@ -106,11 +118,12 @@ impl SystemdBackend for FakeBackend {
         Ok(())
     }
 
-    async fn kill_unit(&self, name: &str) -> anyhow::Result<()> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(BackendCall::KillUnit(name.to_owned()));
+    async fn kill_unit(&self, name: &str, who: &str, signal: i32) -> anyhow::Result<()> {
+        self.calls.lock().unwrap().push(BackendCall::KillUnit {
+            name: name.to_owned(),
+            who: who.to_owned(),
+            signal,
+        });
         Ok(())
     }
 
@@ -557,11 +570,76 @@ async fn start_application_uses_transient_unit() {
                     "https://example.com".to_owned(),
                     "--incognito".to_owned(),
                 ],
+                unit_type: "exec".to_owned(),
+                environment: std::env::vars()
+                    .map(|(key, value)| format!("{key}={value}"))
+                    .collect(),
             },
             BackendCall::ListUnitsByNames {
                 names: vec!["test-app@1.service".to_owned()],
             },
         ]
+    );
+}
+
+#[tokio::test]
+async fn start_application_propagates_transient_start_failure() {
+    let backend = FakeBackend::default();
+    *backend.start_error.lock().unwrap() = Some("job failed".to_owned());
+    let manager = ServiceManager::new(
+        vec![],
+        vec![ApplicationManifest {
+            name: "test-app".to_owned(),
+            command: "app".to_owned(),
+            args: vec![],
+            directories: vec![],
+        }],
+        backend.clone(),
+    );
+
+    let error = manager
+        .start_application("test-app@1.service", vec![])
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("job failed"));
+    assert!(backend.calls.lock().unwrap().iter().any(|call| matches!(
+        call,
+        BackendCall::StartTransientUnit { name, .. } if name == "test-app@1.service"
+    )));
+}
+
+#[tokio::test]
+async fn start_application_rejects_empty_command_before_backend_call() {
+    let backend = FakeBackend::default();
+    let manager = ServiceManager::new(
+        vec![],
+        vec![ApplicationManifest {
+            name: "test-app".to_owned(),
+            command: "   ".to_owned(),
+            args: vec![],
+            directories: vec![],
+        }],
+        backend.clone(),
+    );
+
+    let error = manager
+        .start_application("test-app@1.service", vec![])
+        .await
+        .unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("incorrect application string format")
+    );
+    assert!(
+        !backend
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| matches!(call, BackendCall::StartTransientUnit { .. }))
     );
 }
 
@@ -610,6 +688,62 @@ async fn start_application_prefers_merge_candidate() {
 
     assert_eq!(snapshot.name, "test-app@9.service");
     assert_eq!(snapshot.description, "merged");
+}
+
+#[tokio::test]
+async fn start_application_returns_go_dead_unit_shape_when_transient_unit_disappears() {
+    let backend = FakeBackend::default();
+    let manager = ServiceManager::new(
+        vec![],
+        vec![ApplicationManifest {
+            name: "test-app".to_owned(),
+            command: "app".to_owned(),
+            args: vec![],
+            directories: vec![],
+        }],
+        backend,
+    );
+
+    let snapshot = manager
+        .start_application("test-app@1.service", vec![])
+        .await
+        .unwrap();
+
+    assert_eq!(snapshot.active_state, "inactive");
+    assert_eq!(snapshot.sub_state, "dead");
+    assert_eq!(snapshot.freezer_state, "");
+}
+
+#[tokio::test]
+async fn kill_unit_targets_all_processes() {
+    let backend = FakeBackend::default();
+    backend.snapshots.lock().unwrap().insert(
+        "foo.service".to_owned(),
+        Snapshot {
+            name: "foo.service".to_owned(),
+            description: String::new(),
+            load_state: "loaded".to_owned(),
+            active_state: "inactive".to_owned(),
+            sub_state: "dead".to_owned(),
+            path: String::new(),
+            freezer_state: String::new(),
+        },
+    );
+    let manager = ServiceManager::new(vec!["foo.service".to_owned()], vec![], backend.clone());
+
+    manager.kill_unit("foo.service").await.unwrap();
+
+    assert_eq!(
+        *backend.calls.lock().unwrap(),
+        vec![
+            BackendCall::KillUnit {
+                name: "foo.service".to_owned(),
+                who: "all".to_owned(),
+                signal: 9,
+            },
+            BackendCall::GetUnitSnapshot("foo.service".to_owned()),
+        ]
+    );
 }
 
 #[tokio::test(start_paused = true)]

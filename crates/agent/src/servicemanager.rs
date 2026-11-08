@@ -11,6 +11,7 @@ use procfs::Current;
 use regex::Regex;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
+use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 
 pub use pb::systemd::unit_control_service_server::UnitControlServiceServer;
@@ -21,12 +22,18 @@ pub enum BackendCall {
     GetUnitMainPid(String),
     RestartUnit(String),
     StopUnit(String),
-    KillUnit(String),
+    KillUnit {
+        name: String,
+        who: String,
+        signal: i32,
+    },
     FreezeUnit(String),
     ThawUnit(String),
     StartTransientUnit {
         name: String,
         command: Vec<String>,
+        unit_type: String,
+        environment: Vec<String>,
     },
     ListUnitsByPatterns {
         states: Vec<String>,
@@ -71,10 +78,16 @@ pub trait SystemdBackend: Send + Sync {
         patterns: &[String],
     ) -> Result<Vec<RunningUnit>>;
     async fn list_units_by_names(&self, names: &[String]) -> Result<Vec<Snapshot>>;
-    async fn start_transient_unit(&self, name: &str, command: &[String]) -> Result<()>;
+    async fn start_transient_unit(
+        &self,
+        name: &str,
+        command: &[String],
+        unit_type: &str,
+        environment: &[String],
+    ) -> Result<()>;
     async fn restart_unit(&self, name: &str) -> Result<()>;
     async fn stop_unit(&self, name: &str) -> Result<()>;
-    async fn kill_unit(&self, name: &str) -> Result<()>;
+    async fn kill_unit(&self, name: &str, who: &str, signal: i32) -> Result<()>;
     async fn freeze_unit(&self, name: &str) -> Result<()>;
     async fn thaw_unit(&self, name: &str) -> Result<()>;
 }
@@ -151,7 +164,7 @@ where
 
     async fn kill_then_snapshot(&self, name: &str) -> Result<Snapshot> {
         self.ensure_whitelisted(name)?;
-        self.backend.kill_unit(name).await?;
+        self.backend.kill_unit(name, "all", 9).await?;
         self.wait_for_exitted_snapshot(name).await
     }
 
@@ -245,10 +258,20 @@ where
         service_args: Vec<String>,
     ) -> Result<Snapshot> {
         let plan = self.resolve_application_request(service_name, service_args)?;
+        if plan.command.is_empty() {
+            bail!("incorrect application string format");
+        }
         let merge_candidate = self.find_merge_candidate(&plan).await?;
 
         self.backend
-            .start_transient_unit(&plan.service_name, &plan.command)
+            .start_transient_unit(
+                &plan.service_name,
+                &plan.command,
+                "exec",
+                &std::env::vars()
+                    .map(|(key, value)| format!("{key}={value}"))
+                    .collect::<Vec<_>>(),
+            )
             .await?;
 
         self.watch_application(&plan.service_name, merge_candidate)
@@ -338,7 +361,7 @@ where
             active_state: "inactive".to_owned(),
             sub_state: "dead".to_owned(),
             path: String::new(),
-            freezer_state: "error".to_owned(),
+            freezer_state: String::new(),
         };
 
         loop {
@@ -357,7 +380,7 @@ where
                     return Ok(merge_candidate
                         .map(|unit| unit.snapshot)
                         .unwrap_or_else(|| Snapshot {
-                            freezer_state: "error".to_owned(),
+                            freezer_state: String::new(),
                             ..synthetic_dead
                         }));
                 }
@@ -837,11 +860,30 @@ impl SystemdBackend for ZbusBackend {
         Ok(snapshots)
     }
 
-    async fn start_transient_unit(&self, name: &str, command: &[String]) -> Result<()> {
-        let properties = vec![("ExecStart".to_owned(), build_exec_start_value(command)?)];
+    async fn start_transient_unit(
+        &self,
+        name: &str,
+        command: &[String],
+        unit_type: &str,
+        environment: &[String],
+    ) -> Result<()> {
+        let properties = vec![
+            ("ExecStart".to_owned(), build_exec_start_value(command)?),
+            (
+                "Type".to_owned(),
+                zbus::zvariant::OwnedValue::try_from(zbus::zvariant::Value::new(unit_type))?,
+            ),
+            (
+                "Environment".to_owned(),
+                zbus::zvariant::OwnedValue::try_from(zbus::zvariant::Value::new(
+                    environment.to_vec(),
+                ))?,
+            ),
+        ];
 
-        let _ = zbus_systemd::systemd1::ManagerProxy::new(&self.conn)
-            .await?
+        let manager = zbus_systemd::systemd1::ManagerProxy::new(&self.conn).await?;
+        let mut jobs = manager.receive_job_removed().await?;
+        let job = manager
             .start_transient_unit(
                 name.to_owned(),
                 "replace".to_owned(),
@@ -849,7 +891,18 @@ impl SystemdBackend for ZbusBackend {
                 Vec::new(),
             )
             .await?;
-        Ok(())
+
+        while let Some(signal) = jobs.next().await {
+            let args = signal.args()?;
+            if args.job() == &job {
+                let result = args.result();
+                if result != "done" {
+                    bail!("failed to start app {name}: {result}");
+                }
+                return Ok(());
+            }
+        }
+        bail!("systemd job ended without a result for {name}");
     }
 
     async fn restart_unit(&self, name: &str) -> Result<()> {
@@ -870,11 +923,11 @@ impl SystemdBackend for ZbusBackend {
         Ok(())
     }
 
-    async fn kill_unit(&self, name: &str) -> Result<()> {
+    async fn kill_unit(&self, name: &str, who: &str, signal: i32) -> Result<()> {
         let _ = self
             .manager()
             .await?
-            .kill_unit(name.to_owned(), "main".to_owned(), 9)
+            .kill_unit(name.to_owned(), who.to_owned(), signal)
             .await?;
         Ok(())
     }
