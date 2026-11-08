@@ -32,8 +32,80 @@ use crate::runtime::AgentInterceptor;
 
 pub use pb::eventproxy::event_service_server::EventServiceServer as EventProxyServerServer;
 
-const UINPUT_NAME_MOUSE: &str = "givc-virtual-mouse";
-const UINPUT_NAME_GAMEPAD: &str = "givc-virtual-gamepad";
+const UINPUT_NAME_MOUSE: &str = "Generic Mouse";
+const UINPUT_NAME_GAMEPAD: &str = "Microsoft X-Box One S pad";
+const SYN_REPORT: u16 = evdev::SynchronizationCode::SYN_REPORT.0;
+
+#[derive(Debug)]
+struct GamepadProfile {
+    input_id: InputId,
+    trigger_max: i32,
+    stick_flat: i32,
+    stick_fuzz: i32,
+}
+
+fn gamepad_profile() -> GamepadProfile {
+    GamepadProfile {
+        input_id: InputId::new(BusType::BUS_USB, 0x045e, 0x02ea, 0x0408),
+        trigger_max: 1023,
+        stick_flat: 128,
+        stick_fuzz: 16,
+    }
+}
+
+fn gamepad_axis_setups() -> Vec<UinputAbsSetup> {
+    let profile = gamepad_profile();
+    [
+        (AbsoluteAxisCode::ABS_X, -32768, 32767),
+        (AbsoluteAxisCode::ABS_Y, -32768, 32767),
+        (AbsoluteAxisCode::ABS_RX, -32768, 32767),
+        (AbsoluteAxisCode::ABS_RY, -32768, 32767),
+        (AbsoluteAxisCode::ABS_Z, 0, profile.trigger_max),
+        (AbsoluteAxisCode::ABS_RZ, 0, profile.trigger_max),
+        (AbsoluteAxisCode::ABS_HAT0X, -1, 1),
+        (AbsoluteAxisCode::ABS_HAT0Y, -1, 1),
+    ]
+    .into_iter()
+    .map(|(axis, min, max)| {
+        let stick_axis = is_stick_axis(axis);
+        UinputAbsSetup::new(
+            axis,
+            AbsInfo::new(
+                0,
+                min,
+                max,
+                if stick_axis { profile.stick_fuzz } else { 0 },
+                if stick_axis { profile.stick_flat } else { 0 },
+                0,
+            ),
+        )
+    })
+    .collect()
+}
+
+fn mouse_input_id() -> InputId {
+    InputId::new(BusType::BUS_USB, 0xdead, 0xbeef, 1)
+}
+
+fn is_syn_report(event: &InputEvent) -> bool {
+    event.event_type() == evdev::EventType::SYNCHRONIZATION && event.code() == SYN_REPORT
+}
+
+fn split_event_frames(events: &[InputEvent]) -> Vec<Vec<InputEvent>> {
+    let mut frames = Vec::new();
+    let mut frame = Vec::new();
+    for event in events {
+        if is_syn_report(event) {
+            frames.push(std::mem::take(&mut frame));
+        } else {
+            frame.push(*event);
+        }
+    }
+    if !frame.is_empty() {
+        frames.push(frame);
+    }
+    frames
+}
 #[derive(Debug)]
 pub struct EventProxyController {
     transport_config: crate::config::TransportConfig,
@@ -171,7 +243,7 @@ impl EventProxyController {
         Ok(())
     }
 
-    fn stream_event(&self, event: &pb::eventproxy::InputEvent) -> Result<()> {
+    fn stream_frame(&self, events: &[InputEvent]) -> Result<()> {
         let mut guard = self
             .virtual_input
             .lock()
@@ -181,9 +253,7 @@ impl EventProxyController {
         };
 
         match device {
-            VirtualInput::Gamepad(dev) | VirtualInput::Mouse(dev) => {
-                dev.emit(event.r#type as u16, event.code as u16, event.value)?;
-            }
+            VirtualInput::Gamepad(dev) | VirtualInput::Mouse(dev) => dev.emit(events)?,
         }
 
         Ok(())
@@ -222,10 +292,23 @@ impl pb::eventproxy::event_service_server::EventService for EventProxyServer {
         request: Request<tonic::Streaming<pb::eventproxy::InputEvent>>,
     ) -> Result<Response<pb::eventproxy::Ack>, Status> {
         let mut stream = request.into_inner();
+        let mut frame = Vec::new();
         loop {
             match stream.next().await {
                 Some(Ok(event)) => {
-                    self.controller.stream_event(&event).rewrap_err()?;
+                    let input_event =
+                        InputEvent::new(event.r#type as u16, event.code as u16, event.value);
+                    if is_syn_report(&input_event) {
+                        frame.push(input_event);
+                        for completed_frame in split_event_frames(&frame) {
+                            self.controller
+                                .stream_frame(&completed_frame)
+                                .rewrap_err()?;
+                        }
+                        frame.clear();
+                    } else {
+                        frame.push(input_event);
+                    }
                 }
                 Some(Err(err)) => {
                     let _ = self.controller.close();
@@ -291,13 +374,9 @@ async fn start_event_proxy_service(config: &AgentConfig, event: EventConfig) -> 
             let result = run_event_proxy_producer(&handle, &config, &event);
             match result {
                 Ok(()) => return,
-                Err(err) if err.to_string().contains("device disconnected") => {
-                    warn!(error = %err, "event: client stream exited with disconnect, retrying");
-                    thread::sleep(Duration::from_secs(1));
-                }
                 Err(err) => {
-                    error!(error = %err, "event: client stream exited");
-                    return;
+                    warn!(error = %err, "event: producer stopped, retrying device discovery and registration");
+                    thread::sleep(Duration::from_secs(1));
                 }
             }
         }
@@ -330,7 +409,11 @@ fn run_event_proxy_producer(
             .stream_events(Request::new(stream))
             .await?
             .into_inner();
-        let _ = send_thread.join();
+        match send_thread.join() {
+            Ok(Err(err)) => return Err(err),
+            Err(_) => bail!("event: device reader thread panicked"),
+            Ok(Ok(())) => {}
+        }
         info!(status = %response.status, "event: producer stream completed");
         Ok::<_, anyhow::Error>(())
     })?;
@@ -475,7 +558,7 @@ impl UInputDevice {
         }
         let device = VirtualDevice::builder()?
             .name(name)
-            .input_id(InputId::new(BusType::BUS_USB, 1, 1, 1))
+            .input_id(mouse_input_id())
             .with_keys(&keys)?
             .with_relative_axes(&axes)?
             .build()?;
@@ -487,7 +570,6 @@ impl UInputDevice {
         for key in [
             KeyCode::BTN_SOUTH,
             KeyCode::BTN_EAST,
-            KeyCode::BTN_C,
             KeyCode::BTN_NORTH,
             KeyCode::BTN_WEST,
             KeyCode::BTN_TL,
@@ -497,48 +579,122 @@ impl UInputDevice {
             KeyCode::BTN_MODE,
             KeyCode::BTN_THUMBL,
             KeyCode::BTN_THUMBR,
-            KeyCode::BTN_DPAD_UP,
-            KeyCode::BTN_DPAD_DOWN,
-            KeyCode::BTN_DPAD_LEFT,
-            KeyCode::BTN_DPAD_RIGHT,
         ] {
             keys.insert(key);
         }
-        let axes = [
-            (AbsoluteAxisCode::ABS_X, -32768, 32767),
-            (AbsoluteAxisCode::ABS_Y, -32768, 32767),
-            (AbsoluteAxisCode::ABS_RX, -32768, 32767),
-            (AbsoluteAxisCode::ABS_RY, -32768, 32767),
-            (AbsoluteAxisCode::ABS_Z, 0, 255),
-            (AbsoluteAxisCode::ABS_RZ, 0, 255),
-            (AbsoluteAxisCode::ABS_HAT0X, -1, 1),
-            (AbsoluteAxisCode::ABS_HAT0Y, -1, 1),
-        ];
+        let profile = gamepad_profile();
         let mut builder = VirtualDevice::builder()?
             .name(name)
-            .input_id(InputId::new(BusType::BUS_USB, 1, 1, 1))
+            .input_id(profile.input_id)
             .with_keys(&keys)?;
-        for (axis, min, max) in axes {
-            builder = builder.with_absolute_axis(&UinputAbsSetup::new(
-                axis,
-                AbsInfo::new(0, min, max, 0, 0, 0),
-            ))?;
+        for axis in gamepad_axis_setups() {
+            builder = builder.with_absolute_axis(&axis)?;
         }
         Ok(Self {
             device: builder.build()?,
         })
     }
 
-    fn emit(&mut self, event_type: u16, code: u16, value: i32) -> Result<()> {
-        self.device
-            .emit(&[InputEvent::new(event_type, code, value)])?;
+    fn emit(&mut self, events: &[InputEvent]) -> Result<()> {
+        self.device.emit(events)?;
         Ok(())
     }
+}
+
+fn is_stick_axis(axis: AbsoluteAxisCode) -> bool {
+    matches!(
+        axis,
+        AbsoluteAxisCode::ABS_X
+            | AbsoluteAxisCode::ABS_Y
+            | AbsoluteAxisCode::ABS_RX
+            | AbsoluteAxisCode::ABS_RY
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn event(event_type: u16, code: u16, value: i32) -> InputEvent {
+        InputEvent::new(event_type, code, value)
+    }
+
+    #[test]
+    fn groups_events_by_syn_report_and_does_not_forward_report_marker() {
+        let events = [
+            event(evdev::EventType::KEY.0, KeyCode::BTN_SOUTH.0, 1),
+            event(
+                evdev::EventType::SYNCHRONIZATION.0,
+                evdev::SynchronizationCode::SYN_REPORT.0,
+                0,
+            ),
+            event(evdev::EventType::ABSOLUTE.0, AbsoluteAxisCode::ABS_X.0, 123),
+            event(
+                evdev::EventType::ABSOLUTE.0,
+                AbsoluteAxisCode::ABS_Y.0,
+                -321,
+            ),
+            event(
+                evdev::EventType::SYNCHRONIZATION.0,
+                evdev::SynchronizationCode::SYN_REPORT.0,
+                0,
+            ),
+        ];
+
+        let frames = split_event_frames(&events);
+
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].len(), 1);
+        assert_eq!(frames[1].len(), 2);
+        assert!(
+            frames
+                .iter()
+                .flatten()
+                .all(|event| { event.event_type() != evdev::EventType::SYNCHRONIZATION })
+        );
+        assert_eq!(
+            split_event_frames(&[event(
+                evdev::EventType::SYNCHRONIZATION.0,
+                evdev::SynchronizationCode::SYN_REPORT.0,
+                0,
+            )]),
+            vec![Vec::<InputEvent>::new()]
+        );
+    }
+
+    #[test]
+    fn xbox_one_s_profile_matches_go_identity_and_axes() {
+        let profile = gamepad_profile();
+        assert_eq!(
+            profile.input_id,
+            InputId::new(BusType::BUS_USB, 0x045e, 0x02ea, 0x0408)
+        );
+        assert_eq!(profile.trigger_max, 1023);
+        assert_eq!(profile.stick_flat, 128);
+        assert_eq!(profile.stick_fuzz, 16);
+        let axes = gamepad_axis_setups();
+        let trigger = axes
+            .iter()
+            .find(|axis| axis.code() == AbsoluteAxisCode::ABS_Z.0)
+            .expect("left trigger axis")
+            .absinfo();
+        assert_eq!(trigger.maximum(), 1023);
+        let stick = axes
+            .iter()
+            .find(|axis| axis.code() == AbsoluteAxisCode::ABS_X.0)
+            .expect("left stick axis")
+            .absinfo();
+        assert_eq!(stick.flat(), 128);
+        assert_eq!(stick.fuzz(), 16);
+    }
+
+    #[test]
+    fn generic_mouse_profile_matches_go_identity() {
+        assert_eq!(
+            mouse_input_id(),
+            InputId::new(BusType::BUS_USB, 0xdead, 0xbeef, 1)
+        );
+    }
 
     #[test]
     #[cfg(target_pointer_width = "64")]

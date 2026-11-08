@@ -85,7 +85,14 @@ in
                   prefixLength = 24;
                 }
               ];
-              environment.systemPackages = [ pkgs.grpcurl ];
+              environment.systemPackages = [
+                pkgs.grpcurl
+                (pkgs.python3.withPackages (pythonPackages: [ pythonPackages.evdev ]))
+              ];
+              boot.initrd.kernelModules = [ "uinput" ];
+              services.udev.extraRules = ''
+                KERNEL=="uinput", MODE="0666"
+              '';
 
               # Setup users and keys
               users.mutableUsers = false;
@@ -96,6 +103,7 @@ in
                   group = "users";
                   uid = 1000;
                   openssh.authorizedKeys.keys = [ snakeOilPublicKey ];
+                  extraGroups = [ "input" ];
                   linger = true;
                 };
               };
@@ -162,7 +170,10 @@ in
                   prefixLength = 24;
                 }
               ];
-              environment.systemPackages = [ pkgs.grpcurl ];
+              environment.systemPackages = [
+                pkgs.grpcurl
+                (pkgs.python3.withPackages (pythonPackages: [ pythonPackages.evdev ]))
+              ];
 
               # Setup users and keys
               users.mutableUsers = false;
@@ -260,16 +271,14 @@ in
 
             with subtest("success_test_device_register"):
               audiovm.succeed("${grpcurl_cmd} -d \'{\"name\":\"wireless controller\", \"vendorId\":\"1118\", \"deviceId\":\"654\"}\' ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.RegisterDevice")
+              appvm.succeed("python3 -c 'import evdev; d=next(evdev.InputDevice(p) for p in evdev.list_devices() if evdev.InputDevice(p).name == \"Microsoft X-Box One S pad\"); assert (d.info.vendor,d.info.product,d.info.version)==(0x045e,0x02ea,0x0408); assert d.absinfo(evdev.ecodes.ABS_Z).max==1023; assert (d.absinfo(evdev.ecodes.ABS_X).flat,d.absinfo(evdev.ecodes.ABS_X).fuzz)==(128,16)'")
 
             with subtest("success_tests_input_events"):
-              # Simulate gamepad Top face button (BUTTON_Y) press
-              audiovm.succeed("${grpcurl_cmd} -d '{\"type\":\"1\",\"code\":\"308\",\"value\":\"1\"}'  ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.StreamEvents")
-
-              # Simulate gamepad Bottom face button (BUTTON_A) press
-              audiovm.succeed("${grpcurl_cmd} -d '{\"type\":\"1\",\"code\":\"304\",\"value\":\"1\"}'  ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.StreamEvents")
-
-              # Simulate gamepad Button Start press
-              audiovm.succeed("${grpcurl_cmd} -d '{\"type\":\"1\",\"code\":\"315\",\"value\":\"1\"}'  ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.StreamEvents")
+              appvm.succeed("python3 -c 'import evdev; d=next(evdev.InputDevice(p) for p in evdev.list_devices() if evdev.InputDevice(p).name == \"Microsoft X-Box One S pad\"); f=open(\"/tmp/event-frame\",\"w\"); n=0\nfor e in d.read_loop():\n f.write(f\"{e.type}:{e.code}:{e.value}\\n\"); f.flush(); n+=1\n if n==3: break' >/tmp/event-reader.log 2>&1 &")
+              appvm.succeed("for i in $(seq 1 50); do test -e /tmp/event-frame && exit 0; sleep .1; done; cat /tmp/event-reader.log; exit 1")
+              audiovm.succeed("printf '%s\\n' '{\"type\":\"1\",\"code\":\"304\",\"value\":\"1\"}' '{\"type\":\"1\",\"code\":\"308\",\"value\":\"1\"}' '{\"type\":\"0\",\"code\":\"0\",\"value\":\"0\"}' | ${grpcurl_cmd} -d @ ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.StreamEvents")
+              appvm.succeed("for i in $(seq 1 50); do test $(wc -l </tmp/event-frame) -eq 3 && exit 0; sleep .1; done; cat /tmp/event-frame /tmp/event-reader.log; exit 1")
+              appvm.succeed("grep -qx '1:304:1' /tmp/event-frame && grep -qx '1:308:1' /tmp/event-frame && grep -qx '0:0:0' /tmp/event-frame")
 
             with subtest("failure_tests_device_register"):
               audiovm.fail("${grpcurl_cmd}  ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.RegisterDevice")
@@ -281,6 +290,17 @@ in
               )
               assert exit_code != 0, f"Cedar should deny app VM event proxy access: {output}"
               assert "PermissionDenied" in output, f"Expected Cedar PermissionDenied, got: {output}"
+
+            with subtest("producer_recovers_after_input_device_recreation"):
+              audiovm.succeed("cat > /tmp/event-source.py <<'PY'\nimport time\nfrom evdev import UInput, ecodes\nu = UInput(events={ecodes.EV_KEY: [ecodes.BTN_SOUTH]}, name='wireless controller test')\nwhile True:\n u.write(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1); u.syn(); time.sleep(.2)\n u.write(ecodes.EV_KEY, ecodes.BTN_SOUTH, 0); u.syn(); time.sleep(.2)\nPY")
+              appvm.succeed("cat > /tmp/capture-event.py <<'PY'\nimport select, sys, time\nimport evdev\ndeadline = time.time() + 20\nwhile time.time() < deadline:\n for path in evdev.list_devices():\n  try:\n   device = evdev.InputDevice(path)\n   if device.name != 'Microsoft X-Box One S pad': continue\n   ready, _, _ = select.select([device.fd], [], [], .2)\n   if ready:\n    event = device.read_one()\n    if event and event.type == evdev.ecodes.EV_KEY and event.code == evdev.ecodes.BTN_SOUTH and event.value == 1:\n     print('captured producer event', flush=True); sys.exit(0)\n  except OSError:\n   continue\nsys.exit('producer event not captured')\nPY")
+              audiovm.succeed("python3 /tmp/event-source.py >/tmp/event-source.log 2>&1 & echo $! >/tmp/event-source.pid")
+              appvm.succeed("python3 /tmp/capture-event.py")
+              audiovm.succeed("kill $(cat /tmp/event-source.pid)")
+              audiovm.sleep(2)
+              appvm.succeed("python3 /tmp/capture-event.py >/tmp/event-reconnect.log 2>&1 &")
+              audiovm.succeed("python3 /tmp/event-source.py >/tmp/event-source.log 2>&1 & echo $! >/tmp/event-source.pid")
+              appvm.wait_until_succeeds("grep -q 'captured producer event' /tmp/event-reconnect.log")
           '';
       };
     };
