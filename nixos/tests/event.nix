@@ -99,7 +99,7 @@ in
                         };
                         producer.enable = true;
                         consumer.enable = false;
-                        device = "wireless controller";
+                        device = "gamepad";
                       }
                     ];
                   };
@@ -219,7 +219,7 @@ in
               appvm.wait_for_unit("multi-user.target")
 
             with subtest("success_test_device_register"):
-              audiovm.succeed("${grpcurl_cmd} -d \'{\"name\":\"wireless controller\", \"vendorId\":\"1118\", \"deviceId\":\"654\", \"deviceType\":\"wireless controller\"}\' ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.RegisterDevice")
+              audiovm.succeed("${grpcurl_cmd} -d \'{\"name\":\"gamepad\", \"vendorId\":\"1118\", \"deviceId\":\"654\", \"deviceType\":\"gamepad\"}\' ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.RegisterDevice")
 
             with subtest("success_tests_input_events"):
               # Simulate gamepad Top face button (BUTTON_Y) press

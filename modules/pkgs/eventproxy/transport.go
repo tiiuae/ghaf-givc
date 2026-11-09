@@ -87,10 +87,10 @@ func (s *EventProxyServer) RegisterDevice(ctx context.Context, info *givc_event.
 	deviceType := info.DeviceType
 
 	switch deviceType {
-	case "wireless controller":
+	case "gamepad":
 		device := gamepad.NewXBoxOneS()
 		if err := device.Register(); err != nil {
-			log.Errorf("event: failed to register wireless controller device %s: %v", info.Name, err)
+			log.Errorf("event: failed to register gamepad device %s: %v", info.Name, err)
 			return nil, err
 		}
 		s.eventController.virtualGamepad = device
@@ -98,7 +98,7 @@ func (s *EventProxyServer) RegisterDevice(ctx context.Context, info *givc_event.
 	case "mouse":
 		device := mouse.NewGenericMouse()
 		if err := device.Register(); err != nil {
-			log.Errorf("event: failed to register wireless mouse device %s: %v", info.Name, err)
+			log.Errorf("event: failed to register mouse device %s: %v", info.Name, err)
 			return nil, err
 		}
 		s.eventController.virtualMouse = device

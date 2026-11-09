@@ -56,13 +56,15 @@ func (s *EventProxyController) WaitForConsumer() (net.Conn, error) {
 
 func parseUdevDeviceType(data string) string {
 	lines := strings.Split(data, "\n")
-	var isMouse, isGamepad, isKeyboard bool
+	var isMouse, isGamepad, isKeyboard, isJoystick bool
 	for _, line := range lines {
 		switch {
-		case strings.HasPrefix(line, "E:ID_INPUT_JOYSTICK=1"), strings.HasPrefix(line, "E:ID_INPUT_GAMEPAD=1"):
-			isGamepad = true
 		case strings.HasPrefix(line, "E:ID_INPUT_MOUSE=1"):
 			isMouse = true
+		case strings.HasPrefix(line, "E:ID_INPUT_JOYSTICK=1"):
+			isJoystick = true
+		case strings.HasPrefix(line, "E:ID_INPUT_GAMEPAD=1"):
+			isGamepad = true
 		case strings.HasPrefix(line, "E:ID_INPUT_KEYBOARD=1"):
 			isKeyboard = true
 		}
@@ -71,8 +73,11 @@ func parseUdevDeviceType(data string) string {
 	if isMouse {
 		return "mouse"
 	}
+	if isJoystick {
+		return "joystick"
+	}
 	if isGamepad {
-		return "wireless controller"
+		return "gamepad"
 	}
 	if isKeyboard {
 		return "keyboard"
@@ -224,7 +229,7 @@ func (s *EventProxyController) MonitorInputDevices(targetDevice string, onAdd fu
 				}
 				if event.Op&fsnotify.Create == fsnotify.Create && strings.HasPrefix(filepath.Base(event.Name), "event") {
 					go func(devicePath string) {
-						if checkDevice(targetDevice, devicePath, 3*time.Second) {
+						if checkDevice(targetDevice, devicePath, 1*time.Second) {
 							once.Do(func() {
 								handler = devicePath
 								close(done)
