@@ -225,7 +225,7 @@ in
                 # producer of input events
                 producer.enable = true;
                 consumer.enable = false;
-                device = "wireless controller";
+                device = "gamepad";
               }
             ];
           '';
