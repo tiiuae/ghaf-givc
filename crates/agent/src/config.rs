@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{collections::HashMap, net::SocketAddr, path::Path, path::PathBuf};
+use std::{collections::HashMap, net::SocketAddr, path::Path, path::PathBuf, str::FromStr};
 
 use anyhow::{Context, Result, bail};
 use givc_client::endpoint::TlsConfig;
@@ -35,6 +35,12 @@ impl AgentConfig {
 
     /// # Errors
     /// Fails if endpoint transport cannot be used for this runtime.
+    pub fn listen_address(&self) -> Result<tokio_listener::ListenerAddress> {
+        self.network.agent.transport.listen_address()
+    }
+
+    /// # Errors
+    /// Fails if agent transport is not TCP or its address is invalid.
     pub fn listen_addr(&self) -> Result<SocketAddr> {
         self.network.agent.transport.listen_addr()
     }
@@ -168,7 +174,7 @@ pub struct TransportConfig {
 impl TransportConfig {
     /// # Errors
     /// Fails if protocol is unsupported or address is invalid.
-    pub fn listen_addr(&self) -> Result<SocketAddr> {
+    pub fn listen_address(&self) -> Result<tokio_listener::ListenerAddress> {
         match self.protocol.as_str() {
             "tcp" => {
                 let addr: std::net::IpAddr = self
@@ -179,9 +185,29 @@ impl TransportConfig {
                     .port
                     .parse()
                     .with_context(|| format!("invalid tcp port {}", self.port))?;
-                Ok(SocketAddr::new(addr, port))
+                Ok(tokio_listener::ListenerAddress::Tcp(SocketAddr::new(
+                    addr, port,
+                )))
             }
+            "unix" => Ok(tokio_listener::ListenerAddress::Path(PathBuf::from(
+                &self.address,
+            ))),
+            "vsock" => tokio_listener::ListenerAddress::from_str(&format!(
+                "vsock:{}:{}",
+                self.address, self.port
+            ))
+            .map_err(anyhow::Error::msg)
+            .with_context(|| format!("invalid vsock address {}:{}", self.address, self.port)),
             other => bail!("unsupported listen protocol: {other}"),
+        }
+    }
+
+    /// # Errors
+    /// Fails if protocol is not TCP or the address is invalid.
+    pub fn listen_addr(&self) -> Result<SocketAddr> {
+        match self.listen_address()? {
+            tokio_listener::ListenerAddress::Tcp(address) => Ok(address),
+            _ => bail!("unsupported listen protocol: {}", self.protocol),
         }
     }
 }
@@ -342,6 +368,41 @@ mod tests {
         };
 
         assert_eq!(config.to_tls_config().unwrap().tls_name, None);
+    }
+
+    #[test]
+    fn parses_all_declared_listener_transports() {
+        let tcp = TransportConfig {
+            protocol: "tcp".to_owned(),
+            address: "127.0.0.1".to_owned(),
+            port: "9001".to_owned(),
+            name: "agent".to_owned(),
+        };
+        assert_eq!(
+            tcp.listen_address().unwrap(),
+            tokio_listener::ListenerAddress::Tcp("127.0.0.1:9001".parse().unwrap())
+        );
+
+        let unix = TransportConfig {
+            protocol: "unix".to_owned(),
+            address: "/run/givc/agent.sock".to_owned(),
+            ..tcp.clone()
+        };
+        assert_eq!(
+            unix.listen_address().unwrap(),
+            tokio_listener::ListenerAddress::Path("/run/givc/agent.sock".into())
+        );
+
+        let vsock = TransportConfig {
+            protocol: "vsock".to_owned(),
+            address: "2".to_owned(),
+            port: "9001".to_owned(),
+            ..tcp
+        };
+        assert_eq!(
+            vsock.listen_address().unwrap(),
+            tokio_listener::ListenerAddress::Vsock { cid: 2, port: 9001 }
+        );
     }
 }
 

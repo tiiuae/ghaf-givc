@@ -29,12 +29,13 @@ pub mod auth {
     use http::Request as HttpRequest;
     use tonic::Status;
     use tonic::body::Body;
-    use tonic::transport::server::{Connected, TlsConnectInfo};
+    use tonic::transport::server::{TcpConnectInfo, TlsConnectInfo};
     use tonic_middleware::RequestInterceptor;
     use tracing::debug;
     use x509_parser::prelude::*;
 
-    type ListenerConnectInfo = <tokio::net::TcpStream as Connected>::ConnectInfo;
+    type ListenerConnectInfo =
+        <tokio_listener::Connection as tonic::transport::server::Connected>::ConnectInfo;
 
     #[derive(Clone, Debug)]
     pub struct SecurityInfo {
@@ -113,19 +114,53 @@ pub mod auth {
     }
 
     fn security_info_from_request<T>(req: &HttpRequest<T>) -> Result<SecurityInfo, Status> {
-        req.extensions()
+        let certs = req
+            .extensions()
             .get::<TlsConnectInfo<ListenerConnectInfo>>()
             .and_then(TlsConnectInfo::peer_certs)
-            .ok_or_else(|| Status::unauthenticated("No peer certificate"))?
+            .or_else(|| {
+                req.extensions()
+                    .get::<TlsConnectInfo<TcpConnectInfo>>()
+                    .and_then(TlsConnectInfo::peer_certs)
+            })
+            .ok_or_else(|| Status::unauthenticated("No peer certificate"))?;
+        certs
             .iter()
             .find_map(|cert| SecurityInfo::try_from(cert.as_ref()).ok())
             .ok_or_else(|| Status::unauthenticated("Can't parse certificate"))
     }
 
-    fn transport_info_from_request<T>(req: &HttpRequest<T>) -> Option<&ListenerConnectInfo> {
-        req.extensions()
+    enum PeerTransport {
+        Tcp(IpAddr),
+        NonTcp,
+        Missing,
+    }
+
+    fn transport_info_from_request<T>(req: &HttpRequest<T>) -> PeerTransport {
+        let listener_info = req
+            .extensions()
             .get::<TlsConnectInfo<ListenerConnectInfo>>()
-            .map(TlsConnectInfo::get_ref)
+            .map(TlsConnectInfo::get_ref);
+        match listener_info {
+            Some(ListenerConnectInfo::Tcp(addr)) => {
+                return addr
+                    .remote_addr()
+                    .map(|addr| PeerTransport::Tcp(addr.ip()))
+                    .unwrap_or(PeerTransport::Missing);
+            }
+            Some(_) => return PeerTransport::NonTcp,
+            None => (),
+        }
+
+        req.extensions()
+            .get::<TlsConnectInfo<TcpConnectInfo>>()
+            .map(|info| {
+                info.get_ref()
+                    .remote_addr()
+                    .map(|addr| PeerTransport::Tcp(addr.ip()))
+                    .unwrap_or(PeerTransport::Missing)
+            })
+            .unwrap_or(PeerTransport::Missing)
     }
 
     #[tonic::async_trait]
@@ -135,11 +170,7 @@ pub mod auth {
                 let security_info = security_info_from_request(&req)?;
 
                 match transport_info_from_request(&req) {
-                    Some(addr) => {
-                        let ip = addr
-                            .remote_addr()
-                            .ok_or_else(|| Status::unauthenticated("Can't determine peer IP"))?
-                            .ip();
+                    PeerTransport::Tcp(ip) => {
                         if security_info.check_address(&ip) {
                             debug!("TCP: IP {ip} verified against certificate");
                             req.extensions_mut().insert(security_info);
@@ -150,7 +181,12 @@ pub mod auth {
                             )))
                         }
                     }
-                    None => Err(Status::unauthenticated("No transport info")),
+                    PeerTransport::NonTcp => {
+                        debug!("non-TCP transport, skipping certificate IP check");
+                        req.extensions_mut().insert(security_info);
+                        Ok(req)
+                    }
+                    PeerTransport::Missing => Err(Status::unauthenticated("No transport info")),
                 }
             } else {
                 req.extensions_mut().insert(SecurityInfo::disabled());
@@ -171,9 +207,10 @@ pub fn trace_init(debug: bool) -> anyhow::Result<()> {
     use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt};
 
     let env_filter = if debug && env::var("GIVC_LOG").is_err() {
-        EnvFilter::from("debug")
+        EnvFilter::from(default_log_directive(debug))
     } else {
-        EnvFilter::try_from_env("GIVC_LOG").unwrap_or_else(|_| EnvFilter::from("info"))
+        EnvFilter::try_from_env("GIVC_LOG")
+            .unwrap_or_else(|_| EnvFilter::from(default_log_directive(debug)))
     };
     let is_debug_log_level = env_filter
         .max_level_hint()
@@ -207,4 +244,17 @@ pub fn trace_init(debug: bool) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn default_log_directive(debug: bool) -> &'static str {
+    if debug { "debug" } else { "warn" }
+}
+
+#[cfg(test)]
+mod logging_tests {
+    #[test]
+    fn default_log_level_matches_go_warn_level() {
+        assert_eq!(super::default_log_directive(false), "warn");
+        assert_eq!(super::default_log_directive(true), "debug");
+    }
 }

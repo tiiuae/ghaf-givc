@@ -12,7 +12,7 @@ use givc_client::endpoint::EndpointConfig;
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, UnixListener, UnixStream};
+use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tokio_listener::{Listener, ListenerAddress, SystemOptions, UserOptions};
@@ -313,7 +313,6 @@ async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) ->
         )
         .await
         .with_context(|| format!("unable to bind socket-proxy listener {listen_addr:?}"))?;
-        let is_tcp = matches!(listen_addr, ListenerAddress::Tcp(_));
         let grpc_service = SocketProxyServerServer::new(socket_service.clone());
         let reflection = ReflectionBuilder::configure()
             .register_encoded_file_descriptor_set(givc_common::pb::reflection::SOCKET_DESCRIPTOR)
@@ -326,21 +325,11 @@ async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) ->
         }
         tokio::spawn(async move {
             info!(addr = ?listen_addr, socket = %proxy.socket, "socket-proxy: server starting");
-            let result = if is_tcp {
-                server
-                    .add_service(grpc_service)
-                    .add_service(reflection)
-                    .serve_with_incoming(
-                        listener.map(|result| result.and_then(listener_connection_into_tcp)),
-                    )
-                    .await
-            } else {
-                server
-                    .add_service(grpc_service)
-                    .add_service(reflection)
-                    .serve_with_incoming(listener)
-                    .await
-            };
+            let result = server
+                .add_service(grpc_service)
+                .add_service(reflection)
+                .serve_with_incoming(listener)
+                .await;
             if let Err(err) = result {
                 error!(error = %err, "socket-proxy: server failed");
             }
@@ -357,14 +346,6 @@ async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) ->
     });
 
     Ok(())
-}
-
-fn listener_connection_into_tcp(
-    connection: tokio_listener::Connection,
-) -> std::io::Result<TcpStream> {
-    connection
-        .try_into_tcp()
-        .map_err(|_| std::io::Error::other("socket-proxy TCP listener accepted non-TCP connection"))
 }
 
 async fn run_socket_proxy_client(
@@ -535,9 +516,17 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
+    use tokio::net::{TcpListener, TcpStream};
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::server::Connected;
+
+    fn listener_connection_into_tcp(
+        connection: tokio_listener::Connection,
+    ) -> std::io::Result<TcpStream> {
+        connection
+            .try_into_tcp()
+            .map_err(|_| std::io::Error::other("expected TCP listener connection"))
+    }
 
     fn test_socket_path(name: &str) -> String {
         let unique = SystemTime::now()

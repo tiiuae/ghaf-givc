@@ -43,7 +43,10 @@ in
                   prefixLength = 24;
                 }
               ];
-              environment.systemPackages = [ pkgs.grpcurl ];
+              environment.systemPackages = [
+                pkgs.grpcurl
+                pkgs.openssl
+              ];
               givc.admin = {
                 enable = true;
                 inherit (admin) name;
@@ -227,6 +230,7 @@ in
               else
                 "-plaintext";
             grpcurl_addr = "${nodes.netvm.givc.sysvm.network.agent.transport.addr}:${nodes.netvm.givc.sysvm.network.agent.transport.port} ";
+            openssl_addr = "${nodes.netvm.givc.sysvm.network.agent.transport.addr}:${nodes.netvm.givc.sysvm.network.agent.transport.port}";
           in
           ''
             import time
@@ -234,6 +238,10 @@ in
             with subtest("boot_completed"):
                 adminvm.wait_for_unit("multi-user.target")
                 netvm.wait_for_unit("multi-user.target")
+
+            with subtest("tls_requires_tls13_and_client_certificate"):
+                adminvm.fail("/run/current-system/sw/bin/openssl s_client -brief -connect ${openssl_addr} -tls1_2 -CAfile /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem </dev/null")
+                adminvm.fail("/run/current-system/sw/bin/openssl s_client -brief -connect ${openssl_addr} -tls1_3 -CAfile /etc/givc/ca-cert.pem </dev/null")
 
             with subtest("wifimanager_listnetworks"):
                 nwlistMsg = adminvm.succeed("${grpcurl_cmd} ${grpcurl_args} ${grpcurl_addr} wifimanager.WifiService.ListNetwork")
@@ -316,6 +324,10 @@ in
                 if not "networks" in nwlistMsg:
                     print("RPC 'wifimanager.WifiService.ListNetworks' failed, no networks found")
                     exit(1)
+
+            with subtest("sigterm_graceful_shutdown"):
+                netvm.succeed("systemctl kill --signal=SIGTERM givc-net-vm.service")
+                netvm.wait_until_succeeds("test \"$(systemctl show -p ActiveState --value givc-net-vm.service)\" = inactive")
 
           '';
       };

@@ -1,10 +1,17 @@
 // SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::net::SocketAddr;
+use std::{
+    fs::File,
+    io::{self, BufReader},
+    net::SocketAddr,
+    sync::Arc,
+};
 
-use anyhow::Result;
-use tonic::transport::{Server, server::TcpIncoming};
+use anyhow::{Context, Result};
+use futures_util::StreamExt as _;
+use tokio_listener::{Listener, ListenerAddress, SystemOptions, UserOptions};
+use tonic::transport::Server;
 use tonic_middleware::RequestInterceptorLayer;
 use tracing::info;
 
@@ -26,10 +33,11 @@ use crate::socketproxy;
 use crate::statsmanager::{StatsServer, StatsServiceServer};
 use crate::update::{UpdateService, UpdateServiceServer};
 use crate::wifimanager::{WifiService, WifiServiceServerServer};
+use givc_client::endpoint::TlsConfig;
 use givc_common::pb::reflection::{
-    CTAP_DESCRIPTOR, EVENT_DESCRIPTOR, EXEC_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR,
-    NOTIFY_DESCRIPTOR, POLICYADMIN_DESCRIPTOR, SOCKET_DESCRIPTOR, SYSTEMD_DESCRIPTOR,
-    UPDATE_DESCRIPTOR, WIFI_DESCRIPTOR,
+    CTAP_DESCRIPTOR, EXEC_DESCRIPTOR, HWID_DESCRIPTOR, LOCALE_DESCRIPTOR, NOTIFY_DESCRIPTOR,
+    POLICYADMIN_DESCRIPTOR, STATS_DESCRIPTOR, SYSTEMD_DESCRIPTOR, UPDATE_DESCRIPTOR,
+    WIFI_DESCRIPTOR,
 };
 
 #[derive(Clone)]
@@ -65,6 +73,12 @@ impl tonic_middleware::RequestInterceptor for AgentInterceptor {
         &self,
         req: http::Request<tonic::body::Body>,
     ) -> Result<http::Request<tonic::body::Body>, tonic::Status> {
+        let (method, request_id) = request_log_fields(&req);
+        info!(
+            method,
+            request_id = request_id.unwrap_or_default(),
+            "GRPC Request"
+        );
         let req = self.auth.intercept(req).await?;
         if let Some(acl) = &self.acl {
             acl.intercept(req).await
@@ -77,14 +91,14 @@ impl tonic_middleware::RequestInterceptor for AgentInterceptor {
 #[derive(Debug, Clone)]
 pub struct AgentRuntime {
     config: AgentConfig,
-    listen: SocketAddr,
+    listen: ListenerAddress,
 }
 
 impl Default for AgentRuntime {
     fn default() -> Self {
         Self {
             config: AgentConfig::default(),
-            listen: SocketAddr::from(([127, 0, 0, 1], 9001)),
+            listen: ListenerAddress::Tcp(SocketAddr::from(([127, 0, 0, 1], 9001))),
         }
     }
 }
@@ -93,7 +107,7 @@ impl AgentRuntime {
     /// # Errors
     /// Fails if endpoint transport cannot be derived.
     pub fn from_config(config: AgentConfig) -> Result<Self> {
-        let listen = config.listen_addr()?;
+        let listen = config.listen_address()?;
         Ok(Self { config, listen })
     }
 
@@ -101,7 +115,7 @@ impl AgentRuntime {
     pub fn new(listen: SocketAddr) -> Self {
         Self {
             config: AgentConfig::default(),
-            listen,
+            listen: ListenerAddress::Tcp(listen),
         }
     }
 
@@ -126,19 +140,11 @@ impl AgentRuntime {
             self.config.capabilities.applications.clone(),
             backend,
         );
-        let reflect = tonic_reflection::server::Builder::configure()
-            .register_encoded_file_descriptor_set(CTAP_DESCRIPTOR)
-            .register_encoded_file_descriptor_set(EVENT_DESCRIPTOR)
-            .register_encoded_file_descriptor_set(EXEC_DESCRIPTOR)
-            .register_encoded_file_descriptor_set(HWID_DESCRIPTOR)
-            .register_encoded_file_descriptor_set(LOCALE_DESCRIPTOR)
-            .register_encoded_file_descriptor_set(NOTIFY_DESCRIPTOR)
-            .register_encoded_file_descriptor_set(POLICYADMIN_DESCRIPTOR)
-            .register_encoded_file_descriptor_set(SOCKET_DESCRIPTOR)
-            .register_encoded_file_descriptor_set(WIFI_DESCRIPTOR)
-            .register_encoded_file_descriptor_set(SYSTEMD_DESCRIPTOR)
-            .register_encoded_file_descriptor_set(UPDATE_DESCRIPTOR)
-            .build_v1()?;
+        let reflect_builder = active_reflection_descriptors(&config).into_iter().fold(
+            tonic_reflection::server::Builder::configure(),
+            |builder, (_, descriptor)| builder.register_encoded_file_descriptor_set(descriptor),
+        );
+        let reflect = reflect_builder.build_v1()?;
 
         info!(
             addr = %self.listen,
@@ -146,16 +152,14 @@ impl AgentRuntime {
             "starting givc-agent"
         );
 
-        let listener = bind_listener_with_retry(self.listen).await?;
+        let listener = bind_listener_with_retry(&self.listen).await?;
         let _ = started_tx.send(());
 
         let interceptor =
             RequestInterceptorLayer::new(AgentInterceptor::from_config(&self.config)?);
 
-        let listener = TcpIncoming::from(listener);
         if let Some(tls) = &self.config.network.tls_config {
             let mut server = Server::builder()
-                .tls_config(tls.server_config()?)?
                 .layer(interceptor.clone())
                 .add_service(reflect);
 
@@ -231,7 +235,12 @@ impl AgentRuntime {
                 None
             };
             server = server.add_optional_service(wifi_service);
-            server.serve_with_incoming(listener).await?;
+            server
+                .serve_with_incoming_shutdown(
+                    tls_incoming(listener, tls_acceptor(tls)?),
+                    shutdown_signal(),
+                )
+                .await?;
         } else {
             let mut server = Server::builder().layer(interceptor).add_service(reflect);
 
@@ -307,18 +316,20 @@ impl AgentRuntime {
                 None
             };
             server = server.add_optional_service(wifi_service);
-            server.serve_with_incoming(listener).await?;
+            server
+                .serve_with_incoming_shutdown(listener, shutdown_signal())
+                .await?;
         }
 
         Ok(())
     }
 }
 
-async fn bind_listener_with_retry(listen: SocketAddr) -> Result<tokio::net::TcpListener> {
+async fn bind_listener_with_retry(listen: &ListenerAddress) -> Result<Listener> {
     const LISTENER_RETRIES: usize = 20;
 
     for attempt in 0..LISTENER_RETRIES {
-        match tokio::net::TcpListener::bind(listen).await {
+        match Listener::bind(listen, &SystemOptions::default(), &UserOptions::default()).await {
             Ok(listener) => return Ok(listener),
             Err(err) if attempt + 1 < LISTENER_RETRIES => {
                 tracing::warn!(addr = %listen, error = %err, "error starting listener for GRPC server, retrying");
@@ -329,4 +340,257 @@ async fn bind_listener_with_retry(listen: SocketAddr) -> Result<tokio::net::TcpL
     }
 
     unreachable!("listener retry loop should always return")
+}
+
+fn active_reflection_descriptors(config: &AgentConfig) -> Vec<(&'static str, &'static [u8])> {
+    let mut descriptors = vec![
+        ("systemd", SYSTEMD_DESCRIPTOR),
+        ("locale", LOCALE_DESCRIPTOR),
+        ("stats", STATS_DESCRIPTOR),
+    ];
+    let capabilities = &config.capabilities;
+    if capabilities.ctap.enabled {
+        descriptors.push(("ctap", CTAP_DESCRIPTOR));
+    }
+    if capabilities.exec.enabled {
+        descriptors.push(("exec", EXEC_DESCRIPTOR));
+    }
+    if capabilities.hwid.enabled {
+        descriptors.push(("hwid", HWID_DESCRIPTOR));
+    }
+    if capabilities.notifier.enabled {
+        descriptors.push(("notify", NOTIFY_DESCRIPTOR));
+    }
+    if capabilities.policy.enabled {
+        descriptors.push(("policyadmin", POLICYADMIN_DESCRIPTOR));
+    }
+    if capabilities.update.enabled {
+        descriptors.push(("update", UPDATE_DESCRIPTOR));
+    }
+    if capabilities.wifi.enabled {
+        descriptors.push(("wifi", WIFI_DESCRIPTOR));
+    }
+    descriptors
+}
+
+static TLS13_ONLY: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
+
+fn tls_protocol_versions() -> &'static [&'static rustls::SupportedProtocolVersion] {
+    TLS13_ONLY
+}
+
+fn tls_acceptor(tls: &TlsConfig) -> Result<tokio_rustls::TlsAcceptor> {
+    let mut roots = rustls::RootCertStore::empty();
+    let ca_file = File::open(&tls.ca_cert_file_path).with_context(|| {
+        format!(
+            "failed to read CA certificate {}",
+            tls.ca_cert_file_path.display()
+        )
+    })?;
+    let ca_certs = rustls_pemfile::certs(&mut BufReader::new(ca_file))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    anyhow::ensure!(!ca_certs.is_empty(), "CA certificate file is empty");
+    roots.add_parsable_certificates(ca_certs);
+    let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(roots)).build()?;
+
+    let cert_file = File::open(&tls.cert_file_path).with_context(|| {
+        format!(
+            "failed to read server certificate {}",
+            tls.cert_file_path.display()
+        )
+    })?;
+    let cert_chain = rustls_pemfile::certs(&mut BufReader::new(cert_file))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    anyhow::ensure!(!cert_chain.is_empty(), "server certificate file is empty");
+    let key_file = File::open(&tls.key_file_path)
+        .with_context(|| format!("failed to read server key {}", tls.key_file_path.display()))?;
+    let key = rustls_pemfile::private_key(&mut BufReader::new(key_file))?
+        .context("server private key file is empty")?;
+
+    let mut config = rustls::ServerConfig::builder_with_protocol_versions(tls_protocol_versions())
+        .with_client_cert_verifier(verifier)
+        .with_single_cert(cert_chain, key)?;
+    config.alpn_protocols.push(b"h2".to_vec());
+    Ok(tokio_rustls::TlsAcceptor::from(Arc::new(config)))
+}
+
+fn tls_incoming(
+    listener: Listener,
+    acceptor: tokio_rustls::TlsAcceptor,
+) -> impl futures_util::Stream<
+    Item = io::Result<tokio_rustls::server::TlsStream<tokio_listener::Connection>>,
+> + Send {
+    concurrent_map(listener, move |connection| {
+        let acceptor = acceptor.clone();
+        async move {
+            let connection = connection?;
+            acceptor.accept(connection).await.map_err(io::Error::other)
+        }
+    })
+}
+
+fn concurrent_map<S, F, Fut, T>(incoming: S, map: F) -> impl futures_util::Stream<Item = T> + Send
+where
+    S: futures_util::Stream + Send,
+    S::Item: Send,
+    F: FnMut(S::Item) -> Fut + Send,
+    Fut: std::future::Future<Output = T> + Send,
+    T: Send,
+{
+    incoming.map(map).buffer_unordered(32)
+}
+
+fn request_log_fields<T>(request: &http::Request<T>) -> (&str, Option<&str>) {
+    (
+        request.uri().path(),
+        request
+            .headers()
+            .get("x-request-id")
+            .and_then(|value| value.to_str().ok()),
+    )
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ShutdownCause {
+    Interrupt,
+    Terminate,
+}
+
+async fn wait_for_shutdown<C, T>(ctrl_c: C, terminate: T) -> ShutdownCause
+where
+    C: std::future::Future<Output = ()>,
+    T: std::future::Future<Output = ()>,
+{
+    tokio::select! {
+        () = ctrl_c => ShutdownCause::Interrupt,
+        () = terminate => ShutdownCause::Terminate,
+    }
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::warn!(%error, "failed to listen for Ctrl-C");
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to listen for SIGTERM");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    let cause = wait_for_shutdown(ctrl_c, terminate).await;
+    info!(?cause, "gRPC server graceful shutdown requested");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::StreamExt;
+
+    #[test]
+    fn reflection_lists_only_services_enabled_in_config() {
+        let mut config = AgentConfig::default();
+        assert_eq!(
+            active_reflection_descriptors(&config)
+                .iter()
+                .map(|(name, _)| *name)
+                .collect::<Vec<_>>(),
+            ["systemd", "locale", "stats"]
+        );
+
+        config.capabilities.update.enabled = true;
+        config.capabilities.wifi.enabled = true;
+        assert_eq!(
+            active_reflection_descriptors(&config)
+                .iter()
+                .map(|(name, _)| *name)
+                .collect::<Vec<_>>(),
+            ["systemd", "locale", "stats", "update", "wifi"]
+        );
+    }
+
+    #[test]
+    fn tls_server_provider_rejects_tls_before_version_13() {
+        assert_eq!(tls_protocol_versions(), [&rustls::version::TLS13]);
+    }
+
+    #[test]
+    fn request_log_method_uses_grpc_path_and_selected_metadata() {
+        let mut request = http::Request::builder()
+            .uri("/wifimanager.WifiService/ListNetwork")
+            .header("x-request-id", "request-7")
+            .body(tonic::body::Body::empty())
+            .unwrap();
+        assert_eq!(
+            request_log_fields(&request),
+            ("/wifimanager.WifiService/ListNetwork", Some("request-7"))
+        );
+        request.headers_mut().remove("x-request-id");
+        assert_eq!(
+            request_log_fields(&request),
+            ("/wifimanager.WifiService/ListNetwork", None)
+        );
+    }
+
+    #[tokio::test]
+    async fn shutdown_wait_completes_on_sigterm() {
+        let (terminate_tx, terminate_rx) = tokio::sync::oneshot::channel();
+        terminate_tx.send(()).unwrap();
+        let cause = wait_for_shutdown(std::future::pending(), async move {
+            let _ = terminate_rx.await;
+        })
+        .await;
+        assert_eq!(cause, ShutdownCause::Terminate);
+    }
+
+    #[tokio::test]
+    async fn tls_handshakes_are_polled_concurrently() {
+        let incoming = futures_util::stream::iter([0_u8, 1]);
+        let mut accepted = concurrent_map(incoming, |connection| async move {
+            if connection == 0 {
+                std::future::pending::<u8>().await
+            } else {
+                connection
+            }
+        });
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), accepted.next())
+                .await
+                .expect("later TLS handshake must not wait for earlier one"),
+            Some(1)
+        );
+    }
+
+    #[tokio::test]
+    async fn unix_listener_accepts_a_client_connection() {
+        let socket = std::env::temp_dir().join(format!(
+            "givc-agent-listener-{}-{}.sock",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let address = ListenerAddress::Path(socket.clone());
+        let listener = bind_listener_with_retry(&address).await.unwrap();
+        let client = tokio::net::UnixStream::connect(&socket).await.unwrap();
+        let accepted =
+            tokio::time::timeout(std::time::Duration::from_secs(1), listener.into_future())
+                .await
+                .expect("listener should accept the client");
+        assert!(accepted.0.expect("incoming connection").is_ok());
+        drop(client);
+        let _ = std::fs::remove_file(socket);
+    }
 }
