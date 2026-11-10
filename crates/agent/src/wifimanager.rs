@@ -55,6 +55,9 @@ struct AccessPointInfo {
     ssid: String,
     signal: u32,
     security: String,
+    privacy: bool,
+    wpa_flags: u32,
+    rsn_flags: u32,
 }
 
 impl NetworkManagerBackend {
@@ -115,6 +118,9 @@ impl NetworkManagerBackend {
             ssid: String::from_utf8_lossy(&ssid).to_string(),
             signal: u32::from(signal),
             security: infer_security(flags, wpa_flags, rsn_flags),
+            privacy: flags != NM_AP_SEC_NONE,
+            wpa_flags,
+            rsn_flags,
         })
     }
 
@@ -143,7 +149,7 @@ impl NetworkManagerBackend {
                     continue;
                 }
 
-                let keymgmt = determine_key_mgmt(&ap);
+                let keymgmt = determine_key_mgmt(ap.privacy, ap.wpa_flags, ap.rsn_flags);
                 let mut settings = build_connection_settings(ssid, password, &keymgmt)?;
                 if keymgmt == "wpa-eap" {
                     settings = merge_settings(settings, settings_ext)?;
@@ -168,24 +174,30 @@ impl NetworkManagerBackend {
 
     async fn wait_for_activation(&self, active_path: &OwnedObjectPath) -> Result<()> {
         let active = self.proxy(active_path, IFACE_CONNECTION_ACTIVE).await?;
-        loop {
-            let state: u32 = active.get_property("State").await?;
-            match state {
-                NM_ACTIVE_CONNECTION_STATE_UNKNOWN => {
-                    bail!("unexpected active connection state: unknown")
+        wait_for_activation_with_timeout(
+            async {
+                loop {
+                    let state: u32 = active.get_property("State").await?;
+                    match state {
+                        NM_ACTIVE_CONNECTION_STATE_UNKNOWN => {
+                            bail!("unexpected active connection state: unknown")
+                        }
+                        NM_ACTIVE_CONNECTION_STATE_ACTIVATING => {}
+                        NM_ACTIVE_CONNECTION_STATE_ACTIVATED => return Ok(()),
+                        NM_ACTIVE_CONNECTION_STATE_DEACTIVATING => {
+                            bail!("unexpected active connection state: deactivating")
+                        }
+                        NM_ACTIVE_CONNECTION_STATE_DEACTIVATED => {
+                            bail!("unexpected active connection state: deactivated")
+                        }
+                        _ => bail!("unknown active connection state"),
+                    }
+                    sleep(Duration::from_millis(100)).await;
                 }
-                NM_ACTIVE_CONNECTION_STATE_ACTIVATING => {}
-                NM_ACTIVE_CONNECTION_STATE_ACTIVATED => return Ok(()),
-                NM_ACTIVE_CONNECTION_STATE_DEACTIVATING => {
-                    bail!("unexpected active connection state: deactivating")
-                }
-                NM_ACTIVE_CONNECTION_STATE_DEACTIVATED => {
-                    bail!("unexpected active connection state: deactivated")
-                }
-                _ => bail!("unknown active connection state"),
-            }
-            sleep(Duration::from_millis(100)).await;
-        }
+            },
+            Duration::from_secs(120),
+        )
+        .await
     }
 
     async fn disconnect(&self) -> Result<String> {
@@ -206,6 +218,15 @@ impl NetworkManagerBackend {
         let status = if turn_on { "enabled" } else { "disabled" };
         Ok(format!("Wireless {status} successfully"))
     }
+}
+
+async fn wait_for_activation_with_timeout<F>(future: F, timeout: Duration) -> Result<()>
+where
+    F: std::future::Future<Output = Result<()>>,
+{
+    tokio::time::timeout(timeout, future)
+        .await
+        .context("timed out waiting for Wi-Fi activation")?
 }
 
 impl WifiService {
@@ -329,19 +350,21 @@ fn infer_security(flags: u32, wpa_flags: u32, rsn_flags: u32) -> String {
     security
 }
 
-fn determine_key_mgmt(ap: &AccessPointInfo) -> String {
-    if ap.security.contains("802.1X") {
+fn determine_key_mgmt(privacy: bool, wpa_flags: u32, rsn_flags: u32) -> String {
+    if wpa_flags & NM_AP_SEC_KEY_MGMT_8021X != 0 || rsn_flags & NM_AP_SEC_KEY_MGMT_8021X != 0 {
         "wpa-eap".to_owned()
-    } else if ap.security.contains("OWE") {
+    } else if rsn_flags & (NM_AP_SEC_KEY_MGMT_OWE | NM_AP_SEC_KEY_MGMT_OWE_TM) != 0 {
         "owe".to_owned()
-    } else if ap.security.contains("WPA3") {
+    } else if rsn_flags & NM_AP_SEC_KEY_MGMT_SAE != 0 {
         "sae".to_owned()
-    } else if ap.security.contains("WPA2") {
+    } else if rsn_flags & NM_AP_SEC_KEY_MGMT_PSK != 0 {
         "wpa-psk".to_owned()
-    } else if ap.security.contains("WEP") {
+    } else if privacy && wpa_flags == NM_AP_SEC_NONE && rsn_flags == NM_AP_SEC_NONE {
         "ieee8021x".to_owned()
-    } else {
+    } else if !privacy {
         "none".to_owned()
+    } else {
+        String::new()
     }
 }
 
@@ -444,13 +467,40 @@ mod tests {
 
     #[test]
     fn security_tree_prefers_flags() {
-        let ap = AccessPointInfo {
-            connection: false,
-            ssid: "ssid".to_owned(),
-            signal: 1,
-            security: "WPA2 WPA3 802.1X".to_owned(),
-        };
-        assert_eq!(determine_key_mgmt(&ap), "wpa-eap");
+        assert_eq!(
+            determine_key_mgmt(false, NM_AP_SEC_KEY_MGMT_8021X, NM_AP_SEC_KEY_MGMT_PSK),
+            "wpa-eap"
+        );
+    }
+
+    #[test]
+    fn mixed_wpa_wpa2_uses_wpa2_psk_key_management() {
+        assert_eq!(
+            determine_key_mgmt(true, NM_AP_SEC_KEY_MGMT_PSK, NM_AP_SEC_KEY_MGMT_PSK),
+            "wpa-psk"
+        );
+    }
+
+    #[test]
+    fn enterprise_security_takes_precedence_over_personal_flags() {
+        assert_eq!(
+            determine_key_mgmt(
+                true,
+                NM_AP_SEC_KEY_MGMT_8021X,
+                NM_AP_SEC_KEY_MGMT_PSK | NM_AP_SEC_KEY_MGMT_8021X,
+            ),
+            "wpa-eap"
+        );
+    }
+
+    #[tokio::test]
+    async fn activation_wait_has_a_bounded_timeout() {
+        let never_activates = std::future::pending::<Result<()>>();
+        assert!(
+            wait_for_activation_with_timeout(never_activates, Duration::from_millis(10))
+                .await
+                .is_err()
+        );
     }
 
     #[test]

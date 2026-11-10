@@ -277,9 +277,14 @@ fn detect_ghaf_version() -> String {
 
 fn detect_secure_boot() -> Option<bool> {
     let out = run_system_command_output("bootctl", &["status"]).ok()?;
-    for line in String::from_utf8_lossy(&out).lines() {
-        let line = line.trim();
-        let (key, value) = line.split_once(':')?;
+    parse_secure_boot_status(&String::from_utf8_lossy(&out))
+}
+
+fn parse_secure_boot_status(output: &str) -> Option<bool> {
+    for line in output.lines() {
+        let Some((key, value)) = line.trim().split_once(':') else {
+            continue;
+        };
         if key.trim().eq_ignore_ascii_case("Secure Boot") {
             let value = value.trim().to_ascii_lowercase();
             if value.contains("enable") {
@@ -355,5 +360,16 @@ mod tests {
         assert_eq!(stats.cpu_processes[0].name, "alpha");
         assert_eq!(stats.mem_processes[0].res_set_size, 456);
         assert_eq!(stats.total_cycles, 50);
+    }
+
+    #[test]
+    fn parses_secure_boot_status_line_without_colon_as_unknown() {
+        assert_eq!(
+            parse_secure_boot_status(
+                "Boot Loader: Linux\nSecure Boot enabled\nSecure Boot: enabled"
+            ),
+            Some(true)
+        );
+        assert_eq!(parse_secure_boot_status("Secure Boot enabled"), None);
     }
 }

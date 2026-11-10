@@ -59,17 +59,25 @@ impl pb::notify::user_notification_service_server::UserNotificationService for U
 }
 
 fn notification_to_json(notification: &pb::notify::UserNotification) -> String {
-    let urgency = pb::notify::UrgencyLevel::try_from(notification.urgency)
-        .map(|level| level.as_str_name())
-        .unwrap_or("NORMAL");
-    serde_json::json!({
-        "Event": notification.event,
-        "Title": notification.title,
-        "Urgency": urgency,
-        "Icon": notification.icon,
-        "Message": notification.message,
-    })
-    .to_string()
+    let mut json = serde_json::Map::new();
+    for (key, value) in [
+        ("Event", &notification.event),
+        ("Title", &notification.title),
+        ("Icon", &notification.icon),
+        ("Message", &notification.message),
+    ] {
+        if !value.is_empty() {
+            json.insert(key.to_owned(), serde_json::Value::String(value.clone()));
+        }
+    }
+    if notification.urgency != pb::notify::UrgencyLevel::Low as i32 {
+        let urgency = pb::notify::UrgencyLevel::try_from(notification.urgency).map_or_else(
+            |_| serde_json::json!(notification.urgency),
+            |level| serde_json::json!(level.as_str_name()),
+        );
+        json.insert("Urgency".to_owned(), urgency);
+    }
+    serde_json::Value::Object(json).to_string()
 }
 
 async fn send_message_to_socket(socket_path: &Path, data: &[u8]) -> Result<()> {
@@ -96,6 +104,31 @@ mod tests {
         });
         assert!(json.contains(r#""Event":"event""#));
         assert!(json.contains(r#""Urgency":"CRITICAL""#));
+    }
+
+    #[test]
+    fn formats_notification_as_protojson() {
+        let json = notification_to_json(&pb::notify::UserNotification {
+            event: "event".to_owned(),
+            title: "title".to_owned(),
+            urgency: pb::notify::UrgencyLevel::Critical as i32,
+            icon: "icon".to_owned(),
+            message: "msg".to_owned(),
+        });
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "Event": "event", "Title": "title", "Urgency": "CRITICAL",
+                "Icon": "icon", "Message": "msg"
+            })
+        );
+    }
+
+    #[test]
+    fn protojson_omits_default_fields() {
+        let json = notification_to_json(&pb::notify::UserNotification::default());
+        assert_eq!(json, "{}");
     }
 
     #[tokio::test]

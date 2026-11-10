@@ -365,9 +365,10 @@ mod tests {
 
     #[tokio::test]
     async fn child_environment_contains_only_requested_variables() {
+        let env = system_program("env");
         let (server, _request_tx, mut response) = start_test_command(
-            vec!["/usr/bin/env".to_owned()],
-            "/usr/bin/env",
+            vec![env.clone()],
+            &env,
             vec![],
             HashMap::from([("GIVC_EXEC_TEST".to_owned(), "present".to_owned())]),
             None,

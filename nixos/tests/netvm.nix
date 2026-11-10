@@ -8,7 +8,6 @@
 }:
 let
   tls = true;
-  snakeoil = ./snakeoil;
   addrs = {
     netvm = "192.168.101.1";
     adminvm = "192.168.101.2";
@@ -19,12 +18,6 @@ let
     port = "9001";
     protocol = "tcp"; # go version expect word "tcp" here, but it unused
   };
-  mkTls = name: {
-    enable = tls;
-    caCertPath = "${snakeoil}/${name}/ca-cert.pem";
-    certPath = "${snakeoil}/${name}/${name}-cert.pem";
-    keyPath = "${snakeoil}/${name}/${name}-key.pem";
-  };
 in
 {
   perSystem = _: {
@@ -34,7 +27,15 @@ in
           adminvm =
             { pkgs, ... }:
             {
-              imports = [ self.nixosModules.admin ];
+              imports = [
+                self.nixosModules.admin
+                ./snakeoil/gen-test-certs.nix
+              ];
+
+              givc-tls-test = {
+                inherit (admin) name;
+                addresses = admin.addr;
+              };
 
               networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
                 {
@@ -46,10 +47,22 @@ in
               givc.admin = {
                 enable = true;
                 inherit (admin) name;
-                inherit (admin) addr;
-                inherit (admin) port;
-                inherit (admin) protocol;
-                tls = mkTls "admin-vm";
+                addresses = [
+                  {
+                    inherit (admin)
+                      name
+                      addr
+                      port
+                      protocol
+                      ;
+                  }
+                ];
+                tls = {
+                  enable = tls;
+                  caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
+                  certPath = lib.mkForce "/etc/givc/cert.pem";
+                  keyPath = lib.mkForce "/etc/givc/key.pem";
+                };
               };
             };
 
@@ -61,7 +74,15 @@ in
                 ;
             in
             {
-              imports = [ self.nixosModules.sysvm ];
+              imports = [
+                self.nixosModules.sysvm
+                ./snakeoil/gen-test-certs.nix
+              ];
+
+              givc-tls-test = {
+                name = "net-vm";
+                addresses = addrs.netvm;
+              };
 
               # Setup users and keys
               users.groups.ghaf = { };
@@ -126,6 +147,7 @@ in
               # Network settings
               networking = {
                 firewall.enable = false;
+                wireless.dbusControlled = lib.mkOverride 0 true;
                 interfaces = {
                   eth1.ipv4.addresses = [
                     {
@@ -166,7 +188,7 @@ in
                   ];
                 };
                 enableIPv6 = false;
-                wireless.enable = lib.mkForce false;
+                wireless.enable = lib.mkOverride 0 true;
               };
 
               givc.sysvm = {
@@ -177,13 +199,18 @@ in
                     addr = addrs.netvm;
                     name = "net-vm";
                   };
-                  tls = mkTls "net-vm";
+                  tls = {
+                    enable = tls;
+                    caCertPath = lib.mkForce "/etc/givc/ca-cert.pem";
+                    certPath = lib.mkForce "/etc/givc/cert.pem";
+                    keyPath = lib.mkForce "/etc/givc/key.pem";
+                  };
                 };
                 capabilities = {
                   wifi.enable = true;
                   hwid = {
                     enable = true;
-                    interface = "wlan1";
+                    interface = "eth1";
                   };
                 };
                 debug = true;
@@ -199,7 +226,7 @@ in
                 "-cacert ${nodes.adminvm.givc.admin.tls.caCertPath} -cert ${nodes.adminvm.givc.admin.tls.certPath} -key ${nodes.adminvm.givc.admin.tls.keyPath}"
               else
                 "-plaintext";
-            grpcurl_addr = "${nodes.netvm.givc.sysvm.transport.addr}:${nodes.netvm.givc.sysvm.transport.port} ";
+            grpcurl_addr = "${nodes.netvm.givc.sysvm.network.agent.transport.addr}:${nodes.netvm.givc.sysvm.network.agent.transport.port} ";
           in
           ''
             import time
@@ -254,6 +281,14 @@ in
                     print("RPC 'wifimanager.WifiService.DisconnectNetwork' failed")
                     exit(1)
 
+            with subtest("test_hwid_manager"):
+                # Test hwid manager service
+                hwId = adminvm.succeed("${grpcurl_cmd} ${grpcurl_args} ${grpcurl_addr} hwid.HwidService.GetHwId")
+                print(hwId)
+                if not "Identifier" in hwId:
+                    print("RPC 'hwid.HwidService.GetHwId' failed")
+                    exit(1)
+
             with subtest("wifimanager_turnoff"):
 
                 # Test turn off wifi
@@ -282,13 +317,6 @@ in
                     print("RPC 'wifimanager.WifiService.ListNetworks' failed, no networks found")
                     exit(1)
 
-            with subtest("test_hwid_manager"):
-                # Test hwid manager service
-                hwId = adminvm.succeed("${grpcurl_cmd} ${grpcurl_args} ${grpcurl_addr} hwid.HwidService.GetHwId")
-                print(hwId)
-                if not "Identifier" in hwId:
-                    print("RPC 'hwid.HwidService.GetHwId' failed")
-                    exit(1)
           '';
       };
     };

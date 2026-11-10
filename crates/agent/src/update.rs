@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use std::pin::Pin;
 
 use serde::Deserialize;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio_stream::Stream;
@@ -69,18 +69,7 @@ impl Update for UpdateService {
         let mut args = registry_prefix(request.insecure, request.credentials.as_ref());
         args.extend(["changelog", &request.reference]);
         let output = run_command(args).await?;
-        let changelog = output
-            .stdout
-            .split(|byte| *byte == b'\n')
-            .filter(|line| {
-                serde_json::from_slice::<serde_json::Value>(line)
-                    .ok()
-                    .and_then(|value| value.get("event").cloned())
-                    .is_none()
-            })
-            .map(String::from_utf8_lossy)
-            .collect::<Vec<_>>()
-            .join("\n");
+        let changelog = changelog_output(&output.stdout);
         Ok(Response::new(RegistryChangelogResponse { changelog }))
     }
 
@@ -362,29 +351,116 @@ async fn output_stream<T>(args: Vec<String>) -> Result<ReceiverStream<Result<T, 
 where
     T: FromOutputResponse + Send + 'static,
 {
-    let output = Command::new("ota-update")
+    output_stream_from("ota-update", args).await
+}
+
+async fn output_stream_from<T>(
+    program: &str,
+    args: Vec<String>,
+) -> Result<ReceiverStream<Result<T, Status>>, Status>
+where
+    T: FromOutputResponse + Send + 'static,
+{
+    let mut child = Command::new(program)
         .args(args)
-        .output()
-        .await
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|err| Status::internal(format!("failed to execute ota-update: {err}")))?;
-    let finished = T::finished();
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| Status::internal("ota-update stdout unavailable"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| Status::internal("ota-update stderr unavailable"))?;
     let (tx, rx) = mpsc::channel(3);
-    if output.status.success() {
-        tx.send(Ok(T::output(
-            String::from_utf8_lossy(&output.stdout).into_owned(),
-        )))
-        .await
-        .map_err(|_| Status::internal("failed to send update output"))?;
-    } else {
-        tx.send(Ok(T::error(
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        )))
-        .await
-        .map_err(|_| Status::internal("failed to send update error"))?;
-    }
-    tx.send(Ok(finished))
-        .await
-        .map_err(|_| Status::internal("failed to send update completion"))?;
+    tokio::spawn(async move {
+        let stdout_tx = tx.clone();
+        let stdout_task = tokio::spawn(async move {
+            let mut stdout = stdout;
+            let mut buffer = [0_u8; 1024];
+            loop {
+                match stdout.read(&mut buffer).await {
+                    Ok(0) => return Ok::<(), Status>(()),
+                    Ok(count) => {
+                        if stdout_tx
+                            .send(Ok(T::output(
+                                String::from_utf8_lossy(&buffer[..count]).into_owned(),
+                            )))
+                            .await
+                            .is_err()
+                        {
+                            return Ok(());
+                        }
+                    }
+                    Err(err) => {
+                        return Err(Status::internal(format!(
+                            "failed reading update output: {err}"
+                        )));
+                    }
+                }
+            }
+        });
+        let stderr_tx = tx.clone();
+        let stderr_task = tokio::spawn(async move {
+            let mut stderr = stderr;
+            let mut buffer = [0_u8; 1024];
+            loop {
+                match stderr.read(&mut buffer).await {
+                    Ok(0) => return Ok::<(), Status>(()),
+                    Ok(count) => {
+                        if stderr_tx
+                            .send(Ok(T::error(
+                                String::from_utf8_lossy(&buffer[..count]).into_owned(),
+                            )))
+                            .await
+                            .is_err()
+                        {
+                            return Ok(());
+                        }
+                    }
+                    Err(err) => {
+                        return Err(Status::internal(format!(
+                            "failed reading update error: {err}"
+                        )));
+                    }
+                }
+            }
+        });
+        let status = child.wait().await;
+        let stdout_result = stdout_task.await;
+        let stderr_result = stderr_task.await;
+        if let Ok(Err(err)) = stdout_result {
+            let _ = tx.send(Err(err)).await;
+            return;
+        }
+        if let Ok(Err(err)) = stderr_result {
+            let _ = tx.send(Err(err)).await;
+            return;
+        }
+        match status {
+            Ok(status) if status.success() => {
+                let _ = tx.send(Ok(T::finished())).await;
+            }
+            Ok(status) => {
+                let _ = tx
+                    .send(Err(Status::unknown(format!(
+                        "ota-update failed with rc {}",
+                        status.code().unwrap_or(-1)
+                    ))))
+                    .await;
+            }
+            Err(err) => {
+                let _ = tx
+                    .send(Err(Status::internal(format!(
+                        "failed waiting for ota-update: {err}"
+                    ))))
+                    .await;
+            }
+        }
+    });
     Ok(ReceiverStream::new(rx))
 }
 
@@ -505,10 +581,29 @@ impl From<PullEvent> for update::RegistryPullProgress {
 
 #[derive(Debug, Deserialize)]
 struct PullResult {
-    #[serde(rename = "outputDir")]
+    #[serde(alias = "outputDir")]
     output_dir: String,
-    #[serde(rename = "manifestPath")]
+    #[serde(alias = "manifestPath")]
     manifest_path: String,
+}
+
+fn changelog_output(stdout: &[u8]) -> String {
+    let mut after_done = false;
+    let mut output = Vec::new();
+    for line in stdout.split(|byte| *byte == b'\n') {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(line) {
+            if let Some(event) = value.get("event").and_then(serde_json::Value::as_str) {
+                if event == "done" {
+                    after_done = true;
+                }
+                continue;
+            }
+        }
+        if after_done {
+            output.push(String::from_utf8_lossy(line).into_owned());
+        }
+    }
+    output.join("\n").trim().to_owned()
 }
 
 #[derive(Debug, Deserialize)]
@@ -624,6 +719,90 @@ mod tests {
             result.manifest_path,
             "/persist/sysupdate/update/manifest.json"
         );
+    }
+
+    #[test]
+    fn parses_cli_snake_case_pull_result_jsonl() {
+        let response = parse_pull_line(
+            r#"{"output_dir":"/persist/update","manifest_path":"/persist/update/manifest.json"}"#,
+        )
+        .expect("CLI result should parse")
+        .expect("result should produce a response");
+
+        let Some(update::registry_pull_response::Update::Result(result)) = response.update else {
+            panic!("expected pull result");
+        };
+        assert_eq!(result.output_dir, "/persist/update");
+        assert_eq!(result.manifest_path, "/persist/update/manifest.json");
+    }
+
+    #[test]
+    fn strips_discover_progress_and_preserves_changelog_after_done() {
+        let discover = br#"{"event":"done"}
+[{"repository":"one","tag":"v1","version":"1","hash":"a"},{"repository":"two","tag":"v2","version":"2","hash":"b"}]"#;
+        let updates: Vec<super::AvailableUpdateJson> = parse_jsonl_result(discover).unwrap();
+        assert_eq!(
+            updates.iter().map(|u| u.tag.as_str()).collect::<Vec<_>>(),
+            ["v1", "v2"]
+        );
+
+        let changelog = super::changelog_output(b"prelude\n{\"event\":\"done\"}\nfirst\nsecond\n");
+        assert_eq!(changelog, "first\nsecond");
+    }
+
+    #[tokio::test]
+    async fn cachix_streams_stdout_then_reports_nonzero_exit() {
+        use super::output_stream_from;
+        use tokio_stream::StreamExt;
+
+        let output = output_stream_from::<givc_common::pb::update::SetGenerationResponse>(
+            "/bin/sh",
+            vec!["-c".to_owned(), "printf 'cache output'; exit 0".to_owned()],
+        )
+        .await
+        .unwrap()
+        .collect::<Vec<_>>()
+        .await;
+        assert_eq!(
+            output[0].as_ref().unwrap().output.as_deref(),
+            Some("cache output")
+        );
+        assert!(output[1].as_ref().unwrap().finished);
+
+        let failure = output_stream_from::<givc_common::pb::update::SetGenerationResponse>(
+            "/bin/sh",
+            vec!["-c".to_owned(), "printf failure >&2; exit 7".to_owned()],
+        )
+        .await
+        .unwrap()
+        .collect::<Vec<_>>()
+        .await;
+        assert_eq!(
+            failure[0].as_ref().unwrap().error.as_deref(),
+            Some("failure")
+        );
+        assert_eq!(
+            failure.last().unwrap().as_ref().unwrap_err().code(),
+            tonic::Code::Unknown
+        );
+    }
+
+    #[tokio::test]
+    async fn output_stream_returns_before_subprocess_finishes() {
+        let stream = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            super::output_stream_from::<givc_common::pb::update::SetGenerationResponse>(
+                "/bin/sh",
+                vec![
+                    "-c".to_owned(),
+                    "printf first; sleep 0.2; printf second".to_owned(),
+                ],
+            ),
+        )
+        .await
+        .expect("stream setup must not wait for process completion")
+        .unwrap();
+        drop(stream);
     }
 
     #[test]

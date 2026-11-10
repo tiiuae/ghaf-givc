@@ -52,12 +52,16 @@ impl pb::hwid::hwid_service_server::HwidService for HwIdServer {
 }
 
 fn select_interface(iface: String) -> Result<String> {
+    select_interface_from("/sys/class/net", iface)
+}
+
+fn select_interface_from(net_path: &str, iface: String) -> Result<String> {
     if !iface.is_empty() {
         return Ok(iface);
     }
 
     for prefix in ["wl", "en"] {
-        if let Some(found) = find_interface(prefix)? {
+        if let Some(found) = find_interface_at(net_path, prefix)? {
             return Ok(found);
         }
     }
@@ -65,8 +69,8 @@ fn select_interface(iface: String) -> Result<String> {
     bail!("could not find wireless or ethernet device")
 }
 
-fn find_interface(prefix: &str) -> Result<Option<String>> {
-    let entries = fs::read_dir("/sys/class/net").context("error querying network device name")?;
+fn find_interface_at(net_path: &str, prefix: &str) -> Result<Option<String>> {
+    let entries = fs::read_dir(net_path).context("error querying network device name")?;
     for entry in entries {
         let entry = entry.context("error querying network device name")?;
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -93,5 +97,17 @@ mod tests {
     #[test]
     fn prefer_explicit_iface() {
         assert_eq!(select_interface("eth0".to_owned()).unwrap(), "eth0");
+    }
+
+    #[test]
+    fn absent_nic_returns_descriptive_error() {
+        let empty_net = std::env::temp_dir().join(format!("givc-no-nic-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&empty_net);
+        fs::create_dir(&empty_net).unwrap();
+        let error = select_interface_from(empty_net.to_str().unwrap(), String::new())
+            .unwrap_err()
+            .to_string();
+        fs::remove_dir_all(empty_net).unwrap();
+        assert!(error.contains("could not find wireless or ethernet device"));
     }
 }

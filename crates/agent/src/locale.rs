@@ -51,13 +51,17 @@ impl LocaleServer {
     }
 
     fn set_timezone(&self, timezone: &str) -> Result<()> {
-        if !validate_timezone(timezone) {
-            bail!("invalid timezone")
-        }
-
-        let _ = run_command("timedatectl", ["set-timezone", timezone]);
-        Ok(())
+        set_timezone_with(timezone, "timedatectl")
     }
+}
+
+fn set_timezone_with(timezone: &str, command: &str) -> Result<()> {
+    if !validate_timezone(timezone) {
+        bail!("invalid timezone")
+    }
+
+    run_command(command, ["set-timezone", timezone]).context("failed to set timezone")?;
+    Ok(())
 }
 
 #[tonic::async_trait]
@@ -142,5 +146,12 @@ mod tests {
         let server = LocaleServer::new();
         let err = server.set_locale(&[]).unwrap_err();
         assert!(err.to_string().contains("no locale assignments"));
+    }
+
+    #[test]
+    fn timezone_command_failure_is_returned() {
+        let error = set_timezone_with("Europe/Helsinki", "/bin/false")
+            .expect_err("failed timedatectl must not report success");
+        assert!(error.to_string().contains("failed to set timezone"));
     }
 }
