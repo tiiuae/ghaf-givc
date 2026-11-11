@@ -6,6 +6,7 @@ use std::{
     io::{self, BufReader},
     net::SocketAddr,
     sync::Arc,
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
@@ -374,12 +375,13 @@ fn active_reflection_descriptors(config: &AgentConfig) -> Vec<(&'static str, &'s
 }
 
 static TLS13_ONLY: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn tls_protocol_versions() -> &'static [&'static rustls::SupportedProtocolVersion] {
     TLS13_ONLY
 }
 
-fn tls_acceptor(tls: &TlsConfig) -> Result<tokio_rustls::TlsAcceptor> {
+pub(crate) fn tls_acceptor(tls: &TlsConfig) -> Result<tokio_rustls::TlsAcceptor> {
     let mut roots = rustls::RootCertStore::empty();
     let ca_file = File::open(&tls.ca_cert_file_path).with_context(|| {
         format!(
@@ -414,7 +416,7 @@ fn tls_acceptor(tls: &TlsConfig) -> Result<tokio_rustls::TlsAcceptor> {
     Ok(tokio_rustls::TlsAcceptor::from(Arc::new(config)))
 }
 
-fn tls_incoming(
+pub(crate) fn tls_incoming(
     listener: Listener,
     acceptor: tokio_rustls::TlsAcceptor,
 ) -> impl futures_util::Stream<
@@ -424,9 +426,21 @@ fn tls_incoming(
         let acceptor = acceptor.clone();
         async move {
             let connection = connection?;
-            acceptor.accept(connection).await.map_err(io::Error::other)
+            timeout_tls_handshake(TLS_HANDSHAKE_TIMEOUT, async {
+                acceptor.accept(connection).await.map_err(io::Error::other)
+            })
+            .await
         }
     })
+}
+
+async fn timeout_tls_handshake<F, T>(timeout: Duration, handshake: F) -> io::Result<T>
+where
+    F: std::future::Future<Output = io::Result<T>>,
+{
+    tokio::time::timeout(timeout, handshake)
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "TLS handshake timed out"))?
 }
 
 fn concurrent_map<S, F, Fut, T>(incoming: S, map: F) -> impl futures_util::Stream<Item = T> + Send
@@ -570,6 +584,17 @@ mod tests {
                 .expect("later TLS handshake must not wait for earlier one"),
             Some(1)
         );
+    }
+
+    #[tokio::test]
+    async fn stalled_tls_handshake_times_out() {
+        let result = timeout_tls_handshake(
+            std::time::Duration::from_millis(1),
+            std::future::pending::<io::Result<()>>(),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
     }
 
     #[tokio::test]

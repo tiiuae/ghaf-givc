@@ -320,16 +320,22 @@ async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) ->
         let mut server = Server::builder().layer(RequestInterceptorLayer::new(
             AgentInterceptor::from_config(config)?,
         ));
-        if let Some(tls) = &config.network.tls_config {
-            server = server.tls_config(tls.server_config()?)?;
-        }
+        let tls_acceptor = config
+            .network
+            .tls_config
+            .as_ref()
+            .map(crate::runtime::tls_acceptor)
+            .transpose()?;
         tokio::spawn(async move {
             info!(addr = ?listen_addr, socket = %proxy.socket, "socket-proxy: server starting");
-            let result = server
-                .add_service(grpc_service)
-                .add_service(reflection)
-                .serve_with_incoming(listener)
-                .await;
+            let server = server.add_service(grpc_service).add_service(reflection);
+            let result = if let Some(acceptor) = tls_acceptor {
+                server
+                    .serve_with_incoming(crate::runtime::tls_incoming(listener, acceptor))
+                    .await
+            } else {
+                server.serve_with_incoming(listener).await
+            };
             if let Err(err) = result {
                 error!(error = %err, "socket-proxy: server failed");
             }

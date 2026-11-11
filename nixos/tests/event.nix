@@ -32,7 +32,7 @@ in
       module = {
         nodes = {
           adminvm =
-            { ... }:
+            { pkgs, ... }:
             {
               imports = [
                 self.nixosModules.admin
@@ -56,6 +56,7 @@ in
                 tls.enable = tls;
                 debug = false;
               };
+              environment.systemPackages = [ pkgs.openssl ];
             };
 
           audiovm =
@@ -268,6 +269,11 @@ in
               appvm.wait_until_succeeds(
                 "grpcurl ${grpcurl_args} ${admin.addr}:${admin.port} admin.AdminService/QueryList"
               )
+
+            with subtest("event_proxy_tls_requires_tls13_and_client_certificate"):
+              adminvm.succeed("/run/current-system/sw/bin/openssl s_client -brief -connect ${addrs.appvm}:9015 -tls1_3 -CAfile /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem </dev/null")
+              adminvm.fail("/run/current-system/sw/bin/openssl s_client -brief -connect ${addrs.appvm}:9015 -tls1_2 -CAfile /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem </dev/null")
+              adminvm.fail("/run/current-system/sw/bin/openssl s_client -brief -connect ${addrs.appvm}:9015 -tls1_3 -CAfile /etc/givc/ca-cert.pem </dev/null")
 
             with subtest("success_test_device_register"):
               audiovm.succeed("${grpcurl_cmd} -d \'{\"name\":\"wireless controller\", \"vendorId\":\"1118\", \"deviceId\":\"654\"}\' ${grpcurl_args} ${grpcurl_addr} eventproxy.EventService.RegisterDevice")

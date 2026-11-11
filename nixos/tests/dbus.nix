@@ -85,6 +85,7 @@ in
               environment.systemPackages = [
                 pkgs.networkmanager
                 pkgs.grpcurl
+                pkgs.openssl
                 pkgs.python3
               ];
 
@@ -576,6 +577,15 @@ in
             print(guivm.fail("sudo -u evil2 dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.Avahi /org/freedesktop/Avahi org.freedesktop.DBus.Introspectable.Introspect"))
 
           with subtest("socket_proxy_cedar_allow"):
+            guivm.succeed(
+              "/run/current-system/sw/bin/openssl s_client -brief -connect ${addrs.netvm}:9010 -tls1_3 -CAfile /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem </dev/null"
+            )
+            guivm.fail(
+              "/run/current-system/sw/bin/openssl s_client -brief -connect ${addrs.netvm}:9010 -tls1_2 -CAfile /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem </dev/null"
+            )
+            guivm.fail(
+              "/run/current-system/sw/bin/openssl s_client -brief -connect ${addrs.netvm}:9010 -tls1_3 -CAfile /etc/givc/ca-cert.pem </dev/null"
+            )
             guivm.succeed(
               "grpcurl -cacert /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem -d '{\"Chunk\":\"b2s=\",\"Eof\":true}' ${addrs.netvm}:9010 socketproxy.SocketStream/TransferData"
             )
