@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, bail};
 use evdev::uinput::VirtualDevice;
 use evdev::{
     AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, Device, InputEvent, InputId, KeyCode,
@@ -20,6 +20,7 @@ use givc_common::types::TransportConfig as CommonTransportConfig;
 use givc_common::{pb, tonic::RewrapErr};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
+use tokio_listener::{Listener, ListenerAddress, SystemOptions, UserOptions};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server;
@@ -340,7 +341,7 @@ async fn start_event_proxy_service(config: &AgentConfig, event: EventConfig) -> 
     let controller = EventProxyController::new(event.transport.clone());
 
     if !event.producer.enabled {
-        let listen_addr = event_server_addr(config, &event)?;
+        let listen_addr = event_server_listener_address(&event)?;
         let grpc_service = EventProxyServerServer::new(EventProxyServer { controller });
         let reflect = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(EVENT_DESCRIPTOR)
@@ -352,11 +353,25 @@ async fn start_event_proxy_service(config: &AgentConfig, event: EventConfig) -> 
             server = server.tls_config(tls.server_config()?)?;
         }
         tokio::spawn(async move {
-            info!(addr = %listen_addr, device = %event.device, "event: server starting");
+            let listener = match Listener::bind(
+                &listen_addr,
+                &SystemOptions::default(),
+                &UserOptions::default(),
+            )
+            .await
+            .with_context(|| format!("unable to bind event listener {listen_addr:?}"))
+            {
+                Ok(listener) => listener,
+                Err(err) => {
+                    error!(error = %err, "event: server failed");
+                    return;
+                }
+            };
+            info!(addr = ?listen_addr, device = %event.device, "event: server starting");
             if let Err(err) = server
                 .add_service(grpc_service)
                 .add_service(reflect)
-                .serve(listen_addr)
+                .serve_with_incoming(listener)
                 .await
             {
                 error!(error = %err, "event: server failed");
@@ -444,25 +459,39 @@ fn stream_device_events(
     }
 }
 
-fn event_server_addr(config: &AgentConfig, event: &EventConfig) -> Result<std::net::SocketAddr> {
-    ensure!(
-        event.transport.protocol == "tcp",
-        "event server requires tcp transport"
-    );
-
-    let addr: std::net::IpAddr = event
-        .transport
-        .address
-        .parse()
-        .with_context(|| format!("invalid event address {}", event.transport.address))?;
-    let port: u16 = event
-        .transport
-        .port
-        .parse()
-        .with_context(|| format!("invalid event port {}", event.transport.port))?;
-
-    let _ = config;
-    Ok(std::net::SocketAddr::new(addr, port))
+fn event_server_listener_address(event: &EventConfig) -> Result<ListenerAddress> {
+    let transport = &event.transport;
+    match transport.protocol.as_str() {
+        "tcp" => {
+            let addr = transport
+                .address
+                .parse()
+                .with_context(|| format!("invalid event address {}", transport.address))?;
+            let port = transport
+                .port
+                .parse()
+                .with_context(|| format!("invalid event port {}", transport.port))?;
+            Ok(ListenerAddress::Tcp(std::net::SocketAddr::new(addr, port)))
+        }
+        "unix" => Ok(ListenerAddress::Path(transport.address.clone().into())),
+        "abstract" => Ok(ListenerAddress::Abstract(transport.address.clone())),
+        "vsock" => {
+            let cid = transport.address.parse().with_context(|| {
+                format!(
+                    "invalid vsock address {}:{}",
+                    transport.address, transport.port
+                )
+            })?;
+            let port = transport.port.parse().with_context(|| {
+                format!(
+                    "invalid vsock address {}:{}",
+                    transport.address, transport.port
+                )
+            })?;
+            Ok(ListenerAddress::Vsock { cid, port })
+        }
+        other => bail!("unsupported event transport protocol: {other}"),
+    }
 }
 
 fn endpoint_from_transport(
@@ -615,8 +644,111 @@ fn is_stick_axis(axis: AbsoluteAxisCode) -> bool {
 mod tests {
     use super::*;
 
+    fn event_config(protocol: &str, address: &str, port: &str) -> EventConfig {
+        EventConfig {
+            transport: crate::config::TransportConfig {
+                protocol: protocol.to_owned(),
+                address: address.to_owned(),
+                port: port.to_owned(),
+                name: String::new(),
+            },
+            ..Default::default()
+        }
+    }
+
+    fn event_listener_address(
+        protocol: &str,
+        address: &str,
+        port: &str,
+    ) -> Result<ListenerAddress> {
+        event_server_listener_address(&event_config(protocol, address, port))
+    }
+
     fn event(event_type: u16, code: u16, value: i32) -> InputEvent {
         InputEvent::new(event_type, code, value)
+    }
+
+    #[test]
+    fn event_listener_accepts_tcp_transport() {
+        let address = event_listener_address("tcp", "192.0.2.20", "9014").unwrap();
+
+        assert!(matches!(
+            address,
+            ListenerAddress::Tcp(address)
+                if address == "192.0.2.20:9014".parse::<std::net::SocketAddr>().unwrap()
+        ));
+    }
+
+    #[test]
+    fn event_listener_accepts_unix_transport() {
+        let address = event_listener_address("unix", "/run/givc/event.sock", "").unwrap();
+
+        assert!(matches!(
+            address,
+            ListenerAddress::Path(path) if path == Path::new("/run/givc/event.sock")
+        ));
+    }
+
+    #[test]
+    fn event_listener_accepts_abstract_transport() {
+        let address = event_listener_address("abstract", "givc-event", "").unwrap();
+
+        assert!(matches!(
+            address,
+            ListenerAddress::Abstract(name) if name == "givc-event"
+        ));
+    }
+
+    #[test]
+    fn event_listener_accepts_vsock_transport() {
+        let address = event_listener_address("vsock", "3", "9014").unwrap();
+
+        assert!(matches!(
+            address,
+            ListenerAddress::Vsock { cid: 3, port: 9014 }
+        ));
+    }
+
+    #[test]
+    fn event_listener_reports_invalid_tcp_address() {
+        let error = event_listener_address("tcp", "not-an-ip", "9014").unwrap_err();
+
+        assert!(error.to_string().contains("not-an-ip"));
+    }
+
+    #[test]
+    fn event_listener_reports_invalid_vsock_address() {
+        for (cid, port) in [("not-a-cid", "9014"), ("3", "not-a-port")] {
+            let error = event_listener_address("vsock", cid, port).unwrap_err();
+            assert!(error.to_string().contains("invalid vsock address"));
+        }
+    }
+
+    #[test]
+    fn event_listener_rejects_unsupported_protocol() {
+        let error = event_listener_address("udp", "192.0.2.20", "9014").unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported event transport protocol: udp")
+        );
+    }
+
+    #[tokio::test]
+    async fn event_listener_bind_failure_does_not_abort_startup() {
+        let occupied = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = occupied.local_addr().unwrap();
+        let event = event_config(
+            "tcp",
+            &address.ip().to_string(),
+            &address.port().to_string(),
+        );
+
+        let result = start_event_proxy_service(&AgentConfig::default(), event).await;
+        tokio::task::yield_now().await;
+
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]
