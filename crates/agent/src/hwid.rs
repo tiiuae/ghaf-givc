@@ -17,25 +17,21 @@ pub struct HwIdServer {
 
 impl HwIdServer {
     #[must_use]
-    pub fn new(iface: String) -> Result<Self> {
-        Ok(Self {
-            iface: select_interface(iface)?,
-        })
+    pub fn new(iface: String) -> Self {
+        Self { iface }
     }
 
     /// # Errors
     /// Fails if the interface does not exist, is down, or cannot read its MAC address.
     pub fn get_identifier(&self) -> Result<String> {
-        if self.iface.is_empty() {
-            bail!("could not find wireless or ethernet device")
-        }
+        let iface = select_interface(self.iface.clone())?;
 
-        let operstate = read_trimmed(format!("/sys/class/net/{}/operstate", self.iface))?;
+        let operstate = read_trimmed(format!("/sys/class/net/{iface}/operstate"))?;
         if operstate != "up" {
             bail!("interface is down, could report unreliable information")
         }
 
-        let hwaddr = read_trimmed(format!("/sys/class/net/{}/address", self.iface))?;
+        let hwaddr = read_trimmed(format!("/sys/class/net/{iface}/address"))?;
         Ok(hwaddr)
     }
 }
@@ -100,6 +96,13 @@ mod tests {
     }
 
     #[test]
+    fn automatic_interface_is_not_selected_at_construction() {
+        let server = HwIdServer::new(String::new());
+
+        assert!(server.iface.is_empty());
+    }
+
+    #[test]
     fn absent_nic_returns_descriptive_error() {
         let empty_net = std::env::temp_dir().join(format!("givc-no-nic-{}", std::process::id()));
         let _ = fs::remove_dir_all(&empty_net);
@@ -109,5 +112,22 @@ mod tests {
             .to_string();
         fs::remove_dir_all(empty_net).unwrap();
         assert!(error.contains("could not find wireless or ethernet device"));
+    }
+
+    #[test]
+    fn automatic_interface_can_appear_after_initial_lookup_failure() {
+        let net = std::env::temp_dir().join(format!("givc-late-nic-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&net);
+        fs::create_dir(&net).unwrap();
+
+        assert!(select_interface_from(net.to_str().unwrap(), String::new()).is_err());
+
+        fs::create_dir(net.join("en-test")).unwrap();
+        assert_eq!(
+            select_interface_from(net.to_str().unwrap(), String::new()).unwrap(),
+            "en-test"
+        );
+
+        fs::remove_dir_all(net).unwrap();
     }
 }

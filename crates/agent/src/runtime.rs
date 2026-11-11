@@ -198,7 +198,7 @@ impl AgentRuntime {
                 if self.config.capabilities.hwid.enabled {
                     Some(HwidServiceServer::new(HwIdServer::new(
                         self.config.capabilities.hwid.interface.clone(),
-                    )?))
+                    )))
                 } else {
                     None
                 };
@@ -279,7 +279,7 @@ impl AgentRuntime {
                 if self.config.capabilities.hwid.enabled {
                     Some(HwidServiceServer::new(HwIdServer::new(
                         self.config.capabilities.hwid.interface.clone(),
-                    )?))
+                    )))
                 } else {
                     None
                 };
