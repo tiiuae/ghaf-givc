@@ -1415,6 +1415,464 @@ func (x *ImageInstallResponse) GetError() string {
 	return ""
 }
 
+type LocalMetadata struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Manifest      string                 `protobuf:"bytes,1,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	Signature     string                 `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"` // Hex-encoded detached Ed25519 signature.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalMetadata) Reset() {
+	*x = LocalMetadata{}
+	mi := &file_update_update_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalMetadata) ProtoMessage() {}
+
+func (x *LocalMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_update_update_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalMetadata.ProtoReflect.Descriptor instead.
+func (*LocalMetadata) Descriptor() ([]byte, []int) {
+	return file_update_update_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *LocalMetadata) GetManifest() string {
+	if x != nil {
+		return x.Manifest
+	}
+	return ""
+}
+
+func (x *LocalMetadata) GetSignature() string {
+	if x != nil {
+		return x.Signature
+	}
+	return ""
+}
+
+type LocalArtifact struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Size          uint64                 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalArtifact) Reset() {
+	*x = LocalArtifact{}
+	mi := &file_update_update_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalArtifact) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalArtifact) ProtoMessage() {}
+
+func (x *LocalArtifact) ProtoReflect() protoreflect.Message {
+	mi := &file_update_update_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalArtifact.ProtoReflect.Descriptor instead.
+func (*LocalArtifact) Descriptor() ([]byte, []int) {
+	return file_update_update_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *LocalArtifact) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *LocalArtifact) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+type LocalCandidate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Target        string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	Generation    uint64                 `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`
+	Files         []*LocalArtifact       `protobuf:"bytes,5,rep,name=files,proto3" json:"files,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalCandidate) Reset() {
+	*x = LocalCandidate{}
+	mi := &file_update_update_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalCandidate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalCandidate) ProtoMessage() {}
+
+func (x *LocalCandidate) ProtoReflect() protoreflect.Message {
+	mi := &file_update_update_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalCandidate.ProtoReflect.Descriptor instead.
+func (*LocalCandidate) Descriptor() ([]byte, []int) {
+	return file_update_update_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *LocalCandidate) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *LocalCandidate) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *LocalCandidate) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *LocalCandidate) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *LocalCandidate) GetFiles() []*LocalArtifact {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+type LocalImportRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*LocalImportRequest_Metadata
+	//	*LocalImportRequest_Data
+	//	*LocalImportRequest_Finish
+	Payload       isLocalImportRequest_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalImportRequest) Reset() {
+	*x = LocalImportRequest{}
+	mi := &file_update_update_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalImportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalImportRequest) ProtoMessage() {}
+
+func (x *LocalImportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_update_update_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalImportRequest.ProtoReflect.Descriptor instead.
+func (*LocalImportRequest) Descriptor() ([]byte, []int) {
+	return file_update_update_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *LocalImportRequest) GetPayload() isLocalImportRequest_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *LocalImportRequest) GetMetadata() *LocalMetadata {
+	if x != nil {
+		if x, ok := x.Payload.(*LocalImportRequest_Metadata); ok {
+			return x.Metadata
+		}
+	}
+	return nil
+}
+
+func (x *LocalImportRequest) GetData() []byte {
+	if x != nil {
+		if x, ok := x.Payload.(*LocalImportRequest_Data); ok {
+			return x.Data
+		}
+	}
+	return nil
+}
+
+func (x *LocalImportRequest) GetFinish() bool {
+	if x != nil {
+		if x, ok := x.Payload.(*LocalImportRequest_Finish); ok {
+			return x.Finish
+		}
+	}
+	return false
+}
+
+type isLocalImportRequest_Payload interface {
+	isLocalImportRequest_Payload()
+}
+
+type LocalImportRequest_Metadata struct {
+	Metadata *LocalMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof"` // First message only.
+}
+
+type LocalImportRequest_Data struct {
+	Data []byte `protobuf:"bytes,2,opt,name=data,proto3,oneof"` // Concatenated root, verity, UKI; at most 256 KiB per message.
+}
+
+type LocalImportRequest_Finish struct {
+	Finish bool `protobuf:"varint,3,opt,name=finish,proto3,oneof"`
+}
+
+func (*LocalImportRequest_Metadata) isLocalImportRequest_Payload() {}
+
+func (*LocalImportRequest_Data) isLocalImportRequest_Payload() {}
+
+func (*LocalImportRequest_Finish) isLocalImportRequest_Payload() {}
+
+type LocalImportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Phase         string                 `protobuf:"bytes,1,opt,name=phase,proto3" json:"phase,omitempty"`
+	Completed     uint64                 `protobuf:"varint,2,opt,name=completed,proto3" json:"completed,omitempty"`
+	Total         uint64                 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	Candidate     *LocalCandidate        `protobuf:"bytes,4,opt,name=candidate,proto3" json:"candidate,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalImportResponse) Reset() {
+	*x = LocalImportResponse{}
+	mi := &file_update_update_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalImportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalImportResponse) ProtoMessage() {}
+
+func (x *LocalImportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_update_update_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalImportResponse.ProtoReflect.Descriptor instead.
+func (*LocalImportResponse) Descriptor() ([]byte, []int) {
+	return file_update_update_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *LocalImportResponse) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *LocalImportResponse) GetCompleted() uint64 {
+	if x != nil {
+		return x.Completed
+	}
+	return 0
+}
+
+func (x *LocalImportResponse) GetTotal() uint64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *LocalImportResponse) GetCandidate() *LocalCandidate {
+	if x != nil {
+		return x.Candidate
+	}
+	return nil
+}
+
+type LocalReceiveRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // Set on first message only, by admin.
+	Metadata      *LocalMetadata         `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	Finish        bool                   `protobuf:"varint,4,opt,name=finish,proto3" json:"finish,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalReceiveRequest) Reset() {
+	*x = LocalReceiveRequest{}
+	mi := &file_update_update_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalReceiveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalReceiveRequest) ProtoMessage() {}
+
+func (x *LocalReceiveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_update_update_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalReceiveRequest.ProtoReflect.Descriptor instead.
+func (*LocalReceiveRequest) Descriptor() ([]byte, []int) {
+	return file_update_update_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *LocalReceiveRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *LocalReceiveRequest) GetMetadata() *LocalMetadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *LocalReceiveRequest) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *LocalReceiveRequest) GetFinish() bool {
+	if x != nil {
+		return x.Finish
+	}
+	return false
+}
+
+type LocalCandidateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalCandidateRequest) Reset() {
+	*x = LocalCandidateRequest{}
+	mi := &file_update_update_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalCandidateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalCandidateRequest) ProtoMessage() {}
+
+func (x *LocalCandidateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_update_update_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalCandidateRequest.ProtoReflect.Descriptor instead.
+func (*LocalCandidateRequest) Descriptor() ([]byte, []int) {
+	return file_update_update_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *LocalCandidateRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 var File_update_update_proto protoreflect.FileDescriptor
 
 const file_update_update_proto_rawDesc = "" +
@@ -1521,8 +1979,45 @@ const file_update_update_proto_rawDesc = "" +
 	"\x06Output\x18\x02 \x01(\tH\x00R\x06Output\x88\x01\x01\x12\x19\n" +
 	"\x05Error\x18\x03 \x01(\tH\x01R\x05Error\x88\x01\x01B\t\n" +
 	"\a_OutputB\b\n" +
-	"\x06_Error2\xcc\x03\n" +
-	"\x06Update\x12C\n" +
+	"\x06_Error\"I\n" +
+	"\rLocalMetadata\x12\x1a\n" +
+	"\bmanifest\x18\x01 \x01(\tR\bmanifest\x12\x1c\n" +
+	"\tsignature\x18\x02 \x01(\tR\tsignature\"7\n" +
+	"\rLocalArtifact\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x04R\x04size\"\x9f\x01\n" +
+	"\x0eLocalCandidate\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x16\n" +
+	"\x06target\x18\x03 \x01(\tR\x06target\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x04 \x01(\x04R\n" +
+	"generation\x12+\n" +
+	"\x05files\x18\x05 \x03(\v2\x15.update.LocalArtifactR\x05files\"\x84\x01\n" +
+	"\x12LocalImportRequest\x123\n" +
+	"\bmetadata\x18\x01 \x01(\v2\x15.update.LocalMetadataH\x00R\bmetadata\x12\x14\n" +
+	"\x04data\x18\x02 \x01(\fH\x00R\x04data\x12\x18\n" +
+	"\x06finish\x18\x03 \x01(\bH\x00R\x06finishB\t\n" +
+	"\apayload\"\x95\x01\n" +
+	"\x13LocalImportResponse\x12\x14\n" +
+	"\x05phase\x18\x01 \x01(\tR\x05phase\x12\x1c\n" +
+	"\tcompleted\x18\x02 \x01(\x04R\tcompleted\x12\x14\n" +
+	"\x05total\x18\x03 \x01(\x04R\x05total\x124\n" +
+	"\tcandidate\x18\x04 \x01(\v2\x16.update.LocalCandidateR\tcandidate\"\x84\x01\n" +
+	"\x13LocalReceiveRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x121\n" +
+	"\bmetadata\x18\x02 \x01(\v2\x15.update.LocalMetadataR\bmetadata\x12\x12\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\x12\x16\n" +
+	"\x06finish\x18\x04 \x01(\bR\x06finish\"'\n" +
+	"\x15LocalCandidateRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id2\xa3\a\n" +
+	"\x06Update\x12E\n" +
+	"\x12PrepareLocalImport\x12\x15.update.LocalMetadata\x1a\x16.update.LocalCandidate\"\x00\x12T\n" +
+	"\x12ReceiveLocalImport\x12\x1b.update.LocalReceiveRequest\x1a\x1b.update.LocalImportResponse\"\x00(\x010\x01\x12L\n" +
+	"\x11AcceptLocalImport\x12\x1d.update.LocalCandidateRequest\x1a\x16.update.LocalCandidate\"\x00\x12D\n" +
+	"\x12DiscardLocalImport\x12\x1d.update.LocalCandidateRequest\x1a\r.update.Empty\"\x00\x12O\n" +
+	"\x0fCandidateStatus\x12\x1d.update.LocalCandidateRequest\x1a\x1b.update.LocalImportResponse\"\x00\x12S\n" +
+	"\x10InstallCandidate\x12\x1d.update.LocalCandidateRequest\x1a\x1c.update.ImageInstallResponse\"\x000\x01\x12C\n" +
 	"\x0fListGenerations\x12\r.update.Empty\x1a\x1f.update.ListGenerationsResponse\"\x00\x12O\n" +
 	"\bDiscover\x12\x1f.update.RegistryDiscoverRequest\x1a .update.RegistryDiscoverResponse\"\x00\x12R\n" +
 	"\tChangelog\x12 .update.RegistryChangelogRequest\x1a!.update.RegistryChangelogResponse\"\x00\x12E\n" +
@@ -1542,7 +2037,7 @@ func file_update_update_proto_rawDescGZIP() []byte {
 	return file_update_update_proto_rawDescData
 }
 
-var file_update_update_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_update_update_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_update_update_proto_goTypes = []any{
 	(*Empty)(nil),                     // 0: update.Empty
 	(*Generation)(nil),                // 1: update.Generation
@@ -1566,6 +2061,13 @@ var file_update_update_proto_goTypes = []any{
 	(*RegistryPullResponse)(nil),      // 19: update.RegistryPullResponse
 	(*ImageInstallRequest)(nil),       // 20: update.ImageInstallRequest
 	(*ImageInstallResponse)(nil),      // 21: update.ImageInstallResponse
+	(*LocalMetadata)(nil),             // 22: update.LocalMetadata
+	(*LocalArtifact)(nil),             // 23: update.LocalArtifact
+	(*LocalCandidate)(nil),            // 24: update.LocalCandidate
+	(*LocalImportRequest)(nil),        // 25: update.LocalImportRequest
+	(*LocalImportResponse)(nil),       // 26: update.LocalImportResponse
+	(*LocalReceiveRequest)(nil),       // 27: update.LocalReceiveRequest
+	(*LocalCandidateRequest)(nil),     // 28: update.LocalCandidateRequest
 }
 var file_update_update_proto_depIdxs = []int32{
 	1,  // 0: update.ListGenerationsResponse.List:type_name -> update.Generation
@@ -1580,23 +2082,39 @@ var file_update_update_proto_depIdxs = []int32{
 	17, // 9: update.RegistryPullProgress.BlobDownloading:type_name -> update.RegistryBlobDownloading
 	18, // 10: update.RegistryPullResponse.Progress:type_name -> update.RegistryPullProgress
 	15, // 11: update.RegistryPullResponse.Result:type_name -> update.RegistryPullResult
-	0,  // 12: update.Update.ListGenerations:input_type -> update.Empty
-	10, // 13: update.Update.Discover:input_type -> update.RegistryDiscoverRequest
-	12, // 14: update.Update.Changelog:input_type -> update.RegistryChangelogRequest
-	14, // 15: update.Update.Pull:input_type -> update.RegistryPullRequest
-	20, // 16: update.Update.ImageInstall:input_type -> update.ImageInstallRequest
-	4,  // 17: update.Update.InstallCachix:input_type -> update.Cachix
-	2,  // 18: update.Update.ListGenerations:output_type -> update.ListGenerationsResponse
-	11, // 19: update.Update.Discover:output_type -> update.RegistryDiscoverResponse
-	13, // 20: update.Update.Changelog:output_type -> update.RegistryChangelogResponse
-	19, // 21: update.Update.Pull:output_type -> update.RegistryPullResponse
-	21, // 22: update.Update.ImageInstall:output_type -> update.ImageInstallResponse
-	5,  // 23: update.Update.InstallCachix:output_type -> update.SetGenerationResponse
-	18, // [18:24] is the sub-list for method output_type
-	12, // [12:18] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	23, // 12: update.LocalCandidate.files:type_name -> update.LocalArtifact
+	22, // 13: update.LocalImportRequest.metadata:type_name -> update.LocalMetadata
+	24, // 14: update.LocalImportResponse.candidate:type_name -> update.LocalCandidate
+	22, // 15: update.LocalReceiveRequest.metadata:type_name -> update.LocalMetadata
+	22, // 16: update.Update.PrepareLocalImport:input_type -> update.LocalMetadata
+	27, // 17: update.Update.ReceiveLocalImport:input_type -> update.LocalReceiveRequest
+	28, // 18: update.Update.AcceptLocalImport:input_type -> update.LocalCandidateRequest
+	28, // 19: update.Update.DiscardLocalImport:input_type -> update.LocalCandidateRequest
+	28, // 20: update.Update.CandidateStatus:input_type -> update.LocalCandidateRequest
+	28, // 21: update.Update.InstallCandidate:input_type -> update.LocalCandidateRequest
+	0,  // 22: update.Update.ListGenerations:input_type -> update.Empty
+	10, // 23: update.Update.Discover:input_type -> update.RegistryDiscoverRequest
+	12, // 24: update.Update.Changelog:input_type -> update.RegistryChangelogRequest
+	14, // 25: update.Update.Pull:input_type -> update.RegistryPullRequest
+	20, // 26: update.Update.ImageInstall:input_type -> update.ImageInstallRequest
+	4,  // 27: update.Update.InstallCachix:input_type -> update.Cachix
+	24, // 28: update.Update.PrepareLocalImport:output_type -> update.LocalCandidate
+	26, // 29: update.Update.ReceiveLocalImport:output_type -> update.LocalImportResponse
+	24, // 30: update.Update.AcceptLocalImport:output_type -> update.LocalCandidate
+	0,  // 31: update.Update.DiscardLocalImport:output_type -> update.Empty
+	26, // 32: update.Update.CandidateStatus:output_type -> update.LocalImportResponse
+	21, // 33: update.Update.InstallCandidate:output_type -> update.ImageInstallResponse
+	2,  // 34: update.Update.ListGenerations:output_type -> update.ListGenerationsResponse
+	11, // 35: update.Update.Discover:output_type -> update.RegistryDiscoverResponse
+	13, // 36: update.Update.Changelog:output_type -> update.RegistryChangelogResponse
+	19, // 37: update.Update.Pull:output_type -> update.RegistryPullResponse
+	21, // 38: update.Update.ImageInstall:output_type -> update.ImageInstallResponse
+	5,  // 39: update.Update.InstallCachix:output_type -> update.SetGenerationResponse
+	28, // [28:40] is the sub-list for method output_type
+	16, // [16:28] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_update_update_proto_init() }
@@ -1630,13 +2148,18 @@ func file_update_update_proto_init() {
 		(*RegistryPullResponse_Result)(nil),
 	}
 	file_update_update_proto_msgTypes[21].OneofWrappers = []any{}
+	file_update_update_proto_msgTypes[25].OneofWrappers = []any{
+		(*LocalImportRequest_Metadata)(nil),
+		(*LocalImportRequest_Data)(nil),
+		(*LocalImportRequest_Finish)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_update_update_proto_rawDesc), len(file_update_update_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

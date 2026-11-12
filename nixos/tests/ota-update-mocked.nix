@@ -4,6 +4,19 @@
 { self, ... }:
 let
   nodes = {
+    guivm = { lib, ... }: {
+      imports = [ ./snakeoil/gen-test-certs.nix ];
+      givc-tls-test = {
+        name = "gui-vm";
+        addresses = "192.168.101.3";
+      };
+      networking.interfaces.eth1.ipv4.addresses = lib.mkForce [
+        {
+          address = "192.168.101.3";
+          prefixLength = 24;
+        }
+      ];
+    };
     adminvm =
       { ... }:
       {
@@ -11,6 +24,35 @@ let
           self.nixosModules.tests-adminvm
         ];
         systemd.services.givc-admin.environment.GIVC_MONITORING = "false";
+        givc.admin.accessControl = {
+          enable = true;
+          adminRules = [
+            {
+              from = [ "ghaf-host" ];
+              permittedRequests = [
+                "RegisterService"
+                "QueryList"
+                "ListGenerations"
+                "Discover"
+                "Changelog"
+                "Pull"
+              ];
+            }
+            {
+              from = [ "net-vm" ];
+              permittedRequests = [ "RegisterService" ];
+            }
+            {
+              from = [ "gui-vm" ];
+              permittedRequests = [
+                "ImportBundle"
+                "InstallCandidate"
+                "CandidateStatus"
+                "DiscardCandidate"
+              ];
+            }
+          ];
+        };
       };
     hostvm =
       { pkgs, ... }:
@@ -37,6 +79,17 @@ let
           ]
           EOF
               ;;
+            image)
+              test "$2" = local
+              case "$3" in
+                prepare) cat >/tmp/local-metadata ;;
+                accept) touch /tmp/local-accepted ;;
+                install) touch /tmp/local-installed; exit 0 ;;
+                discard-admission) exit 0 ;;
+                *) exit 1 ;;
+              esac
+              echo '{"id":"0123456789abcdef0123456789abcdef","version":"offline-test","target":"test-target","generation":2,"files":[{"name":"root.raw","size":3},{"name":"verity.raw","size":3},{"name":"kernel.efi","size":3}]}'
+              ;;
             *)
               echo "hostvm ota-update only supports get: $*" >&2
               exit 1
@@ -61,6 +114,8 @@ let
         '';
         environment.systemPackages = [ pkgs.curl ];
         givc.host.capabilities.update.enable = true;
+        givc.host.accessControl.enable = true;
+        systemd.services.givc-ghaf-host.environment.GHAF_LOCAL_UPDATE_ROLE = "host";
       };
     netvm =
       {
@@ -136,6 +191,17 @@ let
             image)
               shift
               case "$1" in
+                local)
+                  case "$2" in
+                    receive)
+                      IFS= read -r metadata
+                      printf '%s' "$metadata" >/tmp/local-received-metadata
+                      cat >/tmp/local-received-bytes
+                      ;;
+                    discard-received) ;;
+                    *) exit 1 ;;
+                  esac
+                  ;;
                 install)
                   echo "netvm does not support flashing images" >&2
                   exit 1
@@ -211,6 +277,7 @@ let
         '';
         givc.sysvm = {
           enable = true;
+          accessControl.enable = true;
           capabilities.update.enable = true;
           network = {
             admin.transport = {
@@ -226,6 +293,7 @@ let
             tls.enable = true;
           };
         };
+        systemd.services.givc-net-vm.environment.GHAF_LOCAL_UPDATE_ROLE = "receiver";
         services.nix-serve = {
           enable = true;
           secretKeyFile = "${./snakeoil/nix-serve.key}";
@@ -327,6 +395,27 @@ in
               assert any("registry --output jsonl discover ghaf-updates" in call for call in netvm_calls), netvm_calls
               assert any("registry --output jsonl changelog ghaf-updates" in call for call in netvm_calls), netvm_calls
               assert any("registry --output jsonl pull ghaf-updates" in call for call in netvm_calls), netvm_calls
+
+              with subtest("offline bundle crosses gui admin net and host boundaries"):
+                  import json
+                  guivm.wait_for_unit("multi-user.target")
+                  netvm.succeed("systemctl stop nginx ota-update-server")
+                  denied = guivm.fail("${cli} ${cliArgs} update list 2>&1")
+                  assert "permission denied" in denied.lower(), denied
+                  guivm.succeed("mkdir /tmp/ssd; printf '{}' >/tmp/ssd/manifest.json; head -c 64 /dev/zero >/tmp/ssd/manifest.json.sig; printf abc >/tmp/ssd/root.raw; printf def >/tmp/ssd/verity.raw; printf ghi >/tmp/ssd/kernel.efi")
+                  result = json.loads(guivm.succeed("${cli} ${cliArgs} update import --manifest /tmp/ssd/manifest.json --json"))
+                  assert result["id"] == "0123456789abcdef0123456789abcdef", result
+                  assert netvm.succeed("cat /tmp/local-received-bytes") == "abcdefghi"
+                  hostvm.succeed("test -f /tmp/local-accepted")
+                  hostvm.fail("test -e /tmp/ssd/manifest.json")
+                  adminvm.fail("test -e /tmp/ssd/manifest.json")
+                  netvm.fail("test -e /tmp/ssd/manifest.json")
+                  guivm.succeed("rm -rf /tmp/ssd")
+                  guivm.succeed(f"${cli} ${cliArgs} update install --candidate {result['id']}")
+                  hostvm.succeed("test -f /tmp/local-installed")
+                  netvm.fail("test -f /tmp/local-installed")
+                  guivm.fail("${cli} ${cliArgs} update install --candidate ../escape")
+
             '';
         };
       };
