@@ -244,7 +244,7 @@ fn collect_process_snapshot() -> Result<ProcessSnapshot> {
             Ok(stat) => stat,
             Err(_) => continue,
         };
-        let rss = stat.rss.max(0) as u64;
+        let rss = stat.rss;
         processes.insert(
             proc.pid() as u32,
             ProcessSample {
