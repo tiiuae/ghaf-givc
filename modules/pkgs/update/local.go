@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	pb "givc/modules/api/update"
@@ -19,6 +20,7 @@ import (
 )
 
 const localChunkSize = 256 * 1024
+const localReceiveIdle = 30 * time.Second
 
 func localRole(want string) error {
 	if os.Getenv("GHAF_LOCAL_UPDATE_ROLE") != want {
@@ -118,7 +120,44 @@ func (s *UpdateServer) ReceiveLocalImport(stream pb.Update_ReceiveLocalImportSer
 	if err := localRole("receiver"); err != nil {
 		return err
 	}
-	first, err := stream.Recv()
+	return s.receiveLocalImport(stream, localReceiveIdle)
+}
+
+func (s *UpdateServer) receiveLocalImport(stream pb.Update_ReceiveLocalImportServer, idle time.Duration) error {
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
+	timer := time.AfterFunc(idle, cancel)
+	defer timer.Stop()
+	type receiveResult struct {
+		chunk *pb.LocalReceiveRequest
+		err   error
+	}
+	messages := make(chan receiveResult)
+	go func() {
+		for {
+			chunk, err := stream.Recv()
+			select {
+			case messages <- receiveResult{chunk, err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	recv := func() (*pb.LocalReceiveRequest, error) {
+		select {
+		case message := <-messages:
+			return message.chunk, message.err
+		case <-ctx.Done():
+			if stream.Context().Err() != nil {
+				return nil, status.FromContextError(stream.Context().Err()).Err()
+			}
+			return nil, status.Error(codes.DeadlineExceeded, "local upload idle timeout")
+		}
+	}
+	first, err := recv()
 	if err != nil {
 		return err
 	}
@@ -131,9 +170,8 @@ func (s *UpdateServer) ReceiveLocalImport(stream pb.Update_ReceiveLocalImportSer
 	if len(first.Data) != 0 || first.Finish {
 		return status.Error(codes.InvalidArgument, "expected metadata first")
 	}
-	ctx, cancel := context.WithCancel(stream.Context())
-	defer cancel()
 	cmd := exec.CommandContext(ctx, "ota-update", "image", "local", "receive", "--id", first.Id)
+	cmd.WaitDelay = 2 * time.Second
 	input, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -157,8 +195,16 @@ func (s *UpdateServer) ReceiveLocalImport(stream pb.Update_ReceiveLocalImportSer
 			_, _ = runLocal(cleanup, nil, "discard-received", "--id", first.Id)
 		}
 	}()
+	receiveError := func(cause error) error {
+		_ = input.Close()
+		// Joining os/exec's stderr copier precedes reading its buffer.
+		cancel()
+		waitErr := cmd.Wait()
+		waited = true
+		return fmt.Errorf("receiving bundle: %w (process: %v): %s", cause, waitErr, stderr.String())
+	}
 	if err := json.NewEncoder(input).Encode(first.Metadata); err != nil {
-		return err
+		return receiveError(err)
 	}
 	if err := stream.Send(&pb.LocalImportResponse{Phase: "receiving"}); err != nil {
 		return err
@@ -166,7 +212,7 @@ func (s *UpdateServer) ReceiveLocalImport(stream pb.Update_ReceiveLocalImportSer
 	var received uint64
 	finished := false
 	for {
-		chunk, err := stream.Recv()
+		chunk, err := recv()
 		if errors.Is(err, io.EOF) {
 			if !finished {
 				return status.Error(codes.InvalidArgument, "upload ended without completion")
@@ -187,8 +233,9 @@ func (s *UpdateServer) ReceiveLocalImport(stream pb.Update_ReceiveLocalImportSer
 			return status.Error(codes.InvalidArgument, "empty local update chunk")
 		}
 		if _, err := input.Write(chunk.Data); err != nil {
-			return fmt.Errorf("receiving bundle: %w", err)
+			return receiveError(err)
 		}
+		timer.Reset(idle)
 		received += uint64(len(chunk.Data))
 		if err := stream.Send(&pb.LocalImportResponse{Phase: "receiving", Completed: received}); err != nil {
 			return err
@@ -213,16 +260,39 @@ func (s *UpdateServer) InstallCandidate(req *pb.LocalCandidateRequest, stream pb
 	if err := localID(req.Id); err != nil {
 		return err
 	}
-	// Keep draining the process after a subscriber disconnects; closing its pipes can abort a slot write.
-	_ = stream.Send(&pb.ImageInstallResponse{Output: stringPtr("Installing verified candidate")})
+	// Output delivery is bounded and lossy under backpressure; the installer
+	// must keep draining and writing its slot even without a progress consumer.
+	progress := make(chan string, 16)
+	output := &localProgress{events: progress}
 	cmd := exec.Command("ota-update", "image", "local", "install", "--id", req.Id)
-	var stderr bytes.Buffer
-	cmd.Stdout = io.Discard
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("installing candidate: %w: %s", err, stderr.String())
+	cmd.Stdout = output
+	cmd.Stderr = output
+	done := make(chan error, 1)
+	go func() { done <- cmd.Run() }()
+	subscribed := true
+	send := func(text string) {
+		if subscribed {
+			subscribed = stream.Send(&pb.ImageInstallResponse{Output: stringPtr(text)}) == nil
+		}
 	}
-	return stream.Send(&pb.ImageInstallResponse{Finished: true, Output: stringPtr("Installation complete; restart required")})
+	send("Installing verified candidate")
+	for {
+		select {
+		case text := <-progress:
+			send(text)
+		case err := <-done:
+			for len(progress) > 0 {
+				send(<-progress)
+			}
+			if err != nil {
+				return fmt.Errorf("installing candidate: %w: %s", err, output.tail())
+			}
+			if !subscribed {
+				return nil
+			}
+			return stream.Send(&pb.ImageInstallResponse{Finished: true, Output: stringPtr("Installation complete; restart required")})
+		}
+	}
 }
 
 func (s *UpdateServer) CandidateStatus(ctx context.Context, req *pb.LocalCandidateRequest) (*pb.LocalImportResponse, error) {
@@ -241,4 +311,35 @@ func (s *UpdateServer) CandidateStatus(ctx context.Context, req *pb.LocalCandida
 		return nil, err
 	}
 	return &state, nil
+}
+
+// localProgress retains only a bounded diagnostic tail. Write never waits for RPC I/O.
+type localProgress struct {
+	mutex      sync.Mutex
+	diagnostic []byte
+	events     chan string
+}
+
+func (w *localProgress) Write(data []byte) (int, error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	const limit = 16 * 1024
+	n := len(data)
+	if len(data) > limit {
+		data = data[len(data)-limit:]
+	}
+	w.diagnostic = append(w.diagnostic, data...)
+	if len(w.diagnostic) > limit {
+		w.diagnostic = w.diagnostic[len(w.diagnostic)-limit:]
+	}
+	select {
+	case w.events <- string(data):
+	default:
+	}
+	return n, nil
+}
+func (w *localProgress) tail() string {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	return string(w.diagnostic)
 }

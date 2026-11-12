@@ -650,6 +650,8 @@ impl AdminClient {
     }
 
     /// Import an SSD bundle through admin/net-vm and return a host-verified candidate.
+    /// # Errors
+    /// Fails on bundle I/O, transport errors, or rejection by the update service.
     pub async fn import_local_update<F>(
         &self,
         manifest: &std::path::Path,
@@ -662,6 +664,8 @@ impl AdminClient {
     }
 
     /// Discard an unused local candidate without touching installed slots.
+    /// # Errors
+    /// Fails on bundle I/O, transport errors, or rejection by the update service.
     pub async fn discard_local_candidate(&self, id: String) -> anyhow::Result<()> {
         self.connect_to()
             .await?
@@ -672,11 +676,15 @@ impl AdminClient {
     }
 
     /// Read persistent host state after reconnecting to an installation.
+    /// # Errors
+    /// Fails on bundle I/O, transport errors, or rejection by the update service.
     pub async fn local_candidate_status(&self, id: String) -> anyhow::Result<String> {
         Ok(self.local_candidate_state(id).await?.phase)
     }
 
     /// Read verified candidate metadata and installation state from the host.
+    /// # Errors
+    /// Fails on bundle I/O, transport errors, or rejection by the update service.
     pub async fn local_candidate_state(
         &self,
         id: String,
@@ -691,6 +699,8 @@ impl AdminClient {
     }
 
     /// Install a previously verified local candidate.
+    /// # Errors
+    /// Fails on bundle I/O, transport errors, or rejection by the update service.
     pub async fn install_local_candidate(&self, id: String) -> anyhow::Result<()> {
         let mut stream = self
             .connect_to()

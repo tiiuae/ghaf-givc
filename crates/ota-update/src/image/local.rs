@@ -5,6 +5,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, ensure};
 use givc_common::pb::update::{LocalArtifact, LocalCandidate, LocalMetadata};
@@ -19,6 +20,97 @@ use super::signature::verify_detached;
 
 pub const PRIVATE: &str = "/persist/ota-local";
 pub const SHARED: &str = "/persist/sysupdate/local";
+
+// Bound abandoned uploads even when the GUI loses the opaque candidate ID.
+const MAX_IMPORTS: usize = 2;
+const IMPORT_LIFETIME: Duration = Duration::from_secs(24 * 60 * 60);
+
+fn import_lock(root: &Path, id: &str) -> anyhow::Result<crate::lock::UpdateLock> {
+    crate::lock::UpdateLock::acquire(root.join(format!("import-{id}.lock")), "local-import")
+}
+
+fn expired(path: &Path) -> anyhow::Result<bool> {
+    Ok(path.metadata()?.modified()?.elapsed().unwrap_or_default() >= IMPORT_LIFETIME)
+}
+
+fn imports(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    fs::read_dir(root)?
+        .filter_map(|entry| match entry {
+            Ok(entry) if check_id(&entry.file_name().to_string_lossy()).is_ok() => {
+                Some(Ok(entry.path()))
+            }
+            Ok(_) => None,
+            Err(error) => Some(Err(error.into())),
+        })
+        .collect()
+}
+
+pub fn recover_host(root: &Path, startup: bool) -> anyhow::Result<()> {
+    if !root.exists() {
+        return Ok(());
+    }
+    for path in imports(&root.join("admissions"))? {
+        let id = path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .context("invalid import ID")?;
+        if (startup || expired(&path)?)
+            && let Ok(_lock) = import_lock(root, id)
+        {
+            recover(root, &format!(".verifying-{id}-"))?;
+            fs::remove_dir_all(path)?;
+        }
+    }
+    for path in imports(&root.join("candidates"))? {
+        if expired(&path)? {
+            let id = path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .context("invalid candidate ID")?;
+            // An installer may outlive its RPC subscriber or the admin VM.
+            if let Ok(_lock) = import_lock(root, id)
+                && let Ok(_install) =
+                    crate::lock::UpdateLock::acquire(path.join("install.lock"), "local-expire")
+            {
+                fs::remove_dir_all(path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn recover_received(shared: &Path, startup: bool) -> anyhow::Result<()> {
+    if !shared.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(shared)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let id = name
+            .strip_prefix(".receiving-")
+            .and_then(|s| s.get(..32))
+            .unwrap_or(&name);
+        // Completed uploads may still be copied by the host after a netVM restart.
+        // Virtiofs flock ownership is not shared with the host on every target.
+        let incomplete = name.starts_with(".receiving-");
+        if check_id(id).is_ok()
+            && ((startup && incomplete) || expired(&entry.path())?)
+            && let Ok(_lock) = import_lock(shared, id)
+        {
+            fs::remove_dir_all(entry.path())?;
+        }
+    }
+    Ok(())
+}
 
 pub fn check_id(id: &str) -> anyhow::Result<()> {
     ensure!(
@@ -130,7 +222,8 @@ fn total(candidate: &LocalCandidate) -> anyhow::Result<u64> {
 }
 
 fn require_space(path: &Path, bytes: u64) -> anyhow::Result<()> {
-    let stat = rustix::fs::statvfs(path)?;
+    let stat = rustix::fs::statvfs(path)
+        .with_context(|| format!("checking update staging filesystem {}", path.display()))?;
     let available = stat.f_bavail.saturating_mul(stat.f_frsize);
     ensure!(
         available >= bytes.saturating_add(1024 * 1024),
@@ -155,8 +248,29 @@ pub fn prepare(
 ) -> anyhow::Result<LocalCandidate> {
     authenticate(metadata, validation)?;
     private_dir(root)?;
+    let _reservation =
+        crate::lock::UpdateLock::acquire(root.join("prepare.lock"), "local-prepare")?;
+    recover_host(root, false)?;
     let admissions = root.join("admissions");
     private_dir(&admissions)?;
+    let pending = imports(&admissions)?;
+    let candidates = imports(&root.join("candidates"))?;
+    ensure!(
+        pending.len() + candidates.len() < MAX_IMPORTS,
+        "at most {MAX_IMPORTS} local imports can be retained; discard an existing candidate or retry after the 24-hour expiry"
+    );
+    let reserved = pending
+        .iter()
+        .try_fold(0u64, |sum, path| -> anyhow::Result<u64> {
+            let metadata: LocalMetadata =
+                serde_json::from_slice(&fs::read(path.join("metadata.json"))?)?;
+            sum.checked_add(
+                total(&describe(&metadata, "")?)?
+                    .checked_mul(2)
+                    .context("bundle size overflow")?,
+            )
+            .context("bundle size overflow")
+        })?;
     let mut random = [0u8; 16];
     SystemRandom::new()
         .fill(&mut random)
@@ -165,11 +279,22 @@ pub fn prepare(
     let bytes = total(&candidate)?;
     // The shared receive directory and private copy normally consume the same filesystem.
     let shared_parent = shared.parent().context("missing shared parent")?;
-    let same_fs = rustix::fs::stat(root)?.st_dev == rustix::fs::stat(shared_parent)?.st_dev;
+    let same_fs = rustix::fs::stat(root)?.st_dev
+        == rustix::fs::stat(shared_parent)
+            .with_context(|| {
+                format!(
+                    "checking shared update staging parent {} (is sysupdate mounted?)",
+                    shared_parent.display()
+                )
+            })?
+            .st_dev;
     require_space(
         root,
         if same_fs {
-            bytes.checked_mul(2).context("bundle size overflow")?
+            bytes
+                .checked_mul(2)
+                .and_then(|bytes| bytes.checked_add(reserved))
+                .context("bundle size overflow")?
         } else {
             bytes
         },
@@ -195,12 +320,25 @@ pub fn receive(
     check_id(id)?;
     let candidate = describe(metadata, id)?;
     fs::create_dir_all(shared)?;
-    let _lock = crate::lock::UpdateLock::acquire(shared.join("receive.lock"), "local-receive")?;
+    let _reservation =
+        crate::lock::UpdateLock::acquire(shared.join("receive.lock"), "local-reserve")?;
+    recover_received(shared, false)?;
+    let _lock = import_lock(shared, id)?;
+    let count =
+        fs::read_dir(shared)?.try_fold(0usize, |count, entry| -> anyhow::Result<usize> {
+            let entry = entry?;
+            Ok(count + usize::from(entry.file_type()?.is_dir()))
+        })?;
+    ensure!(
+        count < MAX_IMPORTS,
+        "receiver staging is full; discard an import or wait for its 24-hour expiry"
+    );
     require_space(shared, total(&candidate)?)?;
     ensure!(!shared.join(id).exists(), "import already exists");
     let temporary = tempfile::Builder::new()
         .prefix(&format!(".receiving-{id}-"))
         .tempdir_in(shared)?;
+    drop(_reservation);
     for artifact in &candidate.files {
         let mut file = File::create(temporary.path().join(&artifact.name))?;
         let copied = std::io::copy(&mut input.take(artifact.size), &mut file)?;
@@ -229,7 +367,7 @@ pub async fn accept(
     validation: &ValidationConfig<'_>,
 ) -> anyhow::Result<LocalCandidate> {
     check_id(id)?;
-    let _lock = crate::lock::UpdateLock::acquire(root.join("accept.lock"), "local-accept")?;
+    let _lock = import_lock(root, id)?;
     let admission = root.join("admissions").join(id);
     let metadata: LocalMetadata =
         serde_json::from_slice(&givc_common::update_bundle::read_bounded(
@@ -275,8 +413,9 @@ pub async fn accept(
         signature: &signature,
         ..*validation
     };
-    validate_signed_manifest_path(&temporary.path().join("manifest.json"), &validation).await?;
-    authenticate(&metadata, &validation)?;
+    validate_signed_manifest_path(&temporary.path().join("manifest.json"), &validation)
+        .await?
+        .authorize_install(&validation)?;
     write_file(
         &temporary.path().join("candidate.json"),
         &serde_json::to_vec(&candidate)?,
@@ -305,7 +444,7 @@ pub fn candidate_manifest(root: &Path, id: &str) -> anyhow::Result<PathBuf> {
 
 pub fn discard_import(root: &Path, id: &str) -> anyhow::Result<()> {
     check_id(id)?;
-    let _lock = crate::lock::UpdateLock::acquire(root.join("accept.lock"), "local-discard")?;
+    let _lock = import_lock(root, id)?;
     recover(root, &format!(".verifying-{id}-"))?;
     discard(&root.join("admissions"), id)?;
     let path = root.join("candidates").join(id);
@@ -318,6 +457,10 @@ pub fn discard_import(root: &Path, id: &str) -> anyhow::Result<()> {
 
 pub fn discard(root: &Path, id: &str) -> anyhow::Result<()> {
     check_id(id)?;
+    if !root.exists() {
+        return Ok(());
+    }
+    let _lock = import_lock(root, id)?;
     if let Ok(entries) = fs::read_dir(root) {
         for entry in entries {
             let entry = entry?;
@@ -344,7 +487,7 @@ pub fn recover(root: &Path, prefix: &str) -> anyhow::Result<()> {
     }
     for entry in fs::read_dir(root)? {
         let entry = entry?;
-        if entry.file_name().to_string_lossy().starts_with(prefix) {
+        if entry.file_type()?.is_dir() && entry.file_name().to_string_lossy().starts_with(prefix) {
             fs::remove_dir_all(entry.path())?;
         }
     }
@@ -360,7 +503,7 @@ fn save_status(path: &Path, phase: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn status(root: &Path, id: &str) -> anyhow::Result<String> {
+pub fn status(root: &Path, id: &str, accepted: &Path) -> anyhow::Result<String> {
     let manifest = candidate_manifest(root, id)?;
     let path = manifest.parent().unwrap();
     let state = match fs::read_to_string(path.join("install-state")) {
@@ -369,8 +512,6 @@ pub fn status(root: &Path, id: &str) -> anyhow::Result<String> {
         Err(error) => return Err(error.into()),
     };
     if state == "restart-required" {
-        let accepted = std::env::var("GHAF_ACCEPTED_GENERATION_FILE")
-            .unwrap_or_else(|_| "/persist/common/ota/accepted-generation".into());
         if fs::read_to_string(accepted)
             .ok()
             .and_then(|s| s.trim().parse::<u64>().ok())
@@ -391,9 +532,7 @@ pub fn status(root: &Path, id: &str) -> anyhow::Result<String> {
             .into());
         }
     }
-    if state == "installing"
-        && crate::lock::UpdateLock::acquire(path.join("install.lock"), "local-status").is_ok()
-    {
+    if state == "installing" && !crate::lock::UpdateLock::is_held(path.join("install.lock"))? {
         return Ok("interrupted".into());
     }
     Ok(state)
@@ -431,7 +570,14 @@ pub async fn install(
         },
     )?;
     if result.is_ok() {
-        for artifact in candidate(root, id)?.files {
+        let files = match candidate(root, id) {
+            Ok(candidate) => candidate.files,
+            Err(error) => {
+                tracing::warn!("reading installed bundle for cleanup: {error}");
+                Vec::new()
+            }
+        };
+        for artifact in files {
             if let Err(error) = fs::remove_file(path.join(artifact.name)) {
                 tracing::warn!("removing installed bundle artifact: {error}");
             }
@@ -477,15 +623,39 @@ mod tests {
             &serde_json::to_vec(&describe(&bundle(), &id).unwrap()).unwrap(),
         )
         .unwrap();
-        assert_eq!(status(root.path(), &id).unwrap(), "ready");
+        assert_eq!(
+            status(root.path(), &id, &root.path().join("accepted")).unwrap(),
+            "ready"
+        );
         save_status(&path, "installing").unwrap();
-        assert_eq!(status(root.path(), &id).unwrap(), "interrupted");
+        assert_eq!(
+            status(root.path(), &id, &root.path().join("accepted")).unwrap(),
+            "interrupted"
+        );
         let lock =
             crate::lock::UpdateLock::acquire(path.join("install.lock"), "test-install").unwrap();
-        assert_eq!(status(root.path(), &id).unwrap(), "installing");
+        assert_eq!(
+            status(root.path(), &id, &root.path().join("accepted")).unwrap(),
+            "installing"
+        );
         assert!(discard_import(root.path(), &id).is_err());
         assert!(path.exists());
+        let owner = fs::read(path.join("install.lock")).unwrap();
+        for _ in 0..20 {
+            status(root.path(), &id, &root.path().join("accepted")).unwrap();
+        }
+        assert_eq!(fs::read(path.join("install.lock")).unwrap(), owner);
         drop(lock);
+        save_status(&path, "restart-required").unwrap();
+        fs::write(
+            root.path().join("accepted"),
+            candidate(root.path(), &id).unwrap().generation.to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            status(root.path(), &id, &root.path().join("accepted")).unwrap(),
+            "accepted"
+        );
         discard_import(root.path(), &id).unwrap();
         assert!(!path.exists());
     }
@@ -503,6 +673,71 @@ mod tests {
         recover(root.path(), ".receiving-").unwrap();
         assert!(!root.path().join(".receiving-abcd-random").exists());
         assert!(root.path().join("completed").exists());
+    }
+
+    #[test]
+    fn recovery_sweeps_completed_staging_but_skips_active_receivers() {
+        let root = tempfile::tempdir().unwrap();
+        let active = "ab".repeat(16);
+        let abandoned = "cd".repeat(16);
+        let active_path = root.path().join(format!(".receiving-{active}-partial"));
+        fs::create_dir(&active_path).unwrap();
+        fs::create_dir(root.path().join(&abandoned)).unwrap();
+        let recent = root.path().join("ef".repeat(16));
+        fs::create_dir(&recent).unwrap();
+        File::open(root.path().join(&abandoned))
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(
+                std::time::SystemTime::now() - IMPORT_LIFETIME - Duration::from_secs(1),
+            ))
+            .unwrap();
+        fs::write(root.path().join(".receiving-not-a-directory"), b"lock").unwrap();
+        let lock = import_lock(root.path(), &active).unwrap();
+        recover_received(root.path(), true).unwrap();
+        assert!(active_path.exists());
+        assert!(recent.exists());
+        assert!(!root.path().join(&abandoned).exists());
+        drop(lock);
+        recover_received(root.path(), true).unwrap();
+        assert!(!active_path.exists());
+    }
+
+    #[test]
+    fn stalled_receive_does_not_block_another_import() {
+        struct PausedReader(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>);
+        impl Read for PausedReader {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                self.0.send(()).unwrap();
+                self.1.recv().unwrap();
+                Ok(0)
+            }
+        }
+        let shared = tempfile::tempdir().unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let path = shared.path();
+            scope.spawn(move || {
+                assert!(
+                    receive(
+                        path,
+                        &"ab".repeat(16),
+                        &bundle(),
+                        &mut PausedReader(started_tx, release_rx)
+                    )
+                    .is_err()
+                );
+            });
+            started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let result = receive(
+                path,
+                &"cd".repeat(16),
+                &bundle(),
+                &mut Cursor::new(b"abcdefghi"),
+            );
+            release_tx.send(()).unwrap();
+            result.unwrap();
+        });
     }
 
     #[test]
@@ -602,6 +837,28 @@ mod tests {
         let candidate = prepare(&root, &shared, &metadata, &validation).unwrap();
         assert!(root.join("admissions").join(&candidate.id).exists());
         assert!(candidate_manifest(&root, &candidate.id).is_err());
+        let second = prepare(&root, &shared, &metadata, &validation).unwrap();
+        assert!(
+            prepare(&root, &shared, &metadata, &validation)
+                .unwrap_err()
+                .to_string()
+                .contains("at most")
+        );
+        let active = import_lock(&root, &candidate.id).unwrap();
+        discard_import(&root, &second.id).unwrap();
+        assert!(root.join("admissions").join(&candidate.id).exists());
+        drop(active);
+        let admission = root.join("admissions").join(&candidate.id);
+        File::open(&admission)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(
+                std::time::SystemTime::now() - IMPORT_LIFETIME - Duration::from_secs(1),
+            ))
+            .unwrap();
+        let replacement = prepare(&root, &shared, &metadata, &validation).unwrap();
+        assert!(!admission.exists());
+        discard_import(&root, &replacement.id).unwrap();
+
         fs::write(&accepted, manifest.generation.to_string()).unwrap();
         assert!(prepare(&root, &shared, &metadata, &validation).is_err());
         fs::write(&accepted, "0").unwrap();

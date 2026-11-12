@@ -191,6 +191,14 @@ in
       update.enable = mkEnableOption ''
         update module for OTA-related actions on the host via the GIVC agent.
       '';
+      update.localRole = mkOption {
+        type = types.enum [
+          "disabled"
+          "host"
+        ];
+        default = "disabled";
+        description = "Local image update role. Enables staging recovery before the agent starts; host trust anchors must be configured separately.";
+      };
 
       policy = mkOption {
         type = policyClientSubmodule;
@@ -225,6 +233,10 @@ in
 
   config = mkIf cfg.enable {
     assertions = [
+      {
+        assertion = cfg.capabilities.update.localRole != "disabled" -> cfg.capabilities.update.enable;
+        message = "Local image updates require the update capability.";
+      }
       {
         assertion = cfg.accessControl.enable -> cfg.network.tls.enable;
         message = "Access control is only available with TLS enabled.";
@@ -267,6 +279,13 @@ in
     ];
 
     systemd.services."givc-${cfg.network.agent.transport.name}" = {
+      environment = lib.optionalAttrs (cfg.capabilities.update.localRole != "disabled") {
+        GHAF_LOCAL_UPDATE_ROLE = cfg.capabilities.update.localRole;
+      };
+      serviceConfig.ExecStartPre = lib.optional (
+        cfg.capabilities.update.localRole != "disabled"
+      ) "${ota-update}/bin/ota-update image local recover-host";
+
       description = "GIVC remote service manager for the host.";
       enable = true;
       after = [

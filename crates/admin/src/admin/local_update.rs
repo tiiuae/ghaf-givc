@@ -29,13 +29,27 @@ pub async fn import(
         let result = run_import(&mut host, &mut net, &mut incoming, &output, &mut id).await;
         if let Some(id) = id {
             let request = pb::LocalCandidateRequest { id };
-            let cleanup = async {
-                let _ = net.discard_local_import(request.clone()).await;
-                if result.is_err() {
-                    let _ = host.discard_local_import(request).await;
+            let cleanup = |role: &'static str,
+                           mut client: Client,
+                           request: pb::LocalCandidateRequest| async move {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    client.discard_local_import(request),
+                )
+                .await
+                {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => tracing::warn!(role, %error, "local import cleanup failed"),
+                    Err(error) => tracing::warn!(role, %error, "local import cleanup timed out"),
                 }
             };
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(10), cleanup).await;
+            let net_cleanup = cleanup("receiver", net, request.clone());
+            let host_cleanup = async {
+                if result.is_err() {
+                    cleanup("host", host, request).await;
+                }
+            };
+            tokio::join!(net_cleanup, host_cleanup);
         }
         if let Err(error) = result {
             let _ = output.send(Err(wrap_error(error))).await;

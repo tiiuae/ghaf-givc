@@ -85,7 +85,7 @@ let
                 prepare) cat >/tmp/local-metadata ;;
                 accept) touch /tmp/local-accepted ;;
                 install) touch /tmp/local-installed; exit 0 ;;
-                discard-admission) exit 0 ;;
+                discard-admission|recover-host) exit 0 ;;
                 *) exit 1 ;;
               esac
               echo '{"id":"0123456789abcdef0123456789abcdef","version":"offline-test","target":"test-target","generation":2,"files":[{"name":"root.raw","size":3},{"name":"verity.raw","size":3},{"name":"kernel.efi","size":3}]}'
@@ -115,7 +115,7 @@ let
         environment.systemPackages = [ pkgs.curl ];
         givc.host.capabilities.update.enable = true;
         givc.host.accessControl.enable = true;
-        systemd.services.givc-ghaf-host.environment.GHAF_LOCAL_UPDATE_ROLE = "host";
+        givc.host.capabilities.update.localRole = "host";
       };
     netvm =
       {
@@ -198,7 +198,7 @@ let
                       printf '%s' "$metadata" >/tmp/local-received-metadata
                       cat >/tmp/local-received-bytes
                       ;;
-                    discard-received) ;;
+                    discard-received|recover-received) ;;
                     *) exit 1 ;;
                   esac
                   ;;
@@ -293,7 +293,7 @@ let
             tls.enable = true;
           };
         };
-        systemd.services.givc-net-vm.environment.GHAF_LOCAL_UPDATE_ROLE = "receiver";
+        givc.sysvm.capabilities.update.localRole = "receiver";
         services.nix-serve = {
           enable = true;
           secretKeyFile = "${./snakeoil/nix-serve.key}";
@@ -389,7 +389,7 @@ in
               hostvm.succeed("${cli} ${cliArgs} registry pull ghaf-updates --destination ${pull_destination}")
 
               host_calls = hostvm.succeed("cat /tmp/host-ota-update-calls").strip().splitlines()
-              assert host_calls == ["get"], host_calls
+              assert host_calls == ["image local recover-host", "get"], host_calls
 
               netvm_calls = netvm.succeed("cat /tmp/netvm-ota-update-calls").strip().splitlines()
               assert any("registry --output jsonl discover ghaf-updates" in call for call in netvm_calls), netvm_calls

@@ -52,7 +52,7 @@ impl SignedManifest {
 pub(crate) struct ValidatedManifest(Manifest);
 
 impl ValidatedManifest {
-    fn authorize_install(
+    pub(crate) fn authorize_install(
         self,
         validation: &ValidationConfig<'_>,
     ) -> anyhow::Result<SignedManifest> {
