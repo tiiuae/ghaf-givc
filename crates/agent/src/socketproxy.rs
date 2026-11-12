@@ -741,10 +741,7 @@ mod tests {
                 tokio::spawn(async move {
                     let _ = accepted_tx.send(());
                     let mut buf = [0; 1024];
-                    loop {
-                        let Ok(n) = conn.read(&mut buf).await else {
-                            break;
-                        };
+                    while let Ok(n) = conn.read(&mut buf).await {
                         if n == 0 || conn.write_all(&buf[..n]).await.is_err() {
                             break;
                         }
