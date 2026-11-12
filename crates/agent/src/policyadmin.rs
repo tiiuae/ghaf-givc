@@ -151,17 +151,17 @@ impl pb::policyadmin::policy_admin_server::PolicyAdmin for PolicyAdminServer {
                 temp_file = Some(tmp);
             }
 
-            if let Some(path) = temp_file.as_ref() {
-                if !req.policy_chunk.is_empty() {
-                    let mut file = fs::OpenOptions::new()
-                        .append(true)
-                        .open(path)
-                        .await
-                        .map_err(|err| Status::internal(err.to_string()))?;
-                    file.write_all(&req.policy_chunk)
-                        .await
-                        .map_err(|err| Status::internal(err.to_string()))?;
-                }
+            if let Some(path) = temp_file.as_ref()
+                && !req.policy_chunk.is_empty()
+            {
+                let mut file = fs::OpenOptions::new()
+                    .append(true)
+                    .open(path)
+                    .await
+                    .map_err(|err| Status::internal(err.to_string()))?;
+                file.write_all(&req.policy_chunk)
+                    .await
+                    .map_err(|err| Status::internal(err.to_string()))?;
             }
         }
 
@@ -297,13 +297,18 @@ mod tests {
 
         let restarted =
             PolicyAdminServer::new(store.to_string_lossy().into_owned(), HashMap::new());
-        let persisted = restarted.policy_map.lock().unwrap();
-        assert_eq!(persisted["network"].destination, "");
+        let (destination, sha) = {
+            let persisted = restarted.policy_map.lock().unwrap();
+            (
+                persisted["network"].destination.clone(),
+                persisted["network"].sha.clone(),
+            )
+        };
+        assert_eq!(destination, "");
         assert_eq!(
-            persisted["network"].sha,
+            sha,
             file_hash(&store.join("network/policy.bin")).await.unwrap()
         );
-        drop(persisted);
         fs::remove_dir_all(store).await.unwrap();
     }
 
