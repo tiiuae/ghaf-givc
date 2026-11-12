@@ -27,9 +27,7 @@ pub struct ExecService {
 impl ExecService {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            allowed_commands: HashSet::from(["ota-update".to_owned(), "uptime".to_owned()]),
-        }
+        Self::default()
     }
 
     fn validate_command(&self, cmd: &str) -> Result<()> {
@@ -60,6 +58,14 @@ impl ExecService {
         }
 
         bail!("allowed executable was not found in server PATH: {command}")
+    }
+}
+
+impl Default for ExecService {
+    fn default() -> Self {
+        Self {
+            allowed_commands: HashSet::from(["ota-update".to_owned(), "uptime".to_owned()]),
+        }
     }
 }
 
@@ -153,14 +159,14 @@ impl pb::exec::exec_server::Exec for ExecService {
             }));
         }
 
-        if let (Some(stdin), Some(initial)) = (stdin_pipe.as_ref(), start.stdin.as_ref()) {
-            if !initial.is_empty() {
-                let mut guard = stdin.lock().await;
-                guard
-                    .write_all(initial)
-                    .await
-                    .map_err(|err| Status::internal(err.to_string()))?;
-            }
+        if let (Some(stdin), Some(initial)) = (stdin_pipe.as_ref(), start.stdin.as_ref())
+            && !initial.is_empty()
+        {
+            let mut guard = stdin.lock().await;
+            guard
+                .write_all(initial)
+                .await
+                .map_err(|err| Status::internal(err.to_string()))?;
         }
 
         let input_stdin = stdin_pipe;
