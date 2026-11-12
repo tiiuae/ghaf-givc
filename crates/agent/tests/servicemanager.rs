@@ -472,7 +472,6 @@ fn file_paths_match_go_allowlist_and_reject_sibling_directory_escape() {
     let repeated_separator = format!("{}/file.txt", allowed.display());
     let repeated_separator = repeated_separator.replacen('/', "//", 1);
     let malformed_parent = allowed.join(".. ").join("file.txt");
-    let directory = allowed.to_string_lossy().into_owned();
     let allowed_file = accepted[0].to_string_lossy().into_owned();
     for directories in [vec!["tmp".to_owned()], vec![], vec!["/etc".to_owned()]] {
         let manager = ServiceManager::new(
