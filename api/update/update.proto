@@ -135,7 +135,52 @@ message ImageInstallResponse {
     optional string Error = 3;         // Standard error from the command
 }
 
+message LocalMetadata {
+    string manifest = 1;
+    string signature = 2; // Hex-encoded detached Ed25519 signature.
+}
+message LocalArtifact {
+    string name = 1;
+    uint64 size = 2;
+}
+message LocalCandidate {
+    string id = 1;
+    string version = 2;
+    string target = 3;
+    uint64 generation = 4;
+    repeated LocalArtifact files = 5;
+}
+message LocalImportRequest {
+    oneof payload {
+        LocalMetadata metadata = 1; // First message only.
+        bytes data = 2; // Concatenated root, verity, UKI; at most 256 KiB per message.
+        bool finish = 3;
+    }
+}
+message LocalImportResponse {
+    string phase = 1;
+    uint64 completed = 2;
+    uint64 total = 3;
+    LocalCandidate candidate = 4;
+}
+message LocalReceiveRequest {
+    string id = 1; // Set on first message only, by admin.
+    LocalMetadata metadata = 2;
+    bytes data = 3;
+    bool finish = 4;
+}
+message LocalCandidateRequest {
+    string id = 1;
+}
+
 service Update {
+    rpc PrepareLocalImport(LocalMetadata) returns (LocalCandidate) {}
+    rpc ReceiveLocalImport(stream LocalReceiveRequest) returns (stream LocalImportResponse) {}
+    rpc AcceptLocalImport(LocalCandidateRequest) returns (LocalCandidate) {}
+    rpc DiscardLocalImport(LocalCandidateRequest) returns (Empty) {}
+    rpc CandidateStatus(LocalCandidateRequest) returns (LocalImportResponse) {}
+    rpc InstallCandidate(LocalCandidateRequest) returns (stream ImageInstallResponse) {}
+
     // List installed generations (updates)
     rpc ListGenerations(Empty) returns (ListGenerationsResponse) {}
     // Discover available OTA updates in an OCI repository

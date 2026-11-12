@@ -49,6 +49,10 @@ const (
 	AdminService_Discover_FullMethodName          = "/admin.AdminService/Discover"
 	AdminService_Changelog_FullMethodName         = "/admin.AdminService/Changelog"
 	AdminService_Pull_FullMethodName              = "/admin.AdminService/Pull"
+	AdminService_ImportBundle_FullMethodName      = "/admin.AdminService/ImportBundle"
+	AdminService_DiscardCandidate_FullMethodName  = "/admin.AdminService/DiscardCandidate"
+	AdminService_CandidateStatus_FullMethodName   = "/admin.AdminService/CandidateStatus"
+	AdminService_InstallCandidate_FullMethodName  = "/admin.AdminService/InstallCandidate"
 	AdminService_ImageInstall_FullMethodName      = "/admin.AdminService/ImageInstall"
 	AdminService_NotifyUser_FullMethodName        = "/admin.AdminService/NotifyUser"
 	AdminService_Ctap_FullMethodName              = "/admin.AdminService/Ctap"
@@ -101,6 +105,10 @@ type AdminServiceClient interface {
 	Discover(ctx context.Context, in *update.RegistryDiscoverRequest, opts ...grpc.CallOption) (*update.RegistryDiscoverResponse, error)
 	Changelog(ctx context.Context, in *update.RegistryChangelogRequest, opts ...grpc.CallOption) (*update.RegistryChangelogResponse, error)
 	Pull(ctx context.Context, in *update.RegistryPullRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[update.RegistryPullResponse], error)
+	ImportBundle(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[update.LocalImportRequest, update.LocalImportResponse], error)
+	DiscardCandidate(ctx context.Context, in *update.LocalCandidateRequest, opts ...grpc.CallOption) (*update.Empty, error)
+	CandidateStatus(ctx context.Context, in *update.LocalCandidateRequest, opts ...grpc.CallOption) (*update.LocalImportResponse, error)
+	InstallCandidate(ctx context.Context, in *update.LocalCandidateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[update.ImageInstallResponse], error)
 	ImageInstall(ctx context.Context, in *update.ImageInstallRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[update.ImageInstallResponse], error)
 	// Send user notification
 	NotifyUser(ctx context.Context, in *UserNotificationRequest, opts ...grpc.CallOption) (*notify.Status, error)
@@ -375,9 +383,61 @@ func (c *adminServiceClient) Pull(ctx context.Context, in *update.RegistryPullRe
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AdminService_PullClient = grpc.ServerStreamingClient[update.RegistryPullResponse]
 
+func (c *adminServiceClient) ImportBundle(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[update.LocalImportRequest, update.LocalImportResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AdminService_ServiceDesc.Streams[3], AdminService_ImportBundle_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[update.LocalImportRequest, update.LocalImportResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AdminService_ImportBundleClient = grpc.BidiStreamingClient[update.LocalImportRequest, update.LocalImportResponse]
+
+func (c *adminServiceClient) DiscardCandidate(ctx context.Context, in *update.LocalCandidateRequest, opts ...grpc.CallOption) (*update.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(update.Empty)
+	err := c.cc.Invoke(ctx, AdminService_DiscardCandidate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) CandidateStatus(ctx context.Context, in *update.LocalCandidateRequest, opts ...grpc.CallOption) (*update.LocalImportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(update.LocalImportResponse)
+	err := c.cc.Invoke(ctx, AdminService_CandidateStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) InstallCandidate(ctx context.Context, in *update.LocalCandidateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[update.ImageInstallResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AdminService_ServiceDesc.Streams[4], AdminService_InstallCandidate_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[update.LocalCandidateRequest, update.ImageInstallResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AdminService_InstallCandidateClient = grpc.ServerStreamingClient[update.ImageInstallResponse]
+
 func (c *adminServiceClient) ImageInstall(ctx context.Context, in *update.ImageInstallRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[update.ImageInstallResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &AdminService_ServiceDesc.Streams[3], AdminService_ImageInstall_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &AdminService_ServiceDesc.Streams[5], AdminService_ImageInstall_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -470,6 +530,10 @@ type AdminServiceServer interface {
 	Discover(context.Context, *update.RegistryDiscoverRequest) (*update.RegistryDiscoverResponse, error)
 	Changelog(context.Context, *update.RegistryChangelogRequest) (*update.RegistryChangelogResponse, error)
 	Pull(*update.RegistryPullRequest, grpc.ServerStreamingServer[update.RegistryPullResponse]) error
+	ImportBundle(grpc.BidiStreamingServer[update.LocalImportRequest, update.LocalImportResponse]) error
+	DiscardCandidate(context.Context, *update.LocalCandidateRequest) (*update.Empty, error)
+	CandidateStatus(context.Context, *update.LocalCandidateRequest) (*update.LocalImportResponse, error)
+	InstallCandidate(*update.LocalCandidateRequest, grpc.ServerStreamingServer[update.ImageInstallResponse]) error
 	ImageInstall(*update.ImageInstallRequest, grpc.ServerStreamingServer[update.ImageInstallResponse]) error
 	// Send user notification
 	NotifyUser(context.Context, *UserNotificationRequest) (*notify.Status, error)
@@ -555,6 +619,18 @@ func (UnimplementedAdminServiceServer) Changelog(context.Context, *update.Regist
 }
 func (UnimplementedAdminServiceServer) Pull(*update.RegistryPullRequest, grpc.ServerStreamingServer[update.RegistryPullResponse]) error {
 	return status.Error(codes.Unimplemented, "method Pull not implemented")
+}
+func (UnimplementedAdminServiceServer) ImportBundle(grpc.BidiStreamingServer[update.LocalImportRequest, update.LocalImportResponse]) error {
+	return status.Error(codes.Unimplemented, "method ImportBundle not implemented")
+}
+func (UnimplementedAdminServiceServer) DiscardCandidate(context.Context, *update.LocalCandidateRequest) (*update.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DiscardCandidate not implemented")
+}
+func (UnimplementedAdminServiceServer) CandidateStatus(context.Context, *update.LocalCandidateRequest) (*update.LocalImportResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CandidateStatus not implemented")
+}
+func (UnimplementedAdminServiceServer) InstallCandidate(*update.LocalCandidateRequest, grpc.ServerStreamingServer[update.ImageInstallResponse]) error {
+	return status.Error(codes.Unimplemented, "method InstallCandidate not implemented")
 }
 func (UnimplementedAdminServiceServer) ImageInstall(*update.ImageInstallRequest, grpc.ServerStreamingServer[update.ImageInstallResponse]) error {
 	return status.Error(codes.Unimplemented, "method ImageInstall not implemented")
@@ -982,6 +1058,60 @@ func _AdminService_Pull_Handler(srv interface{}, stream grpc.ServerStream) error
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AdminService_PullServer = grpc.ServerStreamingServer[update.RegistryPullResponse]
 
+func _AdminService_ImportBundle_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AdminServiceServer).ImportBundle(&grpc.GenericServerStream[update.LocalImportRequest, update.LocalImportResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AdminService_ImportBundleServer = grpc.BidiStreamingServer[update.LocalImportRequest, update.LocalImportResponse]
+
+func _AdminService_DiscardCandidate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(update.LocalCandidateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).DiscardCandidate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_DiscardCandidate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).DiscardCandidate(ctx, req.(*update.LocalCandidateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_CandidateStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(update.LocalCandidateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).CandidateStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_CandidateStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).CandidateStatus(ctx, req.(*update.LocalCandidateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_InstallCandidate_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(update.LocalCandidateRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AdminServiceServer).InstallCandidate(m, &grpc.GenericServerStream[update.LocalCandidateRequest, update.ImageInstallResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AdminService_InstallCandidateServer = grpc.ServerStreamingServer[update.ImageInstallResponse]
+
 func _AdminService_ImageInstall_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(update.ImageInstallRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -1135,6 +1265,14 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_Changelog_Handler,
 		},
 		{
+			MethodName: "DiscardCandidate",
+			Handler:    _AdminService_DiscardCandidate_Handler,
+		},
+		{
+			MethodName: "CandidateStatus",
+			Handler:    _AdminService_CandidateStatus_Handler,
+		},
+		{
 			MethodName: "NotifyUser",
 			Handler:    _AdminService_NotifyUser_Handler,
 		},
@@ -1161,6 +1299,17 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Pull",
 			Handler:       _AdminService_Pull_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ImportBundle",
+			Handler:       _AdminService_ImportBundle_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "InstallCandidate",
+			Handler:       _AdminService_InstallCandidate_Handler,
 			ServerStreams: true,
 		},
 		{

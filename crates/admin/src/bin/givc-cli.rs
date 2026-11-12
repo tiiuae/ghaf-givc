@@ -103,6 +103,24 @@ impl StopSub {
 
 #[derive(Debug, Subcommand)]
 enum UpdateSub {
+    Discard {
+        #[arg(long)]
+        candidate: String,
+    },
+    Status {
+        #[arg(long)]
+        candidate: String,
+    },
+    Import {
+        #[arg(long)]
+        manifest: std::path::PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Install {
+        #[arg(long)]
+        candidate: String,
+    },
     Query(QueryUpdates),
     List,
     Cachix(CachixOptions),
@@ -371,6 +389,26 @@ impl Test {
 impl UpdateSub {
     async fn handle(self, admin: AdminClient) -> anyhow::Result<()> {
         match self {
+            UpdateSub::Discard { candidate } => admin.discard_local_candidate(candidate).await?,
+            UpdateSub::Status { candidate } => {
+                println!("{}", admin.local_candidate_status(candidate).await?)
+            }
+            UpdateSub::Import { manifest, json } => {
+                let candidate = admin
+                    .import_local_update(&manifest, async |event| {
+                        eprintln!("{}: {}/{}", event.phase, event.completed, event.total);
+                    })
+                    .await?;
+                if json {
+                    println!("{}", serde_json::to_string(&candidate)?);
+                } else {
+                    println!(
+                        "Verified {} generation {} for {}\ncandidate: {}",
+                        candidate.version, candidate.generation, candidate.target, candidate.id
+                    );
+                }
+            }
+            UpdateSub::Install { candidate } => admin.install_local_candidate(candidate).await?,
             UpdateSub::Query(query) => query_updates(query).await?,
             UpdateSub::List => {
                 let response = admin.list_generations().await?;

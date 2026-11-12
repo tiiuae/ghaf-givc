@@ -21,18 +21,30 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Update_ListGenerations_FullMethodName = "/update.Update/ListGenerations"
-	Update_Discover_FullMethodName        = "/update.Update/Discover"
-	Update_Changelog_FullMethodName       = "/update.Update/Changelog"
-	Update_Pull_FullMethodName            = "/update.Update/Pull"
-	Update_ImageInstall_FullMethodName    = "/update.Update/ImageInstall"
-	Update_InstallCachix_FullMethodName   = "/update.Update/InstallCachix"
+	Update_PrepareLocalImport_FullMethodName = "/update.Update/PrepareLocalImport"
+	Update_ReceiveLocalImport_FullMethodName = "/update.Update/ReceiveLocalImport"
+	Update_AcceptLocalImport_FullMethodName  = "/update.Update/AcceptLocalImport"
+	Update_DiscardLocalImport_FullMethodName = "/update.Update/DiscardLocalImport"
+	Update_CandidateStatus_FullMethodName    = "/update.Update/CandidateStatus"
+	Update_InstallCandidate_FullMethodName   = "/update.Update/InstallCandidate"
+	Update_ListGenerations_FullMethodName    = "/update.Update/ListGenerations"
+	Update_Discover_FullMethodName           = "/update.Update/Discover"
+	Update_Changelog_FullMethodName          = "/update.Update/Changelog"
+	Update_Pull_FullMethodName               = "/update.Update/Pull"
+	Update_ImageInstall_FullMethodName       = "/update.Update/ImageInstall"
+	Update_InstallCachix_FullMethodName      = "/update.Update/InstallCachix"
 )
 
 // UpdateClient is the client API for Update service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type UpdateClient interface {
+	PrepareLocalImport(ctx context.Context, in *LocalMetadata, opts ...grpc.CallOption) (*LocalCandidate, error)
+	ReceiveLocalImport(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[LocalReceiveRequest, LocalImportResponse], error)
+	AcceptLocalImport(ctx context.Context, in *LocalCandidateRequest, opts ...grpc.CallOption) (*LocalCandidate, error)
+	DiscardLocalImport(ctx context.Context, in *LocalCandidateRequest, opts ...grpc.CallOption) (*Empty, error)
+	CandidateStatus(ctx context.Context, in *LocalCandidateRequest, opts ...grpc.CallOption) (*LocalImportResponse, error)
+	InstallCandidate(ctx context.Context, in *LocalCandidateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ImageInstallResponse], error)
 	// List installed generations (updates)
 	ListGenerations(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListGenerationsResponse, error)
 	// Discover available OTA updates in an OCI repository
@@ -54,6 +66,78 @@ type updateClient struct {
 func NewUpdateClient(cc grpc.ClientConnInterface) UpdateClient {
 	return &updateClient{cc}
 }
+
+func (c *updateClient) PrepareLocalImport(ctx context.Context, in *LocalMetadata, opts ...grpc.CallOption) (*LocalCandidate, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LocalCandidate)
+	err := c.cc.Invoke(ctx, Update_PrepareLocalImport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *updateClient) ReceiveLocalImport(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[LocalReceiveRequest, LocalImportResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Update_ServiceDesc.Streams[0], Update_ReceiveLocalImport_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[LocalReceiveRequest, LocalImportResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Update_ReceiveLocalImportClient = grpc.BidiStreamingClient[LocalReceiveRequest, LocalImportResponse]
+
+func (c *updateClient) AcceptLocalImport(ctx context.Context, in *LocalCandidateRequest, opts ...grpc.CallOption) (*LocalCandidate, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LocalCandidate)
+	err := c.cc.Invoke(ctx, Update_AcceptLocalImport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *updateClient) DiscardLocalImport(ctx context.Context, in *LocalCandidateRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Update_DiscardLocalImport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *updateClient) CandidateStatus(ctx context.Context, in *LocalCandidateRequest, opts ...grpc.CallOption) (*LocalImportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LocalImportResponse)
+	err := c.cc.Invoke(ctx, Update_CandidateStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *updateClient) InstallCandidate(ctx context.Context, in *LocalCandidateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ImageInstallResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Update_ServiceDesc.Streams[1], Update_InstallCandidate_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[LocalCandidateRequest, ImageInstallResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Update_InstallCandidateClient = grpc.ServerStreamingClient[ImageInstallResponse]
 
 func (c *updateClient) ListGenerations(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListGenerationsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -87,7 +171,7 @@ func (c *updateClient) Changelog(ctx context.Context, in *RegistryChangelogReque
 
 func (c *updateClient) Pull(ctx context.Context, in *RegistryPullRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RegistryPullResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Update_ServiceDesc.Streams[0], Update_Pull_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Update_ServiceDesc.Streams[2], Update_Pull_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +190,7 @@ type Update_PullClient = grpc.ServerStreamingClient[RegistryPullResponse]
 
 func (c *updateClient) ImageInstall(ctx context.Context, in *ImageInstallRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ImageInstallResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Update_ServiceDesc.Streams[1], Update_ImageInstall_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Update_ServiceDesc.Streams[3], Update_ImageInstall_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +209,7 @@ type Update_ImageInstallClient = grpc.ServerStreamingClient[ImageInstallResponse
 
 func (c *updateClient) InstallCachix(ctx context.Context, in *Cachix, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SetGenerationResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Update_ServiceDesc.Streams[2], Update_InstallCachix_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Update_ServiceDesc.Streams[4], Update_InstallCachix_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +230,12 @@ type Update_InstallCachixClient = grpc.ServerStreamingClient[SetGenerationRespon
 // All implementations must embed UnimplementedUpdateServer
 // for forward compatibility.
 type UpdateServer interface {
+	PrepareLocalImport(context.Context, *LocalMetadata) (*LocalCandidate, error)
+	ReceiveLocalImport(grpc.BidiStreamingServer[LocalReceiveRequest, LocalImportResponse]) error
+	AcceptLocalImport(context.Context, *LocalCandidateRequest) (*LocalCandidate, error)
+	DiscardLocalImport(context.Context, *LocalCandidateRequest) (*Empty, error)
+	CandidateStatus(context.Context, *LocalCandidateRequest) (*LocalImportResponse, error)
+	InstallCandidate(*LocalCandidateRequest, grpc.ServerStreamingServer[ImageInstallResponse]) error
 	// List installed generations (updates)
 	ListGenerations(context.Context, *Empty) (*ListGenerationsResponse, error)
 	// Discover available OTA updates in an OCI repository
@@ -168,6 +258,24 @@ type UpdateServer interface {
 // pointer dereference when methods are called.
 type UnimplementedUpdateServer struct{}
 
+func (UnimplementedUpdateServer) PrepareLocalImport(context.Context, *LocalMetadata) (*LocalCandidate, error) {
+	return nil, status.Error(codes.Unimplemented, "method PrepareLocalImport not implemented")
+}
+func (UnimplementedUpdateServer) ReceiveLocalImport(grpc.BidiStreamingServer[LocalReceiveRequest, LocalImportResponse]) error {
+	return status.Error(codes.Unimplemented, "method ReceiveLocalImport not implemented")
+}
+func (UnimplementedUpdateServer) AcceptLocalImport(context.Context, *LocalCandidateRequest) (*LocalCandidate, error) {
+	return nil, status.Error(codes.Unimplemented, "method AcceptLocalImport not implemented")
+}
+func (UnimplementedUpdateServer) DiscardLocalImport(context.Context, *LocalCandidateRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DiscardLocalImport not implemented")
+}
+func (UnimplementedUpdateServer) CandidateStatus(context.Context, *LocalCandidateRequest) (*LocalImportResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CandidateStatus not implemented")
+}
+func (UnimplementedUpdateServer) InstallCandidate(*LocalCandidateRequest, grpc.ServerStreamingServer[ImageInstallResponse]) error {
+	return status.Error(codes.Unimplemented, "method InstallCandidate not implemented")
+}
 func (UnimplementedUpdateServer) ListGenerations(context.Context, *Empty) (*ListGenerationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListGenerations not implemented")
 }
@@ -206,6 +314,96 @@ func RegisterUpdateServer(s grpc.ServiceRegistrar, srv UpdateServer) {
 	}
 	s.RegisterService(&Update_ServiceDesc, srv)
 }
+
+func _Update_PrepareLocalImport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LocalMetadata)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UpdateServer).PrepareLocalImport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Update_PrepareLocalImport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UpdateServer).PrepareLocalImport(ctx, req.(*LocalMetadata))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Update_ReceiveLocalImport_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(UpdateServer).ReceiveLocalImport(&grpc.GenericServerStream[LocalReceiveRequest, LocalImportResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Update_ReceiveLocalImportServer = grpc.BidiStreamingServer[LocalReceiveRequest, LocalImportResponse]
+
+func _Update_AcceptLocalImport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LocalCandidateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UpdateServer).AcceptLocalImport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Update_AcceptLocalImport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UpdateServer).AcceptLocalImport(ctx, req.(*LocalCandidateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Update_DiscardLocalImport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LocalCandidateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UpdateServer).DiscardLocalImport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Update_DiscardLocalImport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UpdateServer).DiscardLocalImport(ctx, req.(*LocalCandidateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Update_CandidateStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LocalCandidateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UpdateServer).CandidateStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Update_CandidateStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UpdateServer).CandidateStatus(ctx, req.(*LocalCandidateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Update_InstallCandidate_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(LocalCandidateRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(UpdateServer).InstallCandidate(m, &grpc.GenericServerStream[LocalCandidateRequest, ImageInstallResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Update_InstallCandidateServer = grpc.ServerStreamingServer[ImageInstallResponse]
 
 func _Update_ListGenerations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
@@ -302,6 +500,22 @@ var Update_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*UpdateServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "PrepareLocalImport",
+			Handler:    _Update_PrepareLocalImport_Handler,
+		},
+		{
+			MethodName: "AcceptLocalImport",
+			Handler:    _Update_AcceptLocalImport_Handler,
+		},
+		{
+			MethodName: "DiscardLocalImport",
+			Handler:    _Update_DiscardLocalImport_Handler,
+		},
+		{
+			MethodName: "CandidateStatus",
+			Handler:    _Update_CandidateStatus_Handler,
+		},
+		{
 			MethodName: "ListGenerations",
 			Handler:    _Update_ListGenerations_Handler,
 		},
@@ -315,6 +529,17 @@ var Update_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "ReceiveLocalImport",
+			Handler:       _Update_ReceiveLocalImport_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "InstallCandidate",
+			Handler:       _Update_InstallCandidate_Handler,
+			ServerStreams: true,
+		},
 		{
 			StreamName:    "Pull",
 			Handler:       _Update_Pull_Handler,

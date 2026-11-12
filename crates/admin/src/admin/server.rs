@@ -968,6 +968,59 @@ impl pb::admin_service_server::AdminService for AdminService {
         .await
     }
 
+    type ImportBundleStream = Stream<pb::update::LocalImportResponse>;
+    async fn import_bundle(
+        &self,
+        request: tonic::Request<tonic::Streaming<pb::update::LocalImportRequest>>,
+    ) -> Result<tonic::Response<Self::ImportBundleStream>, tonic::Status> {
+        escalate(request, async |incoming| {
+            super::local_update::import(
+                self.inner.host_endpoint()?,
+                self.inner.net_vm_endpoint()?,
+                incoming,
+            )
+            .await
+        })
+        .await
+    }
+
+    async fn discard_candidate(
+        &self,
+        request: tonic::Request<pb::update::LocalCandidateRequest>,
+    ) -> Result<tonic::Response<pb::update::Empty>, tonic::Status> {
+        escalate(request, async |request| {
+            let mut client = pb::update::update_client::UpdateClient::new(
+                self.inner.host_endpoint()?.connect().await?,
+            );
+            Ok(client.discard_local_import(request).await?.into_inner())
+        })
+        .await
+    }
+
+    async fn candidate_status(
+        &self,
+        request: tonic::Request<pb::update::LocalCandidateRequest>,
+    ) -> Result<tonic::Response<pb::update::LocalImportResponse>, tonic::Status> {
+        escalate(request, async |request| {
+            let mut client = pb::update::update_client::UpdateClient::new(
+                self.inner.host_endpoint()?.connect().await?,
+            );
+            Ok(client.candidate_status(request).await?.into_inner())
+        })
+        .await
+    }
+
+    type InstallCandidateStream = Stream<pb::update::ImageInstallResponse>;
+    async fn install_candidate(
+        &self,
+        request: tonic::Request<pb::update::LocalCandidateRequest>,
+    ) -> Result<tonic::Response<Self::InstallCandidateStream>, tonic::Status> {
+        escalate(request, async |request| {
+            super::local_update::install(self.inner.host_endpoint()?, request).await
+        })
+        .await
+    }
+
     // OTA
     async fn list_generations(
         &self,
