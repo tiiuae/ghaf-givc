@@ -161,7 +161,6 @@ func (s *UpdateServer) Pull(request *pbupdate.RegistryPullRequest, stream pbupda
 
 func (s *UpdateServer) ImageInstall(request *pbupdate.ImageInstallRequest, stream pbupdate.Update_ImageInstallServer) error {
 	args := []string{"image", "install", "--manifest", request.Manifest}
-	args = append(args, "--validate")
 
 	return runOutputCommand(
 		stream,
