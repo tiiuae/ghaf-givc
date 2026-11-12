@@ -170,15 +170,15 @@ where
 
     async fn wait_for_exitted_snapshot(&self, name: &str) -> Result<Snapshot> {
         let deadline = Instant::now() + Duration::from_secs(10);
-        let mut last_snapshot = synthetic_dead_snapshot(name);
+        let mut last_snapshot;
 
         loop {
             match self.backend.get_unit_snapshot(name).await {
                 Ok(snapshot) => {
-                    last_snapshot = snapshot.clone();
                     if snapshot.active_state == "inactive" && snapshot.sub_state == "dead" {
                         return Ok(snapshot);
                     }
+                    last_snapshot = snapshot;
                 }
                 Err(_) => return Ok(synthetic_dead_snapshot(name)),
             }
@@ -468,7 +468,7 @@ fn validate_job_result(unit_name: &str, result: Option<&str>) -> Result<()> {
 }
 
 fn build_exec_start_value(command: &[String]) -> Result<zbus::zvariant::OwnedValue> {
-    let Some((program, args)) = command.split_first() else {
+    let Some(program) = command.first() else {
         bail!("incorrect application string format")
     };
 
