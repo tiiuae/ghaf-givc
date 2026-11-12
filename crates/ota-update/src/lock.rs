@@ -47,6 +47,13 @@ impl UpdateLock {
     }
 }
 
+impl Drop for UpdateLock {
+    fn drop(&mut self) {
+        // A forked child can retain the file description until it execs.
+        let _ = self._file.unlock();
+    }
+}
+
 fn lock_owner_text(purpose: &str) -> String {
     let pid = std::process::id();
     let data = std::fs::read_to_string("/proc/sys/kernel/hostname").ok();
@@ -57,4 +64,24 @@ fn lock_owner_text(purpose: &str) -> String {
         .unwrap_or("unknown");
 
     format!("host={hostname}\npid={pid}\npurpose={purpose}\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dropping_owner_releases_lock_even_with_an_inherited_descriptor() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("update.lock");
+        let owner = UpdateLock::acquire(&path, "test").unwrap();
+        let inherited = owner._file.try_clone().unwrap();
+        assert!(UpdateLock::acquire(&path, "contender").is_err());
+        drop(owner);
+        let next = UpdateLock::acquire(&path, "next").unwrap();
+        assert!(path.exists());
+        drop(inherited);
+        assert!(UpdateLock::acquire(&path, "contender").is_err());
+        drop(next);
+    }
 }
