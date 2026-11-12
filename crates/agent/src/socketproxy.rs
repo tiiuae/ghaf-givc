@@ -42,7 +42,11 @@ pub struct SocketProxyController {
 }
 
 impl SocketProxyController {
-    async fn new(socket: String, run_as_server: bool) -> Result<Self> {
+    async fn new(
+        socket: String,
+        run_as_server: bool,
+        mut shutdown: crate::runtime::AgentShutdown,
+    ) -> Result<Self> {
         if !run_as_server {
             let _ = fs::remove_file(&socket);
         }
@@ -56,7 +60,10 @@ impl SocketProxyController {
         };
 
         while fs::metadata(&socket).is_err() {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            tokio::select! {
+                () = shutdown.cancelled() => bail!("socket proxy setup cancelled during socket wait"),
+                () = tokio::time::sleep(std::time::Duration::from_millis(500)) => {},
+            }
         }
         set_socket_permissions(Path::new(&socket))?;
 
@@ -102,9 +109,15 @@ pub struct SocketProxyService {
 }
 
 impl SocketProxyService {
-    async fn new(socket: String, run_as_server: bool) -> Result<Self> {
+    async fn new(
+        socket: String,
+        run_as_server: bool,
+        shutdown: crate::runtime::AgentShutdown,
+    ) -> Result<Self> {
         Ok(Self {
-            socket_controller: Arc::new(SocketProxyController::new(socket, run_as_server).await?),
+            socket_controller: Arc::new(
+                SocketProxyController::new(socket, run_as_server, shutdown).await?,
+            ),
         })
     }
 
@@ -289,20 +302,40 @@ impl pb::socketproxy::socket_stream_server::SocketStream for SocketProxyService 
     }
 }
 
-pub async fn start_socket_proxy_services(config: &AgentConfig) -> Result<()> {
+pub(crate) async fn start_socket_proxy_services(
+    config: &AgentConfig,
+    shutdown: crate::runtime::AgentShutdown,
+) -> Result<Vec<tokio::task::JoinHandle<()>>> {
     if !config.capabilities.socket_proxy.enabled {
-        return Ok(());
+        return Ok(Vec::new());
+    }
+    if shutdown.is_cancelled() {
+        return Ok(Vec::new());
     }
 
+    let mut workers = Vec::new();
     for proxy in &config.capabilities.socket_proxy.sockets {
-        start_socket_proxy_service(config, proxy.clone()).await?;
+        if shutdown.is_cancelled() {
+            break;
+        }
+        match start_socket_proxy_service(config, proxy.clone(), shutdown.clone()).await {
+            Ok(worker) => workers.push(worker),
+            Err(err) => {
+                error!(error = %err, "socket-proxy: unable to start configured proxy; continuing")
+            }
+        }
     }
 
-    Ok(())
+    Ok(workers)
 }
 
-async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) -> Result<()> {
-    let socket_service = SocketProxyService::new(proxy.socket.clone(), proxy.server).await?;
+async fn start_socket_proxy_service(
+    config: &AgentConfig,
+    proxy: ProxyConfig,
+    mut shutdown: crate::runtime::AgentShutdown,
+) -> Result<tokio::task::JoinHandle<()>> {
+    let socket_service =
+        SocketProxyService::new(proxy.socket.clone(), proxy.server, shutdown.clone()).await?;
 
     if proxy.server {
         let listen_addr = socket_proxy_listener_address(config, &proxy)?;
@@ -326,42 +359,48 @@ async fn start_socket_proxy_service(config: &AgentConfig, proxy: ProxyConfig) ->
             .as_ref()
             .map(crate::runtime::tls_acceptor)
             .transpose()?;
-        tokio::spawn(async move {
+        return Ok(tokio::spawn(async move {
             info!(addr = ?listen_addr, socket = %proxy.socket, "socket-proxy: server starting");
             let server = server.add_service(grpc_service).add_service(reflection);
             let result = if let Some(acceptor) = tls_acceptor {
                 server
-                    .serve_with_incoming(crate::runtime::tls_incoming(listener, acceptor))
+                    .serve_with_incoming_shutdown(
+                        crate::runtime::tls_incoming(listener, acceptor),
+                        shutdown.cancelled(),
+                    )
                     .await
             } else {
-                server.serve_with_incoming(listener).await
+                server
+                    .serve_with_incoming_shutdown(listener, shutdown.cancelled())
+                    .await
             };
             if let Err(err) = result {
                 error!(error = %err, "socket-proxy: server failed");
             }
-        });
-        return Ok(());
+        }));
     }
 
     let endpoint = socket_proxy_endpoint_config(config, &proxy)?;
-    tokio::spawn(async move {
+    Ok(tokio::spawn(async move {
         info!(socket = %proxy.socket, "socket-proxy: client starting");
-        if let Err(err) = run_socket_proxy_client(socket_service, endpoint).await {
+        if let Err(err) = run_socket_proxy_client(socket_service, endpoint, shutdown).await {
             error!(error = %err, "socket-proxy: client failed");
         }
-    });
-
-    Ok(())
+    }))
 }
 
 async fn run_socket_proxy_client(
     service: SocketProxyService,
     endpoint: EndpointConfig,
+    mut shutdown: crate::runtime::AgentShutdown,
 ) -> Result<()> {
     let mut consecutive_failures = 0usize;
 
     loop {
-        let channel = match endpoint.connect().await {
+        let channel = match tokio::select! {
+            () = shutdown.cancelled() => return Ok(()),
+            result = endpoint.connect() => result,
+        } {
             Ok(channel) => channel,
             Err(err) => {
                 warn!(error = %err, "socket-proxy: remote connect failed");
@@ -375,7 +414,10 @@ async fn run_socket_proxy_client(
                 } else {
                     1
                 };
-                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                tokio::select! {
+                    () = shutdown.cancelled() => return Ok(()),
+                    () = tokio::time::sleep(std::time::Duration::from_secs(delay)) => {},
+                }
                 continue;
             }
         };
@@ -384,9 +426,22 @@ async fn run_socket_proxy_client(
         let mut connections = JoinSet::new();
         loop {
             tokio::select! {
+                () = shutdown.cancelled() => {
+                    let deadline = shutdown.deadline().unwrap_or_else(tokio::time::Instant::now);
+                    while !connections.is_empty() {
+                        if tokio::time::timeout_at(deadline, connections.join_next()).await.is_err() {
+                            connections.abort_all();
+                            while connections.join_next().await.is_some() {}
+                            break;
+                        }
+                    }
+                    return Ok(());
+                }
                 Some(result) = connections.join_next(), if !connections.is_empty() => {
-                    if let Err(err) = result {
-                        warn!(error = %err, "socket-proxy: connection task failed");
+                    match result {
+                        Ok(Ok(())) => {},
+                        Ok(Err(err)) => warn!(error = %err, "socket-proxy: connection task failed"),
+                        Err(err) => warn!(error = %err, "socket-proxy: connection task panicked"),
                     }
                 }
                 accepted = service.socket_controller.accept() => {
@@ -394,12 +449,16 @@ async fn run_socket_proxy_client(
                         Ok(conn) => conn,
                         Err(err) => {
                             warn!(error = %err, "socket-proxy: local accept failed");
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            tokio::select! {
+                                () = shutdown.cancelled() => return Ok(()),
+                                () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                            }
                             continue;
                         }
                     };
                     let mut client = client.clone();
                     let service = service.clone();
+                    let mut connection_shutdown = shutdown.clone();
                     connections.spawn(async move {
                         let mut failures = 0usize;
                         let (tx, mut response) = loop {
@@ -410,11 +469,17 @@ async fn run_socket_proxy_client(
                                     warn!("socket-proxy: remote transfer failed: {err}");
                                     failures += 1;
                                     let delay = if failures >= SOCKET_PROXY_MAX_RETRIES { 5 } else { 1 };
-                                    tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                                    tokio::select! {
+                                        () = connection_shutdown.cancelled() => return Ok(()),
+                                        () = tokio::time::sleep(std::time::Duration::from_secs(delay)) => {},
+                                    }
                                 }
                             }
                         };
-                        service.stream_client_connection(conn, &mut response, tx).await
+                        tokio::select! {
+                            () = connection_shutdown.cancelled() => Ok(()),
+                            result = service.stream_client_connection(conn, &mut response, tx) => result,
+                        }
                     });
                 }
             }
@@ -688,7 +753,8 @@ mod tests {
             }
         });
 
-        let remote_service = SocketProxyService::new(backend_path.clone(), true)
+        let (_remote_trigger, remote_shutdown) = crate::runtime::AgentShutdown::channel();
+        let remote_service = SocketProxyService::new(backend_path.clone(), true, remote_shutdown)
             .await
             .expect("service");
         let remote_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -702,7 +768,8 @@ mod tests {
                 .await
         });
 
-        let proxy_service = SocketProxyService::new(proxy_path.clone(), false)
+        let (_proxy_trigger, proxy_shutdown) = crate::runtime::AgentShutdown::channel();
+        let proxy_service = SocketProxyService::new(proxy_path.clone(), false, proxy_shutdown)
             .await
             .expect("proxy");
         let endpoint = EndpointConfig {
@@ -715,7 +782,8 @@ mod tests {
             },
             tls: None,
         };
-        let proxy_task = tokio::spawn(run_socket_proxy_client(proxy_service, endpoint));
+        let (_shutdown_trigger, shutdown) = crate::runtime::AgentShutdown::channel();
+        let proxy_task = tokio::spawn(run_socket_proxy_client(proxy_service, endpoint, shutdown));
 
         let first = UnixStream::connect(&proxy_path)
             .await
@@ -749,5 +817,83 @@ mod tests {
         backend_task.abort();
         let _ = tokio::fs::remove_file(proxy_path).await;
         let _ = tokio::fs::remove_file(backend_path).await;
+    }
+
+    #[tokio::test]
+    async fn shutdown_interrupts_remote_retry_wait() {
+        let socket_path = test_socket_path("cancel-retry");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("reserve an unused remote port");
+        let port = listener.local_addr().expect("remote address").port();
+        drop(listener);
+        let (trigger, shutdown) = crate::runtime::AgentShutdown::channel();
+        let service = SocketProxyService::new(socket_path.clone(), false, shutdown.clone())
+            .await
+            .expect("proxy service");
+        let endpoint = EndpointConfig {
+            transport: givc_common::types::TransportConfig {
+                address: EndpointAddress::Tcp {
+                    addr: "127.0.0.1".to_owned(),
+                    port,
+                },
+                tls_name: String::new(),
+            },
+            tls: None,
+        };
+        let worker = tokio::spawn(run_socket_proxy_client(service, endpoint, shutdown));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        trigger.trigger();
+
+        tokio::time::timeout(std::time::Duration::from_millis(200), worker)
+            .await
+            .expect("shutdown must interrupt retry sleep")
+            .expect("proxy worker must exit")
+            .expect("proxy loop must succeed");
+        let _ = tokio::fs::remove_file(socket_path).await;
+    }
+
+    #[tokio::test]
+    async fn invalid_socket_proxy_does_not_block_sibling_startup() {
+        let bad_path = test_socket_path("bad-setup");
+        let good_path = test_socket_path("good-setup");
+        let mut config = AgentConfig::default();
+        config.capabilities.socket_proxy.enabled = true;
+        config.capabilities.socket_proxy.sockets = vec![
+            ProxyConfig {
+                transport: crate::config::TransportConfig {
+                    protocol: "unsupported".to_owned(),
+                    ..Default::default()
+                },
+                server: false,
+                socket: bad_path.clone(),
+            },
+            ProxyConfig {
+                transport: crate::config::TransportConfig {
+                    protocol: "tcp".to_owned(),
+                    address: "127.0.0.1".to_owned(),
+                    port: "1".to_owned(),
+                    name: String::new(),
+                },
+                server: false,
+                socket: good_path.clone(),
+            },
+        ];
+        let (trigger, shutdown) = crate::runtime::AgentShutdown::channel();
+
+        let workers = start_socket_proxy_services(&config, shutdown)
+            .await
+            .unwrap();
+
+        assert_eq!(workers.len(), 1, "valid sibling must still start");
+        trigger.trigger();
+        for worker in workers {
+            tokio::time::timeout(std::time::Duration::from_millis(200), worker)
+                .await
+                .expect("socket proxy must observe shutdown")
+                .expect("socket proxy task must exit");
+        }
+        let _ = tokio::fs::remove_file(bad_path).await;
+        let _ = tokio::fs::remove_file(good_path).await;
     }
 }

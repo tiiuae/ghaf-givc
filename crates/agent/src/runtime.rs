@@ -3,6 +3,7 @@
 
 use std::{
     fs::File,
+    future::Future,
     io::{self, BufReader},
     net::SocketAddr,
     sync::Arc,
@@ -11,10 +12,11 @@ use std::{
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt as _;
+use tokio::sync::watch;
 use tokio_listener::{Listener, ListenerAddress, SystemOptions, UserOptions};
 use tonic::transport::Server;
 use tonic_middleware::RequestInterceptorLayer;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::access_control::Authorizer as AccessController;
 use crate::auth::Authenticator;
@@ -95,6 +97,101 @@ pub struct AgentRuntime {
     listen: ListenerAddress,
 }
 
+const PROXY_SHUTDOWN_GRACE: Duration = Duration::from_secs(4);
+
+#[derive(Clone)]
+pub(crate) struct AgentShutdown {
+    started: watch::Receiver<Option<tokio::time::Instant>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct ShutdownTrigger {
+    started: watch::Sender<Option<tokio::time::Instant>>,
+}
+
+impl AgentShutdown {
+    pub(crate) fn channel() -> (ShutdownTrigger, Self) {
+        let (started_tx, started) = watch::channel(None);
+        (
+            ShutdownTrigger {
+                started: started_tx,
+            },
+            Self { started },
+        )
+    }
+
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.started.has_changed().is_err() || self.started.borrow().is_some()
+    }
+
+    pub(crate) async fn cancelled(&mut self) {
+        while !self.is_cancelled() {
+            if self.started.changed().await.is_err() {
+                return;
+            }
+        }
+    }
+
+    pub(crate) fn deadline(&self) -> Option<tokio::time::Instant> {
+        self.started
+            .borrow()
+            .map(|started| started + PROXY_SHUTDOWN_GRACE)
+    }
+}
+
+impl ShutdownTrigger {
+    pub(crate) fn trigger(&self) {
+        self.started.send_if_modified(|started| {
+            if started.is_some() {
+                return false;
+            }
+            *started = Some(tokio::time::Instant::now());
+            true
+        });
+    }
+}
+
+async fn drain_workers_until(
+    mut workers: Vec<tokio::task::JoinHandle<()>>,
+    deadline: tokio::time::Instant,
+) -> bool {
+    let abort_handles = workers
+        .iter()
+        .map(tokio::task::JoinHandle::abort_handle)
+        .collect::<Vec<_>>();
+    match tokio::time::timeout_at(deadline, futures_util::future::join_all(workers.iter_mut()))
+        .await
+    {
+        Ok(results) => {
+            for result in results {
+                if let Err(err) = result {
+                    warn!(error = %err, "proxy worker failed during shutdown");
+                }
+            }
+            false
+        }
+        Err(_) => {
+            for worker in abort_handles {
+                worker.abort();
+            }
+            true
+        }
+    }
+}
+
+async fn finish_proxy_workers<T>(
+    trigger: ShutdownTrigger,
+    shutdown: AgentShutdown,
+    workers: Vec<tokio::task::JoinHandle<()>>,
+    result: Result<T>,
+) -> Result<T> {
+    trigger.trigger();
+    if let Some(deadline) = shutdown.deadline() {
+        drain_workers_until(workers, deadline).await;
+    }
+    result
+}
+
 impl Default for AgentRuntime {
     fn default() -> Self {
         Self {
@@ -123,12 +220,17 @@ impl AgentRuntime {
     /// # Errors
     /// Fails if server setup or serving fails.
     pub async fn serve(self) -> Result<()> {
+        let (shutdown_trigger, shutdown) = AgentShutdown::channel();
+        let mut proxy_workers = Vec::new();
+        let result = async {
         let config = self.config.clone();
         if config.capabilities.event_proxy.enabled {
-            eventproxy::start_event_proxy_services(&config).await?;
+            proxy_workers
+                .extend(eventproxy::start_event_proxy_services(&config, shutdown.clone()).await?);
         }
         if config.capabilities.socket_proxy.enabled {
-            socketproxy::start_socket_proxy_services(&config).await?;
+            proxy_workers
+                .extend(socketproxy::start_socket_proxy_services(&config, shutdown.clone()).await?);
         }
 
         let backend = ZbusBackend::new().await?;
@@ -236,12 +338,15 @@ impl AgentRuntime {
                 None
             };
             server = server.add_optional_service(wifi_service);
-            server
-                .serve_with_incoming_shutdown(
+            let result = serve_until_shutdown(
+                server.serve_with_incoming_shutdown(
                     tls_incoming(listener, tls_acceptor(tls)?),
-                    shutdown_signal(),
-                )
-                .await?;
+                    shutdown_signal(shutdown_trigger.clone()),
+                ),
+                shutdown.clone(),
+            )
+            .await;
+            result?;
         } else {
             let mut server = Server::builder().layer(interceptor).add_service(reflect);
 
@@ -317,12 +422,21 @@ impl AgentRuntime {
                 None
             };
             server = server.add_optional_service(wifi_service);
-            server
-                .serve_with_incoming_shutdown(listener, shutdown_signal())
-                .await?;
+            let result = serve_until_shutdown(
+                server.serve_with_incoming_shutdown(
+                    listener,
+                    shutdown_signal(shutdown_trigger.clone()),
+                ),
+                shutdown.clone(),
+            )
+            .await;
+            result?;
         }
 
         Ok(())
+        }
+        .await;
+        finish_proxy_workers(shutdown_trigger, shutdown, proxy_workers, result).await
     }
 }
 
@@ -341,6 +455,26 @@ async fn bind_listener_with_retry(listen: &ListenerAddress) -> Result<Listener> 
     }
 
     unreachable!("listener retry loop should always return")
+}
+
+async fn serve_until_shutdown<F>(serve: F, mut shutdown: AgentShutdown) -> Result<()>
+where
+    F: Future<Output = std::result::Result<(), tonic::transport::Error>>,
+{
+    tokio::pin!(serve);
+    tokio::select! {
+        result = &mut serve => result.map_err(Into::into),
+        () = shutdown.cancelled() => {
+            let deadline = shutdown.deadline().unwrap_or_else(tokio::time::Instant::now);
+            match tokio::time::timeout_at(deadline, &mut serve).await {
+                Ok(result) => result.map_err(Into::into),
+                Err(_) => {
+                    warn!("main gRPC server exceeded graceful-shutdown deadline; forcing stop");
+                    Ok(())
+                }
+            }
+        }
+    }
 }
 
 fn active_reflection_descriptors(config: &AgentConfig) -> Vec<(&'static str, &'static [u8])> {
@@ -481,7 +615,7 @@ where
     }
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(trigger: ShutdownTrigger) {
     let ctrl_c = async {
         if let Err(error) = tokio::signal::ctrl_c().await {
             tracing::warn!(%error, "failed to listen for Ctrl-C");
@@ -504,6 +638,7 @@ async fn shutdown_signal() {
     let terminate = std::future::pending::<()>();
 
     let cause = wait_for_shutdown(ctrl_c, terminate).await;
+    trigger.trigger();
     info!(?cause, "gRPC server graceful shutdown requested");
 }
 
@@ -566,6 +701,64 @@ mod tests {
         })
         .await;
         assert_eq!(cause, ShutdownCause::Terminate);
+    }
+
+    #[tokio::test]
+    async fn shared_agent_shutdown_notifies_all_clones() {
+        let (trigger, shutdown) = AgentShutdown::channel();
+        let mut sibling = shutdown.clone();
+        let waiter = tokio::spawn(async move { sibling.cancelled().await });
+
+        trigger.trigger();
+        waiter.await.unwrap();
+
+        assert!(shutdown.is_cancelled());
+        assert!(shutdown.deadline().is_some());
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_agent_shutdown_returns_immediately() {
+        let (trigger, mut shutdown) = AgentShutdown::channel();
+        trigger.trigger();
+
+        tokio::time::timeout(Duration::from_millis(50), shutdown.cancelled())
+            .await
+            .expect("pre-cancelled shutdown must not wait for another watch update");
+    }
+
+    #[tokio::test]
+    async fn worker_drain_uses_one_absolute_deadline() {
+        let started = tokio::time::Instant::now();
+        let deadline = started + Duration::from_millis(100);
+        let slow = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_millis(70)).await;
+        });
+        let stalled = tokio::spawn(std::future::pending::<()>());
+
+        let forced = drain_workers_until(vec![slow, stalled], deadline).await;
+
+        assert!(
+            forced,
+            "unfinished worker must be aborted at shared deadline"
+        );
+        assert!(started.elapsed() < Duration::from_millis(150));
+    }
+
+    #[tokio::test]
+    async fn proxy_workers_drain_when_runtime_setup_fails() {
+        let (trigger, shutdown) = AgentShutdown::channel();
+        let mut worker_shutdown = shutdown.clone();
+        let worker = tokio::spawn(async move { worker_shutdown.cancelled().await });
+
+        let result = finish_proxy_workers(
+            trigger,
+            shutdown,
+            vec![worker],
+            Err::<(), _>(anyhow::anyhow!("setup failed")),
+        )
+        .await;
+
+        assert!(result.unwrap_err().to_string().contains("setup failed"));
     }
 
     #[tokio::test]

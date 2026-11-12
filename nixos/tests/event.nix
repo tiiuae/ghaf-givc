@@ -307,6 +307,14 @@ in
               appvm.succeed("python3 /tmp/capture-event.py >/tmp/event-reconnect.log 2>&1 &")
               audiovm.succeed("python3 /tmp/event-source.py >/tmp/event-source.log 2>&1 & echo $! >/tmp/event-source.pid")
               appvm.wait_until_succeeds("grep -q 'captured producer event' /tmp/event-reconnect.log")
+
+            with subtest("agent_stops_with_active_event_stream"):
+              audiovm.succeed("${grpcurl_cmd} ${grpcurl_args} -d @ ${grpcurl_addr} eventproxy.EventService.StreamEvents < <(printf '%s\\n' '{\"type\":\"0\",\"code\":\"0\",\"value\":\"0\"}'; tail -f /dev/null) >/tmp/event-active-stream.log 2>&1 & echo $! >/tmp/event-active-stream.pid")
+              audiovm.sleep(1)
+              audiovm.wait_until_succeeds("kill -0 $(cat /tmp/event-active-stream.pid)")
+              audiovm.wait_until_succeeds("ps -o comm= -p $(cat /tmp/event-active-stream.pid) | grep -qx grpcurl")
+              appvm.succeed("python3 -c 'import subprocess,time; command=[\"systemctl\",\"--user\",\"--machine=ghaf@.host\"]; start=time.monotonic(); subprocess.run(command+[\"stop\",\"givc-app-vm.service\"],check=True); elapsed=time.monotonic()-start; assert elapsed < 5, f\"agent stop took {elapsed:.2f}s\"; assert subprocess.check_output(command+[\"show\",\"-p\",\"ActiveState\",\"--value\",\"givc-app-vm.service\"],text=True).strip() == \"inactive\"'")
+              audiovm.succeed("kill $(cat /tmp/event-active-stream.pid) || true")
           '';
       };
     };

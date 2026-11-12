@@ -4,6 +4,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -132,16 +136,28 @@ impl EventProxyController {
         &self,
         handle: &Handle,
         tls: Option<givc_client::endpoint::TlsConfig>,
+        shutdown: &mut crate::runtime::AgentShutdown,
     ) -> Result<ClientEndpointConfig> {
         let endpoint = endpoint_from_transport(&self.transport_config, tls)?;
         let deadline = Instant::now() + Duration::from_secs(60);
 
         loop {
+            if shutdown.is_cancelled() {
+                bail!("event: shutdown while waiting for consumer");
+            }
             if Instant::now() >= deadline {
                 bail!("event: consumer not ready");
             }
 
-            let connect = handle.block_on(endpoint.connect());
+            let connect = handle.block_on(async {
+                tokio::select! {
+                    () = shutdown.cancelled() => None,
+                    result = endpoint.connect() => Some(result),
+                }
+            });
+            let Some(connect) = connect else {
+                bail!("event: shutdown while connecting to consumer");
+            };
             match connect {
                 Ok(_) => {
                     info!("event: successfully connected to consumer");
@@ -149,7 +165,15 @@ impl EventProxyController {
                 }
                 Err(err) => {
                     warn!(error = %err, "event: consumer not ready, retrying in 1 second");
-                    thread::sleep(Duration::from_secs(1));
+                    let cancelled = handle.block_on(async {
+                        tokio::select! {
+                            () = shutdown.cancelled() => true,
+                            () = tokio::time::sleep(Duration::from_secs(1)) => false,
+                        }
+                    });
+                    if cancelled {
+                        bail!("event: shutdown while waiting for consumer");
+                    }
                 }
             }
         }
@@ -169,10 +193,17 @@ impl EventProxyController {
         Ok((device, device_info))
     }
 
-    fn monitor_input_device(&self, target_device: &str) -> Result<PathBuf> {
+    fn monitor_input_device(
+        &self,
+        target_device: &str,
+        shutdown: &crate::runtime::AgentShutdown,
+    ) -> Result<PathBuf> {
         info!(target = %target_device, "event: monitoring input devices");
 
         loop {
+            if shutdown.is_cancelled() {
+                bail!("event: shutdown while monitoring input devices");
+            }
             for entry in fs::read_dir("/dev/input").context("event: failed to read /dev/input")? {
                 let entry = match entry {
                     Ok(entry) => entry,
@@ -325,19 +356,36 @@ impl pb::eventproxy::event_service_server::EventService for EventProxyServer {
     }
 }
 
-pub async fn start_event_proxy_services(config: &AgentConfig) -> Result<()> {
+pub(crate) async fn start_event_proxy_services(
+    config: &AgentConfig,
+    shutdown: crate::runtime::AgentShutdown,
+) -> Result<Vec<tokio::task::JoinHandle<()>>> {
     if !config.capabilities.event_proxy.enabled {
-        return Ok(());
+        return Ok(Vec::new());
+    }
+    if shutdown.is_cancelled() {
+        return Ok(Vec::new());
     }
 
+    let mut workers = Vec::new();
     for event in &config.capabilities.event_proxy.events {
-        start_event_proxy_service(config, event.clone()).await?;
+        if shutdown.is_cancelled() {
+            break;
+        }
+        match start_event_proxy_service(config, event.clone(), shutdown.clone()).await {
+            Ok(worker) => workers.push(worker),
+            Err(err) => error!(error = %err, "event: unable to start configured proxy; continuing"),
+        }
     }
 
-    Ok(())
+    Ok(workers)
 }
 
-async fn start_event_proxy_service(config: &AgentConfig, event: EventConfig) -> Result<()> {
+async fn start_event_proxy_service(
+    config: &AgentConfig,
+    event: EventConfig,
+    shutdown: crate::runtime::AgentShutdown,
+) -> Result<tokio::task::JoinHandle<()>> {
     let controller = EventProxyController::new(event.transport.clone());
 
     if !event.producer.enabled {
@@ -355,7 +403,7 @@ async fn start_event_proxy_service(config: &AgentConfig, event: EventConfig) -> 
             .as_ref()
             .map(crate::runtime::tls_acceptor)
             .transpose()?;
-        tokio::spawn(async move {
+        return Ok(tokio::spawn(async move {
             let listener = match Listener::bind(
                 &listen_addr,
                 &SystemOptions::default(),
@@ -372,69 +420,112 @@ async fn start_event_proxy_service(config: &AgentConfig, event: EventConfig) -> 
             };
             info!(addr = ?listen_addr, device = %event.device, "event: server starting");
             let server = server.add_service(grpc_service).add_service(reflect);
+            let mut shutdown = shutdown;
             let result = if let Some(acceptor) = tls_acceptor {
                 server
-                    .serve_with_incoming(crate::runtime::tls_incoming(listener, acceptor))
+                    .serve_with_incoming_shutdown(
+                        crate::runtime::tls_incoming(listener, acceptor),
+                        shutdown.cancelled(),
+                    )
                     .await
             } else {
-                server.serve_with_incoming(listener).await
+                server
+                    .serve_with_incoming_shutdown(listener, shutdown.cancelled())
+                    .await
             };
             if let Err(err) = result {
                 error!(error = %err, "event: server failed");
             }
-        });
-        return Ok(());
+        }));
     }
 
     let handle = Handle::current();
     let config = config.clone();
-    thread::spawn(move || {
+    let worker_shutdown = shutdown.clone();
+    let worker = tokio::task::spawn_blocking(move || {
+        let mut worker_shutdown = worker_shutdown;
         // Keep Go's producer/server split: capture and injection run as independent workers so a
         // restart in one role does not stall the other.
         loop {
-            let result = run_event_proxy_producer(&handle, &config, &event);
+            if worker_shutdown.is_cancelled() {
+                return;
+            }
+            let result =
+                run_event_proxy_producer(&handle, &config, &event, worker_shutdown.clone());
             match result {
                 Ok(()) => return,
                 Err(err) => {
                     warn!(error = %err, "event: producer stopped, retrying device discovery and registration");
-                    thread::sleep(Duration::from_secs(1));
+                    if wait_event_producer_retry(&handle, &mut worker_shutdown) {
+                        return;
+                    }
                 }
             }
         }
     });
 
-    Ok(())
+    Ok(tokio::spawn(async move {
+        if let Err(err) = worker.await {
+            error!(error = %err, "event: producer worker failed");
+        }
+    }))
+}
+
+fn wait_event_producer_retry(
+    handle: &Handle,
+    shutdown: &mut crate::runtime::AgentShutdown,
+) -> bool {
+    handle.block_on(async {
+        tokio::select! {
+            () = shutdown.cancelled() => true,
+            () = tokio::time::sleep(Duration::from_secs(1)) => false,
+        }
+    })
 }
 
 fn run_event_proxy_producer(
     handle: &Handle,
     config: &AgentConfig,
     event: &EventConfig,
+    mut shutdown: crate::runtime::AgentShutdown,
 ) -> Result<()> {
     let controller = EventProxyController::new(event.transport.clone());
-    let handler = controller.monitor_input_device(&event.device)?;
+    let handler = controller.monitor_input_device(&event.device, &shutdown)?;
     let (mut dev, device_info) = controller.open_and_extract(&handler)?;
+    dev.set_nonblocking(true)
+        .context("unable to set event device nonblocking")?;
 
-    let endpoint = controller.wait_for_consumer(handle, config.network.tls_config.clone())?;
+    let endpoint =
+        controller.wait_for_consumer(handle, config.network.tls_config.clone(), &mut shutdown)?;
     handle.block_on(async {
-        let channel = endpoint.connect().await?;
+        let channel = tokio::select! {
+            () = shutdown.cancelled() => return Ok(()),
+            result = endpoint.connect() => result?,
+        };
         let mut client = pb::eventproxy::event_service_client::EventServiceClient::new(channel);
 
-        client.register_device(device_info.clone()).await?;
+        tokio::select! {
+            () = shutdown.cancelled() => return Ok(()),
+            result = client.register_device(device_info.clone()) => { result?; },
+        }
 
         let (tx, rx) = mpsc::channel::<pb::eventproxy::InputEvent>(32);
         let stream = ReceiverStream::new(rx);
-        let send_thread = thread::spawn(move || stream_device_events(&mut dev, tx));
-
-        let response = client
-            .stream_events(Request::new(stream))
-            .await?
-            .into_inner();
-        match send_thread.join() {
-            Ok(Err(err)) => return Err(err),
-            Err(_) => bail!("event: device reader thread panicked"),
-            Ok(Ok(())) => {}
-        }
+        let stopping = Arc::new(AtomicBool::new(false));
+        let reader_stopping = stopping.clone();
+        let send_thread =
+            thread::spawn(move || stream_device_events(&mut dev, tx, reader_stopping));
+        let response = match finish_event_reader_and_rpc(
+            send_thread,
+            client.stream_events(Request::new(stream)),
+            &mut shutdown,
+            stopping,
+        )
+        .await?
+        {
+            Some(response) => response.into_inner(),
+            None => return Ok(()),
+        };
         info!(status = %response.status, "event: producer stream completed");
         Ok::<_, anyhow::Error>(())
     })?;
@@ -445,11 +536,18 @@ fn run_event_proxy_producer(
 fn stream_device_events(
     dev: &mut Device,
     tx: mpsc::Sender<pb::eventproxy::InputEvent>,
+    stopping: Arc<AtomicBool>,
 ) -> Result<()> {
     loop {
+        if stopping.load(Ordering::Acquire) {
+            return Ok(());
+        }
         match dev.fetch_events() {
             Ok(events) => {
                 for event in events {
+                    if stopping.load(Ordering::Acquire) {
+                        return Ok(());
+                    }
                     if tx.blocking_send(input_event_to_message(&event)).is_err() {
                         return Ok(());
                     }
@@ -463,6 +561,70 @@ fn stream_device_events(
             }
         }
     }
+}
+
+async fn finish_event_reader_and_rpc<F, T>(
+    reader: thread::JoinHandle<Result<()>>,
+    rpc: F,
+    shutdown: &mut crate::runtime::AgentShutdown,
+    stopping: Arc<AtomicBool>,
+) -> Result<Option<T>>
+where
+    F: std::future::Future<Output = std::result::Result<T, Status>>,
+{
+    tokio::pin!(rpc);
+    let mut reader = tokio::task::spawn_blocking(move || reader.join());
+    let mut reader_result = None;
+    let mut rpc_result = None;
+
+    while reader_result.is_none() || rpc_result.is_none() {
+        if shutdown.is_cancelled() {
+            stopping.store(true, Ordering::Release);
+            let deadline = shutdown
+                .deadline()
+                .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(4));
+            let drained = tokio::time::timeout_at(deadline, async {
+                while reader_result.is_none() || rpc_result.is_none() {
+                    tokio::select! {
+                        result = &mut reader, if reader_result.is_none() => reader_result = Some(result),
+                        result = &mut rpc, if rpc_result.is_none() => {
+                            if result.is_err() {
+                                stopping.store(true, Ordering::Release);
+                            }
+                            rpc_result = Some(result);
+                        }
+                    }
+                }
+            })
+            .await;
+            if drained.is_err() {
+                return Ok(None);
+            }
+            break;
+        }
+
+        tokio::select! {
+            result = &mut reader, if reader_result.is_none() => reader_result = Some(result),
+            result = &mut rpc, if rpc_result.is_none() => {
+                if result.is_err() {
+                    stopping.store(true, Ordering::Release);
+                }
+                rpc_result = Some(result);
+            }
+            () = shutdown.cancelled() => stopping.store(true, Ordering::Release),
+        }
+    }
+
+    match reader_result
+        .expect("reader loop completed")
+        .context("event reader join task failed")?
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => return Err(err),
+        Err(_) => bail!("event: device reader thread panicked"),
+    }
+
+    Ok(Some(rpc_result.expect("RPC loop completed")?))
 }
 
 fn event_server_listener_address(event: &EventConfig) -> Result<ListenerAddress> {
@@ -751,10 +913,137 @@ mod tests {
             &address.port().to_string(),
         );
 
-        let result = start_event_proxy_service(&AgentConfig::default(), event).await;
+        let (_shutdown_trigger, shutdown) = crate::runtime::AgentShutdown::channel();
+        let result = start_event_proxy_service(&AgentConfig::default(), event, shutdown).await;
         tokio::task::yield_now().await;
 
         assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn invalid_event_proxy_does_not_block_sibling_startup() {
+        let mut config = AgentConfig::default();
+        config.capabilities.event_proxy.enabled = true;
+        config.capabilities.event_proxy.events = vec![
+            event_config("udp", "127.0.0.1", "0"),
+            event_config("tcp", "127.0.0.1", "0"),
+        ];
+        let (trigger, shutdown) = crate::runtime::AgentShutdown::channel();
+
+        let workers = start_event_proxy_services(&config, shutdown).await.unwrap();
+
+        assert_eq!(workers.len(), 1, "valid sibling must still start");
+        trigger.trigger();
+        for worker in workers {
+            tokio::time::timeout(Duration::from_millis(200), worker)
+                .await
+                .expect("event listener must observe shutdown")
+                .expect("event listener task must exit");
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_interrupts_event_consumer_retry_wait() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port().to_string();
+        drop(listener);
+        let controller =
+            EventProxyController::new(event_config("tcp", "127.0.0.1", &port).transport);
+        let handle = Handle::current();
+        let (trigger, mut shutdown) = crate::runtime::AgentShutdown::channel();
+        let worker = tokio::task::spawn_blocking(move || {
+            controller.wait_for_consumer(&handle, None, &mut shutdown)
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        trigger.trigger();
+
+        let result = tokio::time::timeout(Duration::from_millis(200), worker)
+            .await
+            .expect("shutdown must interrupt event retry wait")
+            .expect("event worker must finish");
+        assert!(result.is_err(), "shutdown ends consumer discovery");
+    }
+
+    #[tokio::test]
+    async fn event_reader_drain_polls_stream_while_joining_reader() {
+        let (tx, mut rx) = mpsc::channel(1);
+        let reader = thread::spawn(move || -> Result<()> {
+            tx.blocking_send(1)?;
+            tx.blocking_send(2)?;
+            Ok(())
+        });
+        let rpc = async move {
+            let mut received = 0;
+            while rx.recv().await.is_some() {
+                received += 1;
+            }
+            Ok::<_, Status>(received)
+        };
+        let (_trigger, mut shutdown) = crate::runtime::AgentShutdown::channel();
+
+        let response = finish_event_reader_and_rpc(
+            reader,
+            rpc,
+            &mut shutdown,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response, Some(2));
+    }
+
+    #[tokio::test]
+    async fn shutdown_drains_rpc_while_reader_channel_is_full() {
+        let (tx, mut rx) = mpsc::channel(1);
+        let reader = thread::spawn(move || -> Result<()> {
+            tx.blocking_send(1)?;
+            tx.blocking_send(2)?;
+            Ok(())
+        });
+        let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+        let rpc = async move {
+            let _ = resume_rx.await;
+            let mut received = 0;
+            while rx.recv().await.is_some() {
+                received += 1;
+            }
+            Ok::<_, Status>(received)
+        };
+        let (trigger, mut shutdown) = crate::runtime::AgentShutdown::channel();
+        let stopping = Arc::new(AtomicBool::new(false));
+        let worker_stopping = stopping.clone();
+        let worker = tokio::spawn(async move {
+            finish_event_reader_and_rpc(reader, rpc, &mut shutdown, worker_stopping).await
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        trigger.trigger();
+        resume_tx.send(()).unwrap();
+
+        let response = tokio::time::timeout(Duration::from_millis(200), worker)
+            .await
+            .expect("reader and RPC must drain before deadline")
+            .expect("drain task must finish")
+            .unwrap();
+        assert_eq!(response, Some(2));
+        assert!(stopping.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn shutdown_interrupts_event_producer_retry_delay() {
+        let handle = Handle::current();
+        let (trigger, mut shutdown) = crate::runtime::AgentShutdown::channel();
+        let waiter =
+            tokio::task::spawn_blocking(move || wait_event_producer_retry(&handle, &mut shutdown));
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        trigger.trigger();
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), waiter)
+                .await
+                .expect("shutdown must interrupt producer retry delay")
+                .expect("producer retry worker must finish")
+        );
     }
 
     #[test]

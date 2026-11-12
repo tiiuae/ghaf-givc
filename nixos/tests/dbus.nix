@@ -610,6 +610,12 @@ in
 
           with subtest("test_parallel_access"):
             print(guivm.succeed("sudo -u ghaf dbus-send --bus=unix:path=/tmp/.dbusproxy_app.sock --dest=org.mpris.MediaPlayer2.playerctld /org/mpris/MediaPlayer2 org.freedesktop.DBus.Introspectable.Introspect & sudo -u ghaf dbus-send --bus=unix:path=/tmp/.dbusproxy_app.sock --dest=org.mpris.MediaPlayer2.playerctld /org/mpris/MediaPlayer2 org.freedesktop.DBus.Introspectable.Introspect & wait"))
+
+          with subtest("agent_stops_with_active_socket_proxy"):
+            guivm.succeed("python3 -c 'import socket,time; s=socket.socket(socket.AF_UNIX); s.connect(\"/tmp/.dbusproxy_net.sock\"); open(\"/tmp/givc-active-proxy-open\",\"w\").close(); time.sleep(60)' >/tmp/givc-active-proxy.log 2>&1 & echo $! >/tmp/givc-active-proxy.pid")
+            guivm.wait_until_succeeds("test -e /tmp/givc-active-proxy-open")
+            guivm.succeed("python3 -c 'import subprocess,time; start=time.monotonic(); subprocess.run([\"systemctl\",\"stop\",\"givc-gui-vm.service\"],check=True); elapsed=time.monotonic()-start; assert elapsed < 5, f\"agent stop took {elapsed:.2f}s\"; assert subprocess.check_output([\"systemctl\",\"show\",\"-p\",\"ActiveState\",\"--value\",\"givc-gui-vm.service\"],text=True).strip() == \"inactive\"'")
+            guivm.succeed("kill $(cat /tmp/givc-active-proxy.pid) || true")
         '';
       };
     };
