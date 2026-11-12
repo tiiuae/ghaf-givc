@@ -134,11 +134,14 @@ impl Plan {
         let target = volume.device_file_string();
         let input = file.full_name(source);
 
+        // Bound dirty data during slot writes so encrypted storage stays responsive.
         if file.is_compressed() {
             Pipeline::new(CommandSpec::new("zstdcat").arg_path(input)).pipe(
                 CommandSpec::new("dd")
                     .arg(format!("of={target}"))
                     .arg("bs=4M")
+                    .arg("iflag=fullblock")
+                    .arg("oflag=direct")
                     .arg("status=progress"),
             )
         } else {
@@ -147,6 +150,8 @@ impl Plan {
                     .arg(format!("if={input}", input = input.to_string_lossy()))
                     .arg(format!("of={target}"))
                     .arg("bs=4M")
+                    .arg("iflag=fullblock")
+                    .arg("oflag=direct")
                     .arg("status=progress"),
             )
         }
@@ -284,8 +289,8 @@ mod tests {
         let expected = &[
             "lvrename pool root_empty root_staging_44cc41b403a2d323",
             "lvrename pool verity_empty verity_staging_44cc41b403a2d323",
-            "zstdcat /sysupdate/ghaf_root_25.12.1_44cc41b403a2d323.raw.zst | dd of=/dev/mapper/pool-root_staging_44cc41b403a2d323 bs=4M status=progress",
-            "zstdcat /sysupdate/ghaf_verity_25.12.1_44cc41b403a2d323.raw.zst | dd of=/dev/mapper/pool-verity_staging_44cc41b403a2d323 bs=4M status=progress",
+            "zstdcat /sysupdate/ghaf_root_25.12.1_44cc41b403a2d323.raw.zst | dd of=/dev/mapper/pool-root_staging_44cc41b403a2d323 bs=4M iflag=fullblock oflag=direct status=progress",
+            "zstdcat /sysupdate/ghaf_verity_25.12.1_44cc41b403a2d323.raw.zst | dd of=/dev/mapper/pool-verity_staging_44cc41b403a2d323 bs=4M iflag=fullblock oflag=direct status=progress",
             "blockdev --flushbufs /dev/mapper/pool-root_staging_44cc41b403a2d323",
             "blockdev --flushbufs /dev/mapper/pool-verity_staging_44cc41b403a2d323",
             "veritysetup verify /dev/mapper/pool-root_staging_44cc41b403a2d323 /dev/mapper/pool-verity_staging_44cc41b403a2d323 44cc41b403a2d323a68f42941131169899545eaceebe332e24426e9ff7d7f3bc",

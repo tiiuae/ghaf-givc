@@ -23,6 +23,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ".update.Generation",
                 "#[derive(Deserialize, Serialize)] #[serde(rename_all = \"camelCase\")]",
             )
+            .type_attribute(".update.LocalMetadata", "#[derive(Deserialize, Serialize)]")
+            .type_attribute(".update.LocalArtifact", "#[derive(Deserialize, Serialize)]")
+            .type_attribute(
+                ".update.LocalCandidate",
+                "#[derive(Deserialize, Serialize)]",
+            )
             .compile_protos(&[format!("api/{pkg}/{pkg}.proto").as_str()], &["api"])?;
     }
 

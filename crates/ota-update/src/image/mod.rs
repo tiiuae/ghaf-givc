@@ -6,6 +6,7 @@ pub mod cli;
 pub mod executor;
 pub mod group;
 pub mod install;
+pub(crate) mod local;
 pub mod lvm;
 pub mod manifest;
 pub mod pipeline;

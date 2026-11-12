@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	cedartypes "github.com/cedar-policy/cedar-go/types"
@@ -263,5 +264,13 @@ func TestAclPolicyUpdateRequestSelector(t *testing.T) {
 				t.Errorf("Expected request to be denied, but it was permitted")
 			}
 		})
+	}
+}
+
+func TestLocalAdmissionOmitsBulkMetadataFromPolicyContext(t *testing.T) {
+	request := &updatepb.LocalMetadata{Manifest: strings.Repeat("x", 256*1024), Signature: strings.Repeat("a", 128)}
+	context, err := MapRequestToContext(request)
+	if err != nil || len(context) != 0 {
+		t.Fatalf("bulk metadata exposed to authorizer: %v, %v", context, err)
 	}
 }

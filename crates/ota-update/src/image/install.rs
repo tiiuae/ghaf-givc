@@ -52,7 +52,7 @@ impl SignedManifest {
 pub(crate) struct ValidatedManifest(Manifest);
 
 impl ValidatedManifest {
-    fn authorize_install(
+    pub(crate) fn authorize_install(
         self,
         validation: &ValidationConfig<'_>,
     ) -> anyhow::Result<SignedManifest> {
@@ -213,7 +213,7 @@ fn read_accepted_generation(path: &Path) -> anyhow::Result<u64> {
         .with_context(|| format!("parsing accepted generation in {}", path.display()))
 }
 
-fn validate_install_generation(
+pub(crate) fn validate_install_generation(
     manifest: &Manifest,
     validation: &ValidationConfig<'_>,
 ) -> anyhow::Result<()> {

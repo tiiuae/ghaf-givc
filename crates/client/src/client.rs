@@ -649,6 +649,78 @@ impl AdminClient {
         result.ok_or_else(|| anyhow::anyhow!("pull stream completed without a result"))
     }
 
+    /// Import an SSD bundle through admin/net-vm and return a host-verified candidate.
+    /// # Errors
+    /// Fails on bundle I/O, transport errors, or rejection by the update service.
+    pub async fn import_local_update<F>(
+        &self,
+        manifest: &std::path::Path,
+        on_progress: F,
+    ) -> anyhow::Result<pb::update::LocalCandidate>
+    where
+        F: AsyncFnMut(pb::update::LocalImportResponse),
+    {
+        crate::local_update::import(self.connect_to().await?, manifest, on_progress).await
+    }
+
+    /// Discard an unused local candidate without touching installed slots.
+    /// # Errors
+    /// Fails on bundle I/O, transport errors, or rejection by the update service.
+    pub async fn discard_local_candidate(&self, id: String) -> anyhow::Result<()> {
+        self.connect_to()
+            .await?
+            .discard_candidate(pb::update::LocalCandidateRequest { id })
+            .await
+            .rewrap_err()?;
+        Ok(())
+    }
+
+    /// Read persistent host state after reconnecting to an installation.
+    /// # Errors
+    /// Fails on bundle I/O, transport errors, or rejection by the update service.
+    pub async fn local_candidate_status(&self, id: String) -> anyhow::Result<String> {
+        Ok(self.local_candidate_state(id).await?.phase)
+    }
+
+    /// Read verified candidate metadata and installation state from the host.
+    /// # Errors
+    /// Fails on bundle I/O, transport errors, or rejection by the update service.
+    pub async fn local_candidate_state(
+        &self,
+        id: String,
+    ) -> anyhow::Result<pb::update::LocalImportResponse> {
+        Ok(self
+            .connect_to()
+            .await?
+            .candidate_status(pb::update::LocalCandidateRequest { id })
+            .await
+            .rewrap_err()?
+            .into_inner())
+    }
+
+    /// Install a previously verified local candidate.
+    /// # Errors
+    /// Fails on bundle I/O, transport errors, or rejection by the update service.
+    pub async fn install_local_candidate(&self, id: String) -> anyhow::Result<()> {
+        let mut stream = self
+            .connect_to()
+            .await?
+            .install_candidate(pb::update::LocalCandidateRequest { id })
+            .await
+            .rewrap_err()?
+            .into_inner();
+        while let Some(event) = stream.message().await.rewrap_err()? {
+            if let Some(output) = event.output {
+                info!("{output}");
+            }
+            if let Some(error) = event.error {
+                info!("{error}");
+            }
+        }
+        check_trailers(stream).await?;
+        Ok(())
+    }
+
     /// Install image on ghaf-host from a manifest path.
     /// # Errors
     /// Fails if remote execution of `ota-update` tool failed, or on network IO errors
