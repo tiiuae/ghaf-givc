@@ -124,7 +124,8 @@ _: {
                   }
                   ''
                     mkdir -p $out
-                    dd if=/dev/zero of=root.raw bs=1M count=8
+                    # Exercise the final partial direct-I/O block as well as full blocks.
+                    dd if=/dev/zero of=root.raw bs=4096 count=2049
                     truncate -s 8M verity.raw
                     veritysetup format --salt=0123456789abcdef0123456789abcdef \
                       --root-hash-file=root.hash root.raw verity.raw
