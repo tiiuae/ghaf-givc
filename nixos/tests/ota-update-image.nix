@@ -103,6 +103,7 @@ _: {
               target = "test-target";
               artifactId = "artifact";
               trustArgs = "--signature ${suDir}/manifest.json.sig --trusted-key ${suDir}/update.pub --uki-trusted-cert ${suDir}/db.crt --target ${target} --accepted-generation-file /var/lib/ota-test/accepted-generation";
+              localTrustArgs = "--trusted-key ${suDir}/update.pub --uki-trusted-cert ${suDir}/db.crt --target ${target} --accepted-generation-file /var/lib/ota-test/accepted-generation";
               tamperedTrustArgs = "--signature /tmp/tampered-manifest/manifest.json.sig --trusted-key ${suDir}/update.pub --uki-trusted-cert ${suDir}/db.crt --target ${target} --accepted-generation-file /var/lib/ota-test/accepted-generation";
               badSignatureTrustArgs = "--signature /tmp/bad-manifest.sig --trusted-key ${suDir}/update.pub --uki-trusted-cert ${suDir}/db.crt --target ${target} --accepted-generation-file /var/lib/ota-test/accepted-generation";
               wrongTargetTrustArgs = "--signature ${suDir}/manifest.json.sig --trusted-key ${suDir}/update.pub --uki-trusted-cert ${suDir}/db.crt --target wrong-target --accepted-generation-file /var/lib/ota-test/accepted-generation";
@@ -290,22 +291,22 @@ _: {
                   import json
                   machine.succeed("mkdir -p /persist/sysupdate; cp -a ${suDir} /tmp/offline-ssd; chmod -R u+w /tmp/offline-ssd")
                   machine.succeed("jq -cn --rawfile manifest /tmp/offline-ssd/manifest.json --arg signature \"$(od -An -v -tx1 /tmp/offline-ssd/manifest.json.sig | tr -d ' \\n')\" '{manifest: $manifest, signature: $signature}' >/tmp/offline-header")
-                  admission = json.loads(machine.succeed("${ota-update} image local prepare ${trustArgs} </tmp/offline-header"))
+                  admission = json.loads(machine.succeed("${ota-update} image local prepare ${localTrustArgs} </tmp/offline-header"))
                   candidate_id = admission["id"]
                   machine.succeed(f"(cat /tmp/offline-header; for kind in root verity kernel; do cat /tmp/offline-ssd/$(jq -r --arg kind \"$kind\" '.[$kind].file' /tmp/offline-ssd/manifest.json); done) | ${ota-update} image local receive --id {candidate_id}")
                   machine.succeed("rm -rf /tmp/offline-ssd")
                   root_name = machine.succeed("jq -r .root.file ${suDir}/manifest.json").strip()
                   source_root = f"/persist/sysupdate/local/{candidate_id}/{root_name}"
                   machine.succeed(f"printf x | dd of={source_root} bs=1 count=1 conv=notrunc")
-                  machine.fail(f"${ota-update} image local accept --id {candidate_id} ${trustArgs}")
+                  machine.fail(f"${ota-update} image local accept --id {candidate_id} ${localTrustArgs}")
                   machine.fail(f"test -e /persist/ota-local/candidates/{candidate_id}")
                   machine.succeed(f"cp ${suDir}/{root_name} {source_root}")
                   machine.succeed(f"mv {source_root} {source_root}.save; ln -s {source_root}.save {source_root}")
-                  machine.fail(f"${ota-update} image local accept --id {candidate_id} ${trustArgs}")
+                  machine.fail(f"${ota-update} image local accept --id {candidate_id} ${localTrustArgs}")
                   machine.succeed(f"rm {source_root}; mv {source_root}.save {source_root}")
-                  machine.succeed(f"${ota-update} image local accept --id {candidate_id} ${trustArgs}")
+                  machine.succeed(f"${ota-update} image local accept --id {candidate_id} ${localTrustArgs}")
                   candidate_manifest = f"/persist/ota-local/candidates/{candidate_id}/manifest.json"
-                  machine.fail(f"${ota-update} image --dry-run local install --id {candidate_id} ${trustArgs}")
+                  machine.fail(f"${ota-update} image --dry-run local install --id {candidate_id} ${localTrustArgs}")
                   machine.succeed(f"${ota-update} image validate --manifest {candidate_manifest} ${trustArgs}")
                   machine.succeed(f"rm -rf /persist/sysupdate/local/{candidate_id}")
                   machine.succeed(f"${ota-update} image validate --manifest {candidate_manifest} ${trustArgs}")
@@ -318,11 +319,15 @@ _: {
                   assert "root_empty" in output, "dry-run should not rename volumes"
 
               with subtest("install"):
-                  machine.succeed(f"${ota-update} image local install --id {candidate_id} ${trustArgs}")
-                  state = json.loads(machine.succeed(f"${ota-update} image local status --id {candidate_id}"))
+                  machine.succeed(f"${ota-update} image local install --id {candidate_id} ${localTrustArgs}")
+                  state = json.loads(machine.succeed(f"${ota-update} image local status --id {candidate_id} --accepted-generation-file /var/lib/ota-test/accepted-generation"))
                   assert state["phase"] == "restart-required", state
+                  machine.succeed("printf '${toString generation}\\n' > /var/lib/ota-test/accepted-generation")
+                  accepted = json.loads(machine.succeed(f"${ota-update} image local status --id {candidate_id} --accepted-generation-file /var/lib/ota-test/accepted-generation"))
+                  assert accepted["phase"] == "accepted", accepted
+                  machine.succeed("printf '1\\n' > /var/lib/ota-test/accepted-generation")
                   machine.fail(f"test -f /persist/ota-local/candidates/{candidate_id}/{root_name}")
-                  machine.succeed(f"${ota-update} image local install --id {candidate_id} ${trustArgs}")
+                  machine.succeed(f"${ota-update} image local install --id {candidate_id} ${localTrustArgs}")
 
                   output = machine.succeed("lvs --noheadings -o lv_name pool | sort")
                   print(f"LVs after install:\n{output}")
@@ -359,6 +364,11 @@ _: {
                   assert f"verity_${version}_{hash_fragment}" not in output, f"verity slot should have been removed: {output}"
                   assert "root_empty" in output, f"Expected root_empty_* after remove: {output}"
                   assert "verity_empty" in output, f"Expected verity_empty_* after remove: {output}"
+
+              with subtest("plain manifest install into existing empty slots"):
+                  machine.succeed("${ota-update} image install --manifest ${suDir}/manifest.json ${trustArgs}")
+                  machine.succeed(f"test -f /boot/EFI/Linux/ghaf-${version}-{hash_fragment}+3.efi")
+                  machine.succeed(f"${ota-update} image remove --version ${version} --hash {hash_fragment}")
 
               with subtest("status after remove"):
                   status = machine.succeed("${ota-update} image status")

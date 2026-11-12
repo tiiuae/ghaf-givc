@@ -19,10 +19,6 @@ use std::path::{Path, PathBuf};
 /// the privileged update service; never forward them from an unprivileged RPC
 /// caller.
 pub struct TrustArgs {
-    /// Detached raw Ed25519 signature (defaults to MANIFEST.sig)
-    #[arg(long)]
-    signature: Option<PathBuf>,
-
     /// Trusted Ed25519 key: 32 raw bytes without a newline, or 64 hex characters
     #[arg(long, env = "GHAF_UPDATE_TRUSTED_KEY")]
     trusted_key: PathBuf,
@@ -61,12 +57,6 @@ impl TrustArgs {
             allow_downgrade: self.allow_downgrade,
         }
     }
-
-    fn signature_path(&self, manifest: &std::path::Path) -> PathBuf {
-        self.signature
-            .clone()
-            .unwrap_or_else(|| default_signature_path(manifest))
-    }
 }
 
 #[derive(Debug, Parser)]
@@ -90,6 +80,9 @@ pub enum ImageAction {
     Install {
         #[arg(long)]
         manifest: PathBuf,
+        /// Detached raw Ed25519 signature (defaults to MANIFEST.sig)
+        #[arg(long)]
+        signature: Option<PathBuf>,
         #[command(flatten)]
         trust: TrustArgs,
     },
@@ -98,6 +91,9 @@ pub enum ImageAction {
     Validate {
         #[arg(long)]
         manifest: PathBuf,
+        /// Detached raw Ed25519 signature (defaults to MANIFEST.sig)
+        #[arg(long)]
+        signature: Option<PathBuf>,
         #[command(flatten)]
         trust: TrustArgs,
     },
@@ -139,6 +135,12 @@ pub enum LocalAction {
     Status {
         #[arg(long)]
         id: String,
+        #[arg(
+            long,
+            env = "GHAF_ACCEPTED_GENERATION_FILE",
+            default_value = "/persist/common/ota/accepted-generation"
+        )]
+        accepted_generation_file: PathBuf,
     },
     DiscardAdmission {
         #[arg(long)]
@@ -157,10 +159,9 @@ impl LocalAction {
         let shared = Path::new(local::SHARED);
         match self {
             Self::RecoverHost => {
-                local::recover(root, ".verifying-")?;
-                local::recover(&root.join("admissions"), "")?;
+                local::recover_host(root, true)?;
             }
-            Self::RecoverReceived => local::recover(shared, ".receiving-")?,
+            Self::RecoverReceived => local::recover_received(shared, true)?,
             Self::Prepare { trust } => {
                 let metadata = local::read_metadata(&mut std::io::stdin().lock())?;
                 let candidate =
@@ -180,9 +181,12 @@ impl LocalAction {
             Self::Install { id, trust } => {
                 local::install(root, &id, &trust.validation(Path::new(""))).await?;
             }
-            Self::Status { id } => println!(
+            Self::Status {
+                id,
+                accepted_generation_file,
+            } => println!(
                 "{}",
-                serde_json::json!({"phase": local::status(root, &id)?, "candidate": local::candidate(root, &id)?})
+                serde_json::json!({"phase": local::status(root, &id, &accepted_generation_file)?, "candidate": local::candidate(root, &id)?})
             ),
             Self::DiscardAdmission { id } => local::discard_import(root, &id)?,
             Self::DiscardReceived { id } => local::discard(shared, &id)?,
@@ -202,13 +206,21 @@ impl ImageUpdate {
                 );
                 action.handle().await
             }
-            ImageAction::Install { manifest, trust } => {
-                let signature = trust.signature_path(&manifest);
+            ImageAction::Install {
+                manifest,
+                trust,
+                signature,
+            } => {
+                let signature = signature.unwrap_or_else(|| default_signature_path(&manifest));
                 install_from_manifest_path(&manifest, &trust.validation(&signature), self.dry_run)
                     .await
             }
-            ImageAction::Validate { manifest, trust } => {
-                let signature = trust.signature_path(&manifest);
+            ImageAction::Validate {
+                manifest,
+                trust,
+                signature,
+            } => {
+                let signature = signature.unwrap_or_else(|| default_signature_path(&manifest));
                 validate_signed_manifest_path(&manifest, &trust.validation(&signature)).await?;
                 println!("Manifest, signature, target, artifacts, and UKI validation successful.");
                 Ok(())

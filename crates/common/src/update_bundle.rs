@@ -11,6 +11,8 @@ use rustix::fs::{Mode, OFlags, open, openat};
 pub const MAX_MANIFEST: usize = 256 * 1024;
 pub const CHUNK_SIZE: usize = 256 * 1024;
 
+/// # Errors
+/// Rejects empty, reserved, escaping, or unsupported filenames.
 pub fn check_name(name: &str) -> anyhow::Result<()> {
     ensure!(
         !name.is_empty()
@@ -25,6 +27,8 @@ pub fn check_name(name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// # Errors
+/// Fails if the path cannot be opened as a directory without following symlinks.
 pub fn directory(path: &Path) -> anyhow::Result<File> {
     Ok(open(
         path,
@@ -34,6 +38,8 @@ pub fn directory(path: &Path) -> anyhow::Result<File> {
     .into())
 }
 
+/// # Errors
+/// Fails for an invalid name or a directory that cannot be opened safely.
 pub fn subdirectory(parent: &File, name: &str) -> anyhow::Result<File> {
     check_name(name)?;
     Ok(openat(
@@ -45,6 +51,8 @@ pub fn subdirectory(parent: &File, name: &str) -> anyhow::Result<File> {
     .into())
 }
 
+/// # Errors
+/// Fails for an invalid name, symlink, special file, or inaccessible file.
 pub fn regular_file(parent: &File, name: &str) -> anyhow::Result<File> {
     check_name(name)?;
     // NONBLOCK prevents a substituted FIFO from hanging before the type check.
@@ -63,6 +71,8 @@ pub fn regular_file(parent: &File, name: &str) -> anyhow::Result<File> {
     Ok(file)
 }
 
+/// # Errors
+/// Fails on an I/O error or when the file exceeds the size limit.
 pub fn read_bounded(file: File, limit: usize) -> anyhow::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     file.take((limit + 1) as u64).read_to_end(&mut bytes)?;
