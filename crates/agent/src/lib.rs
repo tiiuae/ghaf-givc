@@ -34,6 +34,24 @@ pub mod auth {
     use tracing::debug;
     use x509_parser::prelude::*;
 
+    #[cfg(test)]
+    mod tests {
+        use super::SecurityInfo;
+        use std::net::{IpAddr, Ipv4Addr};
+
+        #[test]
+        fn certificate_ipv4_san_matches_ipv4_mapped_peer_address() {
+            let info = SecurityInfo {
+                enabled: true,
+                dns_names: Vec::new(),
+                ip_addrs: vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))],
+            };
+            let peer = IpAddr::V6(Ipv4Addr::new(192, 0, 2, 1).to_ipv6_mapped());
+
+            assert!(info.check_address(&peer));
+        }
+    }
+
     type ListenerConnectInfo =
         <tokio_listener::Connection as tonic::transport::server::Connected>::ConnectInfo;
 
@@ -63,7 +81,12 @@ pub mod auth {
 
         #[must_use]
         pub fn check_address(&self, ip: &IpAddr) -> bool {
-            !self.enabled || self.ip_addrs.iter().any(|candidate| candidate == ip)
+            !self.enabled
+                || self.ip_addrs.iter().any(|candidate| {
+                    candidate == ip
+                        || matches!((candidate, ip), (IpAddr::V4(v4), IpAddr::V6(v6)) if v6.to_ipv4() == Some(*v4))
+                        || matches!((candidate, ip), (IpAddr::V6(v6), IpAddr::V4(v4)) if v6.to_ipv4() == Some(*v4))
+                })
         }
 
         #[must_use]
