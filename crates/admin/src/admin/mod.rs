@@ -7,3 +7,5 @@ pub mod entry;
 pub mod policyclient;
 pub mod registry;
 pub mod server;
+
+pub mod local_update;

@@ -8,3 +8,5 @@ pub mod exec;
 pub mod stream;
 pub mod update;
 pub use crate::client::{AdminClient, QueryResult, RegistryAuth};
+
+mod local_update;

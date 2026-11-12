@@ -4,6 +4,7 @@
 pub mod address;
 pub mod query;
 pub mod types;
+pub mod update_bundle;
 
 pub mod pb {
     // Suppress clippy on generated code

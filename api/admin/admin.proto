@@ -162,6 +162,10 @@ service AdminService {
     rpc Discover(update.RegistryDiscoverRequest) returns (update.RegistryDiscoverResponse) {}
     rpc Changelog(update.RegistryChangelogRequest) returns (update.RegistryChangelogResponse) {}
     rpc Pull(update.RegistryPullRequest) returns (stream update.RegistryPullResponse) {}
+    rpc ImportBundle(stream update.LocalImportRequest) returns (stream update.LocalImportResponse) {}
+    rpc DiscardCandidate(update.LocalCandidateRequest) returns (update.Empty) {}
+    rpc CandidateStatus(update.LocalCandidateRequest) returns (update.LocalImportResponse) {}
+    rpc InstallCandidate(update.LocalCandidateRequest) returns (stream update.ImageInstallResponse) {}
     rpc ImageInstall(update.ImageInstallRequest) returns (stream update.ImageInstallResponse) {}
 
     // Send user notification

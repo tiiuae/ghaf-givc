@@ -213,7 +213,7 @@ fn read_accepted_generation(path: &Path) -> anyhow::Result<u64> {
         .with_context(|| format!("parsing accepted generation in {}", path.display()))
 }
 
-fn validate_install_generation(
+pub(crate) fn validate_install_generation(
     manifest: &Manifest,
     validation: &ValidationConfig<'_>,
 ) -> anyhow::Result<()> {

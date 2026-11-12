@@ -10,6 +10,7 @@ version = "0.0.1"
 ignored = ["tonic-prost"]
 
 [dependencies]
+rustix = { version = "1", features = ["fs"] }
 anyhow.workspace = true
 glib = { version = "*", optional = true, features = [] }
 prost = "0.14"
