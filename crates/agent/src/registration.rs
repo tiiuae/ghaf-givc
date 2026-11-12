@@ -107,7 +107,7 @@ async fn register_agent(config: &AgentConfig, backend: &ZbusBackend) -> Result<(
 
     let admin = admin_client(config)?;
     let unit_status = backend
-        .get_unit_snapshot(&agent_service_name)
+        .get_unit_snapshot(agent_service_name)
         .await
         .with_context(|| format!("failed to read unit snapshot for {agent_service_name}"))?;
     admin
