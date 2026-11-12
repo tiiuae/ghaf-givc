@@ -591,13 +591,13 @@ fn changelog_output(stdout: &[u8]) -> String {
     let mut after_done = false;
     let mut output = Vec::new();
     for line in stdout.split(|byte| *byte == b'\n') {
-        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(line) {
-            if let Some(event) = value.get("event").and_then(serde_json::Value::as_str) {
-                if event == "done" {
-                    after_done = true;
-                }
-                continue;
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(line)
+            && let Some(event) = value.get("event").and_then(serde_json::Value::as_str)
+        {
+            if event == "done" {
+                after_done = true;
             }
+            continue;
         }
         if after_done {
             output.push(String::from_utf8_lossy(line).into_owned());
