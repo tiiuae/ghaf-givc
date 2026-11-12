@@ -13,6 +13,7 @@ struct FakeBackend {
     snapshot_sequence: Arc<std::sync::Mutex<std::collections::VecDeque<Snapshot>>>,
     running_units: Arc<std::sync::Mutex<Vec<RunningUnit>>>,
     start_error: Arc<std::sync::Mutex<Option<String>>>,
+    snapshot_error: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 #[tonic::async_trait]
@@ -22,6 +23,9 @@ impl SystemdBackend for FakeBackend {
             .lock()
             .unwrap()
             .push(BackendCall::GetUnitSnapshot(name.to_owned()));
+        if let Some(error) = self.snapshot_error.lock().unwrap().clone() {
+            anyhow::bail!(error);
+        }
         if let Some(snapshot) = self.snapshot_sequence.lock().unwrap().pop_front() {
             return Ok(snapshot);
         }
@@ -162,6 +166,29 @@ fn whitelist_matches_bare_names() {
     assert!(manager.is_unit_whitelisted("foot@0.service"));
 }
 
+#[test]
+fn whitelist_matches_only_numeric_service_instances() {
+    let manager = ServiceManager::new(
+        vec!["foo.service".to_owned()],
+        vec![],
+        FakeBackend::default(),
+    );
+
+    for accepted in ["foo.service", "foo@0.service", "foo@123.service"] {
+        assert!(manager.is_unit_whitelisted(accepted), "{accepted}");
+    }
+    for rejected in [
+        "foo@.service",
+        "foo@bar.service",
+        "foo@1.timer",
+        "foo@1.service.extra",
+        "foo@1@2.service",
+        "foobar@1.service",
+    ] {
+        assert!(!manager.is_unit_whitelisted(rejected), "{rejected}");
+    }
+}
+
 #[tokio::test]
 async fn start_unit_restarts_whitelisted_unit() {
     let backend = FakeBackend::default();
@@ -214,6 +241,26 @@ async fn stop_unit_waits_for_exit_snapshot() {
         vec![
             BackendCall::StopUnit("foo.service".to_owned()),
             BackendCall::GetUnitSnapshot("foo.service".to_owned()),
+            BackendCall::GetUnitSnapshot("foo.service".to_owned()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn stop_unit_returns_dead_snapshot_when_unit_disappears() {
+    let backend = FakeBackend::default();
+    *backend.snapshot_error.lock().unwrap() = Some("unit not found".to_owned());
+    let manager = ServiceManager::new(vec!["foo.service".to_owned()], vec![], backend.clone());
+
+    let snapshot = manager.stop_unit("foo.service").await.unwrap();
+
+    assert_eq!(snapshot.name, "foo.service");
+    assert_eq!(snapshot.active_state, "inactive");
+    assert_eq!(snapshot.sub_state, "dead");
+    assert_eq!(
+        *backend.calls.lock().unwrap(),
+        vec![
+            BackendCall::StopUnit("foo.service".to_owned()),
             BackendCall::GetUnitSnapshot("foo.service".to_owned()),
         ]
     );

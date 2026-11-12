@@ -442,8 +442,7 @@ async fn monitor_sample(
         .map_err(|err| Status::internal(format!("cannot monitor unit {name}: {err}")))?;
 
     let total_cpu = (stat.utime + stat.stime) as f64 / procfs::ticks_per_second() as f64;
-    let elapsed = started.elapsed().as_secs_f64().max(0.001);
-    let cpu_usage = (total_cpu / elapsed) * 100.0;
+    let cpu_usage = cpu_usage_percent(total_cpu, started.elapsed().as_secs_f64());
     let memory_usage = if meminfo.mem_total == 0 {
         0.0
     } else {
@@ -454,6 +453,18 @@ async fn monitor_sample(
         cpu_usage,
         memory_usage,
     })
+}
+
+fn cpu_usage_percent(cpu_seconds: f64, elapsed_seconds: f64) -> f64 {
+    (cpu_seconds / elapsed_seconds.max(0.001)) * 100.0
+}
+
+fn validate_job_result(unit_name: &str, result: Option<&str>) -> Result<()> {
+    match result {
+        Some("done") => Ok(()),
+        Some(result) => bail!("systemd job for {unit_name} failed: {result}"),
+        None => bail!("systemd job ended without a result for {unit_name}"),
+    }
 }
 
 fn build_exec_start_value(command: &[String]) -> Result<zbus::zvariant::OwnedValue> {
@@ -724,6 +735,45 @@ mod application_validation_tests {
     }
 }
 
+#[cfg(test)]
+mod systemd_parity_tests {
+    use super::*;
+
+    #[test]
+    fn systemd_job_result_is_checked() {
+        assert!(validate_job_result("test.service", Some("done")).is_ok());
+        for result in [Some("failed"), Some("timeout"), None] {
+            let error = validate_job_result("test.service", result).unwrap_err();
+            assert!(error.to_string().contains("test.service"));
+            if let Some(result) = result {
+                assert!(error.to_string().contains(result));
+            }
+        }
+    }
+
+    #[test]
+    fn cpu_usage_percent_allows_multi_core_values() {
+        assert_eq!(cpu_usage_percent(2.5, 1.0), 250.0);
+        assert_eq!(cpu_usage_percent(1.0, 0.0), 100_000.0);
+    }
+
+    #[test]
+    fn service_errors_map_to_expected_grpc_codes() {
+        assert_eq!(
+            map_err(anyhow::anyhow!("unit is not whitelisted")).code(),
+            tonic::Code::PermissionDenied
+        );
+        assert_eq!(
+            map_err(anyhow::anyhow!("unit not found")).code(),
+            tonic::Code::NotFound
+        );
+        assert_eq!(
+            map_err(anyhow::anyhow!("systemd bus disconnected")).code(),
+            tonic::Code::Internal
+        );
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ZbusBackend {
     conn: zbus::Connection,
@@ -895,32 +945,42 @@ impl SystemdBackend for ZbusBackend {
         while let Some(signal) = jobs.next().await {
             let args = signal.args()?;
             if args.job() == &job {
-                let result = args.result();
-                if result != "done" {
-                    bail!("failed to start app {name}: {result}");
-                }
-                return Ok(());
+                return validate_job_result(name, Some(args.result()));
             }
         }
-        bail!("systemd job ended without a result for {name}");
+        validate_job_result(name, None)
     }
 
     async fn restart_unit(&self, name: &str) -> Result<()> {
-        let _ = self
-            .manager()
-            .await?
+        let manager = self.manager().await?;
+        let mut jobs = manager.receive_job_removed().await?;
+        let job = manager
             .restart_unit(name.to_owned(), "replace".to_owned())
             .await?;
-        Ok(())
+
+        while let Some(signal) = jobs.next().await {
+            let args = signal.args()?;
+            if args.job() == &job {
+                return validate_job_result(name, Some(args.result()));
+            }
+        }
+        validate_job_result(name, None)
     }
 
     async fn stop_unit(&self, name: &str) -> Result<()> {
-        let _ = self
-            .manager()
-            .await?
+        let manager = self.manager().await?;
+        let mut jobs = manager.receive_job_removed().await?;
+        let job = manager
             .stop_unit(name.to_owned(), "replace".to_owned())
             .await?;
-        Ok(())
+
+        while let Some(signal) = jobs.next().await {
+            let args = signal.args()?;
+            if args.job() == &job {
+                return validate_job_result(name, Some(args.result()));
+            }
+        }
+        validate_job_result(name, None)
     }
 
     async fn kill_unit(&self, name: &str, who: &str, signal: i32) -> Result<()> {
@@ -1047,6 +1107,7 @@ where
 
 fn map_err(err: anyhow::Error) -> Status {
     // Preserve domain-specific status codes for systemd errors.
+    // TODO: Replace string matching with typed backend errors in a separate follow-up.
     if err.to_string().contains("whitelisted") {
         Status::permission_denied(err.to_string())
     } else if err.to_string().contains("not found") {
