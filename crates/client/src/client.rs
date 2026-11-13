@@ -82,18 +82,13 @@ impl AdminClient {
     pub async fn register_service(
         &self,
         name: String,
+        parent: String,
         ty: UnitType,
         endpoint: EndpointEntry,
         status: UnitStatus,
     ) -> anyhow::Result<()> {
-        // Convert everything into wire format
-        let request = pb::admin::RegistryRequest {
-            name,
-            parent: String::new(),
-            r#type: ty.into(),
-            transport: Some(endpoint.into()),
-            state: Some(status.into()),
-        };
+        let request =
+            crate::registration::registration_rpc_request(name, parent, ty, endpoint, status);
         let response = self
             .connect_to()
             .await?
@@ -539,7 +534,7 @@ impl AdminClient {
         let request = pb::update::SetGenerationRequest {
             update: Some(pb::update::set_generation_request::Update::Cachix(cachix)),
         };
-        let mut stream = self
+        let stream = self
             .connect_to()
             .await?
             .set_generation(request)

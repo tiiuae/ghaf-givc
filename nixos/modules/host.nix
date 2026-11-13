@@ -188,9 +188,36 @@ in
         };
       };
 
-      update.enable = mkEnableOption ''
-        update module for OTA-related actions on the host via the GIVC agent.
-      '';
+      update = {
+        enable = mkEnableOption ''
+          update module for OTA-related actions on the host via the GIVC agent.
+        '';
+        signaturePath = mkOption {
+          type = types.str;
+          default = "";
+          description = "Optional detached manifest signature path for image updates.";
+        };
+        trustedKey = mkOption {
+          type = types.str;
+          default = "";
+          description = "Trusted Ed25519 update key path.";
+        };
+        ukiTrustedCert = mkOption {
+          type = types.str;
+          default = "";
+          description = "Trusted UKI Authenticode certificate path.";
+        };
+        target = mkOption {
+          type = types.str;
+          default = "";
+          description = "Trusted update target identifier.";
+        };
+        acceptedGenerationFile = mkOption {
+          type = types.str;
+          default = "/persist/common/ota/accepted-generation";
+          description = "Trusted rollback state file.";
+        };
+      };
 
       policy = mkOption {
         type = policyClientSubmodule;
@@ -281,8 +308,8 @@ in
       serviceConfig = {
         Type = "exec";
         ExecStart =
-          "${givc-agent}/bin/givc-agent -config /etc/givc-agent/config.json"
-          + optionalString cfg.debug " -debug";
+          "${givc-agent}/bin/givc-agent --config /etc/givc-agent/config.json"
+          + optionalString cfg.debug " --debug";
         Restart = "on-failure";
         TimeoutStopSec = 5;
         RestartSec = 1;

@@ -1,0 +1,283 @@
+// SPDX-FileCopyrightText: 2025-2026 TII (SSRC) and the Ghaf contributors
+// SPDX-License-Identifier: Apache-2.0
+
+use anyhow::Context;
+
+pub mod access_control;
+pub mod cli;
+pub mod config;
+pub mod ctap;
+pub mod eventproxy;
+pub mod exec;
+pub mod hwid;
+pub mod locale;
+pub mod notifier;
+pub mod policyadmin;
+pub mod registration;
+pub mod runtime;
+pub mod service;
+pub mod servicemanager;
+pub mod socketproxy;
+pub mod statsmanager;
+pub mod update;
+pub mod wifimanager;
+
+pub mod auth {
+    use std::convert::TryFrom;
+    use std::net::IpAddr;
+
+    use http::Request as HttpRequest;
+    use tonic::Status;
+    use tonic::body::Body;
+    use tonic::transport::server::{TcpConnectInfo, TlsConnectInfo};
+    use tonic_middleware::RequestInterceptor;
+    use tracing::debug;
+    use x509_parser::prelude::*;
+
+    #[cfg(test)]
+    mod tests {
+        use super::SecurityInfo;
+        use std::net::{IpAddr, Ipv4Addr};
+
+        #[test]
+        fn certificate_ipv4_san_matches_ipv4_mapped_peer_address() {
+            let info = SecurityInfo {
+                enabled: true,
+                dns_names: Vec::new(),
+                ip_addrs: vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))],
+            };
+            let peer = IpAddr::V6(Ipv4Addr::new(192, 0, 2, 1).to_ipv6_mapped());
+
+            assert!(info.check_address(&peer));
+        }
+    }
+
+    type ListenerConnectInfo =
+        <tokio_listener::Connection as tonic::transport::server::Connected>::ConnectInfo;
+
+    #[derive(Clone, Debug)]
+    pub struct SecurityInfo {
+        enabled: bool,
+        dns_names: Vec<String>,
+        ip_addrs: Vec<IpAddr>,
+    }
+
+    impl SecurityInfo {
+        fn new() -> Self {
+            Self {
+                enabled: true,
+                dns_names: Vec::new(),
+                ip_addrs: Vec::new(),
+            }
+        }
+
+        #[must_use]
+        pub fn disabled() -> Self {
+            Self {
+                enabled: false,
+                ..Self::new()
+            }
+        }
+
+        #[must_use]
+        pub fn check_address(&self, ip: &IpAddr) -> bool {
+            !self.enabled
+                || self.ip_addrs.iter().any(|candidate| {
+                    candidate == ip
+                        || matches!((candidate, ip), (IpAddr::V4(v4), IpAddr::V6(v6)) if v6.to_ipv4() == Some(*v4))
+                        || matches!((candidate, ip), (IpAddr::V6(v6), IpAddr::V4(v4)) if v6.to_ipv4() == Some(*v4))
+                })
+        }
+
+        #[must_use]
+        pub fn check_hostname(&self, hostname: &str) -> bool {
+            !self.enabled || self.dns_names.iter().any(|candidate| candidate == hostname)
+        }
+
+        #[must_use]
+        pub fn hostname(&self) -> Option<&str> {
+            self.dns_names.first().map(String::as_str)
+        }
+    }
+
+    impl TryFrom<&[u8]> for SecurityInfo {
+        type Error = x509_parser::error::X509Error;
+
+        fn try_from(cert: &[u8]) -> Result<Self, Self::Error> {
+            let mut this = Self::new();
+            let (_, x509) = parse_x509_certificate(cert)?;
+            for ext in x509.extensions() {
+                if let ParsedExtension::SubjectAlternativeName(san) = ext.parsed_extension() {
+                    for name in &san.general_names {
+                        match name {
+                            GeneralName::DNSName(s) => this.dns_names.push((*s).to_string()),
+                            GeneralName::IPAddress(b) => match b.len() {
+                                4 => {
+                                    let b = <[u8; 4]>::try_from(*b).unwrap();
+                                    this.ip_addrs.push(IpAddr::from(b));
+                                }
+                                16 => {
+                                    let b = <[u8; 16]>::try_from(*b).unwrap();
+                                    this.ip_addrs.push(IpAddr::from(b));
+                                }
+                                _ => (),
+                            },
+                            _ => (),
+                        }
+                    }
+                }
+            }
+            Ok(this)
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct Authenticator {
+        pub use_tls: bool,
+    }
+
+    fn security_info_from_request<T>(req: &HttpRequest<T>) -> Result<SecurityInfo, Status> {
+        let certs = req
+            .extensions()
+            .get::<TlsConnectInfo<ListenerConnectInfo>>()
+            .and_then(TlsConnectInfo::peer_certs)
+            .or_else(|| {
+                req.extensions()
+                    .get::<TlsConnectInfo<TcpConnectInfo>>()
+                    .and_then(TlsConnectInfo::peer_certs)
+            })
+            .ok_or_else(|| Status::unauthenticated("No peer certificate"))?;
+        certs
+            .iter()
+            .find_map(|cert| SecurityInfo::try_from(cert.as_ref()).ok())
+            .ok_or_else(|| Status::unauthenticated("Can't parse certificate"))
+    }
+
+    enum PeerTransport {
+        Tcp(IpAddr),
+        NonTcp,
+        Missing,
+    }
+
+    fn transport_info_from_request<T>(req: &HttpRequest<T>) -> PeerTransport {
+        let listener_info = req
+            .extensions()
+            .get::<TlsConnectInfo<ListenerConnectInfo>>()
+            .map(TlsConnectInfo::get_ref);
+        match listener_info {
+            Some(ListenerConnectInfo::Tcp(addr)) => {
+                return addr
+                    .remote_addr()
+                    .map(|addr| PeerTransport::Tcp(addr.ip()))
+                    .unwrap_or(PeerTransport::Missing);
+            }
+            Some(_) => return PeerTransport::NonTcp,
+            None => (),
+        }
+
+        req.extensions()
+            .get::<TlsConnectInfo<TcpConnectInfo>>()
+            .map(|info| {
+                info.get_ref()
+                    .remote_addr()
+                    .map(|addr| PeerTransport::Tcp(addr.ip()))
+                    .unwrap_or(PeerTransport::Missing)
+            })
+            .unwrap_or(PeerTransport::Missing)
+    }
+
+    #[tonic::async_trait]
+    impl RequestInterceptor for Authenticator {
+        async fn intercept(&self, mut req: HttpRequest<Body>) -> Result<HttpRequest<Body>, Status> {
+            if self.use_tls {
+                let security_info = security_info_from_request(&req)?;
+
+                match transport_info_from_request(&req) {
+                    PeerTransport::Tcp(ip) => {
+                        if security_info.check_address(&ip) {
+                            debug!("TCP: IP {ip} verified against certificate");
+                            req.extensions_mut().insert(security_info);
+                            Ok(req)
+                        } else {
+                            Err(Status::permission_denied(format!(
+                                "IP {ip} not in certificate SAN"
+                            )))
+                        }
+                    }
+                    PeerTransport::NonTcp => {
+                        debug!("non-TCP transport, skipping certificate IP check");
+                        req.extensions_mut().insert(security_info);
+                        Ok(req)
+                    }
+                    PeerTransport::Missing => Err(Status::unauthenticated("No transport info")),
+                }
+            } else {
+                req.extensions_mut().insert(SecurityInfo::disabled());
+                Ok(req)
+            }
+        }
+    }
+}
+
+/// Init logging.
+///
+/// # Errors
+///
+/// Will return `Err` if failed to initialize logging.
+pub fn trace_init(debug: bool) -> anyhow::Result<()> {
+    use std::env;
+    use tracing::Level;
+    use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt};
+
+    let env_filter = if debug && env::var("GIVC_LOG").is_err() {
+        EnvFilter::from(default_log_directive(debug))
+    } else {
+        EnvFilter::try_from_env("GIVC_LOG")
+            .unwrap_or_else(|_| EnvFilter::from(default_log_directive(debug)))
+    };
+    let is_debug_log_level = env_filter
+        .max_level_hint()
+        .map_or_else(|| false, |level| level >= Level::DEBUG);
+
+    let output = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_target(is_debug_log_level)
+        .with_file(is_debug_log_level)
+        .with_line_number(is_debug_log_level)
+        .with_thread_ids(is_debug_log_level);
+
+    let output = if is_debug_log_level {
+        output.pretty().boxed()
+    } else {
+        output.boxed()
+    };
+
+    if env::var("INVOCATION_ID").is_ok() {
+        let journald = tracing_journald::layer()
+            .map(|layer| layer.with_filter(env_filter.clone()).boxed())
+            .unwrap_or(output.with_filter(env_filter).boxed());
+
+        tracing::subscriber::set_global_default(tracing_subscriber::registry().with(journald))
+            .context("tracing shouldn't already have been set up")?;
+    } else {
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::registry().with(output.with_filter(env_filter)),
+        )
+        .context("tracing shouldn't already have been set up")?;
+    }
+
+    Ok(())
+}
+
+fn default_log_directive(debug: bool) -> &'static str {
+    if debug { "debug" } else { "warn" }
+}
+
+#[cfg(test)]
+mod logging_tests {
+    #[test]
+    fn default_log_level_matches_go_warn_level() {
+        assert_eq!(super::default_log_directive(false), "warn");
+        assert_eq!(super::default_log_directive(true), "debug");
+    }
+}

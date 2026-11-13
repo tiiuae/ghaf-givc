@@ -18,7 +18,7 @@ pub(crate) struct NixosVersion {
 }
 
 static JSON_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?s)cat <<EOF\s*(\{.*?\})\s*EOF").expect("Invalid HEREDOC regex")
+    Regex::new(r"(?s)cat <<(?:'EOF'|EOF)\s*(\{.*?\})\s*EOF").expect("Invalid HEREDOC regex")
 });
 
 static KERNEL_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -53,6 +53,52 @@ pub(crate) async fn read_nixos_version(path: &Path) -> anyhow::Result<NixosVersi
             "Can't find embedded json with version info in {path}",
             path = path.display()
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_nixos_version;
+    use std::{fs, time::SystemTime};
+
+    #[tokio::test]
+    async fn reads_version_from_quoted_eof_heredoc() {
+        let root = std::env::temp_dir().join(format!(
+            "ota-update-nixos-version-{}-{:?}",
+            std::process::id(),
+            SystemTime::now()
+        ));
+        let script_dir = root.join("sw/bin");
+        fs::create_dir_all(&script_dir).unwrap();
+        fs::write(
+            script_dir.join("nixos-version"),
+            "cat <<'EOF'\n{\"nixosVersion\":\"26.11\"}\nEOF\n",
+        )
+        .unwrap();
+
+        let version = read_nixos_version(&root).await.unwrap();
+        assert_eq!(version.nixos_version, "26.11");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn keeps_reading_unquoted_eof_heredoc() {
+        let root = std::env::temp_dir().join(format!(
+            "ota-update-nixos-version-{}-{:?}",
+            std::process::id(),
+            SystemTime::now()
+        ));
+        let script_dir = root.join("sw/bin");
+        fs::create_dir_all(&script_dir).unwrap();
+        fs::write(
+            script_dir.join("nixos-version"),
+            "cat <<EOF\n{\"nixosVersion\":\"26.11\"}\nEOF\n",
+        )
+        .unwrap();
+
+        let version = read_nixos_version(&root).await.unwrap();
+        assert_eq!(version.nixos_version, "26.11");
+        fs::remove_dir_all(root).unwrap();
     }
 }
 
