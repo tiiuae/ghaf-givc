@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Read;
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use anyhow::{Context, ensure};
@@ -13,16 +15,18 @@ pub const CHUNK_SIZE: usize = 256 * 1024;
 
 /// # Errors
 /// Rejects empty, reserved, escaping, or unsupported filenames.
-pub fn check_name(name: &str) -> anyhow::Result<()> {
+pub fn check_name(name: impl AsRef<OsStr>) -> anyhow::Result<()> {
+    let name = name.as_ref();
+    let bytes = name.as_bytes();
     ensure!(
-        !name.is_empty()
+        !bytes.is_empty()
             && name != "."
             && name != ".."
-            && name.len() <= 255
-            && name
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b)),
-        "invalid bundle filename: {name}"
+            && bytes.len() <= 255
+            && bytes
+                .iter()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(b)),
+        "invalid bundle filename: {name:?}"
     );
     Ok(())
 }
@@ -81,4 +85,35 @@ pub fn read_bounded(file: File, limit: usize) -> anyhow::Result<Vec<u8>> {
         "bundle metadata exceeds {limit} bytes"
     );
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    #[test]
+    fn names_accept_paths_and_reject_escaping_or_non_ascii_bytes() {
+        assert!(check_name(Path::new("root.raw.zst")).is_ok());
+        for name in ["../root", "/root", "nested/root", "", ".", ".."] {
+            assert!(check_name(Path::new(name)).is_err());
+        }
+        assert!(check_name(OsString::from_vec(vec![0xff])).is_err());
+    }
+
+    #[test]
+    fn protocol_phases_keep_cli_labels_and_reject_unknown_values() {
+        use crate::pb::update::LocalUpdatePhase;
+        for (phase, label) in [
+            (LocalUpdatePhase::RestartRequired, "restart-required"),
+            (LocalUpdatePhase::RolledBack, "rolled-back"),
+            (LocalUpdatePhase::Accepted, "accepted"),
+        ] {
+            assert_eq!(phase.to_string(), label);
+            assert_eq!(label.parse::<LocalUpdatePhase>().unwrap(), phase);
+        }
+        assert!(LocalUpdatePhase::try_from(999).is_err());
+        assert!("typo".parse::<LocalUpdatePhase>().is_err());
+    }
 }

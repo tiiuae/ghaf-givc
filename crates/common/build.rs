@@ -29,6 +29,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ".update.LocalCandidate",
                 "#[derive(Deserialize, Serialize)]",
             )
+            .type_attribute(
+                ".update.LocalUpdatePhase",
+                "#[derive(strum::Display, strum::EnumString)] #[strum(serialize_all = \"kebab-case\")]",
+            )
             .compile_protos(&[format!("api/{pkg}/{pkg}.proto").as_str()], &["api"])?;
     }
 

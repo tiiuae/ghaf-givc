@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -164,11 +165,8 @@ func (s *UpdateServer) receiveLocalImport(stream pb.Update_ReceiveLocalImportSer
 	if err := localID(first.Id); err != nil {
 		return err
 	}
-	if err := localMetadata(first.Metadata); err != nil {
+	if err := localMetadata(first.GetMetadata()); err != nil {
 		return err
-	}
-	if len(first.Data) != 0 || first.Finish {
-		return status.Error(codes.InvalidArgument, "expected metadata first")
 	}
 	cmd := exec.CommandContext(ctx, "ota-update", "image", "local", "receive", "--id", first.Id)
 	cmd.WaitDelay = 2 * time.Second
@@ -203,10 +201,10 @@ func (s *UpdateServer) receiveLocalImport(stream pb.Update_ReceiveLocalImportSer
 		waited = true
 		return fmt.Errorf("receiving bundle: %w (process: %v): %s", cause, waitErr, stderr.String())
 	}
-	if err := json.NewEncoder(input).Encode(first.Metadata); err != nil {
+	if err := json.NewEncoder(input).Encode(first.GetMetadata()); err != nil {
 		return receiveError(err)
 	}
-	if err := stream.Send(&pb.LocalImportResponse{Phase: "receiving"}); err != nil {
+	if err := stream.Send(&pb.LocalImportResponse{Phase: pb.LocalUpdatePhase_LOCAL_UPDATE_PHASE_RECEIVING}); err != nil {
 		return err
 	}
 	var received uint64
@@ -222,22 +220,31 @@ func (s *UpdateServer) receiveLocalImport(stream pb.Update_ReceiveLocalImportSer
 		if err != nil {
 			return err
 		}
-		if finished || chunk.Id != "" || chunk.Metadata != nil || len(chunk.Data) > localChunkSize || (chunk.Finish && len(chunk.Data) != 0) {
+		if finished || chunk.Id != "" {
 			return status.Error(codes.InvalidArgument, "invalid local update chunk")
 		}
-		if chunk.Finish {
+		var data []byte
+		switch payload := chunk.Payload.(type) {
+		case *pb.LocalReceiveRequest_Finish:
+			if !payload.Finish {
+				return status.Error(codes.InvalidArgument, "invalid completion marker")
+			}
 			finished = true
 			continue
+		case *pb.LocalReceiveRequest_Data:
+			data = payload.Data
+			if len(data) == 0 || len(data) > localChunkSize {
+				return status.Error(codes.InvalidArgument, "invalid local update chunk size")
+			}
+		default:
+			return status.Error(codes.InvalidArgument, "expected artifact data or completion")
 		}
-		if len(chunk.Data) == 0 {
-			return status.Error(codes.InvalidArgument, "empty local update chunk")
-		}
-		if _, err := input.Write(chunk.Data); err != nil {
+		if _, err := input.Write(data); err != nil {
 			return receiveError(err)
 		}
 		timer.Reset(idle)
-		received += uint64(len(chunk.Data))
-		if err := stream.Send(&pb.LocalImportResponse{Phase: "receiving", Completed: received}); err != nil {
+		received += uint64(len(data))
+		if err := stream.Send(&pb.LocalImportResponse{Phase: pb.LocalUpdatePhase_LOCAL_UPDATE_PHASE_RECEIVING, Completed: received}); err != nil {
 			return err
 		}
 	}
@@ -250,7 +257,7 @@ func (s *UpdateServer) receiveLocalImport(stream pb.Update_ReceiveLocalImportSer
 		return fmt.Errorf("receiving bundle: %w: %s", err, stderr.String())
 	}
 	successful = true
-	return stream.Send(&pb.LocalImportResponse{Phase: "received", Completed: received})
+	return stream.Send(&pb.LocalImportResponse{Phase: pb.LocalUpdatePhase_LOCAL_UPDATE_PHASE_RECEIVED, Completed: received})
 }
 
 func (s *UpdateServer) InstallCandidate(req *pb.LocalCandidateRequest, stream pb.Update_InstallCandidateServer) error {
@@ -306,11 +313,18 @@ func (s *UpdateServer) CandidateStatus(ctx context.Context, req *pb.LocalCandida
 	if err != nil {
 		return nil, err
 	}
-	var state pb.LocalImportResponse
+	var state struct {
+		Phase     string             `json:"phase"`
+		Candidate *pb.LocalCandidate `json:"candidate"`
+	}
 	if err := json.Unmarshal(output, &state); err != nil {
 		return nil, err
 	}
-	return &state, nil
+	phase, ok := pb.LocalUpdatePhase_value["LOCAL_UPDATE_PHASE_"+strings.ToUpper(strings.ReplaceAll(state.Phase, "-", "_"))]
+	if !ok || phase == 0 {
+		return nil, status.Error(codes.Internal, "unknown local update phase")
+	}
+	return &pb.LocalImportResponse{Phase: pb.LocalUpdatePhase(phase), Candidate: state.Candidate}, nil
 }
 
 // localProgress retains only a bounded diagnostic tail. Write never waits for RPC I/O.

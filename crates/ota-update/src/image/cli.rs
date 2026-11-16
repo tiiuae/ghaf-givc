@@ -3,7 +3,7 @@
 
 use super::Version;
 use super::install::{
-    ValidationConfig, default_signature_path, execute_plan, install_from_manifest_path,
+    TrustPolicy, default_signature_path, execute_plan, install_from_manifest_path,
     populate_runtime, validate_signed_manifest_path,
 };
 use super::plan::Plan;
@@ -46,9 +46,8 @@ pub struct TrustArgs {
 }
 
 impl TrustArgs {
-    fn validation<'a>(&'a self, signature: &'a Path) -> ValidationConfig<'a> {
-        ValidationConfig {
-            signature,
+    fn policy(&self) -> TrustPolicy<'_> {
+        TrustPolicy {
             trusted_key: &self.trusted_key,
             uki_trusted_cert: &self.uki_trusted_cert,
             target: &self.target,
@@ -164,8 +163,7 @@ impl LocalAction {
             Self::RecoverReceived => local::recover_received(shared, true)?,
             Self::Prepare { trust } => {
                 let metadata = local::read_metadata(&mut std::io::stdin().lock())?;
-                let candidate =
-                    local::prepare(root, shared, &metadata, &trust.validation(Path::new("")))?;
+                let candidate = local::prepare(root, shared, &metadata, &trust.policy())?;
                 println!("{}", serde_json::to_string(&candidate)?);
             }
             Self::Receive { id } => {
@@ -174,12 +172,11 @@ impl LocalAction {
                 local::receive(shared, &id, &metadata, &mut input)?;
             }
             Self::Accept { id, trust } => {
-                let candidate =
-                    local::accept(root, shared, &id, &trust.validation(Path::new(""))).await?;
+                let candidate = local::accept(root, shared, &id, &trust.policy()).await?;
                 println!("{}", serde_json::to_string(&candidate)?);
             }
             Self::Install { id, trust } => {
-                local::install(root, &id, &trust.validation(Path::new(""))).await?;
+                local::install(root, &id, &trust.policy()).await?;
             }
             Self::Status {
                 id,
@@ -212,7 +209,7 @@ impl ImageUpdate {
                 signature,
             } => {
                 let signature = signature.unwrap_or_else(|| default_signature_path(&manifest));
-                install_from_manifest_path(&manifest, &trust.validation(&signature), self.dry_run)
+                install_from_manifest_path(&manifest, &signature, &trust.policy(), self.dry_run)
                     .await
             }
             ImageAction::Validate {
@@ -221,7 +218,7 @@ impl ImageUpdate {
                 signature,
             } => {
                 let signature = signature.unwrap_or_else(|| default_signature_path(&manifest));
-                validate_signed_manifest_path(&manifest, &trust.validation(&signature)).await?;
+                validate_signed_manifest_path(&manifest, &signature, &trust.policy()).await?;
                 println!("Manifest, signature, target, artifacts, and UKI validation successful.");
                 Ok(())
             }

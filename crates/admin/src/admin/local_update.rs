@@ -16,6 +16,67 @@ use crate::utils::tonic::{Stream, wrap_error};
 
 type Client = UpdateClient<Channel>;
 
+#[must_use]
+struct AdmittedImport {
+    candidate: pb::LocalCandidate,
+    decision: tokio::sync::oneshot::Sender<bool>,
+    cleanup: tokio::task::JoinHandle<()>,
+}
+
+impl AdmittedImport {
+    async fn prepare(
+        host: &mut Client,
+        net: &Client,
+        metadata: pb::LocalMetadata,
+    ) -> anyhow::Result<Self> {
+        let candidate = host.prepare_local_import(metadata).await?.into_inner();
+        let request = pb::LocalCandidateRequest {
+            id: candidate.id.clone(),
+        };
+        let (decision, receive) = tokio::sync::oneshot::channel();
+        let mut host = host.clone();
+        let mut net = net.clone();
+        let cleanup = tokio::spawn(async move {
+            // Cancellation or panic drops the sender and reclaims both copies.
+            let keep_candidate = receive.await.unwrap_or(false);
+            let receiver = cleanup_import("receiver", &mut net, request.clone());
+            let host = async {
+                if !keep_candidate {
+                    cleanup_import("host", &mut host, request).await;
+                }
+            };
+            tokio::join!(receiver, host);
+        });
+        Ok(Self {
+            candidate,
+            decision,
+            cleanup,
+        })
+    }
+
+    async fn finish(self, keep_candidate: bool) {
+        let _ = self.decision.send(keep_candidate);
+        let _ = self.cleanup.await;
+    }
+}
+
+async fn cleanup_import(
+    role: &'static str,
+    client: &mut Client,
+    request: pb::LocalCandidateRequest,
+) {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        client.discard_local_import(request),
+    )
+    .await
+    {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => tracing::warn!(role, %error, "local import cleanup failed"),
+        Err(error) => tracing::warn!(role, %error, "local import cleanup timed out"),
+    }
+}
+
 pub async fn import(
     host: EndpointConfig,
     net: EndpointConfig,
@@ -25,32 +86,7 @@ pub async fn import(
     let mut net = Client::new(net.connect().await?);
     let (output, rx) = mpsc::channel(2);
     tokio::spawn(async move {
-        let mut id = None;
-        let result = run_import(&mut host, &mut net, &mut incoming, &output, &mut id).await;
-        if let Some(id) = id {
-            let request = pb::LocalCandidateRequest { id };
-            let cleanup = |role: &'static str,
-                           mut client: Client,
-                           request: pb::LocalCandidateRequest| async move {
-                match tokio::time::timeout(
-                    std::time::Duration::from_secs(10),
-                    client.discard_local_import(request),
-                )
-                .await
-                {
-                    Ok(Ok(_)) => {}
-                    Ok(Err(error)) => tracing::warn!(role, %error, "local import cleanup failed"),
-                    Err(error) => tracing::warn!(role, %error, "local import cleanup timed out"),
-                }
-            };
-            let net_cleanup = cleanup("receiver", net, request.clone());
-            let host_cleanup = async {
-                if result.is_err() {
-                    cleanup("host", host, request).await;
-                }
-            };
-            tokio::join!(net_cleanup, host_cleanup);
-        }
+        let result = run_import(&mut host, &mut net, &mut incoming, &output).await;
         if let Err(error) = result {
             let _ = output.send(Err(wrap_error(error))).await;
         }
@@ -63,7 +99,6 @@ async fn run_import(
     net: &mut Client,
     incoming: &mut tonic::Streaming<pb::LocalImportRequest>,
     output: &mpsc::Sender<Result<pb::LocalImportResponse, tonic::Status>>,
-    id: &mut Option<String>,
 ) -> anyhow::Result<()> {
     let first = incoming
         .message()
@@ -76,20 +111,35 @@ async fn run_import(
         metadata.manifest.len() <= MAX_MANIFEST && metadata.signature.len() == 128,
         "invalid bundle metadata size"
     );
-    let candidate = host
-        .prepare_local_import(metadata.clone())
-        .await?
-        .into_inner();
-    *id = Some(candidate.id.clone());
+    let admission = AdmittedImport::prepare(host, net, metadata.clone()).await?;
+    let result = transfer(
+        host,
+        net,
+        incoming,
+        output,
+        admission.candidate.clone(),
+        metadata,
+    )
+    .await;
+    admission.finish(result.is_ok()).await;
+    result
+}
+
+async fn transfer(
+    host: &mut Client,
+    net: &mut Client,
+    incoming: &mut tonic::Streaming<pb::LocalImportRequest>,
+    output: &mpsc::Sender<Result<pb::LocalImportResponse, tonic::Status>>,
+    candidate: pb::LocalCandidate,
+    metadata: pb::LocalMetadata,
+) -> anyhow::Result<()> {
     let total = candidate.files.iter().try_fold(0u64, |n, f| {
         n.checked_add(f.size).context("bundle size overflow")
     })?;
     let (send, receive) = mpsc::channel(2);
     send.send(pb::LocalReceiveRequest {
         id: candidate.id.clone(),
-        metadata: Some(metadata),
-        data: vec![],
-        finish: false,
+        payload: Some(pb::local_receive_request::Payload::Metadata(metadata)),
     })
     .await?;
     let mut progress = net
@@ -98,7 +148,7 @@ async fn run_import(
         .into_inner();
     output
         .send(Ok(pb::LocalImportResponse {
-            phase: "admitted".into(),
+            phase: pb::LocalUpdatePhase::Admitted.into(),
             total,
             candidate: Some(candidate.clone()),
             completed: 0,
@@ -120,7 +170,7 @@ async fn run_import(
                         .context("bundle size overflow")?;
                     ensure!(count <= total, "bundle exceeds admitted size");
                     pb::LocalReceiveRequest {
-                        data,
+                        payload: Some(pb::local_receive_request::Payload::Data(data)),
                         ..Default::default()
                     }
                 }
@@ -128,7 +178,7 @@ async fn run_import(
                     ensure!(count == total, "incomplete bundle");
                     finished = true;
                     pb::LocalReceiveRequest {
-                        finish: true,
+                        payload: Some(pb::local_receive_request::Payload::Finish(true)),
                         ..Default::default()
                     }
                 }
@@ -138,23 +188,23 @@ async fn run_import(
         }
         ensure!(finished, "bundle upload interrupted");
         drop(send);
-        Ok::<_, anyhow::Error>(())
+        Ok(())
     };
     let feedback = async {
         let mut received = false;
         while let Some(mut event) = progress.message().await? {
-            received |= event.phase == "received";
+            received |= event.phase == pb::LocalUpdatePhase::Received as i32;
             event.total = total;
             output.send(Ok(event)).await?;
         }
         check_trailers(progress).await?;
         ensure!(received, "receiver did not complete the import");
-        Ok::<_, anyhow::Error>(())
+        Ok(())
     };
     tokio::try_join!(upload, feedback)?;
     output
         .send(Ok(pb::LocalImportResponse {
-            phase: "verifying".into(),
+            phase: pb::LocalUpdatePhase::Verifying.into(),
             total,
             completed: total,
             candidate: None,
@@ -166,7 +216,7 @@ async fn run_import(
     };
     output
         .send(Ok(pb::LocalImportResponse {
-            phase: "ready".into(),
+            phase: pb::LocalUpdatePhase::Ready.into(),
             total,
             completed: total,
             candidate: Some(candidate),
@@ -185,4 +235,175 @@ pub async fn install(
         while let Some(event) = incoming.message().await? { yield event; }
         check_trailers(incoming).await.map_err(wrap_error)?;
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use tonic::{Request, Response, Status};
+
+    struct Agent {
+        role: &'static str,
+        calls: mpsc::UnboundedSender<(&'static str, String)>,
+        release: Arc<tokio::sync::Notify>,
+    }
+
+    #[tonic::async_trait]
+    impl pb::update_server::Update for Agent {
+        async fn prepare_local_import(
+            &self,
+            _: Request<pb::LocalMetadata>,
+        ) -> Result<Response<pb::LocalCandidate>, Status> {
+            Ok(Response::new(pb::LocalCandidate {
+                id: "ab".repeat(16),
+                ..Default::default()
+            }))
+        }
+        async fn discard_local_import(
+            &self,
+            request: Request<pb::LocalCandidateRequest>,
+        ) -> Result<Response<pb::Empty>, Status> {
+            self.calls
+                .send((self.role, request.into_inner().id))
+                .unwrap();
+            if self.role == "receiver" {
+                self.release.notified().await;
+            }
+            Ok(Response::new(pb::Empty {}))
+        }
+        type ReceiveLocalImportStream = Stream<pb::LocalImportResponse>;
+        async fn receive_local_import(
+            &self,
+            _: Request<tonic::Streaming<pb::LocalReceiveRequest>>,
+        ) -> Result<Response<Self::ReceiveLocalImportStream>, Status> {
+            Err(Status::unimplemented("unused test RPC"))
+        }
+        async fn accept_local_import(
+            &self,
+            _: Request<pb::LocalCandidateRequest>,
+        ) -> Result<Response<pb::LocalCandidate>, Status> {
+            Err(Status::unimplemented("unused test RPC"))
+        }
+        async fn candidate_status(
+            &self,
+            _: Request<pb::LocalCandidateRequest>,
+        ) -> Result<Response<pb::LocalImportResponse>, Status> {
+            Err(Status::unimplemented("unused test RPC"))
+        }
+        type InstallCandidateStream = Stream<pb::ImageInstallResponse>;
+        async fn install_candidate(
+            &self,
+            _: Request<pb::LocalCandidateRequest>,
+        ) -> Result<Response<Self::InstallCandidateStream>, Status> {
+            Err(Status::unimplemented("unused test RPC"))
+        }
+        async fn list_generations(
+            &self,
+            _: Request<pb::Empty>,
+        ) -> Result<Response<pb::ListGenerationsResponse>, Status> {
+            Err(Status::unimplemented("unused test RPC"))
+        }
+        async fn discover(
+            &self,
+            _: Request<pb::RegistryDiscoverRequest>,
+        ) -> Result<Response<pb::RegistryDiscoverResponse>, Status> {
+            Err(Status::unimplemented("unused test RPC"))
+        }
+        async fn changelog(
+            &self,
+            _: Request<pb::RegistryChangelogRequest>,
+        ) -> Result<Response<pb::RegistryChangelogResponse>, Status> {
+            Err(Status::unimplemented("unused test RPC"))
+        }
+        type PullStream = Stream<pb::RegistryPullResponse>;
+        async fn pull(
+            &self,
+            _: Request<pb::RegistryPullRequest>,
+        ) -> Result<Response<Self::PullStream>, Status> {
+            Err(Status::unimplemented("unused test RPC"))
+        }
+        type ImageInstallStream = Stream<pb::ImageInstallResponse>;
+        async fn image_install(
+            &self,
+            _: Request<pb::ImageInstallRequest>,
+        ) -> Result<Response<Self::ImageInstallStream>, Status> {
+            Err(Status::unimplemented("unused test RPC"))
+        }
+        type InstallCachixStream = Stream<pb::SetGenerationResponse>;
+        async fn install_cachix(
+            &self,
+            _: Request<pb::Cachix>,
+        ) -> Result<Response<Self::InstallCachixStream>, Status> {
+            Err(Status::unimplemented("unused test RPC"))
+        }
+    }
+
+    async fn agent(
+        role: &'static str,
+        calls: mpsc::UnboundedSender<(&'static str, String)>,
+        release: Arc<tokio::sync::Notify>,
+    ) -> (Client, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let incoming = async_stream::stream! {
+            loop { yield listener.accept().await.map(|(socket, _)| socket); }
+        };
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(pb::update_server::UpdateServer::new(Agent {
+                    role,
+                    calls,
+                    release,
+                }))
+                .serve_with_incoming(incoming)
+                .await
+                .unwrap();
+        });
+        let client = Client::connect(format!("http://{address}")).await.unwrap();
+        (client, server)
+    }
+
+    #[tokio::test]
+    async fn admission_guard_cleans_on_abort_and_retains_only_successful_candidates() {
+        for keep_candidate in [false, true] {
+            let (calls, mut received) = mpsc::unbounded_channel();
+            let release = Arc::new(tokio::sync::Notify::new());
+            let (mut host, host_server) = agent("host", calls.clone(), release.clone()).await;
+            let (net, net_server) = agent("receiver", calls, release.clone()).await;
+            let admission = AdmittedImport::prepare(&mut host, &net, pb::LocalMetadata::default())
+                .await
+                .unwrap();
+            let task = if keep_candidate {
+                tokio::spawn(admission.finish(true))
+            } else {
+                let (started, ready) = tokio::sync::oneshot::channel();
+                let task = tokio::spawn(async move {
+                    let _admission = admission;
+                    started.send(()).unwrap();
+                    std::future::pending::<()>().await;
+                });
+                ready.await.unwrap();
+                task.abort();
+                task
+            };
+            let mut roles = Vec::new();
+            for _ in 0..if keep_candidate { 1 } else { 2 } {
+                let (role, id) =
+                    tokio::time::timeout(std::time::Duration::from_secs(3), received.recv())
+                        .await
+                        .unwrap()
+                        .unwrap();
+                assert_eq!(id, "ab".repeat(16));
+                roles.push(role);
+            }
+            assert!(roles.contains(&"receiver"));
+            assert_eq!(roles.contains(&"host"), !keep_candidate);
+            // Host cleanup must arrive even while receiver cleanup is still waiting.
+            release.notify_one();
+            let _ = task.await;
+            host_server.abort();
+            net_server.abort();
+        }
+    }
 }

@@ -74,15 +74,15 @@ func TestLocalReceiveRequiresExplicitCompletionAndBoundedChunks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			first := &pb.LocalReceiveRequest{Id: strings.Repeat("ab", 16), Metadata: &pb.LocalMetadata{Manifest: "{}", Signature: strings.Repeat("00", 64)}}
+			first := &pb.LocalReceiveRequest{Id: strings.Repeat("ab", 16), Payload: &pb.LocalReceiveRequest_Metadata{Metadata: &pb.LocalMetadata{Manifest: "{}", Signature: strings.Repeat("00", 64)}}}
 			if err := stream.Send(first); err != nil {
 				t.Fatal(err)
 			}
-			if err := stream.Send(&pb.LocalReceiveRequest{Data: test.data}); err != nil {
+			if err := stream.Send(&pb.LocalReceiveRequest{Payload: &pb.LocalReceiveRequest_Data{Data: test.data}}); err != nil {
 				t.Fatal(err)
 			}
 			if test.finish {
-				_ = stream.Send(&pb.LocalReceiveRequest{Finish: true})
+				_ = stream.Send(&pb.LocalReceiveRequest{Payload: &pb.LocalReceiveRequest_Finish{Finish: true}})
 			}
 			_ = stream.CloseSend()
 			completed := false
@@ -97,7 +97,7 @@ func TestLocalReceiveRequiresExplicitCompletionAndBoundedChunks(t *testing.T) {
 					}
 					break
 				}
-				completed = completed || event.Phase == "received"
+				completed = completed || event.Phase == pb.LocalUpdatePhase_LOCAL_UPDATE_PHASE_RECEIVED
 			}
 			if completed != test.valid {
 				t.Fatalf("completed=%v, want %v", completed, test.valid)
@@ -163,7 +163,7 @@ func TestLocalReceiveIdleTimeoutCleansStaging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.Send(&pb.LocalReceiveRequest{Id: strings.Repeat("ab", 16), Metadata: &pb.LocalMetadata{Manifest: "{}", Signature: strings.Repeat("00", 64)}}); err != nil {
+	if err := stream.Send(&pb.LocalReceiveRequest{Id: strings.Repeat("ab", 16), Payload: &pb.LocalReceiveRequest_Metadata{Metadata: &pb.LocalMetadata{Manifest: "{}", Signature: strings.Repeat("00", 64)}}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := stream.Recv(); err != nil {
@@ -190,8 +190,8 @@ func TestLocalReceivePreservesEarlyChildDiagnostic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = stream.Send(&pb.LocalReceiveRequest{Id: strings.Repeat("ab", 16), Metadata: &pb.LocalMetadata{Manifest: "{}", Signature: strings.Repeat("00", 64)}})
-	_ = stream.Send(&pb.LocalReceiveRequest{Data: make([]byte, localChunkSize)})
+	_ = stream.Send(&pb.LocalReceiveRequest{Id: strings.Repeat("ab", 16), Payload: &pb.LocalReceiveRequest_Metadata{Metadata: &pb.LocalMetadata{Manifest: "{}", Signature: strings.Repeat("00", 64)}}})
+	_ = stream.Send(&pb.LocalReceiveRequest{Payload: &pb.LocalReceiveRequest_Data{Data: make([]byte, localChunkSize)}})
 	_ = stream.CloseSend()
 	for {
 		_, err := stream.Recv()
@@ -260,5 +260,58 @@ func TestImageInstallRPCUsesSupportedArguments(t *testing.T) {
 	args, err := os.ReadFile(filepath.Join(dir, "arguments"))
 	if err != nil || string(args) != "image install --manifest /tmp/update.manifest\n" {
 		t.Fatalf("arguments=%q, error=%v", args, err)
+	}
+}
+
+func TestLocalReceiveRejectsUnexpectedPayloads(t *testing.T) {
+	for _, chunk := range []*pb.LocalReceiveRequest{
+		{},
+		{Payload: &pb.LocalReceiveRequest_Finish{Finish: false}},
+		{Payload: &pb.LocalReceiveRequest_Metadata{Metadata: &pb.LocalMetadata{}}},
+	} {
+		client, _ := localClient(t, "receiver")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		stream, err := client.ReceiveLocalImport(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = stream.Send(&pb.LocalReceiveRequest{Id: strings.Repeat("ab", 16), Payload: &pb.LocalReceiveRequest_Metadata{Metadata: &pb.LocalMetadata{Manifest: "{}", Signature: strings.Repeat("00", 64)}}})
+		_ = stream.Send(chunk)
+		_ = stream.CloseSend()
+		for {
+			_, err = stream.Recv()
+			if err != nil {
+				break
+			}
+		}
+		cancel()
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("unexpected payload accepted: %v", err)
+		}
+	}
+}
+
+func TestCandidateStatusUsesProtocolEnum(t *testing.T) {
+	client, dir := localClient(t, "host")
+	for _, test := range []struct {
+		text  string
+		phase pb.LocalUpdatePhase
+		code  codes.Code
+	}{
+		{"accepted", pb.LocalUpdatePhase_LOCAL_UPDATE_PHASE_ACCEPTED, codes.OK},
+		{"restart-required", pb.LocalUpdatePhase_LOCAL_UPDATE_PHASE_RESTART_REQUIRED, codes.OK},
+		{"typo", 0, codes.Internal},
+	} {
+		script := "#!/bin/sh\nprintf '%s\\n' '{\"phase\":\"" + test.text + "\"}'\n"
+		if err := os.WriteFile(filepath.Join(dir, "ota-update"), []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+		state, err := client.CandidateStatus(context.Background(), &pb.LocalCandidateRequest{Id: strings.Repeat("ab", 16)})
+		if status.Code(err) != test.code {
+			t.Fatalf("phase %s: %v", test.text, err)
+		}
+		if err == nil && state.Phase != test.phase {
+			t.Fatalf("phase %s became %v", test.text, state.Phase)
+		}
 	}
 }

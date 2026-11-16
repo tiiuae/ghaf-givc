@@ -23,6 +23,85 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type LocalUpdatePhase int32
+
+const (
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_UNSPECIFIED      LocalUpdatePhase = 0
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_ADMITTED         LocalUpdatePhase = 1
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_RECEIVING        LocalUpdatePhase = 2
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_RECEIVED         LocalUpdatePhase = 3
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_VERIFYING        LocalUpdatePhase = 4
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_READY            LocalUpdatePhase = 5
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_INSTALLING       LocalUpdatePhase = 6
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_RESTART_REQUIRED LocalUpdatePhase = 7
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_ACCEPTED         LocalUpdatePhase = 8
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_TRIAL            LocalUpdatePhase = 9
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_ROLLED_BACK      LocalUpdatePhase = 10
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_INTERRUPTED      LocalUpdatePhase = 11
+	LocalUpdatePhase_LOCAL_UPDATE_PHASE_FAILED           LocalUpdatePhase = 12
+)
+
+// Enum value maps for LocalUpdatePhase.
+var (
+	LocalUpdatePhase_name = map[int32]string{
+		0:  "LOCAL_UPDATE_PHASE_UNSPECIFIED",
+		1:  "LOCAL_UPDATE_PHASE_ADMITTED",
+		2:  "LOCAL_UPDATE_PHASE_RECEIVING",
+		3:  "LOCAL_UPDATE_PHASE_RECEIVED",
+		4:  "LOCAL_UPDATE_PHASE_VERIFYING",
+		5:  "LOCAL_UPDATE_PHASE_READY",
+		6:  "LOCAL_UPDATE_PHASE_INSTALLING",
+		7:  "LOCAL_UPDATE_PHASE_RESTART_REQUIRED",
+		8:  "LOCAL_UPDATE_PHASE_ACCEPTED",
+		9:  "LOCAL_UPDATE_PHASE_TRIAL",
+		10: "LOCAL_UPDATE_PHASE_ROLLED_BACK",
+		11: "LOCAL_UPDATE_PHASE_INTERRUPTED",
+		12: "LOCAL_UPDATE_PHASE_FAILED",
+	}
+	LocalUpdatePhase_value = map[string]int32{
+		"LOCAL_UPDATE_PHASE_UNSPECIFIED":      0,
+		"LOCAL_UPDATE_PHASE_ADMITTED":         1,
+		"LOCAL_UPDATE_PHASE_RECEIVING":        2,
+		"LOCAL_UPDATE_PHASE_RECEIVED":         3,
+		"LOCAL_UPDATE_PHASE_VERIFYING":        4,
+		"LOCAL_UPDATE_PHASE_READY":            5,
+		"LOCAL_UPDATE_PHASE_INSTALLING":       6,
+		"LOCAL_UPDATE_PHASE_RESTART_REQUIRED": 7,
+		"LOCAL_UPDATE_PHASE_ACCEPTED":         8,
+		"LOCAL_UPDATE_PHASE_TRIAL":            9,
+		"LOCAL_UPDATE_PHASE_ROLLED_BACK":      10,
+		"LOCAL_UPDATE_PHASE_INTERRUPTED":      11,
+		"LOCAL_UPDATE_PHASE_FAILED":           12,
+	}
+)
+
+func (x LocalUpdatePhase) Enum() *LocalUpdatePhase {
+	p := new(LocalUpdatePhase)
+	*p = x
+	return p
+}
+
+func (x LocalUpdatePhase) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LocalUpdatePhase) Descriptor() protoreflect.EnumDescriptor {
+	return file_update_update_proto_enumTypes[0].Descriptor()
+}
+
+func (LocalUpdatePhase) Type() protoreflect.EnumType {
+	return &file_update_update_proto_enumTypes[0]
+}
+
+func (x LocalUpdatePhase) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LocalUpdatePhase.Descriptor instead.
+func (LocalUpdatePhase) EnumDescriptor() ([]byte, []int) {
+	return file_update_update_proto_rawDescGZIP(), []int{0}
+}
+
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1695,7 +1774,7 @@ func (*LocalImportRequest_Finish) isLocalImportRequest_Payload() {}
 
 type LocalImportResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Phase         string                 `protobuf:"bytes,1,opt,name=phase,proto3" json:"phase,omitempty"`
+	Phase         LocalUpdatePhase       `protobuf:"varint,1,opt,name=phase,proto3,enum=update.LocalUpdatePhase" json:"phase,omitempty"`
 	Completed     uint64                 `protobuf:"varint,2,opt,name=completed,proto3" json:"completed,omitempty"`
 	Total         uint64                 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
 	Candidate     *LocalCandidate        `protobuf:"bytes,4,opt,name=candidate,proto3" json:"candidate,omitempty"`
@@ -1733,11 +1812,11 @@ func (*LocalImportResponse) Descriptor() ([]byte, []int) {
 	return file_update_update_proto_rawDescGZIP(), []int{26}
 }
 
-func (x *LocalImportResponse) GetPhase() string {
+func (x *LocalImportResponse) GetPhase() LocalUpdatePhase {
 	if x != nil {
 		return x.Phase
 	}
-	return ""
+	return LocalUpdatePhase_LOCAL_UPDATE_PHASE_UNSPECIFIED
 }
 
 func (x *LocalImportResponse) GetCompleted() uint64 {
@@ -1762,11 +1841,14 @@ func (x *LocalImportResponse) GetCandidate() *LocalCandidate {
 }
 
 type LocalReceiveRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // Set on first message only, by admin.
-	Metadata      *LocalMetadata         `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
-	Finish        bool                   `protobuf:"varint,4,opt,name=finish,proto3" json:"finish,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // Set on first message only, by admin.
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*LocalReceiveRequest_Metadata
+	//	*LocalReceiveRequest_Data
+	//	*LocalReceiveRequest_Finish
+	Payload       isLocalReceiveRequest_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1808,26 +1890,61 @@ func (x *LocalReceiveRequest) GetId() string {
 	return ""
 }
 
+func (x *LocalReceiveRequest) GetPayload() isLocalReceiveRequest_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
 func (x *LocalReceiveRequest) GetMetadata() *LocalMetadata {
 	if x != nil {
-		return x.Metadata
+		if x, ok := x.Payload.(*LocalReceiveRequest_Metadata); ok {
+			return x.Metadata
+		}
 	}
 	return nil
 }
 
 func (x *LocalReceiveRequest) GetData() []byte {
 	if x != nil {
-		return x.Data
+		if x, ok := x.Payload.(*LocalReceiveRequest_Data); ok {
+			return x.Data
+		}
 	}
 	return nil
 }
 
 func (x *LocalReceiveRequest) GetFinish() bool {
 	if x != nil {
-		return x.Finish
+		if x, ok := x.Payload.(*LocalReceiveRequest_Finish); ok {
+			return x.Finish
+		}
 	}
 	return false
 }
+
+type isLocalReceiveRequest_Payload interface {
+	isLocalReceiveRequest_Payload()
+}
+
+type LocalReceiveRequest_Metadata struct {
+	Metadata *LocalMetadata `protobuf:"bytes,2,opt,name=metadata,proto3,oneof"`
+}
+
+type LocalReceiveRequest_Data struct {
+	Data []byte `protobuf:"bytes,3,opt,name=data,proto3,oneof"`
+}
+
+type LocalReceiveRequest_Finish struct {
+	Finish bool `protobuf:"varint,4,opt,name=finish,proto3,oneof"`
+}
+
+func (*LocalReceiveRequest_Metadata) isLocalReceiveRequest_Payload() {}
+
+func (*LocalReceiveRequest_Data) isLocalReceiveRequest_Payload() {}
+
+func (*LocalReceiveRequest_Finish) isLocalReceiveRequest_Payload() {}
 
 type LocalCandidateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1998,19 +2115,35 @@ const file_update_update_proto_rawDesc = "" +
 	"\bmetadata\x18\x01 \x01(\v2\x15.update.LocalMetadataH\x00R\bmetadata\x12\x14\n" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04data\x12\x18\n" +
 	"\x06finish\x18\x03 \x01(\bH\x00R\x06finishB\t\n" +
-	"\apayload\"\x95\x01\n" +
-	"\x13LocalImportResponse\x12\x14\n" +
-	"\x05phase\x18\x01 \x01(\tR\x05phase\x12\x1c\n" +
+	"\apayload\"\xaf\x01\n" +
+	"\x13LocalImportResponse\x12.\n" +
+	"\x05phase\x18\x01 \x01(\x0e2\x18.update.LocalUpdatePhaseR\x05phase\x12\x1c\n" +
 	"\tcompleted\x18\x02 \x01(\x04R\tcompleted\x12\x14\n" +
 	"\x05total\x18\x03 \x01(\x04R\x05total\x124\n" +
-	"\tcandidate\x18\x04 \x01(\v2\x16.update.LocalCandidateR\tcandidate\"\x84\x01\n" +
+	"\tcandidate\x18\x04 \x01(\v2\x16.update.LocalCandidateR\tcandidate\"\x95\x01\n" +
 	"\x13LocalReceiveRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x121\n" +
-	"\bmetadata\x18\x02 \x01(\v2\x15.update.LocalMetadataR\bmetadata\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\fR\x04data\x12\x16\n" +
-	"\x06finish\x18\x04 \x01(\bR\x06finish\"'\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x123\n" +
+	"\bmetadata\x18\x02 \x01(\v2\x15.update.LocalMetadataH\x00R\bmetadata\x12\x14\n" +
+	"\x04data\x18\x03 \x01(\fH\x00R\x04data\x12\x18\n" +
+	"\x06finish\x18\x04 \x01(\bH\x00R\x06finishB\t\n" +
+	"\apayload\"'\n" +
 	"\x15LocalCandidateRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id2\xa3\a\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id*\xcc\x03\n" +
+	"\x10LocalUpdatePhase\x12\"\n" +
+	"\x1eLOCAL_UPDATE_PHASE_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bLOCAL_UPDATE_PHASE_ADMITTED\x10\x01\x12 \n" +
+	"\x1cLOCAL_UPDATE_PHASE_RECEIVING\x10\x02\x12\x1f\n" +
+	"\x1bLOCAL_UPDATE_PHASE_RECEIVED\x10\x03\x12 \n" +
+	"\x1cLOCAL_UPDATE_PHASE_VERIFYING\x10\x04\x12\x1c\n" +
+	"\x18LOCAL_UPDATE_PHASE_READY\x10\x05\x12!\n" +
+	"\x1dLOCAL_UPDATE_PHASE_INSTALLING\x10\x06\x12'\n" +
+	"#LOCAL_UPDATE_PHASE_RESTART_REQUIRED\x10\a\x12\x1f\n" +
+	"\x1bLOCAL_UPDATE_PHASE_ACCEPTED\x10\b\x12\x1c\n" +
+	"\x18LOCAL_UPDATE_PHASE_TRIAL\x10\t\x12\"\n" +
+	"\x1eLOCAL_UPDATE_PHASE_ROLLED_BACK\x10\n" +
+	"\x12\"\n" +
+	"\x1eLOCAL_UPDATE_PHASE_INTERRUPTED\x10\v\x12\x1d\n" +
+	"\x19LOCAL_UPDATE_PHASE_FAILED\x10\f2\xa3\a\n" +
 	"\x06Update\x12E\n" +
 	"\x12PrepareLocalImport\x12\x15.update.LocalMetadata\x1a\x16.update.LocalCandidate\"\x00\x12T\n" +
 	"\x12ReceiveLocalImport\x12\x1b.update.LocalReceiveRequest\x1a\x1b.update.LocalImportResponse\"\x00(\x010\x01\x12L\n" +
@@ -2037,84 +2170,87 @@ func file_update_update_proto_rawDescGZIP() []byte {
 	return file_update_update_proto_rawDescData
 }
 
+var file_update_update_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_update_update_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_update_update_proto_goTypes = []any{
-	(*Empty)(nil),                     // 0: update.Empty
-	(*Generation)(nil),                // 1: update.Generation
-	(*ListGenerationsResponse)(nil),   // 2: update.ListGenerationsResponse
-	(*SetGenerationRequest)(nil),      // 3: update.SetGenerationRequest
-	(*Cachix)(nil),                    // 4: update.Cachix
-	(*SetGenerationResponse)(nil),     // 5: update.SetGenerationResponse
-	(*RegistryBasicAuth)(nil),         // 6: update.RegistryBasicAuth
-	(*RegistryBearerAuth)(nil),        // 7: update.RegistryBearerAuth
-	(*RegistryCredentials)(nil),       // 8: update.RegistryCredentials
-	(*AvailableUpdate)(nil),           // 9: update.AvailableUpdate
-	(*RegistryDiscoverRequest)(nil),   // 10: update.RegistryDiscoverRequest
-	(*RegistryDiscoverResponse)(nil),  // 11: update.RegistryDiscoverResponse
-	(*RegistryChangelogRequest)(nil),  // 12: update.RegistryChangelogRequest
-	(*RegistryChangelogResponse)(nil), // 13: update.RegistryChangelogResponse
-	(*RegistryPullRequest)(nil),       // 14: update.RegistryPullRequest
-	(*RegistryPullResult)(nil),        // 15: update.RegistryPullResult
-	(*RegistryPullStarted)(nil),       // 16: update.RegistryPullStarted
-	(*RegistryBlobDownloading)(nil),   // 17: update.RegistryBlobDownloading
-	(*RegistryPullProgress)(nil),      // 18: update.RegistryPullProgress
-	(*RegistryPullResponse)(nil),      // 19: update.RegistryPullResponse
-	(*ImageInstallRequest)(nil),       // 20: update.ImageInstallRequest
-	(*ImageInstallResponse)(nil),      // 21: update.ImageInstallResponse
-	(*LocalMetadata)(nil),             // 22: update.LocalMetadata
-	(*LocalArtifact)(nil),             // 23: update.LocalArtifact
-	(*LocalCandidate)(nil),            // 24: update.LocalCandidate
-	(*LocalImportRequest)(nil),        // 25: update.LocalImportRequest
-	(*LocalImportResponse)(nil),       // 26: update.LocalImportResponse
-	(*LocalReceiveRequest)(nil),       // 27: update.LocalReceiveRequest
-	(*LocalCandidateRequest)(nil),     // 28: update.LocalCandidateRequest
+	(LocalUpdatePhase)(0),             // 0: update.LocalUpdatePhase
+	(*Empty)(nil),                     // 1: update.Empty
+	(*Generation)(nil),                // 2: update.Generation
+	(*ListGenerationsResponse)(nil),   // 3: update.ListGenerationsResponse
+	(*SetGenerationRequest)(nil),      // 4: update.SetGenerationRequest
+	(*Cachix)(nil),                    // 5: update.Cachix
+	(*SetGenerationResponse)(nil),     // 6: update.SetGenerationResponse
+	(*RegistryBasicAuth)(nil),         // 7: update.RegistryBasicAuth
+	(*RegistryBearerAuth)(nil),        // 8: update.RegistryBearerAuth
+	(*RegistryCredentials)(nil),       // 9: update.RegistryCredentials
+	(*AvailableUpdate)(nil),           // 10: update.AvailableUpdate
+	(*RegistryDiscoverRequest)(nil),   // 11: update.RegistryDiscoverRequest
+	(*RegistryDiscoverResponse)(nil),  // 12: update.RegistryDiscoverResponse
+	(*RegistryChangelogRequest)(nil),  // 13: update.RegistryChangelogRequest
+	(*RegistryChangelogResponse)(nil), // 14: update.RegistryChangelogResponse
+	(*RegistryPullRequest)(nil),       // 15: update.RegistryPullRequest
+	(*RegistryPullResult)(nil),        // 16: update.RegistryPullResult
+	(*RegistryPullStarted)(nil),       // 17: update.RegistryPullStarted
+	(*RegistryBlobDownloading)(nil),   // 18: update.RegistryBlobDownloading
+	(*RegistryPullProgress)(nil),      // 19: update.RegistryPullProgress
+	(*RegistryPullResponse)(nil),      // 20: update.RegistryPullResponse
+	(*ImageInstallRequest)(nil),       // 21: update.ImageInstallRequest
+	(*ImageInstallResponse)(nil),      // 22: update.ImageInstallResponse
+	(*LocalMetadata)(nil),             // 23: update.LocalMetadata
+	(*LocalArtifact)(nil),             // 24: update.LocalArtifact
+	(*LocalCandidate)(nil),            // 25: update.LocalCandidate
+	(*LocalImportRequest)(nil),        // 26: update.LocalImportRequest
+	(*LocalImportResponse)(nil),       // 27: update.LocalImportResponse
+	(*LocalReceiveRequest)(nil),       // 28: update.LocalReceiveRequest
+	(*LocalCandidateRequest)(nil),     // 29: update.LocalCandidateRequest
 }
 var file_update_update_proto_depIdxs = []int32{
-	1,  // 0: update.ListGenerationsResponse.List:type_name -> update.Generation
-	4,  // 1: update.SetGenerationRequest.Cachix:type_name -> update.Cachix
-	6,  // 2: update.RegistryCredentials.Basic:type_name -> update.RegistryBasicAuth
-	7,  // 3: update.RegistryCredentials.Bearer:type_name -> update.RegistryBearerAuth
-	8,  // 4: update.RegistryDiscoverRequest.Credentials:type_name -> update.RegistryCredentials
-	9,  // 5: update.RegistryDiscoverResponse.List:type_name -> update.AvailableUpdate
-	8,  // 6: update.RegistryChangelogRequest.Credentials:type_name -> update.RegistryCredentials
-	8,  // 7: update.RegistryPullRequest.Credentials:type_name -> update.RegistryCredentials
-	16, // 8: update.RegistryPullProgress.PullStarted:type_name -> update.RegistryPullStarted
-	17, // 9: update.RegistryPullProgress.BlobDownloading:type_name -> update.RegistryBlobDownloading
-	18, // 10: update.RegistryPullResponse.Progress:type_name -> update.RegistryPullProgress
-	15, // 11: update.RegistryPullResponse.Result:type_name -> update.RegistryPullResult
-	23, // 12: update.LocalCandidate.files:type_name -> update.LocalArtifact
-	22, // 13: update.LocalImportRequest.metadata:type_name -> update.LocalMetadata
-	24, // 14: update.LocalImportResponse.candidate:type_name -> update.LocalCandidate
-	22, // 15: update.LocalReceiveRequest.metadata:type_name -> update.LocalMetadata
-	22, // 16: update.Update.PrepareLocalImport:input_type -> update.LocalMetadata
-	27, // 17: update.Update.ReceiveLocalImport:input_type -> update.LocalReceiveRequest
-	28, // 18: update.Update.AcceptLocalImport:input_type -> update.LocalCandidateRequest
-	28, // 19: update.Update.DiscardLocalImport:input_type -> update.LocalCandidateRequest
-	28, // 20: update.Update.CandidateStatus:input_type -> update.LocalCandidateRequest
-	28, // 21: update.Update.InstallCandidate:input_type -> update.LocalCandidateRequest
-	0,  // 22: update.Update.ListGenerations:input_type -> update.Empty
-	10, // 23: update.Update.Discover:input_type -> update.RegistryDiscoverRequest
-	12, // 24: update.Update.Changelog:input_type -> update.RegistryChangelogRequest
-	14, // 25: update.Update.Pull:input_type -> update.RegistryPullRequest
-	20, // 26: update.Update.ImageInstall:input_type -> update.ImageInstallRequest
-	4,  // 27: update.Update.InstallCachix:input_type -> update.Cachix
-	24, // 28: update.Update.PrepareLocalImport:output_type -> update.LocalCandidate
-	26, // 29: update.Update.ReceiveLocalImport:output_type -> update.LocalImportResponse
-	24, // 30: update.Update.AcceptLocalImport:output_type -> update.LocalCandidate
-	0,  // 31: update.Update.DiscardLocalImport:output_type -> update.Empty
-	26, // 32: update.Update.CandidateStatus:output_type -> update.LocalImportResponse
-	21, // 33: update.Update.InstallCandidate:output_type -> update.ImageInstallResponse
-	2,  // 34: update.Update.ListGenerations:output_type -> update.ListGenerationsResponse
-	11, // 35: update.Update.Discover:output_type -> update.RegistryDiscoverResponse
-	13, // 36: update.Update.Changelog:output_type -> update.RegistryChangelogResponse
-	19, // 37: update.Update.Pull:output_type -> update.RegistryPullResponse
-	21, // 38: update.Update.ImageInstall:output_type -> update.ImageInstallResponse
-	5,  // 39: update.Update.InstallCachix:output_type -> update.SetGenerationResponse
-	28, // [28:40] is the sub-list for method output_type
-	16, // [16:28] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	2,  // 0: update.ListGenerationsResponse.List:type_name -> update.Generation
+	5,  // 1: update.SetGenerationRequest.Cachix:type_name -> update.Cachix
+	7,  // 2: update.RegistryCredentials.Basic:type_name -> update.RegistryBasicAuth
+	8,  // 3: update.RegistryCredentials.Bearer:type_name -> update.RegistryBearerAuth
+	9,  // 4: update.RegistryDiscoverRequest.Credentials:type_name -> update.RegistryCredentials
+	10, // 5: update.RegistryDiscoverResponse.List:type_name -> update.AvailableUpdate
+	9,  // 6: update.RegistryChangelogRequest.Credentials:type_name -> update.RegistryCredentials
+	9,  // 7: update.RegistryPullRequest.Credentials:type_name -> update.RegistryCredentials
+	17, // 8: update.RegistryPullProgress.PullStarted:type_name -> update.RegistryPullStarted
+	18, // 9: update.RegistryPullProgress.BlobDownloading:type_name -> update.RegistryBlobDownloading
+	19, // 10: update.RegistryPullResponse.Progress:type_name -> update.RegistryPullProgress
+	16, // 11: update.RegistryPullResponse.Result:type_name -> update.RegistryPullResult
+	24, // 12: update.LocalCandidate.files:type_name -> update.LocalArtifact
+	23, // 13: update.LocalImportRequest.metadata:type_name -> update.LocalMetadata
+	0,  // 14: update.LocalImportResponse.phase:type_name -> update.LocalUpdatePhase
+	25, // 15: update.LocalImportResponse.candidate:type_name -> update.LocalCandidate
+	23, // 16: update.LocalReceiveRequest.metadata:type_name -> update.LocalMetadata
+	23, // 17: update.Update.PrepareLocalImport:input_type -> update.LocalMetadata
+	28, // 18: update.Update.ReceiveLocalImport:input_type -> update.LocalReceiveRequest
+	29, // 19: update.Update.AcceptLocalImport:input_type -> update.LocalCandidateRequest
+	29, // 20: update.Update.DiscardLocalImport:input_type -> update.LocalCandidateRequest
+	29, // 21: update.Update.CandidateStatus:input_type -> update.LocalCandidateRequest
+	29, // 22: update.Update.InstallCandidate:input_type -> update.LocalCandidateRequest
+	1,  // 23: update.Update.ListGenerations:input_type -> update.Empty
+	11, // 24: update.Update.Discover:input_type -> update.RegistryDiscoverRequest
+	13, // 25: update.Update.Changelog:input_type -> update.RegistryChangelogRequest
+	15, // 26: update.Update.Pull:input_type -> update.RegistryPullRequest
+	21, // 27: update.Update.ImageInstall:input_type -> update.ImageInstallRequest
+	5,  // 28: update.Update.InstallCachix:input_type -> update.Cachix
+	25, // 29: update.Update.PrepareLocalImport:output_type -> update.LocalCandidate
+	27, // 30: update.Update.ReceiveLocalImport:output_type -> update.LocalImportResponse
+	25, // 31: update.Update.AcceptLocalImport:output_type -> update.LocalCandidate
+	1,  // 32: update.Update.DiscardLocalImport:output_type -> update.Empty
+	27, // 33: update.Update.CandidateStatus:output_type -> update.LocalImportResponse
+	22, // 34: update.Update.InstallCandidate:output_type -> update.ImageInstallResponse
+	3,  // 35: update.Update.ListGenerations:output_type -> update.ListGenerationsResponse
+	12, // 36: update.Update.Discover:output_type -> update.RegistryDiscoverResponse
+	14, // 37: update.Update.Changelog:output_type -> update.RegistryChangelogResponse
+	20, // 38: update.Update.Pull:output_type -> update.RegistryPullResponse
+	22, // 39: update.Update.ImageInstall:output_type -> update.ImageInstallResponse
+	6,  // 40: update.Update.InstallCachix:output_type -> update.SetGenerationResponse
+	29, // [29:41] is the sub-list for method output_type
+	17, // [17:29] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_update_update_proto_init() }
@@ -2153,18 +2289,24 @@ func file_update_update_proto_init() {
 		(*LocalImportRequest_Data)(nil),
 		(*LocalImportRequest_Finish)(nil),
 	}
+	file_update_update_proto_msgTypes[27].OneofWrappers = []any{
+		(*LocalReceiveRequest_Metadata)(nil),
+		(*LocalReceiveRequest_Data)(nil),
+		(*LocalReceiveRequest_Finish)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_update_update_proto_rawDesc), len(file_update_update_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_update_update_proto_goTypes,
 		DependencyIndexes: file_update_update_proto_depIdxs,
+		EnumInfos:         file_update_update_proto_enumTypes,
 		MessageInfos:      file_update_update_proto_msgTypes,
 	}.Build()
 	File_update_update_proto = out.File
