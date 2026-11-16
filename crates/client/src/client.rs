@@ -678,8 +678,13 @@ impl AdminClient {
     /// Read persistent host state after reconnecting to an installation.
     /// # Errors
     /// Fails on bundle I/O, transport errors, or rejection by the update service.
-    pub async fn local_candidate_status(&self, id: String) -> anyhow::Result<String> {
-        Ok(self.local_candidate_state(id).await?.phase)
+    pub async fn local_candidate_status(
+        &self,
+        id: String,
+    ) -> anyhow::Result<pb::update::LocalUpdatePhase> {
+        Ok(pb::update::LocalUpdatePhase::try_from(
+            self.local_candidate_state(id).await?.phase,
+        )?)
     }
 
     /// Read verified candidate metadata and installation state from the host.

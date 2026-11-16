@@ -396,7 +396,7 @@ impl UpdateSub {
             UpdateSub::Import { manifest, json } => {
                 let candidate = admin
                     .import_local_update(&manifest, async |event| {
-                        eprintln!("{}: {}/{}", event.phase, event.completed, event.total);
+                        eprintln!("{}: {}/{}", event.phase(), event.completed, event.total);
                     })
                     .await?;
                 if json {

@@ -57,7 +57,10 @@ where
         .await
         .rewrap_err()?
         .context("missing import admission")?;
-    ensure!(admission.phase == "admitted", "unexpected import response");
+    ensure!(
+        admission.phase == pb::LocalUpdatePhase::Admitted as i32,
+        "unexpected import response"
+    );
     let candidate = admission
         .candidate
         .clone()
@@ -99,7 +102,18 @@ where
     let feedback = async {
         let mut ready = None;
         while let Some(event) = response.message().await.rewrap_err()? {
-            if event.phase == "ready" {
+            let phase = pb::LocalUpdatePhase::try_from(event.phase)?;
+            ensure!(
+                matches!(
+                    phase,
+                    pb::LocalUpdatePhase::Receiving
+                        | pb::LocalUpdatePhase::Received
+                        | pb::LocalUpdatePhase::Verifying
+                        | pb::LocalUpdatePhase::Ready
+                ),
+                "unexpected import phase: {phase}"
+            );
+            if phase == pb::LocalUpdatePhase::Ready {
                 ready = event.candidate.clone();
             }
             on_progress(event).await;

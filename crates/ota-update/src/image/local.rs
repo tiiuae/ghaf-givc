@@ -12,9 +12,7 @@ use givc_common::pb::update::{LocalArtifact, LocalCandidate, LocalMetadata};
 use givc_common::update_bundle::{MAX_MANIFEST, check_name, directory, regular_file, subdirectory};
 use ring::rand::{SecureRandom, SystemRandom};
 
-use super::install::{
-    ValidationConfig, validate_install_generation, validate_signed_manifest_path,
-};
+use super::install::{TrustPolicy, validate_install_generation, validate_signed_manifest_path};
 use super::manifest::Manifest;
 use super::signature::verify_detached;
 
@@ -156,11 +154,8 @@ fn check_metadata(metadata: &LocalMetadata) -> anyhow::Result<()> {
         metadata.manifest.len() <= MAX_MANIFEST,
         "manifest too large"
     );
-    ensure!(
-        metadata.signature.len() == 128,
-        "signature must be 64 bytes encoded as hex"
-    );
-    hex::decode(&metadata.signature)?;
+    hex::decode_to_slice(&metadata.signature, &mut [0u8; 64])
+        .context("signature must be 64 bytes encoded as hex")?;
     Ok(())
 }
 
@@ -203,7 +198,7 @@ fn describe(metadata: &LocalMetadata, id: &str) -> anyhow::Result<LocalCandidate
     })
 }
 
-fn authenticate(metadata: &LocalMetadata, validation: &ValidationConfig<'_>) -> anyhow::Result<()> {
+fn authenticate(metadata: &LocalMetadata, validation: &TrustPolicy<'_>) -> anyhow::Result<()> {
     check_metadata(metadata)?;
     verify_detached(
         metadata.manifest.as_bytes(),
@@ -244,7 +239,7 @@ pub fn prepare(
     root: &Path,
     shared: &Path,
     metadata: &LocalMetadata,
-    validation: &ValidationConfig<'_>,
+    validation: &TrustPolicy<'_>,
 ) -> anyhow::Result<LocalCandidate> {
     authenticate(metadata, validation)?;
     private_dir(root)?;
@@ -364,7 +359,7 @@ pub async fn accept(
     root: &Path,
     shared: &Path,
     id: &str,
-    validation: &ValidationConfig<'_>,
+    validation: &TrustPolicy<'_>,
 ) -> anyhow::Result<LocalCandidate> {
     check_id(id)?;
     let _lock = import_lock(root, id)?;
@@ -409,13 +404,13 @@ pub async fn accept(
         output.sync_all()?;
     }
     let signature = temporary.path().join("manifest.json.sig");
-    let validation = ValidationConfig {
-        signature: &signature,
-        ..*validation
-    };
-    validate_signed_manifest_path(&temporary.path().join("manifest.json"), &validation)
-        .await?
-        .authorize_install(&validation)?;
+    validate_signed_manifest_path(
+        &temporary.path().join("manifest.json"),
+        &signature,
+        validation,
+    )
+    .await?
+    .authorize_install(validation)?;
     write_file(
         &temporary.path().join("candidate.json"),
         &serde_json::to_vec(&candidate)?,
@@ -538,11 +533,7 @@ pub fn status(root: &Path, id: &str, accepted: &Path) -> anyhow::Result<String> 
     Ok(state)
 }
 
-pub async fn install(
-    root: &Path,
-    id: &str,
-    validation: &ValidationConfig<'_>,
-) -> anyhow::Result<()> {
+pub async fn install(root: &Path, id: &str, validation: &TrustPolicy<'_>) -> anyhow::Result<()> {
     let manifest = candidate_manifest(root, id)?;
     let path = manifest.parent().unwrap();
     let _lock = crate::lock::UpdateLock::acquire(path.join("install.lock"), "local-install")?;
@@ -556,11 +547,8 @@ pub async fn install(
     File::open(path.join("install-boot"))?.sync_all()?;
     save_status(path, "installing")?;
     let signature = super::install::default_signature_path(&manifest);
-    let validation = ValidationConfig {
-        signature: &signature,
-        ..*validation
-    };
-    let result = super::install::install_from_manifest_path(&manifest, &validation, false).await;
+    let result =
+        super::install::install_from_manifest_path(&manifest, &signature, validation, false).await;
     save_status(
         path,
         if result.is_ok() {
@@ -825,8 +813,7 @@ mod tests {
         let mut metadata = bundle();
         let manifest: Manifest = serde_json::from_str(&metadata.manifest).unwrap();
         metadata.signature = hex::encode(pair.sign(metadata.manifest.as_bytes()));
-        let validation = ValidationConfig {
-            signature: Path::new("unused"),
+        let validation = TrustPolicy {
             trusted_key: &key,
             uki_trusted_cert: Path::new("unused"),
             target: &manifest.target,
@@ -862,7 +849,7 @@ mod tests {
         fs::write(&accepted, manifest.generation.to_string()).unwrap();
         assert!(prepare(&root, &shared, &metadata, &validation).is_err());
         fs::write(&accepted, "0").unwrap();
-        let wrong = ValidationConfig {
+        let wrong = TrustPolicy {
             target: "other-target",
             ..validation
         };
