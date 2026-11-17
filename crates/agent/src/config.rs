@@ -5,6 +5,7 @@ use std::{collections::HashMap, net::SocketAddr, path::Path, path::PathBuf, str:
 
 use anyhow::{Context, Result, bail};
 use givc_client::endpoint::TlsConfig;
+use givc_common::address::EndpointAddress;
 use givc_common::types::{ServiceType, UnitType, VmType};
 use serde::Deserialize;
 
@@ -169,6 +170,13 @@ pub struct TransportConfig {
 
     #[serde(default)]
     pub name: String,
+}
+
+impl TryInto<EndpointAddress> for TransportConfig {
+    type Error = anyhow::Error;
+    fn try_into(self) -> anyhow::Result<EndpointAddress> {
+        EndpointAddress::from_protocol(self.protocol, self.address, self.port)
+    }
 }
 
 impl TransportConfig {

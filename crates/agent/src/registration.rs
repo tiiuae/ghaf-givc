@@ -7,7 +7,6 @@ use crate::config::{AgentConfig, EndpointConfig as AgentEndpointConfig};
 use crate::servicemanager::{Snapshot, SystemdBackend, ZbusBackend};
 use anyhow::{Context, Result, bail};
 use givc_client::AdminClient;
-use givc_common::address::EndpointAddress;
 use givc_common::types::{EndpointEntry, UnitStatus};
 use tokio::sync::oneshot;
 use tokio::time::sleep;
@@ -168,30 +167,14 @@ fn admin_client(config: &AgentConfig) -> Result<AdminClient> {
         (admin_tls_name.clone(), tls)
     });
     Ok(AdminClient::from_endpoint_address(
-        endpoint_address(&config.network.admin.transport)?,
+        config.network.admin.transport.clone().try_into()?,
         admin_tls,
     ))
 }
 
-fn endpoint_address(endpoint: &crate::config::TransportConfig) -> Result<EndpointAddress> {
-    Ok(match endpoint.protocol.as_str() {
-        "tcp" => EndpointAddress::Tcp {
-            addr: endpoint.address.clone(),
-            port: endpoint.port.parse()?,
-        },
-        "unix" => EndpointAddress::Unix(endpoint.address.clone()),
-        "abstract" => EndpointAddress::Abstract(endpoint.address.clone()),
-        "vsock" => EndpointAddress::Vsock(tokio_vsock::VsockAddr::new(
-            endpoint.address.parse()?,
-            endpoint.port.parse()?,
-        )),
-        other => bail!("unsupported admin transport protocol: {other}"),
-    })
-}
-
 fn endpoint_entry(endpoint: &AgentEndpointConfig) -> Result<EndpointEntry> {
     Ok(EndpointEntry {
-        address: endpoint_address(&endpoint.transport)?,
+        address: endpoint.transport.clone().try_into()?,
         tls_name: endpoint.transport.name.clone(),
     })
 }
