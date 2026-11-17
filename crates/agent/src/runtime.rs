@@ -223,131 +223,46 @@ impl AgentRuntime {
         let (shutdown_trigger, shutdown) = AgentShutdown::channel();
         let mut proxy_workers = Vec::new();
         let result = async {
-        let config = self.config.clone();
-        if config.capabilities.event_proxy.enabled {
-            proxy_workers
-                .extend(eventproxy::start_event_proxy_services(&config, shutdown.clone()).await?);
-        }
-        if config.capabilities.socket_proxy.enabled {
-            proxy_workers
-                .extend(socketproxy::start_socket_proxy_services(&config, shutdown.clone()).await?);
-        }
-
-        let backend = ZbusBackend::new().await?;
-        let reg_backend = backend.clone();
-        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-        start_registration_worker(config.clone(), reg_backend, started_rx);
-
-        let manager = ServiceManager::new(
-            self.config.network.agent.services.clone(),
-            self.config.capabilities.applications.clone(),
-            backend,
-        );
-        let reflect_builder = active_reflection_descriptors(&config).into_iter().fold(
-            tonic_reflection::server::Builder::configure(),
-            |builder, (_, descriptor)| builder.register_encoded_file_descriptor_set(descriptor),
-        );
-        let reflect = reflect_builder.build_v1()?;
-
-        info!(
-            addr = %self.listen,
-            service = %self.config.identity.service_name,
-            "starting givc-agent"
-        );
-
-        let listener = bind_listener_with_retry(&self.listen).await?;
-        let _ = started_tx.send(());
-
-        let interceptor =
-            RequestInterceptorLayer::new(AgentInterceptor::from_config(&self.config)?);
-
-        if let Some(tls) = &self.config.network.tls_config {
-            let mut server = Server::builder()
-                .layer(interceptor.clone())
-                .add_service(reflect);
-
-            if self.config.capabilities.exec.enabled {
-                server = server.add_service(ExecServiceServer::new(ExecService::new()));
+            let config = self.config.clone();
+            if config.capabilities.event_proxy.enabled {
+                proxy_workers.extend(
+                    eventproxy::start_event_proxy_services(&config, shutdown.clone()).await?,
+                );
             }
-            if self.config.capabilities.ctap.enabled {
-                server = server.add_service(CtapServiceServer::new(CtapService::new()));
+            if config.capabilities.socket_proxy.enabled {
+                proxy_workers.extend(
+                    socketproxy::start_socket_proxy_services(&config, shutdown.clone()).await?,
+                );
             }
-            let policyadmin_service: Option<PolicyAdminServerServer<_>> =
-                if self.config.capabilities.policy.enabled {
-                    Some(PolicyAdminServerServer::new(PolicyAdminServer::new(
-                        self.config.capabilities.policy.store_path.clone(),
-                        self.config.capabilities.policy.policies.clone(),
-                    )))
-                } else {
-                    None
-                };
-            server = server.add_optional_service(policyadmin_service);
 
-            let update_service: Option<UpdateServiceServer> =
-                if self.config.capabilities.update.enabled {
-                    Some(UpdateServiceServer::new(UpdateService::new(
-                        self.config.capabilities.update.clone(),
-                    )))
-                } else {
-                    None
-                };
-            server = server.add_optional_service(update_service);
+            let backend = ZbusBackend::new().await?;
+            let reg_backend = backend.clone();
+            let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+            start_registration_worker(config.clone(), reg_backend, started_rx);
 
-            server = server.add_service(UnitControlServiceServer::new(UnitControlService::new(
-                manager,
-            )));
+            let manager = ServiceManager::new(
+                self.config.network.agent.services.clone(),
+                self.config.capabilities.applications.clone(),
+                backend,
+            );
+            let reflect_builder = active_reflection_descriptors(&config).into_iter().fold(
+                tonic_reflection::server::Builder::configure(),
+                |builder, (_, descriptor)| builder.register_encoded_file_descriptor_set(descriptor),
+            );
+            let reflect = reflect_builder.build_v1()?;
 
-            let hwid_service: Option<HwidServiceServer<_>> =
-                if self.config.capabilities.hwid.enabled {
-                    Some(HwidServiceServer::new(HwIdServer::new(
-                        self.config.capabilities.hwid.interface.clone(),
-                    )))
-                } else {
-                    None
-                };
-            server = server.add_optional_service(hwid_service);
+            info!(
+                addr = %self.listen,
+                service = %self.config.identity.service_name,
+                "starting givc-agent"
+            );
 
-            server = server.add_service(LocaleClientServer::new(LocaleServer::new()));
+            let listener = bind_listener_with_retry(&self.listen).await?;
+            let _ = started_tx.send(());
 
-            let notifier_service: Option<UserNotificationServiceServer<_>> =
-                if self.config.capabilities.notifier.enabled {
-                    Some(UserNotificationServiceServer::new(UserNotifierServer::new(
-                        self.config.capabilities.notifier.socket.clone().into(),
-                    )))
-                } else {
-                    None
-                };
-            server = server.add_optional_service(notifier_service);
+            let interceptor =
+                RequestInterceptorLayer::new(AgentInterceptor::from_config(&self.config)?);
 
-            server = server.add_service(StatsServiceServer::new(StatsServer::new()));
-
-            let wifi_service: Option<WifiServiceServerServer<_>> = if self
-                .config
-                .capabilities
-                .wifi
-                .enabled
-            {
-                match WifiService::new().await {
-                    Ok(service) => Some(WifiServiceServerServer::new(service)),
-                    Err(err) => {
-                        tracing::warn!(error = %err, "wifi service disabled: failed to initialize");
-                        None
-                    }
-                }
-            } else {
-                None
-            };
-            server = server.add_optional_service(wifi_service);
-            let result = serve_until_shutdown(
-                server.serve_with_incoming_shutdown(
-                    tls_incoming(listener, tls_acceptor(tls)?),
-                    shutdown_signal(shutdown_trigger.clone()),
-                ),
-                shutdown.clone(),
-            )
-            .await;
-            result?;
-        } else {
             let mut server = Server::builder().layer(interceptor).add_service(reflect);
 
             if self.config.capabilities.exec.enabled {
@@ -422,18 +337,29 @@ impl AgentRuntime {
                 None
             };
             server = server.add_optional_service(wifi_service);
-            let result = serve_until_shutdown(
-                server.serve_with_incoming_shutdown(
-                    listener,
-                    shutdown_signal(shutdown_trigger.clone()),
-                ),
-                shutdown.clone(),
-            )
-            .await;
-            result?;
-        }
 
-        Ok(())
+            let result = if let Some(tls) = &self.config.network.tls_config {
+                serve_until_shutdown(
+                    server.serve_with_incoming_shutdown(
+                        tls_incoming(listener, tls_acceptor(tls)?),
+                        shutdown_signal(shutdown_trigger.clone()),
+                    ),
+                    shutdown.clone(),
+                )
+                .await
+            } else {
+                serve_until_shutdown(
+                    server.serve_with_incoming_shutdown(
+                        listener,
+                        shutdown_signal(shutdown_trigger.clone()),
+                    ),
+                    shutdown.clone(),
+                )
+                .await
+            };
+            result?;
+
+            Ok(())
         }
         .await;
         finish_proxy_workers(shutdown_trigger, shutdown, proxy_workers, result).await
