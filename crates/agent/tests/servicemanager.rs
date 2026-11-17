@@ -1,10 +1,36 @@
 use std::sync::Arc;
 
 use givc_agent::config::ApplicationManifest;
-use givc_agent::servicemanager::{
-    BackendCall, RunningUnit, ServiceManager, Snapshot, SystemdBackend,
-};
+use givc_agent::servicemanager::{RunningUnit, ServiceManager, Snapshot, SystemdBackend};
 use tokio_stream::StreamExt;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BackendCall {
+    GetUnitSnapshot(String),
+    GetUnitMainPid(String),
+    RestartUnit(String),
+    StopUnit(String),
+    KillUnit {
+        name: String,
+        who: String,
+        signal: i32,
+    },
+    FreezeUnit(String),
+    ThawUnit(String),
+    StartTransientUnit {
+        name: String,
+        command: Vec<String>,
+        unit_type: String,
+        environment: Vec<String>,
+    },
+    ListUnitsByPatterns {
+        states: Vec<String>,
+        patterns: Vec<String>,
+    },
+    ListUnitsByNames {
+        names: Vec<String>,
+    },
+}
 
 #[derive(Clone, Default)]
 struct FakeBackend {

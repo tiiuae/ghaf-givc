@@ -17,34 +17,6 @@ use tonic::{Request, Response, Status};
 pub use pb::systemd::unit_control_service_server::UnitControlServiceServer;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BackendCall {
-    GetUnitSnapshot(String),
-    GetUnitMainPid(String),
-    RestartUnit(String),
-    StopUnit(String),
-    KillUnit {
-        name: String,
-        who: String,
-        signal: i32,
-    },
-    FreezeUnit(String),
-    ThawUnit(String),
-    StartTransientUnit {
-        name: String,
-        command: Vec<String>,
-        unit_type: String,
-        environment: Vec<String>,
-    },
-    ListUnitsByPatterns {
-        states: Vec<String>,
-        patterns: Vec<String>,
-    },
-    ListUnitsByNames {
-        names: Vec<String>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Snapshot {
     pub name: String,
     pub description: String,
