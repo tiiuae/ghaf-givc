@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fs;
-use std::net::{IpAddr, SocketAddr};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
@@ -510,11 +509,11 @@ fn socket_proxy_endpoint_config(
             transport
                 .address
                 .parse()
-                .with_context(|| format!("invalid vsock cid {}", transport.address))?,
+                .with_context(|| format!("invalid vsock address (cid {})", transport.address))?,
             transport
                 .port
                 .parse()
-                .with_context(|| format!("invalid vsock port {}", transport.port))?,
+                .with_context(|| format!("invalid vsock address (port {})", transport.port))?,
         )),
         other => bail!("unsupported socket-proxy transport protocol: {other}"),
     };
@@ -532,32 +531,10 @@ fn socket_proxy_listener_address(
     config: &AgentConfig,
     proxy: &ProxyConfig,
 ) -> Result<ListenerAddress> {
-    let transport = &config.network.agent.transport;
-    Ok(match proxy.transport.protocol.as_str() {
-        "tcp" => {
-            let addr: IpAddr = transport
-                .address
-                .parse()
-                .with_context(|| format!("invalid agent address {}", transport.address))?;
-            let port =
-                proxy.transport.port.parse().with_context(|| {
-                    format!("invalid socket-proxy port {}", proxy.transport.port)
-                })?;
-            ListenerAddress::Tcp(SocketAddr::new(addr, port))
-        }
-        "unix" => ListenerAddress::Path(transport.address.clone().into()),
-        "abstract" => ListenerAddress::Abstract(transport.address.clone()),
-        "vsock" => ListenerAddress::Vsock {
-            cid: transport
-                .address
-                .parse()
-                .with_context(|| format!("invalid agent vsock cid {}", transport.address))?,
-            port: proxy.transport.port.parse().with_context(|| {
-                format!("invalid socket-proxy vsock port {}", proxy.transport.port)
-            })?,
-        },
-        other => bail!("unsupported socket-proxy transport protocol: {other}"),
-    })
+    let mut listener_proxy = proxy.clone();
+    listener_proxy.transport.address = config.network.agent.transport.address.clone();
+    let endpoint = socket_proxy_endpoint_config(config, &listener_proxy)?;
+    endpoint.transport.address.try_into()
 }
 
 fn set_socket_permissions(path: &Path) -> Result<()> {
@@ -630,11 +607,11 @@ mod tests {
             ..Default::default()
         };
 
-        for (protocol, address, port) in [
-            ("tcp", "127.0.0.1", "9010"),
-            ("unix", "/tmp/givc.sock", "9010"),
-            ("abstract", "givc-socket", "9010"),
-            ("vsock", "2", "9010"),
+        for (protocol, address, remote_address, port) in [
+            ("tcp", "127.0.0.1", "192.0.2.10", "9010"),
+            ("unix", "/tmp/givc.sock", "/tmp/remote.sock", "9010"),
+            ("abstract", "givc-socket", "remote-socket", "9010"),
+            ("vsock", "2", "9", "9010"),
         ] {
             let config = AgentConfig {
                 network: crate::config::NetworkConfig {
@@ -652,16 +629,30 @@ mod tests {
             let proxy = ProxyConfig {
                 transport: crate::config::TransportConfig {
                     protocol: protocol.to_owned(),
+                    address: remote_address.to_owned(),
                     port: port.to_owned(),
                     ..Default::default()
                 },
                 server: true,
                 socket: "unused".to_owned(),
             };
-            assert!(
-                socket_proxy_listener_address(&config, &proxy).is_ok(),
-                "{protocol}"
-            );
+            let listener = socket_proxy_listener_address(&config, &proxy).unwrap();
+            match protocol {
+                "tcp" => assert!(
+                    matches!(listener, ListenerAddress::Tcp(addr) if addr == "127.0.0.1:9010".parse().unwrap())
+                ),
+                "unix" => assert!(
+                    matches!(listener, ListenerAddress::Path(path) if path == std::path::Path::new(address))
+                ),
+                "abstract" => {
+                    assert!(matches!(listener, ListenerAddress::Abstract(name) if name == address))
+                }
+                "vsock" => assert!(matches!(
+                    listener,
+                    ListenerAddress::Vsock { cid: 2, port: 9010 }
+                )),
+                _ => unreachable!(),
+            }
         }
     }
 

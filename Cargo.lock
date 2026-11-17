@@ -1545,6 +1545,7 @@ dependencies = [
  "prost",
  "serde",
  "strum 0.28.0",
+ "tokio-listener",
  "tokio-vsock",
  "tonic",
  "tonic-prost",

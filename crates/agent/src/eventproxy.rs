@@ -629,37 +629,8 @@ where
 
 fn event_server_listener_address(event: &EventConfig) -> Result<ListenerAddress> {
     let transport = &event.transport;
-    match transport.protocol.as_str() {
-        "tcp" => {
-            let addr = transport
-                .address
-                .parse()
-                .with_context(|| format!("invalid event address {}", transport.address))?;
-            let port = transport
-                .port
-                .parse()
-                .with_context(|| format!("invalid event port {}", transport.port))?;
-            Ok(ListenerAddress::Tcp(std::net::SocketAddr::new(addr, port)))
-        }
-        "unix" => Ok(ListenerAddress::Path(transport.address.clone().into())),
-        "abstract" => Ok(ListenerAddress::Abstract(transport.address.clone())),
-        "vsock" => {
-            let cid = transport.address.parse().with_context(|| {
-                format!(
-                    "invalid vsock address {}:{}",
-                    transport.address, transport.port
-                )
-            })?;
-            let port = transport.port.parse().with_context(|| {
-                format!(
-                    "invalid vsock address {}:{}",
-                    transport.address, transport.port
-                )
-            })?;
-            Ok(ListenerAddress::Vsock { cid, port })
-        }
-        other => bail!("unsupported event transport protocol: {other}"),
-    }
+    let endpoint = endpoint_from_transport(transport, None)?;
+    endpoint.transport.address.try_into()
 }
 
 fn endpoint_from_transport(
@@ -684,11 +655,11 @@ fn endpoint_from_transport(
             transport
                 .address
                 .parse()
-                .with_context(|| format!("invalid vsock cid {}", transport.address))?,
+                .with_context(|| format!("invalid vsock address (cid {})", transport.address))?,
             transport
                 .port
                 .parse()
-                .with_context(|| format!("invalid vsock port {}", transport.port))?,
+                .with_context(|| format!("invalid vsock address (port {})", transport.port))?,
         )),
         other => bail!("unsupported event transport protocol: {other}"),
     };
