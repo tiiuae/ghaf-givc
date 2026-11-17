@@ -32,6 +32,7 @@ prost-reflect = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = [
   "macros",
   "net",
+  "process",
   "rt-multi-thread",
   "signal",
   "time",

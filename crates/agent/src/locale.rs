@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::ffi::OsStr;
-use std::process::Command;
 
 use anyhow::{Context, Result, bail, ensure};
 use givc_common::{pb, tonic::RewrapErr};
 use regex::Regex;
+use tokio::process::Command;
 use tonic::{Request, Response, Status};
 
 pub use pb::locale::locale_client_server::LocaleClientServer;
@@ -20,7 +20,7 @@ impl LocaleServer {
         Self
     }
 
-    fn set_locale(&self, assignments: &[pb::locale::LocaleAssignment]) -> Result<()> {
+    async fn set_locale(&self, assignments: &[pb::locale::LocaleAssignment]) -> Result<()> {
         if assignments.is_empty() {
             bail!("no locale assignments provided")
         }
@@ -32,6 +32,7 @@ impl LocaleServer {
                 .into_iter()
                 .chain(args.iter().map(String::as_str)),
         )
+        .await
         .context("failed to set locale")?;
 
         let systemctl_args = if is_root() {
@@ -45,22 +46,25 @@ impl LocaleServer {
                 .iter()
                 .map(String::as_str)
                 .chain(args.iter().map(String::as_str)),
-        );
+        )
+        .await;
 
         Ok(())
     }
 
-    fn set_timezone(&self, timezone: &str) -> Result<()> {
-        set_timezone_with(timezone, "timedatectl")
+    async fn set_timezone(&self, timezone: &str) -> Result<()> {
+        set_timezone_with(timezone, "timedatectl").await
     }
 }
 
-fn set_timezone_with(timezone: &str, command: &str) -> Result<()> {
+async fn set_timezone_with(timezone: &str, command: &str) -> Result<()> {
     if !validate_timezone(timezone) {
         bail!("invalid timezone")
     }
 
-    run_command(command, ["set-timezone", timezone]).context("failed to set timezone")?;
+    run_command(command, ["set-timezone", timezone])
+        .await
+        .context("failed to set timezone")?;
     Ok(())
 }
 
@@ -71,7 +75,7 @@ impl pb::locale::locale_client_server::LocaleClient for LocaleServer {
         request: Request<pb::locale::LocaleMessage>,
     ) -> Result<Response<pb::locale::Empty>, Status> {
         let req = request.into_inner();
-        self.set_locale(&req.assignments).rewrap_err()?;
+        self.set_locale(&req.assignments).await.rewrap_err()?;
         Ok(Response::new(pb::locale::Empty {}))
     }
 
@@ -80,7 +84,7 @@ impl pb::locale::locale_client_server::LocaleClient for LocaleServer {
         request: Request<pb::locale::TimezoneMessage>,
     ) -> Result<Response<pb::locale::Empty>, Status> {
         let req = request.into_inner();
-        self.set_timezone(&req.timezone).rewrap_err()?;
+        self.set_timezone(&req.timezone).await.rewrap_err()?;
         Ok(Response::new(pb::locale::Empty {}))
     }
 }
@@ -100,7 +104,7 @@ fn validate_timezone(timezone: &str) -> bool {
     re.is_match(timezone)
 }
 
-fn run_command<I, S>(name: &str, args: I) -> Result<()>
+async fn run_command<I, S>(name: &str, args: I) -> Result<()>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -109,6 +113,7 @@ where
     cmd.args(args);
     let status = cmd
         .status()
+        .await
         .with_context(|| format!("failed to run {name}"))?;
     ensure!(status.success(), "{name} exited with status {status}");
     Ok(())
@@ -141,16 +146,17 @@ mod tests {
         assert_eq!(args, vec!["LC_TIME=en_US.UTF-8"]);
     }
 
-    #[test]
-    fn rejects_empty_locale() {
+    #[tokio::test]
+    async fn rejects_empty_locale() {
         let server = LocaleServer::new();
-        let err = server.set_locale(&[]).unwrap_err();
+        let err = server.set_locale(&[]).await.unwrap_err();
         assert!(err.to_string().contains("no locale assignments"));
     }
 
-    #[test]
-    fn timezone_command_failure_is_returned() {
+    #[tokio::test]
+    async fn timezone_command_failure_is_returned() {
         let error = set_timezone_with("Europe/Helsinki", "/bin/false")
+            .await
             .expect_err("failed timedatectl must not report success");
         assert!(error.to_string().contains("failed to set timezone"));
     }
