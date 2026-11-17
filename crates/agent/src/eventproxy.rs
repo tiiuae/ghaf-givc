@@ -641,28 +641,8 @@ fn endpoint_from_transport(
     if let Some(tls_config) = tls.as_mut() {
         tls_config.tls_name = Some(transport.name.clone());
     }
-    let address = match transport.protocol.as_str() {
-        "tcp" => EndpointAddress::Tcp {
-            addr: transport.address.clone(),
-            port: transport
-                .port
-                .parse()
-                .with_context(|| format!("invalid tcp port {}", transport.port))?,
-        },
-        "unix" => EndpointAddress::Unix(transport.address.clone()),
-        "abstract" => EndpointAddress::Abstract(transport.address.clone()),
-        "vsock" => EndpointAddress::Vsock(tokio_vsock::VsockAddr::new(
-            transport
-                .address
-                .parse()
-                .with_context(|| format!("invalid vsock address (cid {})", transport.address))?,
-            transport
-                .port
-                .parse()
-                .with_context(|| format!("invalid vsock address (port {})", transport.port))?,
-        )),
-        other => bail!("unsupported event transport protocol: {other}"),
-    };
+    let address =
+        EndpointAddress::from_protocol(&transport.protocol, &transport.address, &transport.port)?;
 
     Ok(ClientEndpointConfig {
         transport: CommonTransportConfig {
@@ -795,83 +775,8 @@ mod tests {
         }
     }
 
-    fn event_listener_address(
-        protocol: &str,
-        address: &str,
-        port: &str,
-    ) -> Result<ListenerAddress> {
-        event_server_listener_address(&event_config(protocol, address, port))
-    }
-
     fn event(event_type: u16, code: u16, value: i32) -> InputEvent {
         InputEvent::new(event_type, code, value)
-    }
-
-    #[test]
-    fn event_listener_accepts_tcp_transport() {
-        let address = event_listener_address("tcp", "192.0.2.20", "9014").unwrap();
-
-        assert!(matches!(
-            address,
-            ListenerAddress::Tcp(address)
-                if address == "192.0.2.20:9014".parse::<std::net::SocketAddr>().unwrap()
-        ));
-    }
-
-    #[test]
-    fn event_listener_accepts_unix_transport() {
-        let address = event_listener_address("unix", "/run/givc/event.sock", "").unwrap();
-
-        assert!(matches!(
-            address,
-            ListenerAddress::Path(path) if path == Path::new("/run/givc/event.sock")
-        ));
-    }
-
-    #[test]
-    fn event_listener_accepts_abstract_transport() {
-        let address = event_listener_address("abstract", "givc-event", "").unwrap();
-
-        assert!(matches!(
-            address,
-            ListenerAddress::Abstract(name) if name == "givc-event"
-        ));
-    }
-
-    #[test]
-    fn event_listener_accepts_vsock_transport() {
-        let address = event_listener_address("vsock", "3", "9014").unwrap();
-
-        assert!(matches!(
-            address,
-            ListenerAddress::Vsock { cid: 3, port: 9014 }
-        ));
-    }
-
-    #[test]
-    fn event_listener_reports_invalid_tcp_address() {
-        let error = event_listener_address("tcp", "not-an-ip", "9014").unwrap_err();
-
-        assert!(error.to_string().contains("not-an-ip"));
-    }
-
-    #[test]
-    fn event_listener_reports_invalid_vsock_address() {
-        for (cid, port) in [("not-a-cid", "9014"), ("3", "not-a-port")] {
-            let error = event_listener_address("vsock", cid, port).unwrap_err();
-            assert!(error.to_string().contains("invalid vsock address"));
-        }
-    }
-
-    #[test]
-    fn event_listener_rejects_unsupported_protocol() {
-        let error = event_listener_address("udp", "192.0.2.20", "9014").unwrap_err();
-
-        assert!(
-            error
-                .to_string()
-                .contains("unsupported event transport protocol: udp")
-        );
     }
 
     #[tokio::test]

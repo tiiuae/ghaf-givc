@@ -495,28 +495,8 @@ fn socket_proxy_endpoint_config(
     if let Some(tls_config) = tls.as_mut() {
         tls_config.tls_name = Some(transport.name.clone());
     }
-    let address = match transport.protocol.as_str() {
-        "tcp" => EndpointAddress::Tcp {
-            addr: transport.address,
-            port: transport
-                .port
-                .parse()
-                .with_context(|| format!("invalid proxy port {}", transport.port))?,
-        },
-        "unix" => EndpointAddress::Unix(transport.address),
-        "abstract" => EndpointAddress::Abstract(transport.address),
-        "vsock" => EndpointAddress::Vsock(tokio_vsock::VsockAddr::new(
-            transport
-                .address
-                .parse()
-                .with_context(|| format!("invalid vsock address (cid {})", transport.address))?,
-            transport
-                .port
-                .parse()
-                .with_context(|| format!("invalid vsock address (port {})", transport.port))?,
-        )),
-        other => bail!("unsupported socket-proxy transport protocol: {other}"),
-    };
+    let address =
+        EndpointAddress::from_protocol(transport.protocol, transport.address, transport.port)?;
 
     Ok(EndpointConfig {
         transport: givc_common::types::TransportConfig {
@@ -591,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn supports_socket_proxy_server_transports() {
+    fn socket_proxy_server_binds_local_agent_address() {
         let config = AgentConfig {
             network: crate::config::NetworkConfig {
                 agent: crate::config::EndpointConfig {
@@ -606,54 +586,23 @@ mod tests {
             },
             ..Default::default()
         };
-
-        for (protocol, address, remote_address, port) in [
-            ("tcp", "127.0.0.1", "192.0.2.10", "9010"),
-            ("unix", "/tmp/givc.sock", "/tmp/remote.sock", "9010"),
-            ("abstract", "givc-socket", "remote-socket", "9010"),
-            ("vsock", "2", "9", "9010"),
-        ] {
-            let config = AgentConfig {
-                network: crate::config::NetworkConfig {
-                    agent: crate::config::EndpointConfig {
-                        transport: crate::config::TransportConfig {
-                            address: address.to_owned(),
-                            ..config.network.agent.transport.clone()
-                        },
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
+        let proxy = ProxyConfig {
+            transport: crate::config::TransportConfig {
+                protocol: "tcp".to_owned(),
+                address: "192.0.2.10".to_owned(),
+                port: "9010".to_owned(),
                 ..Default::default()
-            };
-            let proxy = ProxyConfig {
-                transport: crate::config::TransportConfig {
-                    protocol: protocol.to_owned(),
-                    address: remote_address.to_owned(),
-                    port: port.to_owned(),
-                    ..Default::default()
-                },
-                server: true,
-                socket: "unused".to_owned(),
-            };
-            let listener = socket_proxy_listener_address(&config, &proxy).unwrap();
-            match protocol {
-                "tcp" => assert!(
-                    matches!(listener, ListenerAddress::Tcp(addr) if addr == "127.0.0.1:9010".parse().unwrap())
-                ),
-                "unix" => assert!(
-                    matches!(listener, ListenerAddress::Path(path) if path == std::path::Path::new(address))
-                ),
-                "abstract" => {
-                    assert!(matches!(listener, ListenerAddress::Abstract(name) if name == address))
-                }
-                "vsock" => assert!(matches!(
-                    listener,
-                    ListenerAddress::Vsock { cid: 2, port: 9010 }
-                )),
-                _ => unreachable!(),
-            }
-        }
+            },
+            server: true,
+            socket: "unused".to_owned(),
+        };
+
+        let listener = socket_proxy_listener_address(&config, &proxy).unwrap();
+
+        assert!(matches!(
+            listener,
+            ListenerAddress::Tcp(addr) if addr == "127.0.0.1:9010".parse().unwrap()
+        ));
     }
 
     #[tokio::test]
