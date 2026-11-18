@@ -118,8 +118,9 @@
 
               import time
               with subtest("setup services"):
-                  hostvm.wait_for_unit("givc-ghaf-host.service")
                   adminvm.wait_for_unit("givc-admin.service")
+                  hostvm.succeed("systemctl restart givc-ghaf-host.service")
+                  hostvm.wait_for_unit("givc-ghaf-host.service")
                   guivm.wait_for_unit("multi-user.target")
                   print(hostvm.succeed("${cli} ${cliArgs} get-status gui-vm multi-user.target"))
                   appvm.wait_for_unit("multi-user.target")

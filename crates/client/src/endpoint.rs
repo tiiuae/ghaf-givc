@@ -18,6 +18,7 @@ use givc_common::address::EndpointAddress;
 use givc_common::types::TransportConfig;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+pub const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct TlsConfig {
@@ -104,6 +105,7 @@ impl EndpointConfig {
         debug!("Connecting to {url}, TLS name {:?}", &self.tls);
         let mut endpoint = Endpoint::try_from(url.clone())?
             .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(RPC_TIMEOUT)
             .concurrency_limit(30);
         if let Some(tls) = &self.tls {
             endpoint = endpoint.tls_config(tls.client_config()?)?;

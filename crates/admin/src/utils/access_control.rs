@@ -3,8 +3,6 @@
 
 use super::x509::SecurityInfo;
 use anyhow::Context;
-use bytes::Buf;
-
 use cedar_policy::{
     Authorizer as CedarAuthorizer,
     Context as CedarContext,
@@ -19,13 +17,13 @@ use cedar_policy::{
 use givc_common::pb::reflection::ADMIN_DESCRIPTOR;
 use http::Request as HttpRequest;
 use http_body_util::{BodyExt, Full};
-use prost_reflect::{DescriptorPool, DynamicMessage};
+use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor};
 use std::path::Path;
 use std::{fs, str::FromStr, sync::Arc};
 use tonic::Status;
 use tonic::body::Body;
 use tonic_middleware::RequestInterceptor;
-use tracing::{debug, error, warn};
+use tracing::{error, warn};
 
 #[derive(Clone)]
 pub struct Authorizer {
@@ -162,16 +160,7 @@ impl RequestInterceptor for Authorizer {
                     .map_err(|e| Status::internal(format!("Failed to buffer body: {e}")))?
                     .to_bytes();
 
-                let mut buf = body_bytes.clone();
-
-                if let Ok(_compressed) = buf.try_get_u8()
-                    && let Ok(len) = buf.try_get_u32().map(|len| len as usize)
-                    && let Some(payload) = buf.chunk().get(..len)
-                {
-                    let msg = DynamicMessage::decode(method.input(), payload).map_err(|err| {
-                        debug!("Authorizer: Failed to decode: {}", err);
-                        Status::internal(format!("Failed to decode: {err}"))
-                    })?;
+                if let Ok(msg) = decode_request_body(method.input(), &body_bytes) {
                     let cedar_context_json = serde_json::to_value(&msg)
                         .inspect_err(|e| error!("Failed to serialize to cedar context JSON: {e}"))
                         .unwrap_or(serde_json::json!({}));
@@ -196,4 +185,47 @@ impl RequestInterceptor for Authorizer {
 fn parse_grpc_path(path: &str) -> Option<(&str, &str)> {
     let mut parts = path.trim_matches('/').split('/');
     parts.next().zip(parts.next())
+}
+
+fn decode_request_body(
+    input: MessageDescriptor,
+    body: &[u8],
+) -> Result<DynamicMessage, prost_reflect::prost::DecodeError> {
+    if body.len() >= 5 && body[0] <= 1 {
+        let frame_len = u32::from_be_bytes(body[1..5].try_into().unwrap()) as usize;
+        if frame_len == body.len() - 5 {
+            return DynamicMessage::decode(input, &body[5..]);
+        }
+    }
+
+    DynamicMessage::decode(input, body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+    use givc_common::pb::admin::ApplicationRequest;
+    use prost_reflect::prost::Message;
+
+    #[test]
+    fn decodes_unframed_protobuf_body() {
+        let request = ApplicationRequest {
+            app_name: "cat".to_owned(),
+            vm_name: Some("appvm".to_owned()),
+            args: vec!["/tmp/testfile".to_owned()],
+        };
+        let body = Bytes::from(request.encode_to_vec());
+        let pool = DescriptorPool::decode(ADMIN_DESCRIPTOR).expect("descriptor pool");
+        let service = pool
+            .get_service_by_name("admin.AdminService")
+            .expect("admin service");
+        let method = service
+            .methods()
+            .find(|method| method.name() == "StartApplication")
+            .expect("start application method");
+
+        let decoded = decode_request_body(method.input(), &body);
+        assert!(decoded.is_ok(), "raw protobuf body must decode");
+    }
 }

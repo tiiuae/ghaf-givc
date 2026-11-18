@@ -15,6 +15,7 @@ glib = { version = "*", optional = true, features = [] }
 prost = "0.14"
 serde = { workspace = true, features = ["derive"] }
 strum = { workspace = true, features = ["derive"] }
+tokio-listener.workspace = true
 tokio-vsock = "*"
 tonic = { workspace = true, features = ["tls-aws-lc"] }
 tonic-prost.workspace = true

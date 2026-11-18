@@ -34,62 +34,69 @@ in
       vmTests.tests.app = {
         module = {
           nodes = {
-            adminvm = {
-              imports = [
-                self.nixosModules.admin
-                ./snakeoil/gen-test-certs.nix
-              ];
+            adminvm =
+              { pkgs, ... }:
+              {
+                imports = [
+                  self.nixosModules.admin
+                  ./snakeoil/gen-test-certs.nix
+                ];
 
-              # TLS parameter
-              givc-tls-test = {
-                name = "adminvm";
-                addresses = addrs.adminvm;
-              };
+                # TLS parameter
+                givc-tls-test = {
+                  name = "adminvm";
+                  addresses = addrs.adminvm;
+                };
 
-              networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
-                {
-                  address = addrs.adminvm;
-                  prefixLength = 24;
-                }
-              ];
-              givc.admin = {
-                enable = true;
-                debug = true;
-                inherit (adminConfig) name;
-                inherit (adminConfig) addresses;
-                tls.enable = tls;
-                accessControl = {
+                networking.interfaces.eth1.ipv4.addresses = lib.mkOverride 0 [
+                  {
+                    address = addrs.adminvm;
+                    prefixLength = 24;
+                  }
+                ];
+                environment.systemPackages = [ pkgs.grpcurl ];
+                givc.admin = {
                   enable = true;
-                  adminRules = [
-                    {
-                      from = [
-                        "appvm"
-                        "guivm"
-                        "ghaf-host"
-                      ];
-                      permittedRequests = [ "RegisterService" ];
-                    }
-                    {
-                      from = [ "guivm" ];
-                      to = [ "appvm" ];
-                      permittedRequests = [ "StartApplication" ];
-                    }
-                    {
-                      from = [ "guivm" ];
-                      to = [ "ghaf-host" ];
+                  debug = true;
+                  inherit (adminConfig) name;
+                  inherit (adminConfig) addresses;
+                  tls.enable = tls;
+                  accessControl = {
+                    enable = true;
+                    adminRules = [
+                      {
+                        from = [
+                          "appvm"
+                          "guivm"
+                          "ghaf-host"
+                        ];
+                        permittedRequests = [ "RegisterService" ];
+                      }
+                      {
+                        from = [ "guivm" ];
+                        to = [ "appvm" ];
+                        permittedRequests = [ "StartApplication" ];
+                      }
+                      {
+                        from = [ "guivm" ];
+                        to = [ "ghaf-host" ];
 
-                      permittedRequests = [ "StopService" ];
-                    }
-                  ];
+                        permittedRequests = [ "StopService" ];
+                      }
+                    ];
+                  };
                 };
               };
-            };
             guivm =
               { pkgs, ... }:
               let
                 inherit (import "${inputs.nixpkgs.outPath}/nixos/tests/ssh-keys.nix" pkgs)
                   snakeOilPublicKey
                   ;
+                ctapHelper = pkgs.writeShellScriptBin "qctap-get-info" ''
+                  ${pkgs.coreutils}/bin/cat
+                  ${pkgs.coreutils}/bin/touch /tmp/ctap-invoked
+                '';
               in
               {
                 imports = [
@@ -125,6 +132,8 @@ in
 
                 givc.sysvm = {
                   enable = true;
+                  capabilities.ctap.enable = true;
+                  accessControl.enable = true;
                   network.admin.transport = lib.head adminConfig.addresses;
                   network.agent.transport = {
                     addr = addrs.guivm;
@@ -132,6 +141,10 @@ in
                   };
                   network.tls.enable = tls;
                 };
+                systemd.services."givc-guivm".path = lib.mkForce [
+                  pkgs.dbus
+                  ctapHelper
+                ];
                 environment = {
                   systemPackages = with pkgs; [
                     grpcurl
@@ -305,6 +318,24 @@ in
                   appvm.succeed("sudo -u ghaf touch /tmp/testfile")
                   appvm.succeed("sudo -u ghaf touch /tmp/admin_forbids")
                   appvm.succeed("sudo -u ghaf touch /tmp/agent_forbids")
+
+              with subtest("CTAP allowed for admin peer"):
+                  output = adminvm.succeed(
+                      "${grpcurl} -d '{\"Req\":\"ctap.GetInfo\",\"Payload\":\"aGVsbG8=\"}' "
+                      "${addrs.guivm}:9000 ctap.Ctap/Ctap"
+                  )
+                  assert "aGVsbG8=" in output, f"unexpected CTAP stdout: {output}"
+                  guivm.succeed("test -e /tmp/ctap-invoked")
+
+              with subtest("CTAP denied for host peer"):
+                  guivm.succeed("rm -f /tmp/ctap-invoked")
+                  (exit_code, output) = hostvm.execute(
+                      "${grpcurl} -d '{\"Req\":\"ctap.GetInfo\"}' "
+                      "${addrs.guivm}:9000 ctap.Ctap/Ctap 2>&1"
+                  )
+                  assert exit_code != 0, f"unexpected CTAP permission for hostvm: {output}"
+                  assert "permission denied by access control policy" in output, output
+                  guivm.fail("test -e /tmp/ctap-invoked")
 
               with subtest("start app with correct file path"):
                   guivm.succeed("${cli} ${cliArgs} start app --vm appvm cat -- /tmp/testfile")

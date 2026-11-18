@@ -9,3 +9,7 @@ result
 target
 __pycache__/
 .pre-commit-config.yaml
+
+# Superpowers temporary workflow artifacts
+/.superpowers/
+/docs/superpowers/

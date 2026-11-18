@@ -84,6 +84,9 @@ in
               };
               environment.systemPackages = [
                 pkgs.networkmanager
+                pkgs.grpcurl
+                pkgs.openssl
+                pkgs.python3
               ];
 
               # Network
@@ -138,6 +141,20 @@ in
 
               givc.sysvm = {
                 enable = true;
+                accessControl = {
+                  enable = true;
+                  # Keep this test policy local; revisit when proxy authorization tests have a dedicated VM fixture.
+                  agentRules = [
+                    {
+                      permittedVms = [ "net-vm" ];
+                      permittedModules = [ "socketproxy" ];
+                    }
+                    {
+                      permittedVms = [ "app-vm" ];
+                      permittedModules = [ "socketproxy" ];
+                    }
+                  ];
+                };
                 network = {
                   admin.transport = lib.head adminConfig.addresses;
                   agent.transport = {
@@ -176,6 +193,7 @@ in
                           protocol = "tcp";
                         };
                         socket = "/tmp/.dbusproxy_app.sock";
+                        server = false;
                       }
                       {
                         transport = {
@@ -239,6 +257,7 @@ in
 
               givc.sysvm = {
                 enable = true;
+                accessControl.enable = true;
                 network = {
                   admin.transport = lib.head adminConfig.addresses;
                   agent.transport = {
@@ -312,6 +331,7 @@ in
                   prefixLength = 24;
                 }
               ];
+              environment.systemPackages = [ pkgs.grpcurl ];
 
               # Service
               services.upower.enable = true;
@@ -332,6 +352,20 @@ in
 
               givc.sysvm = {
                 enable = true;
+                accessControl = {
+                  enable = true;
+                  # Keep this test policy local; revisit when proxy authorization tests have a dedicated VM fixture.
+                  agentRules = [
+                    {
+                      permittedVms = [ "gui-vm" ];
+                      permittedModules = [ "socketproxy" ];
+                    }
+                    {
+                      permittedVms = [ "gui-vm" ];
+                      permittedModules = [ ];
+                    }
+                  ];
+                };
                 network = {
                   admin.transport = lib.head adminConfig.addresses;
                   agent.transport = {
@@ -500,7 +534,7 @@ in
           with subtest("success_tests_systembus"):
 
             # SUCCESS: remote access to netvms NetworkManager service; dbus-send
-            print(guivm.succeed("sudo -u ghaf dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.NetworkManager /org/freedesktop/NetworkManager org.freedesktop.DBus.Properties.Get string:'org.freedesktop.NetworkManager' string:'ActiveConnections'"))
+            print(guivm.succeed("sudo -u ghaf timeout 10 dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.NetworkManager /org/freedesktop/NetworkManager org.freedesktop.DBus.Properties.Get string:'org.freedesktop.NetworkManager' string:'ActiveConnections'"))
 
             # SUCCESS: remote access to netvms NetworkManager service; nmcli
             print(guivm.succeed("sudo -u ghaf -- bash -c 'export DBUS_SYSTEM_BUS_ADDRESS=unix:path=/tmp/.dbusproxy_net.sock; nmcli d'"))
@@ -513,6 +547,20 @@ in
 
             # SUCCESS: connection to secondary system vm (audio)
             print(guivm.succeed("sudo -u ghaf dbus-send --bus=unix:path=/tmp/.dbusproxy_snd.sock --print-reply --dest=org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.DBus.Introspectable.Introspect"))
+
+          with subtest("persistent_socket_client_does_not_block_other_clients"):
+            guivm.succeed(
+              "python3 -c 'import socket,time; s=socket.socket(socket.AF_UNIX); s.connect(\"/tmp/.dbusproxy_net.sock\"); open(\"/tmp/givc-persistent-proxy-open\", \"w\").close(); time.sleep(60)' >/tmp/givc-persistent-proxy.log 2>&1 & echo $! >/tmp/givc-persistent-proxy.pid"
+            )
+            guivm.wait_until_succeeds("test -e /tmp/givc-persistent-proxy-open")
+            guivm.succeed(
+              "sudo -u ghaf timeout 5 dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.Avahi /org/freedesktop/Avahi org.freedesktop.DBus.Introspectable.Introspect"
+            )
+            guivm.succeed("kill $(cat /tmp/givc-persistent-proxy.pid)")
+            guivm.succeed("rm -f /tmp/givc-persistent-proxy-open")
+            guivm.succeed(
+              "sudo -u ghaf timeout 5 dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.Avahi /org/freedesktop/Avahi org.freedesktop.DBus.Introspectable.Introspect"
+            )
 
           with subtest("failure_tests_systembus"):
 
@@ -528,6 +576,27 @@ in
             # FAIL: evil2 user access to netvm service
             print(guivm.fail("sudo -u evil2 dbus-send --bus=unix:path=/tmp/.dbusproxy_net.sock --print-reply --dest=org.freedesktop.Avahi /org/freedesktop/Avahi org.freedesktop.DBus.Introspectable.Introspect"))
 
+          with subtest("socket_proxy_cedar_allow"):
+            guivm.succeed(
+              "/run/current-system/sw/bin/openssl s_client -brief -connect ${addrs.netvm}:9010 -tls1_3 -CAfile /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem </dev/null"
+            )
+            guivm.fail(
+              "/run/current-system/sw/bin/openssl s_client -brief -connect ${addrs.netvm}:9010 -tls1_2 -CAfile /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem </dev/null"
+            )
+            guivm.fail(
+              "/run/current-system/sw/bin/openssl s_client -brief -connect ${addrs.netvm}:9010 -tls1_3 -CAfile /etc/givc/ca-cert.pem </dev/null"
+            )
+            guivm.succeed(
+              "grpcurl -cacert /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem -d '{\"Chunk\":\"b2s=\",\"Eof\":true}' ${addrs.netvm}:9010 socketproxy.SocketStream/TransferData"
+            )
+
+          with subtest("socket_proxy_cedar_deny"):
+            (exit_code, output) = audiovm.execute(
+              "grpcurl -cacert /etc/givc/ca-cert.pem -cert /etc/givc/cert.pem -key /etc/givc/key.pem -d '{\"Chunk\":\"b2s=\",\"Eof\":true}' ${addrs.netvm}:9010 socketproxy.SocketStream/TransferData 2>&1"
+            )
+            assert exit_code != 0, f"Cedar should deny audio VM access to net-vm socket proxy: {output}"
+            assert "PermissionDenied" in output, f"Expected Cedar PermissionDenied, got: {output}"
+
           with subtest("remote_user_to_sesssionbus_access"):
             appvm.wait_for_unit("multi-user.target")
 
@@ -541,6 +610,12 @@ in
 
           with subtest("test_parallel_access"):
             print(guivm.succeed("sudo -u ghaf dbus-send --bus=unix:path=/tmp/.dbusproxy_app.sock --dest=org.mpris.MediaPlayer2.playerctld /org/mpris/MediaPlayer2 org.freedesktop.DBus.Introspectable.Introspect & sudo -u ghaf dbus-send --bus=unix:path=/tmp/.dbusproxy_app.sock --dest=org.mpris.MediaPlayer2.playerctld /org/mpris/MediaPlayer2 org.freedesktop.DBus.Introspectable.Introspect & wait"))
+
+          with subtest("agent_stops_with_active_socket_proxy"):
+            guivm.succeed("python3 -c 'import socket,time; s=socket.socket(socket.AF_UNIX); s.connect(\"/tmp/.dbusproxy_net.sock\"); open(\"/tmp/givc-active-proxy-open\",\"w\").close(); time.sleep(60)' >/tmp/givc-active-proxy.log 2>&1 & echo $! >/tmp/givc-active-proxy.pid")
+            guivm.wait_until_succeeds("test -e /tmp/givc-active-proxy-open")
+            guivm.succeed("python3 -c 'import subprocess,time; start=time.monotonic(); subprocess.run([\"systemctl\",\"stop\",\"givc-gui-vm.service\"],check=True); elapsed=time.monotonic()-start; assert elapsed < 5, f\"agent stop took {elapsed:.2f}s\"; assert subprocess.check_output([\"systemctl\",\"show\",\"-p\",\"ActiveState\",\"--value\",\"givc-gui-vm.service\"],text=True).strip() == \"inactive\"'")
+            guivm.succeed("kill $(cat /tmp/givc-active-proxy.pid) || true")
         '';
       };
     };

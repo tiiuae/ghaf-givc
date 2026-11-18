@@ -216,6 +216,8 @@ in
                   }";
               in
               ''
+                adminvm.wait_for_unit("multi-user.target")
+                adminvm.wait_for_unit("givc-admin.service")
                 hostvm.wait_for_unit("multi-user.target")
 
                 # Create default system profile symlink
@@ -225,8 +227,6 @@ in
                 update = updatevm.succeed("find-software-update").strip()
                 updatevm.succeed("mkdir -p /nix/var/nix/profiles/per-user/updates") # FIXME: Move it somewhere into setup phase (or even to module)
                 updatevm.succeed(f"ota-update-server register /nix/var/nix/profiles/per-user/updates ghaf-dev {update}")
-
-                adminvm.wait_for_unit("multi-user.target")
 
                 import time
                 with subtest("setup services"):
