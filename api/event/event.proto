@@ -8,6 +8,7 @@ message DeviceInfo {
   uint32 deviceId = 1;
   uint32 vendorId = 2;
   string name = 3;
+  string deviceType = 4;
 }
 
 message InputEvent {
