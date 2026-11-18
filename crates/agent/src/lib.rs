@@ -15,7 +15,6 @@ pub mod notifier;
 pub mod policyadmin;
 pub mod registration;
 pub mod runtime;
-pub mod service;
 pub mod servicemanager;
 pub mod socketproxy;
 pub mod statsmanager;
