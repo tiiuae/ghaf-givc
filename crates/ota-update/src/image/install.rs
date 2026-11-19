@@ -18,8 +18,7 @@ use super::signature::verify_files;
 use crate::bootctl::get_bootctl_info;
 use crate::lock::UpdateLock;
 
-pub(crate) struct ValidationConfig<'a> {
-    pub signature: &'a Path,
+pub(crate) struct TrustPolicy<'a> {
     pub trusted_key: &'a Path,
     pub uki_trusted_cert: &'a Path,
     pub target: &'a str,
@@ -52,9 +51,9 @@ impl SignedManifest {
 pub(crate) struct ValidatedManifest(Manifest);
 
 impl ValidatedManifest {
-    fn authorize_install(
+    pub(crate) fn authorize_install(
         self,
-        validation: &ValidationConfig<'_>,
+        validation: &TrustPolicy<'_>,
     ) -> anyhow::Result<SignedManifest> {
         validate_install_generation(&self.0, validation)?;
         Ok(SignedManifest::new(self.0))
@@ -63,7 +62,8 @@ impl ValidatedManifest {
 
 pub(crate) async fn install_from_manifest_path(
     manifest_path: &Path,
-    validation: &ValidationConfig<'_>,
+    signature: &Path,
+    validation: &TrustPolicy<'_>,
     dry_run: bool,
 ) -> anyhow::Result<()> {
     // Lock before reading runtime state. Otherwise two installers can both select
@@ -72,7 +72,7 @@ pub(crate) async fn install_from_manifest_path(
     let source_dir = manifest_path
         .parent()
         .context("manifest path has no parent directory")?;
-    let manifest = authenticate_manifest_path(manifest_path, validation)?;
+    let manifest = authenticate_manifest_path(manifest_path, signature, validation)?;
     // Reject a replay before hashing multi-gigabyte artifacts. Authorization is
     // repeated after artifact validation so this remains only a fast-path check.
     validate_install_generation(&manifest, validation)?;
@@ -148,22 +148,24 @@ async fn available_run_bytes() -> Option<u64> {
 
 pub(crate) async fn validate_signed_manifest_path(
     manifest_path: &Path,
-    validation: &ValidationConfig<'_>,
+    signature: &Path,
+    validation: &TrustPolicy<'_>,
 ) -> anyhow::Result<ValidatedManifest> {
     let source_dir = manifest_path
         .parent()
         .context("manifest path has no parent directory")?;
-    let manifest = authenticate_manifest_path(manifest_path, validation)?;
+    let manifest = authenticate_manifest_path(manifest_path, signature, validation)?;
     validate_authenticated_manifest(manifest, source_dir, validation.uki_trusted_cert).await
 }
 
 fn authenticate_manifest_path(
     manifest_path: &Path,
-    validation: &ValidationConfig<'_>,
+    signature: &Path,
+    validation: &TrustPolicy<'_>,
 ) -> anyhow::Result<Manifest> {
     // Verify the exact bytes before deserializing them. Re-serializing JSON here
     // would make the signed representation ambiguous.
-    let manifest_bytes = verify_files(manifest_path, validation.signature, validation.trusted_key)?;
+    let manifest_bytes = verify_files(manifest_path, signature, validation.trusted_key)?;
     // Deserialize the same bytes that crossed the signature boundary. Reading
     // the path again here would allow a manifest replacement race.
     let manifest = Manifest::from_slice(&manifest_bytes)?;
@@ -213,9 +215,9 @@ fn read_accepted_generation(path: &Path) -> anyhow::Result<u64> {
         .with_context(|| format!("parsing accepted generation in {}", path.display()))
 }
 
-fn validate_install_generation(
+pub(crate) fn validate_install_generation(
     manifest: &Manifest,
-    validation: &ValidationConfig<'_>,
+    validation: &TrustPolicy<'_>,
 ) -> anyhow::Result<()> {
     let accepted = read_accepted_generation(validation.accepted_generation_file)?;
     manifest.validate_generation(

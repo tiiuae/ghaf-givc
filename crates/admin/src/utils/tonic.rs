@@ -27,6 +27,10 @@ fn is_expected_miss(err: &anyhow::Error) -> bool {
 // suggests to pass by-value here.
 #[allow(clippy::needless_pass_by_value)]
 pub(crate) fn wrap_error(any_err: anyhow::Error) -> tonic::Status {
+    // Preserve upstream RPC semantics, including denial and deadline codes.
+    if let Some(status) = any_err.downcast_ref::<Status>() {
+        return status.clone();
+    }
     // Convert root cause and stack to strings
     let stack: Vec<_> = any_err.chain().skip(1).map(ToString::to_string).collect();
     let cause = any_err.root_cause().to_string();
@@ -94,6 +98,22 @@ mod tests {
             is_expected_miss(&err),
             "a registry miss must be classified as expected, got: {err:?}"
         );
+    }
+
+    #[test]
+    fn upstream_status_survives_admin_relay() {
+        for code in [
+            Code::PermissionDenied,
+            Code::DeadlineExceeded,
+            Code::ResourceExhausted,
+        ] {
+            let upstream =
+                Status::with_details(code, "upstream reason", b"details".as_slice().into());
+            let relayed = wrap_error(anyhow::Error::new(upstream).context("admitting update"));
+            assert_eq!(relayed.code(), code);
+            assert_eq!(relayed.message(), "upstream reason");
+            assert_eq!(relayed.details(), b"details");
+        }
     }
 
     #[test]

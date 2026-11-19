@@ -1180,7 +1180,7 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\x04Args\x18\x02 \x03(\tR\x04Args\x12\x18\n" +
 	"\aPayload\x18\x03 \x01(\fR\aPayload\"&\n" +
 	"\fCtapResponse\x12\x16\n" +
-	"\x06Output\x18\x01 \x01(\fR\x06Output2\xa1\r\n" +
+	"\x06Output\x18\x01 \x01(\fR\x06Output2\xda\x0f\n" +
 	"\fAdminService\x12D\n" +
 	"\x0fRegisterService\x12\x16.admin.RegistryRequest\x1a\x17.admin.RegistryResponse\"\x00\x12E\n" +
 	"\x10StartApplication\x12\x19.admin.ApplicationRequest\x1a\x14.admin.StartResponse\"\x00\x128\n" +
@@ -1205,6 +1205,10 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\bDiscover\x12\x1f.update.RegistryDiscoverRequest\x1a .update.RegistryDiscoverResponse\"\x00\x12R\n" +
 	"\tChangelog\x12 .update.RegistryChangelogRequest\x1a!.update.RegistryChangelogResponse\"\x00\x12E\n" +
 	"\x04Pull\x12\x1b.update.RegistryPullRequest\x1a\x1c.update.RegistryPullResponse\"\x000\x01\x12M\n" +
+	"\fImportBundle\x12\x1a.update.LocalImportRequest\x1a\x1b.update.LocalImportResponse\"\x00(\x010\x01\x12B\n" +
+	"\x10DiscardCandidate\x12\x1d.update.LocalCandidateRequest\x1a\r.update.Empty\"\x00\x12O\n" +
+	"\x0fCandidateStatus\x12\x1d.update.LocalCandidateRequest\x1a\x1b.update.LocalImportResponse\"\x00\x12S\n" +
+	"\x10InstallCandidate\x12\x1d.update.LocalCandidateRequest\x1a\x1c.update.ImageInstallResponse\"\x000\x01\x12M\n" +
 	"\fImageInstall\x12\x1b.update.ImageInstallRequest\x1a\x1c.update.ImageInstallResponse\"\x000\x01\x12>\n" +
 	"\n" +
 	"NotifyUser\x12\x1e.admin.UserNotificationRequest\x1a\x0e.notify.Status\"\x00\x12/\n" +
@@ -1252,18 +1256,21 @@ var file_admin_admin_proto_goTypes = []any{
 	(*update.RegistryDiscoverRequest)(nil),   // 24: update.RegistryDiscoverRequest
 	(*update.RegistryChangelogRequest)(nil),  // 25: update.RegistryChangelogRequest
 	(*update.RegistryPullRequest)(nil),       // 26: update.RegistryPullRequest
-	(*update.ImageInstallRequest)(nil),       // 27: update.ImageInstallRequest
-	(*ctap.CtapRequest)(nil),                 // 28: ctap.CtapRequest
-	(*stats.StatsResponse)(nil),              // 29: stats.StatsResponse
-	(*update.ListGenerationsResponse)(nil),   // 30: update.ListGenerationsResponse
-	(*update.SetGenerationResponse)(nil),     // 31: update.SetGenerationResponse
-	(*update.RegistryDiscoverResponse)(nil),  // 32: update.RegistryDiscoverResponse
-	(*update.RegistryChangelogResponse)(nil), // 33: update.RegistryChangelogResponse
-	(*update.RegistryPullResponse)(nil),      // 34: update.RegistryPullResponse
-	(*update.ImageInstallResponse)(nil),      // 35: update.ImageInstallResponse
-	(*notify.Status)(nil),                    // 36: notify.Status
-	(*ctap.CtapResponse)(nil),                // 37: ctap.CtapResponse
-	(*stats.SysinfoResponse)(nil),            // 38: stats.SysinfoResponse
+	(*update.LocalImportRequest)(nil),        // 27: update.LocalImportRequest
+	(*update.LocalCandidateRequest)(nil),     // 28: update.LocalCandidateRequest
+	(*update.ImageInstallRequest)(nil),       // 29: update.ImageInstallRequest
+	(*ctap.CtapRequest)(nil),                 // 30: ctap.CtapRequest
+	(*stats.StatsResponse)(nil),              // 31: stats.StatsResponse
+	(*update.ListGenerationsResponse)(nil),   // 32: update.ListGenerationsResponse
+	(*update.SetGenerationResponse)(nil),     // 33: update.SetGenerationResponse
+	(*update.RegistryDiscoverResponse)(nil),  // 34: update.RegistryDiscoverResponse
+	(*update.RegistryChangelogResponse)(nil), // 35: update.RegistryChangelogResponse
+	(*update.RegistryPullResponse)(nil),      // 36: update.RegistryPullResponse
+	(*update.LocalImportResponse)(nil),       // 37: update.LocalImportResponse
+	(*update.ImageInstallResponse)(nil),      // 38: update.ImageInstallResponse
+	(*notify.Status)(nil),                    // 39: notify.Status
+	(*ctap.CtapResponse)(nil),                // 40: ctap.CtapResponse
+	(*stats.SysinfoResponse)(nil),            // 41: stats.SysinfoResponse
 }
 var file_admin_admin_proto_depIdxs = []int32{
 	0,  // 0: admin.RegistryRequest.Transport:type_name -> admin.TransportConfig
@@ -1298,39 +1305,47 @@ var file_admin_admin_proto_depIdxs = []int32{
 	24, // 29: admin.AdminService.Discover:input_type -> update.RegistryDiscoverRequest
 	25, // 30: admin.AdminService.Changelog:input_type -> update.RegistryChangelogRequest
 	26, // 31: admin.AdminService.Pull:input_type -> update.RegistryPullRequest
-	27, // 32: admin.AdminService.ImageInstall:input_type -> update.ImageInstallRequest
-	16, // 33: admin.AdminService.NotifyUser:input_type -> admin.UserNotificationRequest
-	28, // 34: admin.AdminService.Ctap:input_type -> ctap.CtapRequest
-	10, // 35: admin.AdminService.Sysinfo:input_type -> admin.Empty
-	2,  // 36: admin.AdminService.RegisterService:output_type -> admin.RegistryResponse
-	7,  // 37: admin.AdminService.StartApplication:output_type -> admin.StartResponse
-	7,  // 38: admin.AdminService.StartVM:output_type -> admin.StartResponse
-	7,  // 39: admin.AdminService.StartService:output_type -> admin.StartResponse
-	8,  // 40: admin.AdminService.StopService:output_type -> admin.ApplicationResponse
-	8,  // 41: admin.AdminService.PauseApplication:output_type -> admin.ApplicationResponse
-	8,  // 42: admin.AdminService.ResumeApplication:output_type -> admin.ApplicationResponse
-	8,  // 43: admin.AdminService.StopApplication:output_type -> admin.ApplicationResponse
-	10, // 44: admin.AdminService.SetLocale:output_type -> admin.Empty
-	10, // 45: admin.AdminService.SetTimezone:output_type -> admin.Empty
-	10, // 46: admin.AdminService.Poweroff:output_type -> admin.Empty
-	10, // 47: admin.AdminService.Reboot:output_type -> admin.Empty
-	10, // 48: admin.AdminService.Suspend:output_type -> admin.Empty
-	10, // 49: admin.AdminService.Wakeup:output_type -> admin.Empty
-	19, // 50: admin.AdminService.GetUnitStatus:output_type -> systemd.UnitStatus
-	29, // 51: admin.AdminService.GetStats:output_type -> stats.StatsResponse
-	12, // 52: admin.AdminService.QueryList:output_type -> admin.QueryListResponse
-	13, // 53: admin.AdminService.Watch:output_type -> admin.WatchItem
-	30, // 54: admin.AdminService.ListGenerations:output_type -> update.ListGenerationsResponse
-	31, // 55: admin.AdminService.SetGeneration:output_type -> update.SetGenerationResponse
-	32, // 56: admin.AdminService.Discover:output_type -> update.RegistryDiscoverResponse
-	33, // 57: admin.AdminService.Changelog:output_type -> update.RegistryChangelogResponse
-	34, // 58: admin.AdminService.Pull:output_type -> update.RegistryPullResponse
-	35, // 59: admin.AdminService.ImageInstall:output_type -> update.ImageInstallResponse
-	36, // 60: admin.AdminService.NotifyUser:output_type -> notify.Status
-	37, // 61: admin.AdminService.Ctap:output_type -> ctap.CtapResponse
-	38, // 62: admin.AdminService.Sysinfo:output_type -> stats.SysinfoResponse
-	36, // [36:63] is the sub-list for method output_type
-	9,  // [9:36] is the sub-list for method input_type
+	27, // 32: admin.AdminService.ImportBundle:input_type -> update.LocalImportRequest
+	28, // 33: admin.AdminService.DiscardCandidate:input_type -> update.LocalCandidateRequest
+	28, // 34: admin.AdminService.CandidateStatus:input_type -> update.LocalCandidateRequest
+	28, // 35: admin.AdminService.InstallCandidate:input_type -> update.LocalCandidateRequest
+	29, // 36: admin.AdminService.ImageInstall:input_type -> update.ImageInstallRequest
+	16, // 37: admin.AdminService.NotifyUser:input_type -> admin.UserNotificationRequest
+	30, // 38: admin.AdminService.Ctap:input_type -> ctap.CtapRequest
+	10, // 39: admin.AdminService.Sysinfo:input_type -> admin.Empty
+	2,  // 40: admin.AdminService.RegisterService:output_type -> admin.RegistryResponse
+	7,  // 41: admin.AdminService.StartApplication:output_type -> admin.StartResponse
+	7,  // 42: admin.AdminService.StartVM:output_type -> admin.StartResponse
+	7,  // 43: admin.AdminService.StartService:output_type -> admin.StartResponse
+	8,  // 44: admin.AdminService.StopService:output_type -> admin.ApplicationResponse
+	8,  // 45: admin.AdminService.PauseApplication:output_type -> admin.ApplicationResponse
+	8,  // 46: admin.AdminService.ResumeApplication:output_type -> admin.ApplicationResponse
+	8,  // 47: admin.AdminService.StopApplication:output_type -> admin.ApplicationResponse
+	10, // 48: admin.AdminService.SetLocale:output_type -> admin.Empty
+	10, // 49: admin.AdminService.SetTimezone:output_type -> admin.Empty
+	10, // 50: admin.AdminService.Poweroff:output_type -> admin.Empty
+	10, // 51: admin.AdminService.Reboot:output_type -> admin.Empty
+	10, // 52: admin.AdminService.Suspend:output_type -> admin.Empty
+	10, // 53: admin.AdminService.Wakeup:output_type -> admin.Empty
+	19, // 54: admin.AdminService.GetUnitStatus:output_type -> systemd.UnitStatus
+	31, // 55: admin.AdminService.GetStats:output_type -> stats.StatsResponse
+	12, // 56: admin.AdminService.QueryList:output_type -> admin.QueryListResponse
+	13, // 57: admin.AdminService.Watch:output_type -> admin.WatchItem
+	32, // 58: admin.AdminService.ListGenerations:output_type -> update.ListGenerationsResponse
+	33, // 59: admin.AdminService.SetGeneration:output_type -> update.SetGenerationResponse
+	34, // 60: admin.AdminService.Discover:output_type -> update.RegistryDiscoverResponse
+	35, // 61: admin.AdminService.Changelog:output_type -> update.RegistryChangelogResponse
+	36, // 62: admin.AdminService.Pull:output_type -> update.RegistryPullResponse
+	37, // 63: admin.AdminService.ImportBundle:output_type -> update.LocalImportResponse
+	22, // 64: admin.AdminService.DiscardCandidate:output_type -> update.Empty
+	37, // 65: admin.AdminService.CandidateStatus:output_type -> update.LocalImportResponse
+	38, // 66: admin.AdminService.InstallCandidate:output_type -> update.ImageInstallResponse
+	38, // 67: admin.AdminService.ImageInstall:output_type -> update.ImageInstallResponse
+	39, // 68: admin.AdminService.NotifyUser:output_type -> notify.Status
+	40, // 69: admin.AdminService.Ctap:output_type -> ctap.CtapResponse
+	41, // 70: admin.AdminService.Sysinfo:output_type -> stats.SysinfoResponse
+	40, // [40:71] is the sub-list for method output_type
+	9,  // [9:40] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
 	9,  // [9:9] is the sub-list for extension extendee
 	0,  // [0:9] is the sub-list for field type_name

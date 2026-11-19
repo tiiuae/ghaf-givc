@@ -161,7 +161,6 @@ func (s *UpdateServer) Pull(request *pbupdate.RegistryPullRequest, stream pbupda
 
 func (s *UpdateServer) ImageInstall(request *pbupdate.ImageInstallRequest, stream pbupdate.Update_ImageInstallServer) error {
 	args := []string{"image", "install", "--manifest", request.Manifest}
-	args = append(args, "--validate")
 
 	return runOutputCommand(
 		stream,
@@ -322,11 +321,18 @@ func runOutputCommand[T any](stream grpc.ServerStreamingServer[T], args []string
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	go streamOutput(stdout, stream, &wg, makeStdout)
-	go streamOutput(stderr, stream, &wg, makeStderr)
+	var sendMutex sync.Mutex
+	send := func(response *T) error {
+		sendMutex.Lock()
+		defer sendMutex.Unlock()
+		return stream.Send(response)
+	}
+	go streamOutput(stdout, send, &wg, makeStdout)
+	go streamOutput(stderr, send, &wg, makeStderr)
 
-	err = cmd.Wait()
+	// Wait must not close the pipes before both readers finish.
 	wg.Wait()
+	err = cmd.Wait()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return grpc_status.Error(grpc_codes.Unknown, fmt.Sprintf("ota-update failed with rc %d", exitErr.ExitCode()))
@@ -336,7 +342,7 @@ func runOutputCommand[T any](stream grpc.ServerStreamingServer[T], args []string
 	return nil
 }
 
-func streamOutput[T any](reader io.ReadCloser, stream grpc.ServerStreamingServer[T], wg *sync.WaitGroup, makeResponse func(data []byte, eof bool) T) {
+func streamOutput[T any](reader io.ReadCloser, send func(*T) error, wg *sync.WaitGroup, makeResponse func(data []byte, eof bool) T) {
 	defer reader.Close()
 	defer wg.Done()
 	bufReader := bufio.NewReader(reader)
@@ -345,14 +351,14 @@ func streamOutput[T any](reader io.ReadCloser, stream grpc.ServerStreamingServer
 		n, err := bufReader.Read(buffer)
 		if n > 0 {
 			resp := makeResponse(buffer[:n], false)
-			if sendErr := stream.Send(&resp); sendErr != nil {
+			if sendErr := send(&resp); sendErr != nil {
 				log.Errorf("failed to stream: %v", sendErr)
 				return
 			}
 		}
 		if err == io.EOF {
 			resp := makeResponse([]byte{}, true)
-			if sendErr := stream.Send(&resp); sendErr != nil {
+			if sendErr := send(&resp); sendErr != nil {
 				log.Warnf("failed to stream eof: %v", sendErr)
 			}
 			break
