@@ -59,6 +59,11 @@ type registryEvent struct {
 	Stage       string  `json:"stage,omitempty"`
 }
 
+type registryPullResult struct {
+	OutputDir    string `json:"output_dir"`
+	ManifestPath string `json:"manifest_path"`
+}
+
 func (s *UpdateServer) Name() string {
 	return "Update Server"
 }
@@ -119,9 +124,8 @@ func (s *UpdateServer) Discover(_ context.Context, request *pbupdate.RegistryDis
 		return nil, grpc_status.Error(grpc_codes.Unknown, fmt.Sprintf("ota-update registry discover failed: %s", strings.TrimSpace(string(stderr))))
 	}
 
-	output := afterDoneOutput(stdout)
-	var updates []discoverUpdate
-	if err := json.Unmarshal([]byte(output), &updates); err != nil {
+	updates, err := parseDiscoverOutput(stdout)
+	if err != nil {
 		return nil, fmt.Errorf("failed to parse discover output: %w", err)
 	}
 
@@ -148,7 +152,7 @@ func (s *UpdateServer) Changelog(_ context.Context, request *pbupdate.RegistryCh
 		return nil, grpc_status.Error(grpc_codes.Unknown, fmt.Sprintf("ota-update registry changelog failed: %s", strings.TrimSpace(string(stderr))))
 	}
 
-	return &pbupdate.RegistryChangelogResponse{Changelog: afterDoneOutput(stdout)}, nil
+	return &pbupdate.RegistryChangelogResponse{Changelog: changelogOutput(stdout)}, nil
 }
 
 func (s *UpdateServer) Pull(request *pbupdate.RegistryPullRequest, stream pbupdate.Update_PullServer) error {
@@ -370,6 +374,7 @@ func readPullProgress(reader io.ReadCloser, stream pbupdate.Update_PullServer) {
 	var stdoutBuf []byte
 	seenDone := false
 	var resultBuf strings.Builder
+	var result *registryPullResult
 
 	flushLine := func(line []byte) error {
 		if len(line) == 0 {
@@ -387,6 +392,12 @@ func readPullProgress(reader io.ReadCloser, stream pbupdate.Update_PullServer) {
 					return err
 				}
 			}
+			return nil
+		}
+
+		var jsonResult registryPullResult
+		if err := json.Unmarshal(line, &jsonResult); err == nil && jsonResult.OutputDir != "" && jsonResult.ManifestPath != "" {
+			result = &jsonResult
 			return nil
 		}
 
@@ -430,9 +441,15 @@ func readPullProgress(reader io.ReadCloser, stream pbupdate.Update_PullServer) {
 		}
 	}
 
-	if result := parsePullResult(resultBuf.String()); result != nil {
+	if result == nil {
+		result = parsePullResult(resultBuf.String())
+	}
+	if result != nil {
 		if err := stream.Send(&pbupdate.RegistryPullResponse{
-			Update: &pbupdate.RegistryPullResponse_Result{Result: result},
+			Update: &pbupdate.RegistryPullResponse_Result{Result: &pbupdate.RegistryPullResult{
+				OutputDir:    result.OutputDir,
+				ManifestPath: result.ManifestPath,
+			}},
 		}); err != nil {
 			log.Warnf("failed to send pull result: %v", err)
 		}
@@ -509,7 +526,7 @@ func registryEventToProgress(event registryEvent) *pbupdate.RegistryPullProgress
 	}
 }
 
-func parsePullResult(stdout string) *pbupdate.RegistryPullResult {
+func parsePullResult(stdout string) *registryPullResult {
 	var outputDir string
 	var manifestPath string
 	for _, line := range strings.Split(stdout, "\n") {
@@ -523,14 +540,13 @@ func parsePullResult(stdout string) *pbupdate.RegistryPullResult {
 	if outputDir == "" || manifestPath == "" {
 		return nil
 	}
-	return &pbupdate.RegistryPullResult{
+	return &registryPullResult{
 		OutputDir:    outputDir,
 		ManifestPath: manifestPath,
 	}
 }
 
-func afterDoneOutput(stdout []byte) string {
-	seenDone := false
+func changelogOutput(stdout []byte) string {
 	var output strings.Builder
 	for _, rawLine := range bytes.Split(stdout, []byte{'\n'}) {
 		line := bytes.TrimSpace(rawLine)
@@ -539,19 +555,43 @@ func afterDoneOutput(stdout []byte) string {
 		}
 		var event registryEvent
 		if err := json.Unmarshal(line, &event); err == nil && event.Event != "" {
-			if event.Event == "done" {
-				seenDone = true
-			}
 			continue
 		}
-		if seenDone {
-			if output.Len() > 0 {
-				output.WriteByte('\n')
-			}
-			output.Write(line)
+		if output.Len() > 0 {
+			output.WriteByte('\n')
 		}
+		output.Write(line)
 	}
 	return output.String()
+}
+
+// parseDiscoverOutput extracts the result array from the JSON stream emitted by
+// ota-update registry discover. Progress events and the result are independent
+// JSON values, so their order must not be used to determine where the result is.
+func parseDiscoverOutput(stdout []byte) ([]discoverUpdate, error) {
+	decoder := json.NewDecoder(bytes.NewReader(stdout))
+	for {
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+
+		trimmed := bytes.TrimSpace(value)
+		if len(trimmed) == 0 || trimmed[0] != '[' {
+			continue
+		}
+
+		var updates []discoverUpdate
+		if err := json.Unmarshal(trimmed, &updates); err != nil {
+			return nil, err
+		}
+		return updates, nil
+	}
+
+	return nil, fmt.Errorf("discover result array not found")
 }
 
 func valueOrDefault(value *string, fallback string) string {
