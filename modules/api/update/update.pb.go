@@ -1842,7 +1842,8 @@ func (x *LocalImportResponse) GetCandidate() *LocalCandidate {
 
 type LocalReceiveRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // Set on first message only, by admin.
+	// Required with metadata in the first message; must be empty with data/finish.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*LocalReceiveRequest_Metadata

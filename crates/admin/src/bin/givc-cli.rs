@@ -114,8 +114,8 @@ enum UpdateSub {
     Import {
         #[arg(long)]
         manifest: std::path::PathBuf,
-        #[arg(long)]
-        json: bool,
+        #[arg(long, alias = "json")]
+        as_json: bool,
     },
     Install {
         #[arg(long)]
@@ -393,13 +393,13 @@ impl UpdateSub {
             UpdateSub::Status { candidate } => {
                 println!("{}", admin.local_candidate_status(candidate).await?)
             }
-            UpdateSub::Import { manifest, json } => {
+            UpdateSub::Import { manifest, as_json } => {
                 let candidate = admin
                     .import_local_update(&manifest, async |event| {
                         eprintln!("{}: {}/{}", event.phase(), event.completed, event.total);
                     })
                     .await?;
-                if json {
+                if as_json {
                     println!("{}", serde_json::to_string(&candidate)?);
                 } else {
                     println!(

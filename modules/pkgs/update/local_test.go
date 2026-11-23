@@ -268,6 +268,8 @@ func TestLocalReceiveRejectsUnexpectedPayloads(t *testing.T) {
 		{},
 		{Payload: &pb.LocalReceiveRequest_Finish{Finish: false}},
 		{Payload: &pb.LocalReceiveRequest_Metadata{Metadata: &pb.LocalMetadata{}}},
+		{Id: strings.Repeat("ab", 16), Payload: &pb.LocalReceiveRequest_Data{Data: []byte("payload")}},
+		{Id: strings.Repeat("ab", 16), Payload: &pb.LocalReceiveRequest_Finish{Finish: true}},
 	} {
 		client, _ := localClient(t, "receiver")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -403,7 +403,7 @@ in
                   denied = guivm.fail("${cli} ${cliArgs} update list 2>&1")
                   assert "permission denied" in denied.lower(), denied
                   guivm.succeed("mkdir /tmp/ssd; printf '{}' >/tmp/ssd/manifest.json; head -c 64 /dev/zero >/tmp/ssd/manifest.json.sig; printf abc >/tmp/ssd/root.raw; printf def >/tmp/ssd/verity.raw; printf ghi >/tmp/ssd/kernel.efi")
-                  result = json.loads(guivm.succeed("${cli} ${cliArgs} update import --manifest /tmp/ssd/manifest.json --json"))
+                  result = json.loads(guivm.succeed("${cli} ${cliArgs} update import --manifest /tmp/ssd/manifest.json --as-json"))
                   assert result["id"] == "0123456789abcdef0123456789abcdef", result
                   assert netvm.succeed("cat /tmp/local-received-bytes") == "abcdefghi"
                   hostvm.succeed("test -f /tmp/local-accepted")

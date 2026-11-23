@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2026 TII (SSRC) and the Ghaf contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, Read, Write};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -37,9 +39,7 @@ fn imports(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
     }
     fs::read_dir(root)?
         .filter_map(|entry| match entry {
-            Ok(entry) if check_id(&entry.file_name().to_string_lossy()).is_ok() => {
-                Some(Ok(entry.path()))
-            }
+            Ok(entry) if check_id(entry.file_name()).is_ok() => Some(Ok(entry.path())),
             Ok(_) => None,
             Err(error) => Some(Err(error.into())),
         })
@@ -51,6 +51,7 @@ pub fn recover_host(root: &Path, startup: bool) -> anyhow::Result<()> {
         return Ok(());
     }
     for path in imports(&root.join("admissions"))? {
+        // imports() returns paths joined to directory entries with ASCII-validated IDs.
         let id = path
             .file_name()
             .unwrap()
@@ -88,20 +89,25 @@ pub fn recover_received(shared: &Path, startup: bool) -> anyhow::Result<()> {
     }
     for entry in fs::read_dir(shared)? {
         let entry = entry?;
-        if !entry.file_type()?.is_dir() {
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
             continue;
         }
         let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let id = name
-            .strip_prefix(".receiving-")
-            .and_then(|s| s.get(..32))
-            .unwrap_or(&name);
+        let Some(name) = name.to_str() else { continue };
+        let (id, incomplete) = if let Some(suffix) = name.strip_prefix(".receiving-") {
+            let Some((id, _)) = suffix.split_once('-') else {
+                continue;
+            };
+            (id, true)
+        } else {
+            (name, false)
+        };
+        if check_id(id).is_err() {
+            continue;
+        }
         // Completed uploads may still be copied by the host after a netVM restart.
         // Virtiofs flock ownership is not shared with the host on every target.
-        let incomplete = name.starts_with(".receiving-");
-        if check_id(id).is_ok()
-            && ((startup && incomplete) || expired(&entry.path())?)
+        if ((startup && incomplete) || expired(&entry.path())?)
             && let Ok(_lock) = import_lock(shared, id)
         {
             fs::remove_dir_all(entry.path())?;
@@ -110,11 +116,12 @@ pub fn recover_received(shared: &Path, startup: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn check_id(id: &str) -> anyhow::Result<()> {
+pub fn check_id(id: impl AsRef<OsStr>) -> anyhow::Result<()> {
+    let id = id.as_ref().as_bytes();
     ensure!(
         id.len() == 32
             && id
-                .bytes()
+                .iter()
                 .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
         "invalid local update ID"
     );
@@ -162,6 +169,10 @@ fn check_metadata(metadata: &LocalMetadata) -> anyhow::Result<()> {
 fn describe(metadata: &LocalMetadata, id: &str) -> anyhow::Result<LocalCandidate> {
     check_metadata(metadata)?;
     let manifest = Manifest::from_slice(metadata.manifest.as_bytes())?;
+    describe_manifest(&manifest, id)
+}
+
+fn describe_manifest(manifest: &Manifest, id: &str) -> anyhow::Result<LocalCandidate> {
     let mut files = Vec::new();
     for artifact in [&manifest.store, &manifest.verity, &manifest.kernel] {
         check_name(&artifact.name)?;
@@ -191,14 +202,28 @@ fn describe(metadata: &LocalMetadata, id: &str) -> anyhow::Result<LocalCandidate
     }
     Ok(LocalCandidate {
         id: id.to_owned(),
-        version: manifest.version,
-        target: manifest.target,
+        version: manifest.version.clone(),
+        target: manifest.target.clone(),
         generation: manifest.generation,
         files,
     })
 }
 
-fn authenticate(metadata: &LocalMetadata, validation: &TrustPolicy<'_>) -> anyhow::Result<()> {
+struct AuthenticatedLocalMetadata<'a> {
+    metadata: &'a LocalMetadata,
+    manifest: Manifest,
+}
+
+impl AuthenticatedLocalMetadata<'_> {
+    fn describe(&self, id: &str) -> anyhow::Result<LocalCandidate> {
+        describe_manifest(&self.manifest, id)
+    }
+}
+
+fn authenticate<'a>(
+    metadata: &'a LocalMetadata,
+    validation: &TrustPolicy<'_>,
+) -> anyhow::Result<AuthenticatedLocalMetadata<'a>> {
     check_metadata(metadata)?;
     verify_detached(
         metadata.manifest.as_bytes(),
@@ -207,7 +232,8 @@ fn authenticate(metadata: &LocalMetadata, validation: &TrustPolicy<'_>) -> anyho
     )?;
     let manifest = Manifest::from_slice(metadata.manifest.as_bytes())?;
     manifest.validate_target(validation.target)?;
-    validate_install_generation(&manifest, validation)
+    validate_install_generation(&manifest, validation)?;
+    Ok(AuthenticatedLocalMetadata { metadata, manifest })
 }
 
 fn total(candidate: &LocalCandidate) -> anyhow::Result<u64> {
@@ -241,7 +267,7 @@ pub fn prepare(
     metadata: &LocalMetadata,
     validation: &TrustPolicy<'_>,
 ) -> anyhow::Result<LocalCandidate> {
-    authenticate(metadata, validation)?;
+    let authenticated = authenticate(metadata, validation)?;
     private_dir(root)?;
     let _reservation =
         crate::lock::UpdateLock::acquire(root.join("prepare.lock"), "local-prepare")?;
@@ -270,7 +296,7 @@ pub fn prepare(
     SystemRandom::new()
         .fill(&mut random)
         .map_err(|_| anyhow::anyhow!("generating import ID"))?;
-    let candidate = describe(metadata, &hex::encode(random))?;
+    let candidate = authenticated.describe(&hex::encode(random))?;
     let bytes = total(&candidate)?;
     // The shared receive directory and private copy normally consume the same filesystem.
     let shared_parent = shared.parent().context("missing shared parent")?;
@@ -299,7 +325,7 @@ pub fn prepare(
     private_dir(&admission)?;
     write_file(
         &admission.join("metadata.json"),
-        &serde_json::to_vec(metadata)?,
+        &serde_json::to_vec(authenticated.metadata)?,
     )?;
     directory(&admission)?.sync_all()?;
     directory(&admissions)?.sync_all()?;
@@ -369,8 +395,8 @@ pub async fn accept(
             regular_file(&directory(&admission)?, "metadata.json")?,
             MAX_MANIFEST * 6 + 1024,
         )?)?;
-    authenticate(&metadata, validation)?;
-    let candidate = describe(&metadata, id)?;
+    let authenticated = authenticate(&metadata, validation)?;
+    let candidate = authenticated.describe(id)?;
     require_space(root, total(&candidate)?)?;
     let candidates = root.join("candidates");
     private_dir(&candidates)?;
@@ -381,11 +407,11 @@ pub async fn accept(
         .tempdir_in(root)?;
     write_file(
         &temporary.path().join("manifest.json"),
-        metadata.manifest.as_bytes(),
+        authenticated.metadata.manifest.as_bytes(),
     )?;
     write_file(
         &temporary.path().join("manifest.json.sig"),
-        &hex::decode(&metadata.signature)?,
+        &hex::decode(&authenticated.metadata.signature)?,
     )?;
     for artifact in &candidate.files {
         let file = regular_file(&source, &artifact.name)?;
@@ -688,6 +714,35 @@ mod tests {
         drop(lock);
         recover_received(root.path(), true).unwrap();
         assert!(!active_path.exists());
+    }
+
+    #[test]
+    fn recovery_skips_malformed_ids_non_utf8_names_and_symlinks() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let id = "ab".repeat(16);
+        let names = [
+            OsString::from(".receiving-xxx"),
+            OsString::from(format!(".receiving-{id}")),
+            OsString::from(format!(".receiving-{id}ff-partial")),
+            OsString::from_vec(vec![0xff; 32]),
+        ];
+        for name in &names {
+            fs::create_dir(root.path().join(name)).unwrap();
+        }
+        symlink(outside.path(), root.path().join(&id)).unwrap();
+        let valid = root.path().join(format!(".receiving-{id}-partial"));
+        fs::create_dir(&valid).unwrap();
+        recover_received(root.path(), true).unwrap();
+        assert!(!valid.exists());
+        for name in &names {
+            assert!(root.path().join(name).exists());
+        }
+        assert!(root.path().join(id).is_symlink());
+        assert!(outside.path().exists());
     }
 
     #[test]

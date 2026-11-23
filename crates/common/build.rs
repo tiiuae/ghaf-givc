@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .type_attribute(
                 ".update.LocalUpdatePhase",
+                // Match persisted ota-update status and the Go receiver's CLI parser.
                 "#[derive(strum::Display, strum::EnumString)] #[strum(serialize_all = \"kebab-case\")]",
             )
             .compile_protos(&[format!("api/{pkg}/{pkg}.proto").as_str()], &["api"])?;

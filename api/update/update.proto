@@ -179,7 +179,8 @@ message LocalImportResponse {
     LocalCandidate candidate = 4;
 }
 message LocalReceiveRequest {
-    string id = 1; // Set on first message only, by admin.
+    // Required with metadata in the first message; must be empty with data/finish.
+    string id = 1;
     oneof payload {
         LocalMetadata metadata = 2;
         bytes data = 3;

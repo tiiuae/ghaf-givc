@@ -28,12 +28,12 @@ where
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new(".")),
     )?;
-    let name = manifest
-        .file_name()
-        .and_then(|s| s.to_str())
-        .context("invalid manifest filename")?;
+    let name = manifest.file_name().context("invalid manifest filename")?;
     let manifest = String::from_utf8(read_bounded(regular_file(&parent, name)?, MAX_MANIFEST)?)?;
-    let signature = read_bounded(regular_file(&parent, &format!("{name}.sig"))?, 64)?;
+    let signature = read_bounded(
+        regular_file(&parent, Path::new(name).with_added_extension("sig"))?,
+        64,
+    )?;
     ensure!(
         signature.len() == 64,
         "detached signature must contain 64 bytes"

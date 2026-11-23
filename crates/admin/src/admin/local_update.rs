@@ -54,8 +54,8 @@ impl AdmittedImport {
         })
     }
 
-    async fn finish(self, keep_candidate: bool) {
-        let _ = self.decision.send(keep_candidate);
+    async fn commit(self) {
+        let _ = self.decision.send(true);
         let _ = self.cleanup.await;
     }
 }
@@ -112,17 +112,9 @@ async fn run_import(
         "invalid bundle metadata size"
     );
     let admission = AdmittedImport::prepare(host, net, metadata.clone()).await?;
-    let result = transfer(
-        host,
-        net,
-        incoming,
-        output,
-        admission.candidate.clone(),
-        metadata,
-    )
-    .await;
-    admission.finish(result.is_ok()).await;
-    result
+    transfer(host, net, incoming, output, &admission.candidate, metadata).await?;
+    admission.commit().await;
+    Ok(())
 }
 
 async fn transfer(
@@ -130,7 +122,7 @@ async fn transfer(
     net: &mut Client,
     incoming: &mut tonic::Streaming<pb::LocalImportRequest>,
     output: &mpsc::Sender<Result<pb::LocalImportResponse, tonic::Status>>,
-    candidate: pb::LocalCandidate,
+    candidate: &pb::LocalCandidate,
     metadata: pb::LocalMetadata,
 ) -> anyhow::Result<()> {
     let total = candidate.files.iter().try_fold(0u64, |n, f| {
@@ -211,7 +203,7 @@ async fn transfer(
         }))
         .await?;
     let candidate = tokio::select! {
-        response = host.accept_local_import(pb::LocalCandidateRequest { id: candidate.id }) => response?.into_inner(),
+        response = host.accept_local_import(pb::LocalCandidateRequest { id: candidate.id.clone() }) => response?.into_inner(),
         _ = output.closed() => anyhow::bail!("local import cancelled"),
     };
     output
@@ -375,7 +367,7 @@ mod tests {
                 .await
                 .unwrap();
             let task = if keep_candidate {
-                tokio::spawn(admission.finish(true))
+                tokio::spawn(admission.commit())
             } else {
                 let (started, ready) = tokio::sync::oneshot::channel();
                 let task = tokio::spawn(async move {

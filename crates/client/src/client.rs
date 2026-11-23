@@ -7,7 +7,7 @@ use gethostname::gethostname;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use givc_common::address::EndpointAddress;
 use givc_common::pb;
@@ -719,7 +719,7 @@ impl AdminClient {
                 info!("{output}");
             }
             if let Some(error) = event.error {
-                info!("{error}");
+                warn!("{error}");
             }
         }
         check_trailers(stream).await?;

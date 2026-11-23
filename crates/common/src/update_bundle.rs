@@ -44,7 +44,8 @@ pub fn directory(path: &Path) -> anyhow::Result<File> {
 
 /// # Errors
 /// Fails for an invalid name or a directory that cannot be opened safely.
-pub fn subdirectory(parent: &File, name: &str) -> anyhow::Result<File> {
+pub fn subdirectory(parent: &File, name: impl AsRef<OsStr>) -> anyhow::Result<File> {
+    let name = name.as_ref();
     check_name(name)?;
     Ok(openat(
         parent,
@@ -57,7 +58,8 @@ pub fn subdirectory(parent: &File, name: &str) -> anyhow::Result<File> {
 
 /// # Errors
 /// Fails for an invalid name, symlink, special file, or inaccessible file.
-pub fn regular_file(parent: &File, name: &str) -> anyhow::Result<File> {
+pub fn regular_file(parent: &File, name: impl AsRef<OsStr>) -> anyhow::Result<File> {
+    let name = name.as_ref();
     check_name(name)?;
     // NONBLOCK prevents a substituted FIFO from hanging before the type check.
     let file: File = openat(
@@ -66,11 +68,12 @@ pub fn regular_file(parent: &File, name: &str) -> anyhow::Result<File> {
         OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
         Mode::empty(),
     )
-    .with_context(|| format!("opening bundle file {name}"))?
+    .with_context(|| format!("opening bundle file {}", name.display()))?
     .into();
     ensure!(
         file.metadata()?.is_file(),
-        "bundle entry is not a regular file: {name}"
+        "bundle entry is not a regular file: {}",
+        name.display()
     );
     Ok(file)
 }

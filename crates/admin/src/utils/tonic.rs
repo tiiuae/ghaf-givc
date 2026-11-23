@@ -22,15 +22,12 @@ fn is_expected_miss(err: &anyhow::Error) -> bool {
     err.downcast_ref::<NotRegistered>().is_some()
 }
 
-// Kludge: wrap_error have .into() semantic, so should be destructive
-// Clippy hint here use &anyhow::Error, but implementing it trigger another clippy warning,
-// suggests to pass by-value here.
-#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn wrap_error(any_err: anyhow::Error) -> tonic::Status {
     // Preserve upstream RPC semantics, including denial and deadline codes.
-    if let Some(status) = any_err.downcast_ref::<Status>() {
-        return status.clone();
-    }
+    let any_err = match any_err.downcast::<Status>() {
+        Ok(status) => return status,
+        Err(any_err) => any_err,
+    };
     // Convert root cause and stack to strings
     let stack: Vec<_> = any_err.chain().skip(1).map(ToString::to_string).collect();
     let cause = any_err.root_cause().to_string();
