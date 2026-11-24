@@ -135,7 +135,70 @@ message ImageInstallResponse {
     optional string Error = 3;         // Standard error from the command
 }
 
+message LocalMetadata {
+    string manifest = 1;
+    string signature = 2; // Hex-encoded detached Ed25519 signature.
+}
+message LocalArtifact {
+    string name = 1;
+    uint64 size = 2;
+}
+message LocalCandidate {
+    string id = 1;
+    string version = 2;
+    string target = 3;
+    uint64 generation = 4;
+    repeated LocalArtifact files = 5;
+}
+message LocalImportRequest {
+    oneof payload {
+        LocalMetadata metadata = 1; // First message only.
+        bytes data = 2; // Concatenated root, verity, UKI; at most 256 KiB per message.
+        bool finish = 3;
+    }
+}
+enum LocalUpdatePhase {
+    LOCAL_UPDATE_PHASE_UNSPECIFIED = 0;
+    LOCAL_UPDATE_PHASE_ADMITTED = 1;
+    LOCAL_UPDATE_PHASE_RECEIVING = 2;
+    LOCAL_UPDATE_PHASE_RECEIVED = 3;
+    LOCAL_UPDATE_PHASE_VERIFYING = 4;
+    LOCAL_UPDATE_PHASE_READY = 5;
+    LOCAL_UPDATE_PHASE_INSTALLING = 6;
+    LOCAL_UPDATE_PHASE_RESTART_REQUIRED = 7;
+    LOCAL_UPDATE_PHASE_ACCEPTED = 8;
+    LOCAL_UPDATE_PHASE_TRIAL = 9;
+    LOCAL_UPDATE_PHASE_ROLLED_BACK = 10;
+    LOCAL_UPDATE_PHASE_INTERRUPTED = 11;
+    LOCAL_UPDATE_PHASE_FAILED = 12;
+}
+message LocalImportResponse {
+    LocalUpdatePhase phase = 1;
+    uint64 completed = 2;
+    uint64 total = 3;
+    LocalCandidate candidate = 4;
+}
+message LocalReceiveRequest {
+    // Required with metadata in the first message; must be empty with data/finish.
+    string id = 1;
+    oneof payload {
+        LocalMetadata metadata = 2;
+        bytes data = 3;
+        bool finish = 4;
+    }
+}
+message LocalCandidateRequest {
+    string id = 1;
+}
+
 service Update {
+    rpc PrepareLocalImport(LocalMetadata) returns (LocalCandidate) {}
+    rpc ReceiveLocalImport(stream LocalReceiveRequest) returns (stream LocalImportResponse) {}
+    rpc AcceptLocalImport(LocalCandidateRequest) returns (LocalCandidate) {}
+    rpc DiscardLocalImport(LocalCandidateRequest) returns (Empty) {}
+    rpc CandidateStatus(LocalCandidateRequest) returns (LocalImportResponse) {}
+    rpc InstallCandidate(LocalCandidateRequest) returns (stream ImageInstallResponse) {}
+
     // List installed generations (updates)
     rpc ListGenerations(Empty) returns (ListGenerationsResponse) {}
     // Discover available OTA updates in an OCI repository

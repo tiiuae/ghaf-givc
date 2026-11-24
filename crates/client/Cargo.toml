@@ -11,7 +11,13 @@ anyhow.workspace = true
 async-channel.workspace = true
 hyper-util = "0.1"
 tokio-stream.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros"] }
+tokio = { workspace = true, features = [
+  "rt-multi-thread",
+  "time",
+  "macros",
+  "fs",
+  "io-util",
+] }
 tokio-vsock = "*"
 tonic-types.workspace = true
 tonic = { workspace = true, features = ["tls-aws-lc"] }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	updatepb "givc/modules/api/update"
 	"os"
 	"strings"
 
@@ -23,6 +24,11 @@ import (
 )
 
 func MapRequestToContext(req proto.Message) (cedartypes.RecordMap, error) {
+	// Admission authorization uses the authenticated principal and RPC action.
+	// The signed manifest is bulk input for the updater, never a policy attribute.
+	if _, ok := req.(*updatepb.LocalMetadata); ok {
+		return cedartypes.RecordMap{}, nil
+	}
 	b, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(req)
 	if err != nil {
 		return cedartypes.RecordMap{}, err
