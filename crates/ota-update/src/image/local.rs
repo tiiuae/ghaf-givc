@@ -515,24 +515,42 @@ pub fn recover(root: &Path, prefix: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn save_status(path: &Path, phase: &str) -> anyhow::Result<()> {
-    let mut temporary = tempfile::NamedTempFile::new_in(path)?;
-    temporary.write_all(phase.as_bytes())?;
-    temporary.as_file().sync_all()?;
-    temporary.persist(path.join("install-state"))?;
-    directory(path)?.sync_all()?;
-    Ok(())
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display, strum::EnumString)]
+#[strum(serialize_all = "kebab-case")]
+enum InstallState {
+    Ready,
+    Installing,
+    RestartRequired,
+    Failed,
+}
+
+impl InstallState {
+    fn read(path: &Path) -> anyhow::Result<Self> {
+        let file = path.join("install-state");
+        match fs::read_to_string(&file) {
+            Ok(state) => state
+                .parse()
+                .with_context(|| format!("invalid state in {}", file.display())),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::Ready),
+            Err(error) => Err(error).with_context(|| format!("reading {}", file.display())),
+        }
+    }
+
+    fn write(self, path: &Path) -> anyhow::Result<()> {
+        let mut temporary = tempfile::NamedTempFile::new_in(path)?;
+        temporary.write_all(self.to_string().as_bytes())?;
+        temporary.as_file().sync_all()?;
+        temporary.persist(path.join("install-state"))?;
+        directory(path)?.sync_all()?;
+        Ok(())
+    }
 }
 
 pub fn status(root: &Path, id: &str, accepted: &Path) -> anyhow::Result<String> {
     let manifest = candidate_manifest(root, id)?;
     let path = manifest.parent().unwrap();
-    let state = match fs::read_to_string(path.join("install-state")) {
-        Ok(state) => state,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => "ready".into(),
-        Err(error) => return Err(error.into()),
-    };
-    if state == "restart-required" {
+    let state = InstallState::read(path)?;
+    if state == InstallState::RestartRequired {
         if fs::read_to_string(accepted)
             .ok()
             .and_then(|s| s.trim().parse::<u64>().ok())
@@ -553,17 +571,19 @@ pub fn status(root: &Path, id: &str, accepted: &Path) -> anyhow::Result<String> 
             .into());
         }
     }
-    if state == "installing" && !crate::lock::UpdateLock::is_held(path.join("install.lock"))? {
+    if state == InstallState::Installing
+        && !crate::lock::UpdateLock::is_held(path.join("install.lock"))?
+    {
         return Ok("interrupted".into());
     }
-    Ok(state)
+    Ok(state.to_string())
 }
 
 pub async fn install(root: &Path, id: &str, validation: &TrustPolicy<'_>) -> anyhow::Result<()> {
     let manifest = candidate_manifest(root, id)?;
     let path = manifest.parent().unwrap();
     let _lock = crate::lock::UpdateLock::acquire(path.join("install.lock"), "local-install")?;
-    if fs::read_to_string(path.join("install-state")).is_ok_and(|s| s == "restart-required") {
+    if InstallState::read(path)? == InstallState::RestartRequired {
         return Ok(());
     }
     fs::write(
@@ -571,18 +591,16 @@ pub async fn install(root: &Path, id: &str, validation: &TrustPolicy<'_>) -> any
         fs::read("/proc/sys/kernel/random/boot_id")?,
     )?;
     File::open(path.join("install-boot"))?.sync_all()?;
-    save_status(path, "installing")?;
+    InstallState::Installing.write(path)?;
     let signature = super::install::default_signature_path(&manifest);
     let result =
         super::install::install_from_manifest_path(&manifest, &signature, validation, false).await;
-    save_status(
-        path,
-        if result.is_ok() {
-            "restart-required"
-        } else {
-            "failed"
-        },
-    )?;
+    if result.is_ok() {
+        InstallState::RestartRequired
+    } else {
+        InstallState::Failed
+    }
+    .write(path)?;
     if result.is_ok() {
         let files = match candidate(root, id) {
             Ok(candidate) => candidate.files,
@@ -606,6 +624,42 @@ mod tests {
     use ring::signature::{Ed25519KeyPair, KeyPair};
     use std::io::Cursor;
     use std::os::unix::fs::symlink;
+
+    #[test]
+    fn install_state_preserves_the_existing_file_format() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("install-state");
+        assert_eq!(
+            InstallState::read(root.path()).unwrap(),
+            InstallState::Ready
+        );
+        for (label, state) in [
+            ("ready", InstallState::Ready),
+            ("installing", InstallState::Installing),
+            ("restart-required", InstallState::RestartRequired),
+            ("failed", InstallState::Failed),
+        ] {
+            fs::write(&file, label).unwrap();
+            assert_eq!(InstallState::read(root.path()).unwrap(), state);
+            state.write(root.path()).unwrap();
+            assert_eq!(fs::read_to_string(&file).unwrap(), label);
+        }
+    }
+
+    #[test]
+    fn install_state_rejects_invalid_or_unreadable_files() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("install-state");
+        for invalid in ["", "installin", "accepted", "installing\n"] {
+            fs::write(&file, invalid).unwrap();
+            let error = InstallState::read(root.path()).unwrap_err().to_string();
+            assert!(error.contains("invalid state"));
+            assert!(error.contains(file.to_str().unwrap()));
+        }
+        fs::remove_file(&file).unwrap();
+        fs::create_dir(&file).unwrap();
+        assert!(InstallState::read(root.path()).is_err());
+    }
 
     fn bundle() -> LocalMetadata {
         let mut manifest = super::super::test::make_test_manifest();
@@ -641,7 +695,7 @@ mod tests {
             status(root.path(), &id, &root.path().join("accepted")).unwrap(),
             "ready"
         );
-        save_status(&path, "installing").unwrap();
+        InstallState::Installing.write(&path).unwrap();
         assert_eq!(
             status(root.path(), &id, &root.path().join("accepted")).unwrap(),
             "interrupted"
@@ -660,7 +714,7 @@ mod tests {
         }
         assert_eq!(fs::read(path.join("install.lock")).unwrap(), owner);
         drop(lock);
-        save_status(&path, "restart-required").unwrap();
+        InstallState::RestartRequired.write(&path).unwrap();
         fs::write(
             root.path().join("accepted"),
             candidate(root.path(), &id).unwrap().generation.to_string(),

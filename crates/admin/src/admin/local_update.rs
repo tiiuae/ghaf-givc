@@ -33,25 +33,37 @@ impl AdmittedImport {
         let request = pb::LocalCandidateRequest {
             id: candidate.id.clone(),
         };
-        let (decision, receive) = tokio::sync::oneshot::channel();
         let mut host = host.clone();
         let mut net = net.clone();
+        let receiver_request = request.clone();
+        Ok(Self::new(
+            candidate,
+            async move { cleanup_import("receiver", &mut net, receiver_request).await },
+            async move { cleanup_import("host", &mut host, request).await },
+        ))
+    }
+
+    fn new(
+        candidate: pb::LocalCandidate,
+        receiver: impl std::future::Future<Output = ()> + Send + 'static,
+        host: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> Self {
+        let (decision, receive) = tokio::sync::oneshot::channel();
         let cleanup = tokio::spawn(async move {
             // Cancellation or panic drops the sender and reclaims both copies.
             let keep_candidate = receive.await.unwrap_or(false);
-            let receiver = cleanup_import("receiver", &mut net, request.clone());
             let host = async {
                 if !keep_candidate {
-                    cleanup_import("host", &mut host, request).await;
+                    host.await;
                 }
             };
             tokio::join!(receiver, host);
         });
-        Ok(Self {
+        Self {
             candidate,
             decision,
             cleanup,
-        })
+        }
     }
 
     async fn commit(self) {
@@ -233,139 +245,22 @@ pub async fn install(
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use tonic::{Request, Response, Status};
-
-    struct Agent {
-        role: &'static str,
-        calls: mpsc::UnboundedSender<(&'static str, String)>,
-        release: Arc<tokio::sync::Notify>,
-    }
-
-    #[tonic::async_trait]
-    impl pb::update_server::Update for Agent {
-        async fn prepare_local_import(
-            &self,
-            _: Request<pb::LocalMetadata>,
-        ) -> Result<Response<pb::LocalCandidate>, Status> {
-            Ok(Response::new(pb::LocalCandidate {
-                id: "ab".repeat(16),
-                ..Default::default()
-            }))
-        }
-        async fn discard_local_import(
-            &self,
-            request: Request<pb::LocalCandidateRequest>,
-        ) -> Result<Response<pb::Empty>, Status> {
-            self.calls
-                .send((self.role, request.into_inner().id))
-                .unwrap();
-            if self.role == "receiver" {
-                self.release.notified().await;
-            }
-            Ok(Response::new(pb::Empty {}))
-        }
-        type ReceiveLocalImportStream = Stream<pb::LocalImportResponse>;
-        async fn receive_local_import(
-            &self,
-            _: Request<tonic::Streaming<pb::LocalReceiveRequest>>,
-        ) -> Result<Response<Self::ReceiveLocalImportStream>, Status> {
-            Err(Status::unimplemented("unused test RPC"))
-        }
-        async fn accept_local_import(
-            &self,
-            _: Request<pb::LocalCandidateRequest>,
-        ) -> Result<Response<pb::LocalCandidate>, Status> {
-            Err(Status::unimplemented("unused test RPC"))
-        }
-        async fn candidate_status(
-            &self,
-            _: Request<pb::LocalCandidateRequest>,
-        ) -> Result<Response<pb::LocalImportResponse>, Status> {
-            Err(Status::unimplemented("unused test RPC"))
-        }
-        type InstallCandidateStream = Stream<pb::ImageInstallResponse>;
-        async fn install_candidate(
-            &self,
-            _: Request<pb::LocalCandidateRequest>,
-        ) -> Result<Response<Self::InstallCandidateStream>, Status> {
-            Err(Status::unimplemented("unused test RPC"))
-        }
-        async fn list_generations(
-            &self,
-            _: Request<pb::Empty>,
-        ) -> Result<Response<pb::ListGenerationsResponse>, Status> {
-            Err(Status::unimplemented("unused test RPC"))
-        }
-        async fn discover(
-            &self,
-            _: Request<pb::RegistryDiscoverRequest>,
-        ) -> Result<Response<pb::RegistryDiscoverResponse>, Status> {
-            Err(Status::unimplemented("unused test RPC"))
-        }
-        async fn changelog(
-            &self,
-            _: Request<pb::RegistryChangelogRequest>,
-        ) -> Result<Response<pb::RegistryChangelogResponse>, Status> {
-            Err(Status::unimplemented("unused test RPC"))
-        }
-        type PullStream = Stream<pb::RegistryPullResponse>;
-        async fn pull(
-            &self,
-            _: Request<pb::RegistryPullRequest>,
-        ) -> Result<Response<Self::PullStream>, Status> {
-            Err(Status::unimplemented("unused test RPC"))
-        }
-        type ImageInstallStream = Stream<pb::ImageInstallResponse>;
-        async fn image_install(
-            &self,
-            _: Request<pb::ImageInstallRequest>,
-        ) -> Result<Response<Self::ImageInstallStream>, Status> {
-            Err(Status::unimplemented("unused test RPC"))
-        }
-        type InstallCachixStream = Stream<pb::SetGenerationResponse>;
-        async fn install_cachix(
-            &self,
-            _: Request<pb::Cachix>,
-        ) -> Result<Response<Self::InstallCachixStream>, Status> {
-            Err(Status::unimplemented("unused test RPC"))
-        }
-    }
-
-    async fn agent(
-        role: &'static str,
-        calls: mpsc::UnboundedSender<(&'static str, String)>,
-        release: Arc<tokio::sync::Notify>,
-    ) -> (Client, tokio::task::JoinHandle<()>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let incoming = async_stream::stream! {
-            loop { yield listener.accept().await.map(|(socket, _)| socket); }
-        };
-        let server = tokio::spawn(async move {
-            tonic::transport::Server::builder()
-                .add_service(pb::update_server::UpdateServer::new(Agent {
-                    role,
-                    calls,
-                    release,
-                }))
-                .serve_with_incoming(incoming)
-                .await
-                .unwrap();
-        });
-        let client = Client::connect(format!("http://{address}")).await.unwrap();
-        (client, server)
-    }
 
     #[tokio::test]
     async fn admission_guard_cleans_on_abort_and_retains_only_successful_candidates() {
         for keep_candidate in [false, true] {
             let (calls, mut received) = mpsc::unbounded_channel();
             let release = Arc::new(tokio::sync::Notify::new());
-            let (mut host, host_server) = agent("host", calls.clone(), release.clone()).await;
-            let (net, net_server) = agent("receiver", calls, release.clone()).await;
-            let admission = AdmittedImport::prepare(&mut host, &net, pb::LocalMetadata::default())
-                .await
-                .unwrap();
+            let receiver_calls = calls.clone();
+            let receiver_release = release.clone();
+            let admission = AdmittedImport::new(
+                pb::LocalCandidate::default(),
+                async move {
+                    receiver_calls.send("receiver").unwrap();
+                    receiver_release.notified().await;
+                },
+                async move { calls.send("host").unwrap() },
+            );
             let task = if keep_candidate {
                 tokio::spawn(admission.commit())
             } else {
@@ -381,21 +276,27 @@ mod tests {
             };
             let mut roles = Vec::new();
             for _ in 0..if keep_candidate { 1 } else { 2 } {
-                let (role, id) =
-                    tokio::time::timeout(std::time::Duration::from_secs(3), received.recv())
-                        .await
-                        .unwrap()
-                        .unwrap();
-                assert_eq!(id, "ab".repeat(16));
+                let role = tokio::time::timeout(std::time::Duration::from_secs(3), received.recv())
+                    .await
+                    .unwrap()
+                    .unwrap();
                 roles.push(role);
             }
             assert!(roles.contains(&"receiver"));
             assert_eq!(roles.contains(&"host"), !keep_candidate);
             // Host cleanup must arrive even while receiver cleanup is still waiting.
             release.notify_one();
-            let _ = task.await;
-            host_server.abort();
-            net_server.abort();
+            if keep_candidate {
+                assert!(task.await.is_ok());
+            } else {
+                assert!(task.await.unwrap_err().is_cancelled());
+            }
+            assert_eq!(
+                tokio::time::timeout(std::time::Duration::from_secs(3), received.recv())
+                    .await
+                    .unwrap(),
+                None
+            );
         }
     }
 }
